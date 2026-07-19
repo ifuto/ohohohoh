@@ -1,0 +1,14 @@
+[package]
+name = "sample-mod"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Example Rsift native DLL mod"
+
+[dependencies]
+rsift-api = { path = "../../crates/rsift-api" }
+tracing.workspace = true
+
+[lib]
+name = "sample_mod"
+crate-type = ["cdylib", "rlib"]
