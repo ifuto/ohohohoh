@@ -1,0 +1,44 @@
+[package]
+name = "rsift-sim"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Rsift world simulation — job system, region I/O, Starlight lighting, entity activation, Folia-style regions"
+
+[features]
+default = []
+tracy = ["dep:tracy-client"]
+tokio-io = ["dep:tokio"]
+io-uring = ["dep:io-uring"]
+
+[dependencies]
+tracing.workspace = true
+rayon.workspace = true
+bytemuck.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zstd = { workspace = true, features = ["zdict_builder"] }
+lz4_flex.workspace = true
+hashbrown.workspace = true
+rustc-hash.workspace = true
+roaring.workspace = true
+parking_lot.workspace = true
+crossbeam-channel.workspace = true
+memmap2.workspace = true
+smallvec.workspace = true
+tracy-client = { version = "0.17", optional = true }
+tokio = { version = "1.40", optional = true, features = ["rt-multi-thread", "fs", "io-util", "sync"] }
+io-uring = { version = "0.7", optional = true }
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "sim_benches"
+harness = false
+
+[lib]
+name = "rsift_sim"
+crate-type = ["rlib"]
+
