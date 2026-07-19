@@ -1,0 +1,24 @@
+[package]
+name = "rsift-installer"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "One-click automated installer that integrates Rsift into the Official Minecraft Launcher"
+
+[[bin]]
+name = "rsift-installer"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+rsift-api = { path = "../rsift-api" }
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { workspace = true, features = ["derive"] }
+
+[lib]
+name = "rsift_installer"
+crate-type = ["rlib"]
