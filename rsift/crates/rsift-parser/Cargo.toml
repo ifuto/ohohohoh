@@ -1,0 +1,17 @@
+[package]
+name = "rsift-parser"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "SIMD-accelerated ultra-fast Java ClassFile parser and bytecode patcher for Rsift"
+
+[dependencies]
+memchr.workspace = true
+rayon.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+rsift-api = { path = "../rsift-api" }
+
+[lib]
+name = "rsift_parser"
+crate-type = ["rlib"]
