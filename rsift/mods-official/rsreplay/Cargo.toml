@@ -1,0 +1,18 @@
+[package]
+name = "rsreplay"
+version.workspace = true
+authors = ["Ifuto_mitai", "Rsift Project Contributors"]
+edition.workspace = true
+description = "RsReplay: Next-generation first-person packet replay system for Rsift"
+
+[dependencies]
+bytemuck.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rsift-api = { path = "../../crates/rsift-api" }
+rsift-replay = { path = "../../crates/rsift-replay" }
+
+[lib]
+name = "rsreplay"
+crate-type = ["cdylib", "rlib"]
