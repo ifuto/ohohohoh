@@ -76,7 +76,7 @@ if not exist "mods" mkdir mods
 if not exist "%MC_DIR%\mods" mkdir "%MC_DIR%\mods" 2>nul
 
 echo [INFO] Deploying compiled DLL Mods to local and official Minecraft mods folders...
-for %%M in (rscalc.dll rsgraphics.dll rsreplay.dll) do (
+for %%M in (rscalc.dll rsgraphics.dll rsreplay.dll smpsystem.dll) do (
     if exist "target\release\%%M" (
         copy /Y "target\release\%%M" "mods\" >nul
         copy /Y "target\release\%%M" "%MC_DIR%\mods\" >nul 2>nul
@@ -86,6 +86,13 @@ for %%M in (rscalc.dll rsgraphics.dll rsreplay.dll) do (
         copy /Y "target\x86_64-pc-windows-gnu\release\%%M" "%MC_DIR%\mods\" >nul 2>nul
         echo [INFO] Copied GNU DLL: %%M
     )
+)
+
+if not exist "windows_binaries" mkdir "windows_binaries"
+if exist "target\release\rsift-installer.exe" (
+    copy /Y "target\release\rsift-installer.exe" "windows_binaries\Rsift-1.21.11-Setup.exe" >nul
+) else if exist "target\x86_64-pc-windows-gnu\release\rsift-installer.exe" (
+    copy /Y "target\x86_64-pc-windows-gnu\release\rsift-installer.exe" "windows_binaries\Rsift-1.21.11-Setup.exe" >nul
 )
 
 REM --- Step 4: Run Auto-Installer (creates rsift-loader-1.21.11_v1.0.0 folder) ---
