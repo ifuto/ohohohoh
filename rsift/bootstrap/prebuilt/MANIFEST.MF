@@ -1,0 +1,4 @@
+Premain-Class: com.rsift.RsiftBootstrapAgent
+Can-Redefine-Classes: true
+Can-Retransform-Classes: true
+
