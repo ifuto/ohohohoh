@@ -1,0 +1,24 @@
+[package]
+name = "rsift-gui-installer"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Rsift Official Single-File GUI Downloader & Auto-Installer (GitHub Pages Integration)"
+
+[[bin]]
+name = "rsift-gui-installer"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+ureq = { version = "2.9", features = ["json"] }
+rsift-installer = { path = "../rsift-installer" }
+
+[lib]
+name = "rsift_gui_installer"
+crate-type = ["rlib"]
