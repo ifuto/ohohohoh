@@ -20,7 +20,7 @@ impl<F: Fn(i32, i32, i32) -> bool> SolidQuery for F {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct EntityTarget {
     pub id: u64,
     /// AABB (ブロック単位, f32 中央管理)。

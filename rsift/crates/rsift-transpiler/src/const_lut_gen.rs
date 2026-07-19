@@ -17,7 +17,7 @@ pub const fn gen_ao_table() -> [u8; AO_TABLE_SIZE] {
             if side1 { v+=1; }
             if side2 { v+=1; }
             if corner { v+=1; }
-            3 - v.min(3)
+            if v > 3 { 0 } else { 3 - v }
         };
         table[i] = ao as u8;
         i+=1;

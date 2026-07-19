@@ -3,6 +3,11 @@
 
 use rayon::prelude::*;
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RayonJobConfig {
+    pub threads: usize,
+}
+
 pub fn parallel_for_each_chunk<I, F>(chunks: I, f: F)
 where
     I: IntoParallelIterator,

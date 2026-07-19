@@ -83,7 +83,7 @@ impl PhysicsDomain {
     #[inline]
     fn integrate_substep(b: &mut PhysicsBody, sub_dt: f64) {
         const GRAVITY: f64 = -0.08;
-        let drag = match b.in_fluid {
+        let drag: f64 = match b.in_fluid {
             1 => 0.80, // water
             2 => 0.50, // lava
             _ => 0.98, // air
@@ -95,19 +95,16 @@ impl PhysicsDomain {
             b.vel[1] = 0.0;
         }
 
-        // Apply velocity with multi-substep integration
         for axis in 0..3 {
             b.pos[axis] += b.vel[axis] * sub_dt;
         }
 
-        // Floor collision & void protection
         if b.pos[1] <= -64.0 {
             b.pos[1] = -64.0;
             b.vel[1] = 0.0;
             b.on_ground = true;
         }
 
-        // Drag deceleration
         b.vel[0] *= drag.powf(sub_dt * 20.0);
         b.vel[2] *= drag.powf(sub_dt * 20.0);
         if b.in_fluid > 0 {

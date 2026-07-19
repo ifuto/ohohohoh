@@ -7,12 +7,20 @@
 use std::marker::PhantomData;
 
 /// 世代管理付きスラブハンドル（ABA 衝突と Use-After-Free を完全防止）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct SlabHandle<T> {
     pub index: u32,
     pub generation: u32,
     _marker: PhantomData<T>,
 }
+
+impl<T> Clone for SlabHandle<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for SlabHandle<T> {}
 
 impl<T> SlabHandle<T> {
     #[inline]
@@ -225,13 +233,13 @@ mod tests {
         assert_eq!(slab.get(h2), Some(&200));
 
         assert_eq!(slab.remove(h1), Some(100));
-        assert_eq!(slab.get(h1), None); // Old handle is invalid!
+        assert_eq!(slab.get(h1), None);
 
         let h3 = slab.insert(300);
-        assert_eq!(h3.index, h1.index); // Slot reused
-        assert_ne!(h3.generation, h1.generation); // Generation incremented
+        assert_eq!(h3.index, h1.index);
+        assert_ne!(h3.generation, h1.generation);
         assert_eq!(slab.get(h3), Some(&300));
-        assert_eq!(slab.get(h1), None); // Old handle still invalid!
+        assert_eq!(slab.get(h1), None);
     }
 
     #[test]

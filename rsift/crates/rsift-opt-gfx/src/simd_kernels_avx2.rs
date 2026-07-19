@@ -2,6 +2,11 @@
 //! SIMD AVX2 Greedy Meshingビットマスク判定 - 100倍高速化
 //! portable-simd + wideクレート相当の手動ベクタ化
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SimdAvx2Config {
+    pub enabled: bool,
+}
+
 #[cfg(target_arch="x86_64")]
 pub fn greedy_mask_avx2(palette: &[u16; 4096]) -> [u32; 16] {
     let mut masks = [0u32; 16];
