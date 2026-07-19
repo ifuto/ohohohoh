@@ -9,15 +9,19 @@
 > `Resource not accessible by integration (HTTP 403)` を確認。
 > エージェント側での有効化は不可能なため、以下のどちらかをお願いします。
 
-## 有効化 (どちらか一方で OK)
+## 有効化 (どれか1つで OK — a が一番手軽)
 
-1. **ローカルで 3 コマンドを実行 (推奨・即時):**
+1. **ブラウザのみ (推奨・1分):**
+   GitHub のリポジトリ → **Actions タブ** → **New workflow** → **set up a workflow yourself** →
+   エディタに **`ci/build.yml` の中身を貼り付け** (ファイル名 `build.yml`) → **Commit changes**。
+   あなたのアカウントからのコミットには workflows 権限が要らないので即座に動き始めます。
+2. **ローカルで 3 コマンド:**
    ```cmd
    git mv ci/build.yml .github/workflows/build.yml
    git commit -m "ci: enable build workflow"
    git push
    ```
-2. **Arena で GitHub を workflows 権限つきで再接続** → その後エージェントに「CI を有効化して」と依頼。
+3. **Arena で GitHub を workflows 権限つきで再接続** → その後エージェントに「CI を有効化して」と依頼。
 
 ## 動作内容
 
