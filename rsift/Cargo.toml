@@ -17,6 +17,7 @@ members = [
     "mods-official/rscalc",
     "mods-official/rsgraphics",
     "mods-official/rsreplay",
+    "mods-official/smpsystem",
     "examples/sample-mod",
 ]
 resolver = "2"

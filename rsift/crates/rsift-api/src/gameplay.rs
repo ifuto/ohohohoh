@@ -142,3 +142,38 @@ impl GameplayRegistry {
         id
     }
 }
+
+/// Block Dispense Loot Event (`BlockDispenseLootEvent`) — fired right before a block (e.g., `minecraft:vault` or `minecraft:dispenser`)
+/// dispenses/spawns an item stack (`item_id`, `item_count`) into the world.
+#[repr(C)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockDispenseLootEvent {
+    pub block_id: String,
+    pub pos: [i32; 3],
+    pub item_id: String,
+    pub item_count: u32,
+    pub cancelled: bool,
+}
+
+impl BlockDispenseLootEvent {
+    pub fn new(block_id: impl Into<String>, pos: [i32; 3], item_id: impl Into<String>, item_count: u32) -> Self {
+        Self {
+            block_id: block_id.into(),
+            pos,
+            item_id: item_id.into(),
+            item_count,
+            cancelled: false,
+        }
+    }
+
+    #[inline]
+    pub fn set_cancelled(&mut self, cancelled: bool) {
+        self.cancelled = cancelled;
+    }
+
+    #[inline]
+    pub fn is_heavy_core_from_vault(&self) -> bool {
+        (self.block_id == "minecraft:vault" || self.block_id == "vault")
+            && (self.item_id == "minecraft:heavy_core" || self.item_id == "heavy_core")
+    }
+}

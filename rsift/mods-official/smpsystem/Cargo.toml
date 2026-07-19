@@ -1,0 +1,12 @@
+[package]
+name = "smpsystem"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "smpsystem"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rsift-api = { path = "../../crates/rsift-api" }
+bytemuck = { version = "1.16", features = ["derive"] }
