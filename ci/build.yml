@@ -1,0 +1,60 @@
+# GitHub Actions ワークフロー (有効化手順は ci/README.md 参照)
+#
+# 有効化: このファイルを `.github/workflows/build.yml` に移動して push するだけ。
+# - ubuntu ジョブ: cargo fmt --check / cargo check --workspace --all-targets --locked / cargo clippy
+# - windows ジョブ: tools\build_windows_setup_exe.bat で Rsift-1.21.11-Setup.exe を実ビルドし
+#   rsift/windows_binaries/ をアーティファクトとしてアップロード (JDK21 = pack-jar.ps1 用)。
+
+name: Build & Verify
+
+on:
+  push:
+    branches: ["arena/**", "main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: cargo check / clippy / fmt (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: rsift
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check (informational)
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+      - name: cargo check
+        run: cargo check --workspace --all-targets --locked
+      - name: cargo clippy (warnings are informational, errors fail)
+        run: cargo clippy --workspace --all-targets --locked
+
+  windows-installer:
+    name: Rsift-1.21.11-Setup.exe (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build setup exe (DLLs -> jar -> launcher -> installer)
+        shell: cmd
+        run: tools\build_windows_setup_exe.bat
+      - name: Upload Windows binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: rsift-windows-binaries
+          path: rsift/windows_binaries/
+          if-no-files-found: error
