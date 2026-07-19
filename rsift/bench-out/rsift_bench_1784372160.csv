@@ -1,0 +1,11 @@
+name,iterations,mean_us,min_us,p50_us,p95_us,p99_us,ops_per_sec
+# rsift wave-5 module bench (single process, HDR log-resolution)
+gpu_arena.alloc_free_mix,1530,228.3,102,219,348,398,4368.26
+mesh_compactor.10k_sections,3116,111.8,97,108,137,149,8900.57
+palette_pack.encode4096,3894,89.3,84,85,109,131,11124.70
+intern_pool.shape_cache_10k,613,570.6,548,568,596,620,1750.82
+stutter_guard.frame_sim_4096alloc,4000,6.2,6,6,6,9,151492.20
+quality_governor.scenario,4000,1.0,1,1,1,1,683760.68
+region_zstd.enc_dec_64k,3415,101.8,96,98,121,133,9755.86
+deinterleave_ao.128x72_scene,179,1962.7,1854,1966,2043,2088,509.30
+time_slice.drain_budget8ms,4000,9.3,9,9,9,26,100087.58
