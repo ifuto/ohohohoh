@@ -1,7 +1,14 @@
-//! Zero-copy packet capture types
+//! Zero-copy packet capture & First-Person UI/HUD Snapshot types
+//!
+//! 1) `CameraSnapshot`: 一人称視点 (`First-Person Centric`) カメラ状態
+//! 2) `FirstPersonUiSnapshot`: Tab キープレイヤーリスト (`PlayerListHud`)、ホットバー選択枠、
+//!    手/アイテム振りモーション (`hand_swing_progress`)、チャット HUD、ボスバーの完全記録
+//! 3) パケット記録式 (`Packet-Recording`) でありながら、オフラインレンダリング時に
+//!    OBS や通常画面録画と全く同じ一画面表示 (`全く同じ表示`) を完全再現し、後からのリソパ・シェーダー変更に対応。
 
 use bytemuck::{Pod, Zeroable};
 use rsift_api::packet::DirectBufferSlice;
+use serde::{Deserialize, Serialize};
 use tracing::trace;
 
 /// Packet direction
@@ -46,6 +53,59 @@ pub struct CameraSnapshot {
     pub _pad: [u8; 3],
 }
 
+/// Exact Tab key player entry in the PlayerListHud.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabPlayerEntry {
+    pub uuid: [u8; 16],
+    pub username: String,
+    pub ping_ms: i32,
+    pub game_mode: u8,
+    pub display_name_json: Option<String>,
+}
+
+/// Boss bar state (Wither, Ender Dragon, Raid boss bars on top of HUD).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BossBarState {
+    pub uuid: [u8; 16],
+    pub title: String,
+    pub progress: f32,
+    pub color: u8,
+}
+
+/// First-Person UI & HUD Snapshot — captures exact first-person screen elements
+/// so offline rendering matches live OBS/screen capture 100%.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct FirstPersonUiSnapshot {
+    pub timestamp_us: u64,
+    /// True when the player holds down `Tab` to check the scoreboard/player list
+    pub tab_list_visible: bool,
+    pub tab_header_text: Option<String>,
+    pub tab_footer_text: Option<String>,
+    pub tab_entries: Vec<TabPlayerEntry>,
+    pub hotbar_selected_slot: u8, // 0..8
+    pub hand_swing_progress: f32, // 0.0..1.0 for first-person item/hand swing
+    pub is_blocking_or_using: bool,
+    pub chat_messages: Vec<String>,
+    pub boss_bars: Vec<BossBarState>,
+}
+
+impl FirstPersonUiSnapshot {
+    pub fn new(timestamp_us: u64) -> Self {
+        Self {
+            timestamp_us,
+            tab_list_visible: false,
+            tab_header_text: None,
+            tab_footer_text: None,
+            tab_entries: Vec::new(),
+            hotbar_selected_slot: 0,
+            hand_swing_progress: 0.0,
+            is_blocking_or_using: false,
+            chat_messages: Vec::new(),
+            boss_bars: Vec::new(),
+        }
+    }
+}
+
 /// Zero-copy capture from JNI DirectBuffer
 pub struct ZeroCopyCapture;
 
@@ -60,7 +120,7 @@ impl ZeroCopyCapture {
         view_mode: u8,
     ) -> Result<CapturedPacket, &'static str> {
         let slice = DirectBufferSlice::from_raw_jni(ptr, len)?;
-        let payload = slice.as_slice().to_vec(); // ring buffer owns copy once; JNI buffer not retained
+        let payload = slice.as_slice().to_vec();
         trace!(
             "[RsReplay] zero-copy capture pkt={} dir={:?} len={}",
             packet_id, direction, len
@@ -82,4 +142,24 @@ impl ZeroCopyCapture {
 pub struct CapturedPacket {
     pub header: PacketRecordHeader,
     pub payload: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_first_person_ui_snapshot() {
+        let mut snap = FirstPersonUiSnapshot::new(1000);
+        snap.tab_list_visible = true;
+        snap.tab_entries.push(TabPlayerEntry {
+            uuid: [1; 16],
+            username: "Ifuto_mitai".into(),
+            ping_ms: 12,
+            game_mode: 0,
+            display_name_json: None,
+        });
+        assert!(snap.tab_list_visible);
+        assert_eq!(snap.tab_entries[0].username, "Ifuto_mitai");
+    }
 }

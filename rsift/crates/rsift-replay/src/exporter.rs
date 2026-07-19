@@ -75,7 +75,9 @@ impl Mp4Exporter {
 
         let mut wrote = 0u32;
         for i in 0..total_frames {
-            let frame = renderer.render_frame(i);
+            let timestamp_us = i * 1_000_000 / self.settings.output_fps.max(1) as u64;
+            let ui_snap = playback.eval_first_person_ui(timestamp_us);
+            let frame = renderer.render_first_person_frame(i, &ui_snap);
             if frame.rgba.is_empty() {
                 let _ = std::fs::remove_dir_all(&temp_dir);
                 return Err("export refused: empty RGBA frame".into());

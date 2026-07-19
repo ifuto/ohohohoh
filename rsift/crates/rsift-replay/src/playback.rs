@@ -3,7 +3,7 @@
 use crate::compressor::ZstdCompressor;
 use crate::format::RsrMetadata;
 use crate::interpolation::SuperFrameGenerator;
-use crate::packet::CameraSnapshot;
+use crate::packet::{CameraSnapshot, FirstPersonUiSnapshot};
 use std::fs;
 use std::path::Path;
 use tracing::info;
@@ -13,6 +13,7 @@ pub struct PlaybackEngine {
     pub raw_data: Vec<u8>,
     pub camera_keyframes: Vec<CameraSnapshot>,
     pub super_frames: Vec<CameraSnapshot>,
+    pub first_person_ui_snapshots: Vec<FirstPersonUiSnapshot>,
     pub current_frame: usize,
     pub target_fps: u32,
     pub playing: bool,
@@ -29,6 +30,7 @@ impl PlaybackEngine {
             raw_data: Vec::new(),
             camera_keyframes: Vec::new(),
             super_frames: Vec::new(),
+            first_person_ui_snapshots: Vec::new(),
             current_frame: 0,
             target_fps: 240,
             playing: false,
@@ -106,5 +108,28 @@ impl PlaybackEngine {
 
     pub fn pause(&mut self) {
         self.playing = false;
+    }
+
+    /// Retrieve the exact first-person HUD / UI snapshot (`Tab` screen, hotbar, chat) for a given timestamp.
+    pub fn eval_first_person_ui(&self, timestamp_us: u64) -> FirstPersonUiSnapshot {
+        if self.first_person_ui_snapshots.is_empty() {
+            return FirstPersonUiSnapshot::new(timestamp_us);
+        }
+        if timestamp_us <= self.first_person_ui_snapshots.first().unwrap().timestamp_us {
+            return self.first_person_ui_snapshots.first().unwrap().clone();
+        }
+        if timestamp_us >= self.first_person_ui_snapshots.last().unwrap().timestamp_us {
+            return self.first_person_ui_snapshots.last().unwrap().clone();
+        }
+        match self
+            .first_person_ui_snapshots
+            .binary_search_by_key(&timestamp_us, |s| s.timestamp_us)
+        {
+            Ok(idx) => self.first_person_ui_snapshots[idx].clone(),
+            Err(idx) => {
+                let prev = if idx > 0 { idx - 1 } else { 0 };
+                self.first_person_ui_snapshots[prev].clone()
+            }
+        }
     }
 }

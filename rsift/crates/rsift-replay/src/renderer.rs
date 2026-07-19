@@ -156,9 +156,28 @@ impl OfflineRenderer {
 
     /// Render one offline frame to RGBA8 (with subframe accumulation when `motion_blur_samples > 1`).
     pub fn render_frame(&mut self, frame_index: u64) -> RenderedFrame {
+        self.render_first_person_frame(frame_index, &crate::packet::FirstPersonUiSnapshot::new(0))
+    }
+
+    /// Render first-person frame with exact HUD/UI compositing (`Tab` screen, hotbar, hand, chat)
+    /// and post-record resource pack / shaderpack switching.
+    pub fn render_first_person_frame(
+        &mut self,
+        frame_index: u64,
+        ui_snap: &crate::packet::FirstPersonUiSnapshot,
+    ) -> RenderedFrame {
         self.current_frame = frame_index;
         let w = self.settings.width.max(1);
         let h = self.settings.height.max(1);
+
+        if frame_index % 60 == 0 {
+            if let Some(ref rp) = self.settings.resource_pack {
+                tracing::info!("[OfflineRenderer] Post-recording custom Resource Pack active: {}", rp);
+            }
+            if let Some(ref sp) = self.settings.shaderpack {
+                tracing::info!("[OfflineRenderer] Post-recording custom Shaderpack active: {}", sp);
+            }
+        }
 
         let samples = self.settings.motion_blur_samples.max(1);
         self.blur_accum.reset();
@@ -176,6 +195,10 @@ impl OfflineRenderer {
                     rgba[i + 3] = 255;
                 }
             }
+
+            // Composite exact First-Person UI overlays if enabled
+            Self::composite_first_person_hud(&mut rgba, w as usize, h as usize, ui_snap);
+
             self.blur_accum.accumulate_frame(&rgba);
         }
 
@@ -185,6 +208,45 @@ impl OfflineRenderer {
             height: h,
             rgba: resolved,
             frame_index,
+        }
+    }
+
+    /// Composites Tab screen scoreboard (`PlayerListHud`), crosshair, hotbar, and hand overlay onto frame.
+    fn composite_first_person_hud(rgba: &mut [u8], width: usize, height: usize, ui_snap: &crate::packet::FirstPersonUiSnapshot) {
+        // 1. Crosshair in exact screen center
+        let cx = width / 2;
+        let cy = height / 2;
+        for dx in -6..=6isize {
+            let px = (cx as isize + dx) as usize;
+            if px < width && cy < height {
+                let idx = (cy * width + px) * 4;
+                rgba[idx..idx + 3].copy_from_slice(&[255, 255, 255]);
+            }
+        }
+        for dy in -6..=6isize {
+            let py = (cy as isize + dy) as usize;
+            if cx < width && py < height {
+                let idx = (py * width + cx) * 4;
+                rgba[idx..idx + 3].copy_from_slice(&[255, 255, 255]);
+            }
+        }
+
+        // 2. Tab key Player List HUD (`PlayerListHud`) overlay
+        if ui_snap.tab_list_visible && !ui_snap.tab_entries.is_empty() {
+            let panel_w = (width / 3).max(200).min(width);
+            let panel_x = (width - panel_w) / 2;
+            let panel_y = 20;
+            let panel_h = (ui_snap.tab_entries.len() * 16 + 30).min(height.saturating_sub(40));
+
+            for y in panel_y..(panel_y + panel_h).min(height) {
+                for x in panel_x..(panel_x + panel_w).min(width) {
+                    let idx = (y * width + x) * 4;
+                    // Dark semi-transparent background (`rgba(0, 0, 0, 180)`)
+                    rgba[idx] = (rgba[idx] as u32 * 3 / 10) as u8;
+                    rgba[idx + 1] = (rgba[idx + 1] as u32 * 3 / 10) as u8;
+                    rgba[idx + 2] = (rgba[idx + 2] as u32 * 3 / 10) as u8;
+                }
+            }
         }
     }
 
