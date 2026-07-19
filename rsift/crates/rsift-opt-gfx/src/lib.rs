@@ -130,6 +130,8 @@ pub mod shadow_lod;
 pub mod meshlet_cone;
 pub mod clustered_lighting;
 pub mod sparse_texture;
+pub mod string_intern;
+pub mod bitpacked_section;
 pub mod visibility_buffer;
 pub mod wboit;
 

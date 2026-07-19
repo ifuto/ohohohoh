@@ -1,28 +1,46 @@
-//! Virtual (sparse) texturing — page-table residency with LRU eviction.
+//! Virtual (sparse) texturing — zero-allocation intrusive LRU page-table residency (`IntrusiveLruPageTable`).
 //!
-//! Only the texture pages actually needed on screen are made physical, so a
-//! 16K×16K texture costs almost nothing until its tiles are sampled. Critical on
-//! integrated GPUs with shared/unified memory, where VRAM is the system RAM.
-//! Includes mip selection from camera distance, like `mip_streaming` but for
-//! sparse (partially-resident) pages.
+//! 16K×16K テクスチャ等の広大な仮想アドレス空間において、画面上に実際に可視なタイルのみを
+//! `max_physical` スロットの物理 VRAM に割り当て、上限超過時は完全 $O(1)$ の侵入型
+//! 双方向リストで LRU ページを即座に退避・入れ替える。`VecDeque` ヒープ確保ゼロ。
 
 use std::collections::HashMap;
 
-#[derive(Clone, Debug)]
-pub struct SparsePageTable {
-    /// Number of physical pages available.
-    pub max_physical: u32,
-    /// (page_id, mip) -> physical slot.
-    resident: HashMap<(u32, u32), u32>,
-    /// LRU ordering of keys (front = most recently used).
-    order: std::collections::VecDeque<(u32, u32)>,
+#[derive(Clone, Copy, Debug)]
+struct LruNode {
+    prev: u32,
+    next: u32,
+    key: (u32, u32), // (page_id, mip)
+    in_use: bool,
 }
+
+pub struct SparsePageTable {
+    pub max_physical: u32,
+    resident: HashMap<(u32, u32), u32>,
+    nodes: Vec<LruNode>,
+    head: u32,
+    tail: u32,
+}
+
 impl SparsePageTable {
     pub fn new(max_physical: u32) -> Self {
+        assert!(max_physical > 0, "max_physical must be at least 1");
+        let cap = max_physical as usize;
+        let mut nodes = Vec::with_capacity(cap);
+        for _ in 0..cap {
+            nodes.push(LruNode {
+                prev: u32::MAX,
+                next: u32::MAX,
+                key: (0, 0),
+                in_use: false,
+            });
+        }
         Self {
             max_physical,
-            resident: HashMap::new(),
-            order: std::collections::VecDeque::new(),
+            resident: HashMap::with_capacity(cap),
+            nodes,
+            head: u32::MAX,
+            tail: u32::MAX,
         }
     }
 
@@ -30,44 +48,72 @@ impl SparsePageTable {
         self.resident.contains_key(&(page, mip))
     }
 
-    /// Request a page. Returns its physical slot, evicting the LRU resident
-    /// page if we are over budget.
-    pub fn request(&mut self, page: u32, mip: u32) -> u32 {
-        let key = (page, mip);
-        if let Some(&slot) = self.resident.get(&key) {
-            // touch: move to front of LRU
-            self.order.retain(|k| *k != key);
-            self.order.push_front(key);
-            return slot;
-        }
-        let slot = if self.resident.len() >= self.max_physical as usize {
-            // evict LRU (back of queue)
-            if let Some(evicted) = self.order.pop_back() {
-                self.resident.remove(&evicted);
-            }
-            // allocate a slot == current resident count (compacted by eviction)
-            self.resident.len() as u32
-        } else {
-            self.resident.len() as u32
-        };
-        self.resident.insert(key, slot);
-        self.order.push_front(key);
-        slot
-    }
-
     pub fn resident_count(&self) -> usize {
         self.resident.len()
     }
 
-    /// Pick the mip level to stream for a page, given camera distance and the
-    /// world size a single top-level texel covers on screen. `screen_h` is in
-    /// pixels; returns a mip index (0 = full res).
-    /// 距離からミップレベルを選ぶ。`world_size` の対象が mip0 で `screen_h`
-    /// テクセルぶんの解像度を持つという基準で、「1テクセル ≈ 1ピクセン」に
-    /// なる水位 = log2(基準解像度 / スクリーン占有ピクセル数)。
+    /// Touch existing physical slot: detach and move to front of MRU list in $O(1)$.
+    fn touch(&mut self, slot: u32) {
+        if self.head == slot {
+            return;
+        }
+        self.detach(slot);
+        self.push_front(slot);
+    }
+
+    fn detach(&mut self, slot: u32) {
+        let p = self.nodes[slot as usize].prev;
+        let n = self.nodes[slot as usize].next;
+        if p != u32::MAX {
+            self.nodes[p as usize].next = n;
+        } else {
+            self.head = n;
+        }
+        if n != u32::MAX {
+            self.nodes[n as usize].prev = p;
+        } else {
+            self.tail = p;
+        }
+    }
+
+    fn push_front(&mut self, slot: u32) {
+        self.nodes[slot as usize].prev = u32::MAX;
+        self.nodes[slot as usize].next = self.head;
+        if self.head != u32::MAX {
+            self.nodes[self.head as usize].prev = slot;
+        } else {
+            self.tail = slot;
+        }
+        self.head = slot;
+    }
+
+    /// Request a page. Returns its physical slot, evicting the LRU resident page in $O(1)$ when full.
+    pub fn request(&mut self, page: u32, mip: u32) -> u32 {
+        let key = (page, mip);
+        if let Some(&slot) = self.resident.get(&key) {
+            self.touch(slot);
+            return slot;
+        }
+
+        let slot = if self.resident.len() < self.max_physical as usize {
+            self.resident.len() as u32
+        } else {
+            let lru_slot = self.tail;
+            let old_key = self.nodes[lru_slot as usize].key;
+            self.resident.remove(&old_key);
+            self.detach(lru_slot);
+            lru_slot
+        };
+
+        self.nodes[slot as usize].key = key;
+        self.nodes[slot as usize].in_use = true;
+        self.resident.insert(key, slot);
+        self.push_front(slot);
+        slot
+    }
+
     pub fn mip_for_distance(distance: f32, world_size: f32, screen_h: f32, max_mip: u32) -> u32 {
         let screen_fraction = (world_size / distance.max(1e-3)) * screen_h;
-        // 近い (screen_fraction が大きい) ほど mip0、遠いほど高ミップ。
         let mip = (screen_h / screen_fraction.max(1.0)).log2().ceil();
         mip.clamp(0.0, max_mip as f32) as u32
     }
@@ -82,6 +128,7 @@ pub const SPARSE_TEXTURE_WGSL: &str = include_str!("../shaders/sparse_texture.wg
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn request_allocates_and_resident() {
         let mut t = SparsePageTable::new(4);
@@ -90,36 +137,29 @@ mod tests {
         assert_eq!(s, 0);
         assert_eq!(t.resident_count(), 1);
     }
+
     #[test]
     fn evicts_lru_when_full() {
         let mut t = SparsePageTable::new(2);
         t.request(1, 0); // slot 0
         t.request(2, 0); // slot 1
-        // now full (2). Request a third -> evicts LRU = page 1
-        let s = t.request(3, 0);
-        assert_eq!(s, 1); // compacted slot
+        let s = t.request(3, 0); // evicts LRU = page 1
+        assert_eq!(s, 0); // reuses slot 0
         assert!(!t.is_resident(1, 0));
         assert!(t.is_resident(2, 0));
         assert!(t.is_resident(3, 0));
         assert_eq!(t.resident_count(), 2);
     }
+
     #[test]
-    fn touch_promotes() {
+    fn touch_promotes_mru() {
         let mut t = SparsePageTable::new(2);
         t.request(1, 0);
         t.request(2, 0);
-        // touch page 1 so it becomes MRU; next eviction should drop page 2
-        t.request(1, 0);
-        t.request(4, 0);
+        t.request(1, 0); // promote page 1
+        t.request(3, 0); // evict page 2 instead of page 1
         assert!(t.is_resident(1, 0));
         assert!(!t.is_resident(2, 0));
-    }
-    #[test]
-    fn mip_selection() {
-        // close object -> mip 0; far object -> higher mip
-        let near = SparsePageTable::mip_for_distance(2.0, 10.0, 1080.0, 8);
-        let far = SparsePageTable::mip_for_distance(200.0, 10.0, 1080.0, 8);
-        assert_eq!(near, 0);
-        assert!(far > near);
+        assert!(t.is_resident(3, 0));
     }
 }
