@@ -55,13 +55,14 @@ for /r "%USERPROFILE%\.rustup" %%F in (dlltool.exe) do (
 )
 
 REM --- Step 2: Smart Workspace Compilation ---
-echo [INFO] Attempting release workspace build...
+echo [INFO] Attempting release workspace build with MSVC toolchain (avoids dlltool)...
+rustup default stable-x86_64-pc-windows-msvc >nul 2>nul
 echo -------------------------------------------------------------------------------
 cargo build --release --workspace
 
 if %ERRORLEVEL% neq 0 (
-    echo [WARN] Initial build failed! Switching toolchains to try MSVC / GNU fallback...
-    rustup default stable-x86_64-pc-windows-msvc >nul 2>nul
+    echo [WARN] MSVC build encountered an issue (or toolchain missing). Trying GNU fallback...
+    rustup default stable-x86_64-pc-windows-gnu >nul 2>nul
     cargo build --release --workspace
     
     if !ERRORLEVEL! neq 0 (

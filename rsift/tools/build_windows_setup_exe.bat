@@ -33,6 +33,9 @@ for /r "%USERPROFILE%\.rustup" %%F in (dlltool.exe) do (
     if exist "%%F" set "PATH=%%~dpF;!PATH!"
 )
 
+echo [INFO] Selecting MSVC target toolchain on Windows if available (avoids dlltool)...
+rustup default stable-x86_64-pc-windows-msvc >nul 2>nul
+
 echo [1/4] Compiling official native DLL plugins (Release mode, LTO Fat, Opt-Level 3)...
 cargo build --release -p rsgraphics -p rscalc -p rsreplay -p smpsystem -p sample-mod
 if %ERRORLEVEL% neq 0 (
