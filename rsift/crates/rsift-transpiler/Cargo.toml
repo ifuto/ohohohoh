@@ -1,0 +1,18 @@
+[package]
+name = "rsift-transpiler"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Zero-Compatibility-Loss Java Bytecode to Native Rust AOT/JIT Transpiler for Rsift"
+
+[dependencies]
+bytemuck.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+rayon.workspace = true
+rsift-api = { path = "../rsift-api" }
+rsift-parser = { path = "../rsift-parser" }
+
+[lib]
+name = "rsift_transpiler"
+crate-type = ["rlib"]
