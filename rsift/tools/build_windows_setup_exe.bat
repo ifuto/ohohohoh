@@ -13,6 +13,26 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+REM Automatically discover and add dlltool.exe and gcc to PATH across all common Windows toolchain directories!
+for /d %%D in ("%USERPROFILE%\.rustup\toolchains\*gnu*") do (
+    if exist "%%D\lib\rustlib\x86_64-pc-windows-gnu\bin" set "PATH=%%D\lib\rustlib\x86_64-pc-windows-gnu\bin;!PATH!"
+    if exist "%%D\libexec\gcc\x86_64-w64-mingw32\bin" set "PATH=%%D\libexec\gcc\x86_64-w64-mingw32\bin;!PATH!"
+)
+for %%P in (
+    "C:\mingw64\bin"
+    "C:\msys64\mingw64\bin"
+    "C:\msys64\usr\bin"
+    "C:\tools\msys64\mingw64\bin"
+    "%USERPROFILE%\scoop\apps\msys2\current\mingw64\bin"
+    "%USERPROFILE%\AppData\Local\Programs\msys2\mingw64\bin"
+    "C:\Program Files\mingw-w64\x86_64-8.1.0-posix-seh-rt_v6-rev0\mingw64\bin"
+) do (
+    if exist %%P set "PATH=%%~P;!PATH!"
+)
+for /r "%USERPROFILE%\.rustup" %%F in (dlltool.exe) do (
+    if exist "%%F" set "PATH=%%~dpF;!PATH!"
+)
+
 echo [1/4] Compiling official native DLL plugins (Release mode, LTO Fat, Opt-Level 3)...
 cargo build --release -p rsgraphics -p rscalc -p rsreplay -p smpsystem -p sample-mod
 if %ERRORLEVEL% neq 0 (
