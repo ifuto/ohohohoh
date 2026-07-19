@@ -228,5 +228,20 @@ pub mod simd_kernels_avx2;
 pub mod pgo_bolt;
 pub mod branchless_block;
 
+// ---- 45-Technique & 2025 Cutting-Edge Implementation Suite ----
+pub mod svdag;
+pub mod transform_svdag;
+pub mod azdo;
+pub mod gigabuffer;
+pub mod lockfree_vram_cache;
+pub mod out_of_core_paging;
+pub mod aokana;
+pub mod location_encoded_occupancy;
+pub mod fragment_ray_box;
+pub mod gigavoxels;
+pub mod voxel_cone_tracing;
+pub mod tiled_deferred;
+pub mod compute_light_prop;
+
 // ---- Complete Wiring Orchestrator (スタブ禁止: 全モジュールを本番フレームに配線)
 pub mod full_graph_wiring;

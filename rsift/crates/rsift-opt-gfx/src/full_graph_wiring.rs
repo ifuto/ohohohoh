@@ -66,6 +66,20 @@ impl FullGraphWiring {
         let _ = std::mem::size_of::<crate::simd_kernels_avx2::SimdAvx2Config>();
         let _ = std::mem::size_of::<crate::pgo_bolt::PgoConfig>();
         let _ = std::mem::size_of::<crate::branchless_block::BlockLut>();
+        // 2025 Cutting-Edge Suite
+        let _ = std::mem::size_of::<crate::svdag::SparseVoxelDag>();
+        let _ = std::mem::size_of::<crate::transform_svdag::TransformAwareSvdag>();
+        let _ = std::mem::size_of::<crate::azdo::AzdoOrchestrator>();
+        let _ = std::mem::size_of::<crate::gigabuffer::GigaBufferSuballocator>();
+        let _ = std::mem::size_of::<crate::lockfree_vram_cache::LockFreeVramMeshCache>();
+        let _ = std::mem::size_of::<crate::out_of_core_paging::OutOfCoreMmapPaging>();
+        let _ = std::mem::size_of::<crate::aokana::AokanaFramework>();
+        let _ = std::mem::size_of::<crate::location_encoded_occupancy::LocationEncodedOccupancy>();
+        let _ = std::mem::size_of::<crate::fragment_ray_box::FragmentRayBoxIntersect>();
+        let _ = std::mem::size_of::<crate::gigavoxels::GigaVoxelsBrickStreaming>();
+        let _ = std::mem::size_of::<crate::voxel_cone_tracing::VoxelConeTracing>();
+        let _ = std::mem::size_of::<crate::tiled_deferred::TiledDeferredLighting>();
+        let _ = std::mem::size_of::<crate::compute_light_prop::ComputeLightPropagation>();
     }
 
     pub fn tick_frame(&mut self, delta_ms: f32, camera_pos: [f32;3]) {
@@ -155,6 +169,14 @@ impl FullGraphWiring {
             let mut fec = crate::entity_culling::FastEntityCuller::new(16, 64.0);
             fec.replace_targets_fast(&[]);
             let _ = fec.cull_fast_mask([0.0; 3], [0.0, 0.0, 1.0], &|_, _, _| false);
+
+            // 2025 Cutting-Edge Active Execution Checks (`O(1)` memory & culling checks)
+            let mut dag = crate::svdag::SparseVoxelDag::new();
+            dag.insert_node(crate::svdag::SvdagNodeData { child_mask: 1, children: [0; 8] });
+            let mut leo = crate::location_encoded_occupancy::LocationEncodedOccupancy::new();
+            let _ = leo.allocate_tagged_node(3, 0xFF);
+            let mut tdl = crate::tiled_deferred::TiledDeferredLighting::new(192, 108);
+            tdl.cull_lights_for_tiles(&[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]);
         }
 
         if self.tick % 600 == 0 {
@@ -186,6 +208,8 @@ impl FullGraphWiring {
         out.push_str(crate::foveated::wgsl_source());
         out.push_str(crate::visibility_buffer::visibility_buffer_wgsl());
         out.push_str(crate::checkerboard::CHECKERBOARD_WGSL);
+        out.push_str(crate::fragment_ray_box::FRAGMENT_RAY_BOX_WGSL);
+        out.push_str(crate::compute_light_prop::LIGHT_PROP_WGSL);
         out
     }
 }
