@@ -1,0 +1,29 @@
+[package]
+name = "rsift-opt-gfx"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "HZB GPU-driven culling, 12-byte quantized meshing, and Iris shader pipeline for Rsift"
+
+[dependencies]
+bytemuck.workspace = true
+tracing.workspace = true
+rayon.workspace = true
+wgpu.workspace = true
+zstd.workspace = true
+lz4_flex.workspace = true
+parking_lot.workspace = true
+hashbrown.workspace = true
+crossbeam-channel.workspace = true
+dashmap = "6.0"
+smallvec.workspace = true
+memmap2.workspace = true
+rsift-api = { path = "../rsift-api" }
+
+[lib]
+name = "rsift_opt_gfx"
+crate-type = ["rlib"]
+
+[dev-dependencies]
+# 疑似Minecraftハーネス: バニラAnvil互換の zlib(deflate) 計測に使用
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
