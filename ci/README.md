@@ -4,15 +4,20 @@
 `workflows` 権限を持たないため `.github/workflows/` への直接 push が拒否される関係で、
 ここに配置しています (このパスは権限不要)。
 
+> 実測 (2026-07-20): git push / REST API の両方で
+> `refusing to allow a GitHub App to create or update workflow ... without 'workflows' permission` /
+> `Resource not accessible by integration (HTTP 403)` を確認。
+> エージェント側での有効化は不可能なため、以下のどちらかをお願いします。
+
 ## 有効化 (どちらか一方で OK)
 
-1. **このファイルを移動して push:**
+1. **ローカルで 3 コマンドを実行 (推奨・即時):**
    ```cmd
    git mv ci/build.yml .github/workflows/build.yml
    git commit -m "ci: enable build workflow"
    git push
    ```
-2. または GitHub 上で新規 workflow を作成し、`ci/build.yml` の内容を貼り付け。
+2. **Arena で GitHub を workflows 権限つきで再接続** → その後エージェントに「CI を有効化して」と依頼。
 
 ## 動作内容
 
