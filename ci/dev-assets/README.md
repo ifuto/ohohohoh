@@ -7,6 +7,11 @@ codeload.github.com / docs.rs / npm / PyPI のみ)。
 **GitHub リリースの asset CDN (release-assets.githubusercontent.com) も遮断** のため、
 リリース添付ではなく **git プロトコル経由 (専用 orphan branch)** で配布します。
 
+> 実測補足 (2026-07-20): リリース asset は「アップロードはできるが sandbox 側ダウンロードが
+> できない」ことを確認。`gh release download BUILD` も CDN リダイレクト先で EOF となる
+> (curl の 302 → release-assets.githubusercontent.com 到達不可と同じ遮断)。
+> よって **Releases 添付ではなく下記 orphan branch 方式を使うこと**。
+
 ## 必要なもの (2 点)
 
 ### 1. Rust toolchain — Linux x86_64 用 tarball (**Windows 版ではない**)
