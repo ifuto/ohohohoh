@@ -40,9 +40,12 @@ As an ordinary player who just wants to jump into the game, here is your complet
 
 ---
 
-### STEP 1: Download the One-Click Installer
-Download our pre-built setup program (provided by modpack creators or our release page):
-* 📦 **`Rsift-1.21.11-Setup.exe`** (The automated Windows installer)
+### STEP 1: Download the One-Click Installer (Single Self-Contained `.exe` File!)
+Download our single self-contained setup program (provided by modpack creators or our release page):
+* 📦 **`Rsift-1.21.11-Setup.exe`** (Single-File Self-Extracting Windows Installer)
+
+> **✨ Zero External Folders or Extra DLLs Required:**  
+> You do NOT need to download the full project folder, ZIP archives, or separate `.dll` files (`rsgraphics.dll`, `rscalc.dll`). Everything needed is embedded directly inside `Rsift-1.21.11-Setup.exe`!
 
 ---
 
@@ -51,7 +54,8 @@ Double-click `Rsift-1.21.11-Setup.exe`. That is literally your only setup action
 
 Within 1 second, the installer automatically works its magic in the background:
 * Detects your official Minecraft folder (`%APPDATA%\.minecraft`).
-* Creates the Fabric-style `.minecraft/versions/Rsift-1.21.11/` folder with the required JSON profile (`"inheritsFrom": "1.21.11"`) and bootstrap JAR.
+* Unpacks and deploys all required native `.dll` plugins (`rsgraphics.dll`, `rscalc.dll`, `rsreplay.dll`) and `rsift_jvm.dll` directly into `.minecraft/mods/` and `.minecraft/versions/Rsift-1.21.11/`.
+* Creates the `.minecraft/versions/Rsift-1.21.11/` folder with the required JSON profile (`"inheritsFrom": "1.21.11"`) and bootstrap JAR.
 * Adds the **[ Rsift 1.21.11 (Hyper-Optimized) ]** profile directly into your Minecraft Launcher.
 * Automatically registers the native `rsift` binary into your Windows System PATH!
 

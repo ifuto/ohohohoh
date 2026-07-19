@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing::{error, info, warn};
 
+pub mod embedded_payloads;
+use embedded_payloads::EmbeddedPayloads;
+
 pub const BUILD_VERSION: &str = "v1.0.1_perf1";
 
 #[derive(Debug, Clone, Default)]
@@ -135,7 +138,6 @@ impl LauncherInstaller {
             .unwrap_or_else(|_| rsift_install_path.to_path_buf());
 
         let agent_path = Self::find_agent_dll(&abs_install);
-        let agent_loaded = agent_path.is_some();
         let agent_for_launch = if let Some(ref ap) = agent_path {
             let dest = version_dir.join(
                 ap.file_name()
@@ -144,11 +146,15 @@ impl LauncherInstaller {
             fs::copy(ap, &dest).map_err(|e| format!("copy agent dll: {}", e))?;
             info!("[Install] native bridge    = {:?} → {:?}", ap, dest);
             Some(dest)
+        } else if let Ok(dest) = EmbeddedPayloads::deploy_rsift_jvm(&version_dir) {
+            info!("[Install] native bridge    = self-extracted to {:?}", dest);
+            Some(dest)
         } else {
             warn!("[Install] rsift_jvm.dll    = NOT FOUND — native hooks disabled");
             warn!("[Install]   Searched under: {:?}", abs_install);
             None
         };
+        let agent_loaded = agent_for_launch.is_some();
 
         let mut jvm_args: Vec<String> = vec![
             "-Drsift.loader.enabled=true".into(),
@@ -542,7 +548,7 @@ impl LauncherInstaller {
                 return Ok(Some(dest));
             }
         }
-        Ok(None)
+        EmbeddedPayloads::deploy_bootstrap_jar(version_dir).map(Some)
     }
 
     fn deploy_official_dll_mods(&self, source_dir: &Path, version_dir: &Path) -> Result<Vec<String>, String> {
@@ -573,9 +579,20 @@ impl LauncherInstaller {
                 }
             }
             if !found {
-                warn!("[Install] mod MISSING     = {} (not found in bundle)", dll);
+                warn!("[Install] mod MISSING on disk = {} — falling back to self-contained payload", dll);
             }
         }
+
+        if deployed.is_empty() {
+            let extracted = EmbeddedPayloads::deploy_official_mods(&shared_mods_dir)?;
+            for name in &extracted {
+                let shared_dest = shared_mods_dir.join(name);
+                let version_dest = version_mods_dir.join(name);
+                let _ = fs::copy(&shared_dest, &version_dest);
+                deployed.push(name.clone());
+            }
+        }
+
         Ok(deployed)
     }
 
