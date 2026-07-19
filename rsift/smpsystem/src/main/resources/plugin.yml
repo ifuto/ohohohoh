@@ -1,0 +1,6 @@
+name: SMPSystem
+version: '1.0.2'
+main: com.rsift.smp.SmpSystemPlugin
+api-version: '1.21'
+author: Rsift Project
+description: Official Paper SMP Economy Tuning & Rare Loot Modifier Plugin for Rsift 1.21.11

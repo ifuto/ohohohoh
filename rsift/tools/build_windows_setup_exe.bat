@@ -41,7 +41,7 @@ echo [INFO] Selecting MSVC target toolchain on Windows if available (avoids dllt
 rustup default stable-x86_64-pc-windows-msvc >nul 2>nul
 
 echo [1/4] Compiling official native DLL plugins (Release mode, LTO Fat, Opt-Level 3)...
-cargo build --release -p rsgraphics -p rscalc -p rsreplay -p smpsystem -p sample-mod
+cargo build --release -p rsgraphics -p rscalc -p rsreplay -p sample-mod
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to compile official DLL plugins!
     exit /b 1
@@ -70,7 +70,6 @@ copy /y "target\release\rsift_gui_installer.exe" "windows_binaries\Rsift-GUI-Ins
 copy /y "target\release\rsgraphics.dll" "windows_binaries\rsgraphics.dll" >nul
 copy /y "target\release\rscalc.dll" "windows_binaries\rscalc.dll" >nul
 copy /y "target\release\rsreplay.dll" "windows_binaries\rsreplay.dll" >nul
-copy /y "target\release\smpsystem.dll" "windows_binaries\smpsystem.dll" >nul
 
 echo ==============================================================================
 echo  ✅ BUILD COMPLETE! All verified Windows binaries generated successfully:
@@ -78,6 +77,5 @@ echo     -> windows_binaries\Rsift-1.21.11-Setup.exe (Single-File Auto-Installer
 echo     -> windows_binaries\rsgraphics.dll (Official Graphics & Culling V2 Engine)
 echo     -> windows_binaries\rscalc.dll (Official Physics & AI AOT Transpiler)
 echo     -> windows_binaries\rsreplay.dll (Official Studio & MP4 Exporter)
-echo     -> windows_binaries\smpsystem.dll (Official SMP Heavy Core Rare Loot Modifier)
 echo ==============================================================================
 endlocal

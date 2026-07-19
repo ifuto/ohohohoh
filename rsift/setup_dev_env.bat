@@ -108,7 +108,7 @@ if not exist "mods" mkdir mods
 if not exist "%MC_DIR%\mods" mkdir "%MC_DIR%\mods" 2>nul
 
 echo [INFO] Deploying compiled DLL Mods to local and official Minecraft mods folders...
-for %%M in (rscalc.dll rsgraphics.dll rsreplay.dll smpsystem.dll) do (
+for %%M in (rscalc.dll rsgraphics.dll rsreplay.dll) do (
     if exist "target\release\%%M" (
         copy /Y "target\release\%%M" "mods\" >nul
         copy /Y "target\release\%%M" "%MC_DIR%\mods\" >nul 2>nul
