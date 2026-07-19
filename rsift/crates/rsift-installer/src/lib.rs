@@ -146,13 +146,21 @@ impl LauncherInstaller {
             fs::copy(ap, &dest).map_err(|e| format!("copy agent dll: {}", e))?;
             info!("[Install] native bridge    = {:?} → {:?}", ap, dest);
             Some(dest)
-        } else if let Ok(dest) = EmbeddedPayloads::deploy_rsift_jvm(&version_dir) {
-            info!("[Install] native bridge    = self-extracted to {:?}", dest);
-            Some(dest)
         } else {
-            warn!("[Install] rsift_jvm.dll    = NOT FOUND — native hooks disabled");
-            warn!("[Install]   Searched under: {:?}", abs_install);
-            None
+            match EmbeddedPayloads::deploy_rsift_jvm(&version_dir) {
+                Ok(dest) => {
+                    info!("[Install] native bridge    = self-extracted to {:?}", dest);
+                    Some(dest)
+                }
+                Err(e) => {
+                    warn!(
+                        "[Install] rsift_jvm.dll    = NOT FOUND — native hooks disabled ({})",
+                        e
+                    );
+                    warn!("[Install]   Searched under: {:?}", abs_install);
+                    None
+                }
+            }
         };
         let agent_loaded = agent_for_launch.is_some();
 
@@ -548,7 +556,16 @@ impl LauncherInstaller {
                 return Ok(Some(dest));
             }
         }
-        EmbeddedPayloads::deploy_bootstrap_jar(version_dir).map(Some)
+        match EmbeddedPayloads::deploy_bootstrap_jar(version_dir) {
+            Ok(p) => Ok(Some(p)),
+            Err(e) => {
+                warn!(
+                    "[Install] bootstrap_jar   = 配備不可 — JVM フックは無効化されます: {}",
+                    e
+                );
+                Ok(None)
+            }
+        }
     }
 
     fn deploy_official_dll_mods(&self, source_dir: &Path, version_dir: &Path) -> Result<Vec<String>, String> {
@@ -578,14 +595,36 @@ impl LauncherInstaller {
                 }
             }
             if !found {
-                // Normal self-contained setup: deploy directly from embedded payload!
-                if let Ok(path) = EmbeddedPayloads::deploy_single_mod(&shared_mods_dir, dll) {
-                    let version_dest = version_mods_dir.join(dll);
-                    let _ = fs::copy(&path, &version_dest);
-                    info!("[Install] mod deployed from embedded setup payload -> {:?}", path);
-                    deployed.push(dll.to_string());
+                // 自己完結 setup: 実埋め込み payload から配備する。
+                match EmbeddedPayloads::deploy_single_mod(&shared_mods_dir, dll) {
+                    Ok(path) => {
+                        let version_dest = version_mods_dir.join(dll);
+                        fs::copy(&path, &version_dest)
+                            .map_err(|e| format!("copy mod {} to version mods: {}", dll, e))?;
+                        info!(
+                            "[Install] mod deployed from embedded setup payload -> {:?}",
+                            path
+                        );
+                        deployed.push(dll.to_string());
+                    }
+                    Err(e) => warn!("[Install] mod {} を配備できません: {}", dll, e),
                 }
             }
+        }
+
+        if deployed.is_empty() {
+            // Windows では公式 mod DLL がインストールの核心価値 — 0 件配備は fail-loud Err
+            // (旧実装は偽マーカー文字列を書き込んで「成功」偽装していた)。
+            // 非 Windows (開発/CI) では embedded payload 非対応のため warn のみで継続。
+            if cfg!(target_os = "windows") {
+                return Err(
+                    "公式 mod DLL を 1 件も配備できませんでした (disk にも embedded にも非存在)。\
+                     先に `cargo build --release -p rsgraphics -p rscalc -p rsreplay` を実行してから \
+                     installer を再ビルド/再実行すること"
+                        .to_string(),
+                );
+            }
+            warn!("[Install] 公式 mod の embedded payload は Windows DLL のみ対応 — 今回は 0 件配備で継続");
         }
 
         Ok(deployed)

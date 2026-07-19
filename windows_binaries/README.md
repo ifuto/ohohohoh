@@ -16,7 +16,7 @@ For ordinary Minecraft players who just want to play immediately:
 1. Go to the **GitHub Releases Page (`https://github.com/ifuto/rsift/releases/latest`)**.
 2. Under **Assets**, click to download:
    - 📦 **`Rsift-1.21.11-Setup.exe`** (Single-File Self-Extracting Automated Windows Installer)
-3. Double-click `Rsift-1.21.11-Setup.exe`. Within 1 second, it deploys all required plugins (`rsgraphics.dll`, `rscalc.dll`, `rsreplay.dll`, `smpsystem.dll`), creates the `.minecraft/versions/Rsift-1.21.11/` directory, and registers **[ Rsift 1.21.11 (Hyper-Optimized) ]** right into your official Minecraft Launcher!
+3. Double-click `Rsift-1.21.11-Setup.exe`. Within 1 second, it deploys all required plugins (`rsgraphics.dll`, `rscalc.dll`, `rsreplay.dll`) — サーバー併用時は PaperMC プラグイン `smpsystem-*.jar` (`smpsystem/` から Gradle/Maven で別途ビルド) も任意導入可能, creates the `.minecraft/versions/Rsift-1.21.11/` directory, and registers **[ Rsift 1.21.11 (Hyper-Optimized) ]** right into your official Minecraft Launcher!
 
 ---
 
@@ -29,10 +29,10 @@ Double-click or run from Command Prompt / PowerShell:
 ```cmd
 tools\build_windows_setup_exe.bat
 ```
-This automatically executes Cargo release builds with fat LTO + maximum optimizations and deposits `Rsift-1.21.11-Setup.exe`, `rsift.exe`, `rsgraphics.dll`, `rscalc.dll`, `rsreplay.dll`, and `smpsystem.dll` directly into this `windows_binaries\` directory!
+This automatically executes Cargo release builds with fat LTO + maximum optimizations and deposits `Rsift-1.21.11-Setup.exe`, `rsift.exe`, `rsgraphics.dll`, `rscalc.dll`, and `rsreplay.dll` (smpsystem は PaperMC サーバープラグイン jar のため DLL には含まれません — `smpsystem\pom.xml` 参照) directly into this `windows_binaries\` directory!
 
 ### Option B: Run Cargo Command Directly
 ```cmd
 cargo build --release --workspace
 ```
-The compiled installer will be available at `target\release\rsift_installer.exe` (you can rename it to `Rsift-1.21.11-Setup.exe`).
+The compiled installer will be available at `target\release\rsift-installer.exe` (hyphen — Cargo [[bin]] name "rsift-installer"; you can rename it to `Rsift-1.21.11-Setup.exe`). Note: a plain `--workspace` build may compile the installer before the DLL plugins exist, so payloads can be missing — use `tools\build_windows_setup_exe.bat` (Option A) for a deterministic real-payload Setup.exe.

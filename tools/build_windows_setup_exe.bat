@@ -40,44 +40,63 @@ for /r "%USERPROFILE%\.rustup" %%F in (dlltool.exe) do (
 echo [INFO] Selecting MSVC target toolchain on Windows if available (avoids dlltool)...
 rustup default stable-x86_64-pc-windows-msvc >nul 2>nul
 
-echo [1/4] Compiling official native DLL plugins (Release mode, LTO Fat, Opt-Level 3)...
-cargo build --release -p rsgraphics -p rscalc -p rsreplay -p smpsystem -p sample-mod
+echo [1/5] Compiling official native DLL plugins + JVMTI core (Release mode, LTO Fat, Opt-Level 3)...
+cargo build --release -p rsgraphics -p rscalc -p rsreplay -p rsift-jvm -p sample-mod
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to compile official DLL plugins!
     exit /b 1
 )
 
-echo [2/4] Compiling master host executable (rsift.exe)...
+echo [2/5] Building Java bootstrap agent jar (for installer payload embedding)...
+if exist "bootstrap\pack-jar.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "bootstrap\pack-jar.ps1"
+    if !ERRORLEVEL! neq 0 echo [WARN] pack-jar.ps1 failed ^(JDK required^) — Setup.exe will embed dll payloads only
+) else (
+    echo [WARN] bootstrap\pack-jar.ps1 not found — jar payload will be missing
+)
+
+echo [3/5] Compiling master host executable (rsift.exe)...
 cargo build --release -p rsift-launcher
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to compile master host launcher!
     exit /b 1
 )
 
-echo [3/4] Compiling self-extracting one-click setup installer (Rsift-1.21.11-Setup.exe)...
+echo [4/5] Compiling self-extracting one-click setup installer (Rsift-1.21.11-Setup.exe)...
+REM clean -p で installers の build.rs を確実に再実行させ、実 DLL/JAR payload を決定論的に再埋め込みする
+cargo clean -p rsift-installer -p rsift-gui-installer
 cargo build --release -p rsift-installer -p rsift-gui-installer
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to compile installer!
     exit /b 1
 )
 
-echo [4/4] Staging verified Windows binaries into `windows_binaries\`...
+echo [5/5] Staging verified Windows binaries into `windows_binaries\`...
 if not exist "windows_binaries" mkdir "windows_binaries"
 
 copy /y "target\release\rsift.exe" "windows_binaries\rsift.exe" >nul
-copy /y "target\release\rsift_installer.exe" "windows_binaries\Rsift-1.21.11-Setup.exe" >nul
-copy /y "target\release\rsift_gui_installer.exe" "windows_binaries\Rsift-GUI-Installer.exe" >nul
+copy /y "target\release\rsift-installer.exe" "windows_binaries\Rsift-1.21.11-Setup.exe" >nul
+copy /y "target\release\rsift-gui-installer.exe" "windows_binaries\Rsift-GUI-Installer.exe" >nul
 copy /y "target\release\rsgraphics.dll" "windows_binaries\rsgraphics.dll" >nul
 copy /y "target\release\rscalc.dll" "windows_binaries\rscalc.dll" >nul
 copy /y "target\release\rsreplay.dll" "windows_binaries\rsreplay.dll" >nul
-copy /y "target\release\smpsystem.dll" "windows_binaries\smpsystem.dll" >nul
+copy /y "target\release\rsift_jvm.dll" "windows_binaries\rsift_jvm.dll" >nul
+copy /y "target\release\sample_mod.dll" "windows_binaries\sample_mod.dll" >nul
+if exist "target\release\rsift-installer.exe" (
+    echo [OK] Setup.exe staged: windows_binaries\Rsift-1.21.11-Setup.exe
+) else (
+    echo [ERROR] Rsift-1.21.11-Setup.exe staging failed ^(rsift-installer.exe not found^)!
+    exit /b 1
+)
 
 echo ==============================================================================
 echo  ✅ BUILD COMPLETE! All verified Windows binaries generated successfully:
-echo     -> windows_binaries\Rsift-1.21.11-Setup.exe (Single-File Auto-Installer)
+echo     -> windows_binaries\Rsift-1.21.11-Setup.exe (Single-File Auto-Installer, 実payload埋め込み済み)
 echo     -> windows_binaries\rsgraphics.dll (Official Graphics & Culling V2 Engine)
 echo     -> windows_binaries\rscalc.dll (Official Physics & AI AOT Transpiler)
 echo     -> windows_binaries\rsreplay.dll (Official Studio & MP4 Exporter)
-echo     -> windows_binaries\smpsystem.dll (Official SMP Heavy Core Rare Loot Modifier)
+echo     -> windows_binaries\rsift_jvm.dll (JVMTI Core Native Bridge)
+echo     -> windows_binaries\sample_mod.dll (Sample Mod)
+echo  ※ smpsystem は PaperMC サーバープラグイン jar (smpsystem\pom.xml から別ビルド) のため DLL には含まれません
 echo ==============================================================================
 endlocal

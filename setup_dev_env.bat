@@ -100,6 +100,19 @@ if %ERRORLEVEL% neq 0 (
 echo -------------------------------------------------------------------------------
 echo [INFO] Build completed successfully!
 
+REM --- Step 2.5: Deterministic payload embedding for the Setup installer ---
+REM 実 DLL (rsgraphics/rscalc/rsreplay/rsift_jvm) を揃えてから installers を clean 再ビルドし、
+REM Setup.exe への実バイナリ埋め込みを保証する (旧来はダミー payload が混入し得た)。
+echo [INFO] Rebuilding installers with real embedded payloads...
+%CARGO_EXE% build --release -p rsgraphics -p rscalc -p rsreplay -p rsift-jvm
+%CARGO_EXE% clean -p rsift-installer -p rsift-gui-installer
+%CARGO_EXE% build --release -p rsift-installer -p rsift-gui-installer
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Installer rebuild with embedded payloads failed.
+    pause
+    exit /b 1
+)
+
 REM --- Step 3: Ensure Mods Directory Exists in ALL Official Minecraft Locations! ---
 set "MC_DIR=%APPDATA%\.minecraft"
 if not exist "%MC_DIR%" set "MC_DIR=C:\Users\%USERNAME%\AppData\Roaming\.minecraft"
@@ -108,7 +121,7 @@ if not exist "mods" mkdir mods
 if not exist "%MC_DIR%\mods" mkdir "%MC_DIR%\mods" 2>nul
 
 echo [INFO] Deploying compiled DLL Mods to local and official Minecraft mods folders...
-for %%M in (rscalc.dll rsgraphics.dll rsreplay.dll smpsystem.dll) do (
+for %%M in (rscalc.dll rsgraphics.dll rsreplay.dll) do (
     if exist "target\release\%%M" (
         copy /Y "target\release\%%M" "mods\" >nul
         copy /Y "target\release\%%M" "%MC_DIR%\mods\" >nul 2>nul
