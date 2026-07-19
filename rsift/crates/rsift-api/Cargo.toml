@@ -1,0 +1,18 @@
+[package]
+name = "rsift-api"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Core API and zero-copy hyper-optimized layer for Rsift Mod Loader (Minecraft 1.21.11)"
+
+[dependencies]
+bytemuck.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+libloading.workspace = true
+
+[lib]
+name = "rsift_api"
+crate-type = ["rlib", "cdylib"]
