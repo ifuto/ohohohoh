@@ -1,0 +1,19 @@
+[package]
+name = "rsgraphics"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "RsGraphics: Official Rsift Mod that migrates all Minecraft rendering to bindless wgpu, Sodium-surpassing meshing, and Iris Shaders"
+
+[dependencies]
+bytemuck.workspace = true
+tracing.workspace = true
+rayon.workspace = true
+rsift-api = { path = "../../crates/rsift-api" }
+rsift-render = { path = "../../crates/rsift-render" }
+rsift-dx12 = { path = "../../crates/rsift-dx12" }
+rsift-opt-gfx = { path = "../../crates/rsift-opt-gfx" }
+
+[lib]
+name = "rsgraphics"
+crate-type = ["cdylib", "rlib"]
