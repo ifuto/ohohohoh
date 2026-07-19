@@ -1,0 +1,18 @@
+[package]
+name = "rscalc"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "RsCalc: Official Rsift Mod that migrates heavy Minecraft calculations (AI, Physics, Redstone, Ticks) to native Rust"
+
+[dependencies]
+bytemuck.workspace = true
+tracing.workspace = true
+rayon.workspace = true
+rsift-api = { path = "../../crates/rsift-api" }
+rsift-parser = { path = "../../crates/rsift-parser" }
+rsift-transpiler = { path = "../../crates/rsift-transpiler" }
+
+[lib]
+name = "rscalc"
+crate-type = ["cdylib", "rlib"]
