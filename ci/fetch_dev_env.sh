@@ -11,29 +11,51 @@ WORKSPACE="$REPO_ROOT/rsift"
 RUST_PREFIX="$HOME/rust"
 ASSET_BRANCH="${ASSET_BRANCH:-dev-assets}"
 
-echo "== [1/6] fetch $ASSET_BRANCH =="
-git -C "$REPO_ROOT" fetch origin "$ASSET_BRANCH"
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+echo "== [1/6] fetch asset ブランチ群 =="
+ASSET_BRANCH="${ASSET_BRANCH:-dev-assets}"
+# アップロード経路は2つをサポート:
+#  a) dev-assets ブランチの assets/         (orphan 配布)
+#  b) arena 系ブランチの ci/dev-assets/     (実績: rust toolchain はここに上がった)
+git -C "$REPO_ROOT" fetch origin "$ASSET_BRANCH" 'arena/*' 2>/dev/null || \
+    git -C "$REPO_ROOT" fetch origin '+refs/heads/*:refs/remotes/origin/*'
 
-echo "== [2/6] assets/ 内を basename グループ毎に番号順結合 =="
-mapfile -t files < <(git -C "$REPO_ROOT" ls-tree -r --name-only "origin/$ASSET_BRANCH" -- assets/ | sort)
-if [ "${#files[@]}" -eq 0 ]; then
-    echo "ERROR: origin/$ASSET_BRANCH の assets/ にファイルがありません" >&2
-    exit 1
+# 走査対象 (ref:path) を存在するものから自動選定
+ASSET_REFS=()
+if git -C "$REPO_ROOT" rev-parse --verify -q "origin/$ASSET_BRANCH" >/dev/null; then
+    ASSET_REFS+=("origin/$ASSET_BRANCH:assets")
 fi
-
-declare -A groups
-for f in "${files[@]}"; do
-    base="$(basename "$f")"
-    case "$base" in
-        MANIFEST*|README*|*.md) echo "   skip (manifest/docs): $base"; continue ;;
-    esac
-    if [[ "$base" =~ \.[0-9]{3,}$ ]]; then
-        groups["${base%.*}"]+="$f "
-    else
-        groups["$base"]+="$f "
+for b in $(git -C "$REPO_ROOT" branch -r | grep -E 'origin/arena/' | tr -d ' '); do
+    if git -C "$REPO_ROOT" cat-file -e "$b:ci/dev-assets/README.md" 2>/dev/null; then
+        ASSET_REFS+=("$b:ci/dev-assets")
     fi
 done
+[ "${#ASSET_REFS[@]}" -eq 0 ] && { echo "ERROR: アセット経路が見つかりません"; exit 1; }
+echo "   scan targets: ${ASSET_REFS[*]}"
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+
+echo "== [2/6] 分割ファイルを basename グループ毎に番号順結合 =="
+files_list=()
+for ref_path in "${ASSET_REFS[@]}"; do
+    ref="${ref_path%%:*}"; dir="${ref_path#*:}"
+    while IFS= read -r f; do files_list+=("$ref:$f"); done \
+      < <(git -C "$REPO_ROOT" ls-tree -r --name-only "$ref" -- "$dir" 2>/dev/null)
+done
+[ "${#files_list[@]}" -eq 0 ] && { echo "ERROR: assets ファイルがありません" >&2; exit 1; }
+
+declare -A groups
+for rp in "${files_list[@]}"; do
+    ref="${rp%%:*}"; f="${rp#*:}"
+    base="$(basename "$f")"
+    case "$base" in
+        MANIFEST*|README*|*.md|splitter.html) continue ;;
+    esac
+    if [[ "$base" =~ \.[0-9]{3,}$ ]]; then
+        groups["${base%.*}"]+="$ref:$f "
+    else
+        groups["$base"]+="$ref:$f "
+    fi
+done
+echo "   groups: ${!groups[*]}"
 
 extract_archive() { # $1=input  $2=dest-dir
     mkdir -p "$2"
@@ -48,8 +70,8 @@ extract_archive() { # $1=input  $2=dest-dir
 for stem in "${!groups[@]}"; do
     out="$tmp/$stem"
     # shellcheck disable=SC2086
-    for f in $(echo ${groups[$stem]} | tr ' ' '\n' | sort); do
-        git -C "$REPO_ROOT" show "origin/$ASSET_BRANCH:$f"
+    for rp in $(echo ${groups[$stem]} | tr ' ' '\n' | sort); do
+        git -C "$REPO_ROOT" show "$rp"
     done > "$out"
     echo "   結合: $stem (${groups[$stem]}) -> $(du -h "$out" | cut -f1)"
     # stem 名に archive 拡張子が無い場合 (e.g. big.zip.001 の stem は big.zip) でも

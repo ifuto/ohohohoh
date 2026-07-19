@@ -3,8 +3,8 @@
 //! versions/rsift-loader-{mc_version}_{build_version}/ に JSON・JAR・mods を配置し、
 //! 起動構成へ正確に参照を登録する。
 
-use serde_json::{json, Value};
 use rsift_api::engine_caps::{EngineCaps, GpuCapabilityProbe, ShaderModelTier};
+use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -56,20 +56,34 @@ impl LauncherInstaller {
 
     pub fn detect_minecraft_dir() -> Option<PathBuf> {
         if cfg!(target_os = "windows") {
-            std::env::var("APPDATA").ok().map(|a| Path::new(&a).join(".minecraft"))
+            std::env::var("APPDATA")
+                .ok()
+                .map(|a| Path::new(&a).join(".minecraft"))
         } else if cfg!(target_os = "macos") {
-            std::env::var("HOME").ok().map(|h| Path::new(&h).join("Library/Application Support/minecraft"))
+            std::env::var("HOME")
+                .ok()
+                .map(|h| Path::new(&h).join("Library/Application Support/minecraft"))
         } else {
-            std::env::var("HOME").ok().map(|h| Path::new(&h).join(".minecraft"))
+            std::env::var("HOME")
+                .ok()
+                .map(|h| Path::new(&h).join(".minecraft"))
         }
     }
 
     /// `rsift-loader-1.21.11_v1.0.0` — 既存時は `(1)`, `(2)` …
     pub fn resolve_version_id(&self) -> String {
-        Self::resolve_version_id_for(&self.minecraft_dir, &self.target_version, &self.build_version)
+        Self::resolve_version_id_for(
+            &self.minecraft_dir,
+            &self.target_version,
+            &self.build_version,
+        )
     }
 
-    pub fn resolve_version_id_for(mc_dir: &Path, game_version: &str, build_version: &str) -> String {
+    pub fn resolve_version_id_for(
+        mc_dir: &Path,
+        game_version: &str,
+        build_version: &str,
+    ) -> String {
         let base = format!("rsift-loader-{}_{}", game_version, build_version);
         let versions_dir = mc_dir.join("versions");
         if !versions_dir.join(&base).exists() {
@@ -97,7 +111,10 @@ impl LauncherInstaller {
         let engine_caps = EngineCaps::install_default(&probe, options.shader_model)?;
         info!("==========================================================================");
         info!("  Rsift Auto-Installer | build={}", self.build_version);
-        info!("  GPU: {} (score={} VRAM~{}MB)", probe.gpu_name, probe.gpu_score, probe.vram_mb);
+        info!(
+            "  GPU: {} (score={} VRAM~{}MB)",
+            probe.gpu_name, probe.gpu_score, probe.vram_mb
+        );
         info!(
             "  Shader Model: {} | agility={} | features={}/{}",
             engine_caps.shader_model.as_str(),
@@ -199,8 +216,11 @@ impl LauncherInstaller {
             "mainClass": "net.minecraft.client.main.Main",
             "arguments": { "jvm": version_json_jvm }
         });
-        fs::write(&version_json_path, serde_json::to_string_pretty(&version_json_content).unwrap())
-            .map_err(|e| format!("write version json: {}", e))?;
+        fs::write(
+            &version_json_path,
+            serde_json::to_string_pretty(&version_json_content).unwrap(),
+        )
+        .map_err(|e| format!("write version json: {}", e))?;
         info!("[Install] version_json    = {:?}", version_json_path);
 
         let version_jar_path = version_dir.join(format!("{}.jar", version_id));
@@ -212,7 +232,10 @@ impl LauncherInstaller {
 
         info!("[Install] vanilla_jar ref = {:?}", vanilla_jar);
         if !vanilla_jar.exists() {
-            error!("[Install] Vanilla {}.jar NOT FOUND — install vanilla from official launcher first", inherits_from);
+            error!(
+                "[Install] Vanilla {}.jar NOT FOUND — install vanilla from official launcher first",
+                inherits_from
+            );
             return Err(format!(
                 "Required vanilla jar missing: {:?}.\n\
                  1) Open the official Minecraft Launcher\n\
@@ -228,7 +251,9 @@ impl LauncherInstaller {
             fs::copy(&vanilla_jar, &version_jar_path)
                 .map_err(|e| format!("copy vanilla jar: {}", e))?;
         }
-        let jar_size = fs::metadata(&version_jar_path).map(|m| m.len()).unwrap_or(0);
+        let jar_size = fs::metadata(&version_jar_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
         info!(
             "[Install] version_jar     = {:?} ({} bytes, {})",
             version_jar_path,
@@ -236,7 +261,10 @@ impl LauncherInstaller {
             if linked { "hardlink" } else { "copied" }
         );
         if jar_size < 1_000_000 {
-            return Err(format!("version jar too small ({} bytes) — copy/link failed?", jar_size));
+            return Err(format!(
+                "version jar too small ({} bytes) — copy/link failed?",
+                jar_size
+            ));
         }
 
         // Official launcher loads mods from gameDir/mods (= .minecraft/mods).
@@ -254,23 +282,29 @@ impl LauncherInstaller {
 
         let repaired = Self::repair_profiles(&self.minecraft_dir).unwrap_or(0);
         if repaired > 0 {
-            info!("[Install] repaired {} legacy Rsift profile(s) → agentpath-only", repaired);
+            info!(
+                "[Install] repaired {} legacy Rsift profile(s) → agentpath-only",
+                repaired
+            );
         }
 
         let _ = self.register_to_system_path(rsift_install_path);
-        self.write_install_manifest(&version_dir, &InstallResult {
-            version_id: version_id.clone(),
-            version_dir: version_dir.clone(),
-            version_json: version_json_path.clone(),
-            version_jar: version_jar_path.clone(),
-            inherits_from: inherits_from.clone(),
-            agent_path: agent_for_launch.clone(),
-            agent_loaded,
-            mods_deployed: mods_deployed.clone(),
-            profile_name: profile_name.clone(),
-            profile_java_args: profile_java_args.clone(),
-            engine_caps: engine_caps.clone(),
-        })?;
+        self.write_install_manifest(
+            &version_dir,
+            &InstallResult {
+                version_id: version_id.clone(),
+                version_dir: version_dir.clone(),
+                version_json: version_json_path.clone(),
+                version_jar: version_jar_path.clone(),
+                inherits_from: inherits_from.clone(),
+                agent_path: agent_for_launch.clone(),
+                agent_loaded,
+                mods_deployed: mods_deployed.clone(),
+                profile_name: profile_name.clone(),
+                profile_java_args: profile_java_args.clone(),
+                engine_caps: engine_caps.clone(),
+            },
+        )?;
 
         info!("--------------------------------------------------------------------------");
         info!(" SUCCESS — Rsift registered for the OFFICIAL Minecraft Launcher");
@@ -279,7 +313,14 @@ impl LauncherInstaller {
         info!("   gameDir:         {:?}", self.minecraft_dir);
         info!("   inheritsFrom:    {}", inherits_from);
         info!("   Launch mode:     agentpath (profile javaArgs)");
-        info!("   Native bridge:   {}", if agent_loaded { "YES" } else { "NO (vanilla fallback)" });
+        info!(
+            "   Native bridge:   {}",
+            if agent_loaded {
+                "YES"
+            } else {
+                "NO (vanilla fallback)"
+            }
+        );
         info!("   Mods deployed:   {:?}", mods_deployed);
         info!("--------------------------------------------------------------------------");
         info!(" HOW TO PLAY:");
@@ -346,7 +387,11 @@ impl LauncherInstaller {
     }
 
     /// Canonical agentpath-only javaArgs for a version directory (single source of truth).
-    pub fn canonical_java_args(version_dir: &Path, version_id: &str, install_root: &Path) -> String {
+    pub fn canonical_java_args(
+        version_dir: &Path,
+        version_id: &str,
+        install_root: &Path,
+    ) -> String {
         let dll = version_dir.join("rsift_jvm.dll");
         let jvm_args = vec![
             format!("-agentpath:{}", dll.display()),
@@ -399,11 +444,17 @@ impl LauncherInstaller {
         let mut fixed = 0usize;
         if let Some(map) = profiles.get_mut("profiles").and_then(|p| p.as_object_mut()) {
             for (_key, prof) in map.iter_mut() {
-                let Some(last_id) = prof.get("lastVersionId").and_then(|v| v.as_str()) else { continue };
-                if !last_id.starts_with("rsift-loader-") { continue }
+                let Some(last_id) = prof.get("lastVersionId").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                if !last_id.starts_with("rsift-loader-") {
+                    continue;
+                }
                 let version_dir = minecraft_dir.join("versions").join(last_id);
                 let dll = version_dir.join("rsift_jvm.dll");
-                if !dll.exists() { continue }
+                if !dll.exists() {
+                    continue;
+                }
                 let install_root = Self::detect_install_root(
                     &version_dir,
                     prof.get("javaArgs").and_then(|v| v.as_str()),
@@ -490,7 +541,12 @@ impl LauncherInstaller {
         Ok(fixed)
     }
 
-    fn write_agent_opts(&self, version_dir: &Path, version_id: &str, install_root: &Path) -> Result<(), String> {
+    fn write_agent_opts(
+        &self,
+        version_dir: &Path,
+        version_id: &str,
+        install_root: &Path,
+    ) -> Result<(), String> {
         let mods_dir = self.shared_mods_dir();
         let content = format!(
             "versionId={}\ngameDir={}\nmodDir={}\nnativePath={}\n",
@@ -506,7 +562,10 @@ impl LauncherInstaller {
     }
 
     fn ensure_valid_bootstrap_jar(&self, install_root: &Path) {
-        let prebuilt = install_root.join("bootstrap").join("prebuilt").join("rsift-bootstrap.jar");
+        let prebuilt = install_root
+            .join("bootstrap")
+            .join("prebuilt")
+            .join("rsift-bootstrap.jar");
         if prebuilt.is_file() {
             return;
         }
@@ -517,7 +576,8 @@ impl LauncherInstaller {
         let mut cmd = Command::new("powershell");
         cmd.args([
             "-NoProfile",
-            "-WindowStyle", "Hidden",
+            "-WindowStyle",
+            "Hidden",
             "-ExecutionPolicy",
             "Bypass",
             "-File",
@@ -534,18 +594,31 @@ impl LauncherInstaller {
             }
             Ok(o) => {
                 let stderr = String::from_utf8_lossy(&o.stderr);
-                warn!("[Install] pack-jar.ps1 failed (using prebuilt if present): {}", stderr);
+                warn!(
+                    "[Install] pack-jar.ps1 failed (using prebuilt if present): {}",
+                    stderr
+                );
             }
             Err(e) => warn!("[Install] could not run pack-jar.ps1: {}", e),
         }
     }
 
-    fn deploy_bootstrap_jar(&self, install_root: &Path, version_dir: &Path) -> Result<Option<PathBuf>, String> {
+    fn deploy_bootstrap_jar(
+        &self,
+        install_root: &Path,
+        version_dir: &Path,
+    ) -> Result<Option<PathBuf>, String> {
         let _ = self.ensure_valid_bootstrap_jar(install_root);
         let dest = version_dir.join("rsift-bootstrap.jar");
         let candidates = [
-            install_root.join("target").join("bootstrap").join("rsift-bootstrap.jar"),
-            install_root.join("bootstrap").join("prebuilt").join("rsift-bootstrap.jar"),
+            install_root
+                .join("target")
+                .join("bootstrap")
+                .join("rsift-bootstrap.jar"),
+            install_root
+                .join("bootstrap")
+                .join("prebuilt")
+                .join("rsift-bootstrap.jar"),
             install_root.join("bootstrap").join("rsift-bootstrap.jar"),
             install_root.join("rsift-bootstrap.jar"),
         ];
@@ -568,7 +641,11 @@ impl LauncherInstaller {
         }
     }
 
-    fn deploy_official_dll_mods(&self, source_dir: &Path, version_dir: &Path) -> Result<Vec<String>, String> {
+    fn deploy_official_dll_mods(
+        &self,
+        source_dir: &Path,
+        version_dir: &Path,
+    ) -> Result<Vec<String>, String> {
         let shared_mods_dir = self.shared_mods_dir();
         let version_mods_dir = version_dir.join("mods");
         fs::create_dir_all(&shared_mods_dir).map_err(|e| e.to_string())?;
@@ -587,8 +664,12 @@ impl LauncherInstaller {
                     let shared_dest = shared_mods_dir.join(dll);
                     let version_dest = version_mods_dir.join(dll);
                     fs::copy(path, &shared_dest).map_err(|e| format!("copy mod {}: {}", dll, e))?;
-                    fs::copy(path, &version_dest).map_err(|e| format!("copy mod {}: {}", dll, e))?;
-                    info!("[Install] mod deployed from disk = {:?} → {:?}", path, shared_dest);
+                    fs::copy(path, &version_dest)
+                        .map_err(|e| format!("copy mod {}: {}", dll, e))?;
+                    info!(
+                        "[Install] mod deployed from disk = {:?} → {:?}",
+                        path, shared_dest
+                    );
                     deployed.push(dll.to_string());
                     found = true;
                     break;
@@ -674,7 +755,11 @@ impl LauncherInstaller {
         if cfg!(target_os = "windows") {
             &["rscalc.dll", "rsgraphics.dll", "rsreplay.dll"]
         } else if cfg!(target_os = "macos") {
-            &["librscalc.dylib", "librsgraphics.dylib", "librsreplay.dylib"]
+            &[
+                "librscalc.dylib",
+                "librsgraphics.dylib",
+                "librsreplay.dylib",
+            ]
         } else {
             &["librscalc.so", "librsgraphics.so", "librsreplay.so"]
         }
@@ -687,10 +772,15 @@ impl LauncherInstaller {
         game_dir: &Path,
         java_args: &str,
     ) -> Result<String, String> {
-        let content = fs::read_to_string(profiles_path).unwrap_or_else(|_| "{\"profiles\":{}}".to_string());
-        let mut profiles: Value = serde_json::from_str(&content).unwrap_or_else(|_| json!({"profiles":{}}));
+        let content =
+            fs::read_to_string(profiles_path).unwrap_or_else(|_| "{\"profiles\":{}}".to_string());
+        let mut profiles: Value =
+            serde_json::from_str(&content).unwrap_or_else(|_| json!({"profiles":{}}));
 
-        let base_name = format!("Rsift Loader {} ({})", self.target_version, self.build_version);
+        let base_name = format!(
+            "Rsift Loader {} ({})",
+            self.target_version, self.build_version
+        );
         let mut final_name = base_name.clone();
 
         if let Some(map) = profiles.get_mut("profiles").and_then(|p| p.as_object_mut()) {
@@ -718,12 +808,19 @@ impl LauncherInstaller {
             info!("[Install] javaArgs        = {}", java_args);
         }
 
-        fs::write(profiles_path, serde_json::to_string_pretty(&profiles).unwrap())
-            .map_err(|e| format!("write profiles: {}", e))?;
+        fs::write(
+            profiles_path,
+            serde_json::to_string_pretty(&profiles).unwrap(),
+        )
+        .map_err(|e| format!("write profiles: {}", e))?;
         Ok(final_name)
     }
 
-    fn write_install_manifest(&self, version_dir: &Path, result: &InstallResult) -> Result<(), String> {
+    fn write_install_manifest(
+        &self,
+        version_dir: &Path,
+        result: &InstallResult,
+    ) -> Result<(), String> {
         let enabled: Vec<_> = result
             .engine_caps
             .features
@@ -757,13 +854,16 @@ impl LauncherInstaller {
             }
         });
         let path = version_dir.join("rsift-install-manifest.json");
-        fs::write(&path, serde_json::to_string_pretty(&manifest).unwrap()).map_err(|e| e.to_string())?;
+        fs::write(&path, serde_json::to_string_pretty(&manifest).unwrap())
+            .map_err(|e| e.to_string())?;
         info!("[Install] manifest        = {:?}", path);
         Ok(())
     }
 
     fn register_to_system_path(&self, install_dir: &Path) -> Result<(), String> {
-        let abs_path = install_dir.canonicalize().unwrap_or_else(|_| install_dir.to_path_buf());
+        let abs_path = install_dir
+            .canonicalize()
+            .unwrap_or_else(|_| install_dir.to_path_buf());
         let path_str = abs_path.to_string_lossy().to_string();
         if cfg!(target_os = "windows") {
             let ps_cmd = format!(

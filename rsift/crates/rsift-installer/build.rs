@@ -56,7 +56,13 @@ fn candidate_paths(workspace: &Path, profile: &str, file: &str) -> Vec<PathBuf> 
     }
     v.push(workspace.join("target").join(profile).join(file));
     for triple in ["x86_64-pc-windows-msvc", "x86_64-pc-windows-gnu"] {
-        v.push(workspace.join("target").join(triple).join(profile).join(file));
+        v.push(
+            workspace
+                .join("target")
+                .join(triple)
+                .join(profile)
+                .join(file),
+        );
     }
     if file == "rsift-bootstrap.jar" {
         v.push(workspace.join("bootstrap").join("prebuilt").join(file));

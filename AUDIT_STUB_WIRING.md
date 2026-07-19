@@ -188,3 +188,12 @@ pub fn transpile(&self, bytecode: &mut Vec<u8>, rule: &TranspileRule) -> bool {
 副次修正: `setup_dev_env.bat` (ルート側) の mods デプロイループから smpsystem.dll 除去、`windows_binaries/README.md` ×2 の `rsift_installer.exe` → `rsift-installer.exe` + 決定論的ビルド手順を明記、bat のエコー文を実態 (smpsystem = PaperMC jar 別ビルド) に整合。
 
 検証方法 (誠実性注記): 本ターンは Rust ツールチェーン自体が環境から消失していたため rustfmt/rustc も実行不可。**文字列認識つき状態機械パーサーで全変更 Rust ファイルの括弧バランスを機械検証 (BALANCED OK)** + 人間レビューで代替。`build.rs` は std のみ使用 (外部依存ゼロ) で設計し、実機でのビルド失敗リスクを最小化。実機検証手順: Windows + Rust + JDK で `tools\build_windows_setup_exe.bat` を実行 → `windows_binaries\Rsift-1.21.11-Setup.exe`。
+
+## 追記3: 本物の Rust toolchain を sandbox に導入し実検証開始 (2026-07-20 第4ターン)
+
+- 受領: ユーザーが splitter.html (25MB 分割 HTML ツール) で分割した rust-1.94.1 toolchain ZIP 19 パートを `ci/dev-assets/` に Web UI アップロード → 結合後 **ZIP CRC テスト合格 (51,085 エントリ, 1,566MB)**、公式インストーラ構成を確認
+- 導入成功: **rustc 1.94.1 / cargo 1.94.1 / rustfmt 1.8.0 / clippy 0.1.94**
+- 実検証結果:
+  - `rsift-installer/build.rs` を **rustc で実単体コンパイル成功** (cargo 外実行時は CARGO_MANIFEST_DIR 不在で fail-fast panic = 想定どおり)
+  - `cargo fmt --check`: 私の変更ファイルは edition 2021 で一部スタイル差分あり → **rustfmt 実適用で全件 CLEAN 化して修正コミット**。全リポジトリ換算では 141 ファイルに edition 2021 基準の歴史的差分 (CRLF/旧版フォーマット時代由来) が残存 — `rustfmt lib.rs` は子モジュールまで再帰適用されるため迂闊に全適用すると波及的 (一度 115 ファイル波及→私の編集外は全 revert 済)。全リポジトリ一括 `cargo fmt --all` はブランチの最小差分原則に反するためユーザー判断に委ねる
+  - `cargo check --workspace --all-targets --locked`: **crates.io index 遮断で失敗 (`https://index.crates.io/config.json` TLS EOF)** — 残る唯一の欠片は cargo vendor のみ。ユーザーに `cargo vendor --locked vendor` の ZIP 分割アップロードを依頼中
