@@ -1,19 +1,31 @@
 # GitHub Actions ワークフロー (有効化手順は ci/README.md 参照)
 #
-# 有効化: このファイルを `.github/workflows/build.yml` に移動して push するだけ。
-# - ubuntu ジョブ: cargo fmt --check / cargo check --workspace --all-targets --locked / cargo clippy
-# - windows ジョブ: tools\build_windows_setup_exe.bat で Rsift-1.21.11-Setup.exe を実ビルドし
-#   rsift/windows_binaries/ をアーティファクトとしてアップロード (JDK21 = pack-jar.ps1 用)。
+# private リポジトリ = Actions は月 2,000 分の無料枠 (Windows ランナーは 2倍消費)。
+# そのため次のクォータ節約設計にしてある:
+#   - check ジョブ (ubuntu, ×1, キャッシュあり): push 毎 (ただし md/docs 単独 push は除外)
+#   - windows-installer ジョブ (重い LTO フルビルド, ×2 消費): **手動実行 (workflow_dispatch) のみ**
+#   - concurrency で古い実行は自動キャンセル (同ブランチへの連続 push で二重消費しない)
+#
+# 手動 exe ビルド: GitHub → Actions → Build & Verify → Run workflow
 
 name: Build & Verify
 
 on:
   push:
     branches: ["arena/**", "main"]
+    paths-ignore:
+      - "**.md"
+      - "ci/**"
+      - "AUDIT*"
+      - "bench-downloads/**"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -38,7 +50,8 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked
 
   windows-installer:
-    name: Rsift-1.21.11-Setup.exe (Windows)
+    name: Rsift-1.21.11-Setup.exe (Windows) — 手動実行のみ
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 150
     steps:
@@ -58,3 +71,4 @@ jobs:
           name: rsift-windows-binaries
           path: rsift/windows_binaries/
           if-no-files-found: error
+          retention-days: 30
