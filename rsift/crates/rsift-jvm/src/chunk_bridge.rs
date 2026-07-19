@@ -5,8 +5,8 @@ use jni::sys::{jfloat, jint};
 use jni::{JNIEnv, NativeMethod};
 use tracing::debug;
 
-use crate::agent_log::agent_log;
 use super::screen_inject;
+use crate::agent_log::agent_log;
 
 static mut CHUNK_BRIDGE_READY: bool = false;
 
@@ -61,6 +61,8 @@ pub fn ensure(env: &mut JNIEnv) -> bool {
         return false;
     }
     let _ = env.call_static_method(&cls, "markNativesReady", "()V", &[]);
+    // C ABI VTable を実インストール (実自己検証つき: ログに 1 行出る)。
+    crate::c_abi_vtable::install_vtable();
     unsafe {
         CHUNK_BRIDGE_READY = true;
     }
@@ -149,10 +151,7 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftChunkBridge_nativeIngestColumn
         return;
     }
     let mut buf = vec![0i16; need];
-    if env
-        .get_short_array_region(&blocks, 0, &mut buf)
-        .is_err()
-    {
+    if env.get_short_array_region(&blocks, 0, &mut buf).is_err() {
         return;
     }
     let u16s: Vec<u16> = buf.iter().map(|&s| s as u16).collect();

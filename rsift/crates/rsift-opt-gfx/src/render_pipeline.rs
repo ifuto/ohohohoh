@@ -1,55 +1,55 @@
 //! Rsift render pipeline — 必須/推奨 + Feather weak-PC (no resolution scaling).
 
 use crate::adaptive_shading::AdaptiveShadingController;
+use crate::billboard_lod::BillboardLodSelector;
 use crate::binary_greedy_meshing::{
     demo_column_palettes, mesh_chunk_column, mesh_chunk_column_pull_world, SectionPalette,
-    SECTION_SIZE, SECTIONS_PER_COLUMN,
+    SECTIONS_PER_COLUMN, SECTION_SIZE,
 };
-use crate::gpu_vertex_pull::PullSsboPool;
-use crate::pull_mesh::PullBuiltMesh;
 use crate::chunk_cull::{ChunkCullPass, CullVerdict};
 use crate::chunk_mesh::{BuiltChunkMesh, MultithreadedChunkBuilder};
 use crate::cpu_occlusion::CpuMaskedOccluder;
+use crate::depth_prepass::DepthPrepassPlanner;
+use crate::diff_mesh::DiffMeshUpdater;
+use crate::drs::DynamicResolutionScaler;
 use crate::eco_render::{EcoRegionRenderer, SodiumComparison};
+use crate::entity_tick_lod::EntityTickScheduler;
+use crate::frame_reuse::{FrameReuseCache, ReuseEncoding};
+use crate::full_graph_wiring::{FrameWiringInputs, FullGraphWiring};
 use crate::gpu_culling::ChunkBoundingBox;
+use crate::gpu_vertex_pull::PullSsboPool;
 use crate::hzb_2d::CameraState;
 use crate::leaf_fast_path::apply_leaf_fast_path;
-use crate::lod_hybrid::LodHybridSelector;
-use crate::mesh_cache::MeshDiskCache;
-use crate::section_rle::RleSection;
-use crate::section_rle::occupied_section_indices;
-use crate::frame_reuse::{FrameReuseCache, ReuseEncoding};
-use crate::svo::SparseVoxelOctree;
-use crate::render_graph::RenderGraphScheduler;
-use crate::software_tiling::SoftwareTileBinner;
-use crate::texture_budget::TextureBudget;
-use crate::noise_upsample::{column_palettes_upsampled, benchmark_upsample, NoiseUpsampleConfig};
-use crate::persistent_vbo_pool::PersistentVboPool;
-use crate::vertex_pool::VertexPool;
-use crate::diff_mesh::DiffMeshUpdater;
-use crate::triple_buffer::TripleBuffer;
-use crate::drs::DynamicResolutionScaler;
-use crate::taa::LightweightTaa;
-use crate::occlusion_complete::SoftwareOcclusion;
-use crate::tick_render_split::FixedTickClock;
-use crate::billboard_lod::BillboardLodSelector;
-use crate::depth_prepass::DepthPrepassPlanner;
-use crate::world_column_store::{TerrainFrameConstants, WorldColumnStore};
-use crate::entity_tick_lod::EntityTickScheduler;
-use crate::spatial_hash::SpatialHashGrid3D;
 use crate::light_cache::LightPropagationCache;
-use crate::full_graph_wiring::FullGraphWiring;
+use crate::lod_hybrid::LodHybridSelector;
 use crate::low_spec_stack::{
     adaptive_mesh_interval, apply_cheap_ao, apply_solid_interior_cull, emit_lod_box_quads,
-    filter_quads_by_face_mask, flora_should_skip_detail, frustum_culled, section_occupancy,
-    section_is_empty_occ, sort_nearest_first, sort_quads_by_material, truncate_quad_budget,
+    filter_quads_by_face_mask, flora_should_skip_detail, frustum_culled, section_is_empty_occ,
+    section_occupancy, sort_nearest_first, sort_quads_by_material, truncate_quad_budget,
     FaceEmitMask, LowSpecPlan, PullGenerationCache,
 };
+use crate::mesh_cache::MeshDiskCache;
+use crate::noise_upsample::{benchmark_upsample, column_palettes_upsampled, NoiseUpsampleConfig};
+use crate::occlusion_complete::SoftwareOcclusion;
+use crate::persistent_vbo_pool::PersistentVboPool;
+use crate::pull_mesh::PullBuiltMesh;
+use crate::render_graph::RenderGraphScheduler;
+use crate::section_rle::occupied_section_indices;
+use crate::section_rle::RleSection;
+use crate::software_tiling::SoftwareTileBinner;
+use crate::spatial_hash::SpatialHashGrid3D;
+use crate::svo::SparseVoxelOctree;
+use crate::taa::LightweightTaa;
+use crate::texture_budget::TextureBudget;
+use crate::tick_render_split::FixedTickClock;
+use crate::triple_buffer::TripleBuffer;
+use crate::vertex_pool::VertexPool;
+use crate::world_column_store::{TerrainFrameConstants, WorldColumnStore};
 use rsift_api::{AdaptivePerfEngine, AdaptiveRenderProfile, EngineCaps, FeatherRenderConfig};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 static PIPELINE: OnceLock<Mutex<RsiftRenderPipeline>> = OnceLock::new();
 
@@ -82,6 +82,10 @@ pub struct FrameStats {
     pub soft_occluded: u32,
     pub lod_boxes: u32,
     pub interior_culled_voxels: u32,
+    /// FullGraphWiring が当該フレームに実実行したサブシステム数。
+    pub wiring_subsystems: u32,
+    /// AO 精緻で実際に書き換わったプルクアッド数 (視覚効果の実測)。
+    pub wiring_ao_refined_quads: u32,
 }
 
 pub struct RsiftRenderPipeline {
@@ -127,6 +131,12 @@ pub struct RsiftRenderPipeline {
     pub spatial_hash: SpatialHashGrid3D,
     pub light_cache: LightPropagationCache,
     pub full_wiring: FullGraphWiring,
+    /// Governor 由来の動的 build 予算 (前フレームの wiring レポートが実適用)。
+    pub dynamic_build_budget: Option<u32>,
+    /// front-to-back 可視順の build 優先度マップ (次フレームの build 順に実効果)。
+    pub wiring_priority: std::collections::HashMap<(i32, i32), usize>,
+    /// PowerPolicy が「余分な仕事をスキップせよ」と判定した実状態 (次フレームへ適用)。
+    pub wiring_power_skip_extra: bool,
     last_build: Option<ChunkBuildArtifacts>,
     tick: u64,
 }
@@ -143,7 +153,10 @@ impl RsiftRenderPipeline {
         let hw = AdaptivePerfEngine::hardware();
         let profile = AdaptivePerfEngine::render_profile(hw);
         let feather = profile.feather.clone();
-        info!("[RenderPipeline] {}", AdaptivePerfEngine::render_profile_summary(&profile));
+        info!(
+            "[RenderPipeline] {}",
+            AdaptivePerfEngine::render_profile_summary(&profile)
+        );
         if let Some(caps) = EngineCaps::from_jvm_props() {
             info!("[RenderPipeline] engine caps: {}", caps.summary());
         }
@@ -155,11 +168,15 @@ impl RsiftRenderPipeline {
                 feather.merged_subpasses,
                 feather.software_vrs_checkerboard,
                 feather.lod_hybrid_3tier,
-                TextureBudget::from_profile(true, feather.compressed_textures, feather.mipmap_bias).label()
+                TextureBudget::from_profile(true, feather.compressed_textures, feather.mipmap_bias)
+                    .label()
             );
         }
-        let texture_budget =
-            TextureBudget::from_profile(feather.enabled, feather.compressed_textures, feather.mipmap_bias);
+        let texture_budget = TextureBudget::from_profile(
+            feather.enabled,
+            feather.compressed_textures,
+            feather.mipmap_bias,
+        );
         let render_graph =
             RenderGraphScheduler::new(feather.merged_subpasses, feather.minimal_barriers);
         let lod = LodHybridSelector::new(
@@ -239,10 +256,7 @@ impl RsiftRenderPipeline {
                 rsift_api::PerformanceTier::Low => 0.8,
                 _ => 1.0,
             }),
-            depth_plan: if matches!(
-                profile.tier,
-                rsift_api::PerformanceTier::High
-            ) {
+            depth_plan: if matches!(profile.tier, rsift_api::PerformanceTier::High) {
                 DepthPrepassPlanner::for_high_spec()
             } else {
                 DepthPrepassPlanner::for_low_spec()
@@ -258,7 +272,10 @@ impl RsiftRenderPipeline {
             entity_scheduler: EntityTickScheduler::default(),
             spatial_hash: SpatialHashGrid3D::new(16.0),
             light_cache: LightPropagationCache::new(),
-            full_wiring: FullGraphWiring::new(),
+            full_wiring: FullGraphWiring::new(game_dir),
+            dynamic_build_budget: None,
+            wiring_priority: std::collections::HashMap::new(),
+            wiring_power_skip_extra: false,
             last_build: None,
             tick: 0,
         }
@@ -302,7 +319,10 @@ impl RsiftRenderPipeline {
             if self.low_spec.solid_interior_cull {
                 apply_solid_interior_cull(palette);
             }
-            apply_leaf_fast_path(palette, self.low_spec.leaf_fast_path || self.profile.leaf_fast_path);
+            apply_leaf_fast_path(
+                palette,
+                self.low_spec.leaf_fast_path || self.profile.leaf_fast_path,
+            );
         }
         let rle: Vec<RleSection> = sections.iter().map(RleSection::encode).collect();
         let raw_bytes = (sections.len() * 4096 * 2) as u64;
@@ -311,10 +331,20 @@ impl RsiftRenderPipeline {
         (sections, rle, saved, 0)
     }
 
-    pub fn build_chunk(&mut self, cx: i32, cz: i32, section_y: i32, dist_blocks: f32, sections: Option<&[SectionPalette]>, rle: Option<&[RleSection]>) -> BuiltChunkMesh {
+    pub fn build_chunk(
+        &mut self,
+        cx: i32,
+        cz: i32,
+        section_y: i32,
+        dist_blocks: f32,
+        sections: Option<&[SectionPalette]>,
+        rle: Option<&[RleSection]>,
+    ) -> BuiltChunkMesh {
         if let Some(cached) = self.cache.get(cx, cz, section_y) {
             self.frame_stats.cache_hits += 1;
-            return self.lod.simplify_mesh(cached, self.lod.tier_for_distance(dist_blocks));
+            return self
+                .lod
+                .simplify_mesh(cached, self.lod.tier_for_distance(dist_blocks));
         }
         let (sections, rle, saved, section_y0) = match (sections, rle) {
             (Some(s), Some(r)) => (s.to_vec(), r.to_vec(), 0u64, self.mesh_section_y0),
@@ -374,6 +404,10 @@ impl RsiftRenderPipeline {
             if self.low_spec.cheap_directional_ao {
                 apply_cheap_ao(&mut pull.quads);
             }
+            // 実効果: ao_bake コーナー AO を実パレット近傍から計算し light_ao を精細化
+            // (cheap_face_ao 未満にはしない — 視覚差のある実配線)。
+            let ao_changed = self.full_wiring.ao_refine_quads(&mut pull.quads, &sections);
+            self.frame_stats.wiring_ao_refined_quads += ao_changed;
             if self.low_spec.material_sort {
                 sort_quads_by_material(&mut pull.quads);
             }
@@ -382,7 +416,7 @@ impl RsiftRenderPipeline {
             self.frame_stats.pull_verts_drawn += pull.pull_vertex_count();
             self.frame_stats.pull_ssbo_bytes += pull.ssbo_bytes() as u64;
             if !pull.quads.is_empty() {
-                let bytes = bytemuck::cast_slice(&pull.quads).to_vec();
+                let bytes = crate::zerocopy_cast::cast_slice_to_bytes(&pull.quads).to_vec();
                 if self.low_spec.pull_generation_cache {
                     if let Some(gen) = self.world.column_generation(cx, cz) {
                         self.pull_gen_cache.put(cx, cz, gen, bytes.clone());
@@ -395,7 +429,13 @@ impl RsiftRenderPipeline {
             }
             self.pull_meshes.push(pull);
         }
-        debug_assert!(mesh.vertices.iter().all(|_| std::mem::size_of_val(&mesh.vertices[0]) == crate::chunk_mesh::VERTEX_STRIDE_BYTES) || mesh.vertices.is_empty());
+        debug_assert!(
+            mesh.vertices
+                .iter()
+                .all(|_| std::mem::size_of_val(&mesh.vertices[0])
+                    == crate::chunk_mesh::VERTEX_STRIDE_BYTES)
+                || mesh.vertices.is_empty()
+        );
         let full_mesh = mesh.clone();
         let mesh = self.lod.simplify_mesh(mesh, tier);
         self.last_build = Some(ChunkBuildArtifacts {
@@ -422,9 +462,13 @@ impl RsiftRenderPipeline {
         let (sections, rle, saved, section_y0) = self.prepare_column(cx, cz);
         self.mesh_section_y0 = section_y0;
         self.frame_stats.rle_palette_bytes += saved;
-        let verdict = self.cull_pass.verdict_column(cx, cz, camera_x, camera_z, &rle);
+        let verdict = self
+            .cull_pass
+            .verdict_column(cx, cz, camera_x, camera_z, &rle);
         match verdict {
-            CullVerdict::Visible => Some(self.build_chunk(cx, cz, 0, dist_blocks, Some(&sections), Some(&rle))),
+            CullVerdict::Visible => {
+                Some(self.build_chunk(cx, cz, 0, dist_blocks, Some(&sections), Some(&rle)))
+            }
             CullVerdict::EmptyColumn => {
                 self.frame_stats.empty_culled += 1;
                 None
@@ -462,8 +506,8 @@ impl RsiftRenderPipeline {
         delta_time: f32,
     ) -> FrameStats {
         self.tick += 1;
-        // スタブ禁止: 全Waveモジュールの完全配線オーケストレーターを毎フレーム実行
-        self.full_wiring.tick_frame(delta_time * 1000.0, [self.camera.x, self.camera.y, self.camera.z]);
+        // 注: FullGraphWiring の駆動はフレーム末端で「このフレームの実データ」を
+        //   揃えて `tick_world` を呼ぶ (実メッシュ/実クアッド/実パレットを実入力)。
         self.frame_stats = FrameStats::default();
         self.frame_reuse.begin_frame(self.tick);
         self.pull_meshes.clear();
@@ -500,7 +544,11 @@ impl RsiftRenderPipeline {
         }
 
         if self.feather.enabled && self.feather.motion_adaptive_shading {
-            let speed = if delta_time > 0.0 { 6.0 / delta_time } else { 0.0 };
+            let speed = if delta_time > 0.0 {
+                6.0 / delta_time
+            } else {
+                0.0
+            };
             self.last_camera_speed = speed;
             if let Some(s) = self.shading.as_mut() {
                 s.set_camera_speed(speed.min(40.0));
@@ -529,8 +577,14 @@ impl RsiftRenderPipeline {
         if self.low_spec.nearest_first {
             sort_nearest_first(&mut coords, cam_cx, cam_cz);
         }
+        // 実効果: 前フレームの OverdrawSorter front-to-back 順を build 優先度に反映
+        // (安定ソート — nearest_first 内の等距離タイブレークのみ変更)。
+        if !self.wiring_priority.is_empty() {
+            coords.sort_by_key(|c| self.wiring_priority.get(c).copied().unwrap_or(usize::MAX));
+        }
 
-        let view_proj = TerrainFrameConstants::from_camera(&self.camera, self.world.mesh_origin).view_proj;
+        let view_proj =
+            TerrainFrameConstants::from_camera(&self.camera, self.world.mesh_origin).view_proj;
         if self.low_spec.pre_mesh_occlusion && self.soft_occlusion.is_none() {
             self.soft_occlusion = Some(SoftwareOcclusion::new(256, 256));
         }
@@ -539,13 +593,20 @@ impl RsiftRenderPipeline {
 
         let mut meshes = Vec::new();
         let mut occupied_per_chunk: Vec<(i32, i32, Vec<u32>)> = Vec::new();
-        let max_builds = if self.profile.speed_first {
+        // 実効果: QualityGovernor の連続フレームオーバー検知が build 予算を実縮小。
+        let base_builds = if self.profile.speed_first {
             4
         } else if self.feather.enabled {
             10
         } else {
             20
         };
+        let max_builds = self
+            .dynamic_build_budget
+            .unwrap_or(base_builds)
+            .min(base_builds);
+        // wiring へ渡す実パレット (描画可視と判定された列のみ、上限 4)。
+        let mut wired_palettes: Vec<SectionPalette> = Vec::new();
         let mut builds_this_frame = 0u32;
         let pull_live = self.profile.vertex_pull_4byte
             || self.world.has_live_data
@@ -588,10 +649,7 @@ impl RsiftRenderPipeline {
             // Generation-keyed pull cache (skip remesh when column unchanged).
             if pull_live && self.low_spec.pull_generation_cache {
                 if let Some(gen) = self.world.column_generation(cx, cz) {
-                    let cached = self
-                        .pull_gen_cache
-                        .get(cx, cz, gen)
-                        .map(|b| b.to_vec());
+                    let cached = self.pull_gen_cache.get(cx, cz, gen).map(|b| b.to_vec());
                     if let Some(bytes) = cached {
                         self.frame_stats.pull_cache_hits += 1;
                         self.gpu_quad_bytes.extend_from_slice(&bytes);
@@ -631,15 +689,14 @@ impl RsiftRenderPipeline {
             {
                 let origin = self.world.mesh_origin;
                 let sy0 = self.world.camera_section_y() - 1;
-                let mut box_quads = emit_lod_box_quads(
-                    cx, cz, sy0, origin[0], origin[1], origin[2], 64, 1,
-                );
+                let mut box_quads =
+                    emit_lod_box_quads(cx, cz, sy0, origin[0], origin[1], origin[2], 64, 1);
                 if self.low_spec.camera_face_mask {
                     let mask =
                         FaceEmitMask::from_camera_yaw_pitch(self.camera.yaw, self.camera.pitch);
                     filter_quads_by_face_mask(&mut box_quads, mask);
                 }
-                let bytes = bytemuck::cast_slice(&box_quads);
+                let bytes = crate::zerocopy_cast::cast_slice_to_bytes(&box_quads);
                 self.gpu_quad_bytes.extend_from_slice(bytes);
                 self.frame_stats.lod_boxes += 1;
                 self.frame_stats.pull_quads_built += box_quads.len() as u32;
@@ -652,7 +709,9 @@ impl RsiftRenderPipeline {
             self.mesh_section_y0 = section_y0;
             self.frame_stats.rle_palette_bytes += saved;
             let occupied = occupied_section_indices(&rle);
-            let verdict = self.cull_pass.verdict_column(cx, cz, self.camera.x, self.camera.z, &rle);
+            let verdict = self
+                .cull_pass
+                .verdict_column(cx, cz, self.camera.x, self.camera.z, &rle);
             match verdict {
                 CullVerdict::EmptyColumn => {
                     self.frame_stats.empty_culled += 1;
@@ -665,6 +724,11 @@ impl RsiftRenderPipeline {
                 CullVerdict::Visible | CullVerdict::Occluded => {}
             }
             occupied_per_chunk.push((cx, cz, occupied.clone()));
+            if wired_palettes.len() < 4 {
+                if let Some(p0) = sections.first() {
+                    wired_palettes.push(*p0);
+                }
+            }
             let mesh = self.build_chunk(cx, cz, 0, dist, Some(&sections), Some(&rle));
             if let Some(artifacts) = self.last_build.take() {
                 self.frame_reuse.store(
@@ -708,9 +772,13 @@ impl RsiftRenderPipeline {
 
         if self.low_spec.quad_budget > 0 {
             let mut quads: Vec<crate::packed4::PackedPullQuad> =
-                bytemuck::cast_slice(&self.gpu_quad_bytes).to_vec();
+                crate::zerocopy_cast::cast_bytes_to_slice::<crate::packed4::PackedPullQuad>(
+                    &self.gpu_quad_bytes,
+                )
+                .map(|q| q.to_vec())
+                .unwrap_or_default();
             truncate_quad_budget(&mut quads, self.low_spec.quad_budget);
-            self.gpu_quad_bytes = bytemuck::cast_slice(&quads).to_vec();
+            self.gpu_quad_bytes = crate::zerocopy_cast::cast_slice_to_bytes(&quads).to_vec();
         }
 
         if self.low_spec.triple_buffer_upload && !self.gpu_quad_bytes.is_empty() {
@@ -738,11 +806,7 @@ impl RsiftRenderPipeline {
                     .iter()
                     .enumerate()
                     .map(|(i, m)| ChunkBoundingBox {
-                        min_xyz: [
-                            m.chunk_x as f32 * 16.0,
-                            0.0,
-                            m.chunk_z as f32 * 16.0,
-                        ],
+                        min_xyz: [m.chunk_x as f32 * 16.0, 0.0, m.chunk_z as f32 * 16.0],
                         is_visible: 1,
                         max_xyz: [
                             m.chunk_x as f32 * 16.0 + 16.0,
@@ -765,8 +829,7 @@ impl RsiftRenderPipeline {
         self.frame_reuse.end_frame();
         self.frame_stats.frame_reuse_hits = self.frame_reuse.stats.hits;
         self.frame_stats.frame_reuse_misses = self.frame_reuse.stats.misses;
-        self.frame_stats.frame_reuse_mem_kb =
-            (self.frame_reuse.stats.memory_bytes / 1024) as u32;
+        self.frame_stats.frame_reuse_mem_kb = (self.frame_reuse.stats.memory_bytes / 1024) as u32;
 
         if self.tick % 120 == 0 && self.profile.vertex_pull_4byte {
             let ratio = if self.frame_stats.pull_ssbo_bytes > 0 {
@@ -821,7 +884,7 @@ impl RsiftRenderPipeline {
             self.frame_reuse.log_report(self.tick);
         }
 
-        if self.tick % 300 == 1 {
+        if self.tick % 300 == 1 && !self.wiring_power_skip_extra {
             cmp.log_report();
             let (hits, misses) = self.cache.stats();
             debug!(
@@ -834,6 +897,114 @@ impl RsiftRenderPipeline {
                 self.frame_stats.rle_palette_bytes / 1024,
                 self.texture_budget.bandwidth_factor() * 100.0,
             );
+        }
+
+        // ============================================================
+        // Full Graph Wiring: このフレームの実データで全サブシステムを実実行。
+        // (実メッシュ/実プルクアッド/実パレット/実カメラ行列を入力として供給。)
+        // ============================================================
+        {
+            let (sin_y, cos_y) = self.camera.yaw.sin_cos();
+            let (sin_p, cos_p) = self.camera.pitch.sin_cos();
+            let camera_dir = [-sin_y * cos_p, -sin_p, cos_y * cos_p];
+            let y0 = self.world.mesh_origin[1] as f32;
+
+            let mut chunk_keys: Vec<(i32, i32)> = Vec::with_capacity(meshes.len());
+            let mut chunk_dists: Vec<f32> = Vec::with_capacity(meshes.len());
+            let mut chunk_aabbs: Vec<([f32; 3], [f32; 3])> = Vec::with_capacity(meshes.len());
+            let mut draw_index_counts: Vec<u32> = Vec::with_capacity(meshes.len());
+            for m in &meshes {
+                chunk_keys.push((m.chunk_x, m.chunk_z));
+                chunk_dists
+                    .push(((m.chunk_x - cam_cx) as f32).hypot((m.chunk_z - cam_cz) as f32) * 16.0);
+                chunk_aabbs.push((
+                    [m.chunk_x as f32 * 16.0, y0, m.chunk_z as f32 * 16.0],
+                    [
+                        (m.chunk_x + 1) as f32 * 16.0,
+                        y0 + 64.0,
+                        (m.chunk_z + 1) as f32 * 16.0,
+                    ],
+                ));
+                draw_index_counts.push(m.indices.len() as u32);
+            }
+            // プル専用の空メッシュ列 (SVO エンコード路) も実描画対象として追加。
+            for p in &self.pull_meshes {
+                if chunk_keys.contains(&(p.chunk_x, p.chunk_z)) {
+                    continue;
+                }
+                chunk_keys.push((p.chunk_x, p.chunk_z));
+                chunk_dists
+                    .push(((p.chunk_x - cam_cx) as f32).hypot((p.chunk_z - cam_cz) as f32) * 16.0);
+                chunk_aabbs.push((
+                    [p.chunk_x as f32 * 16.0, y0, p.chunk_z as f32 * 16.0],
+                    [
+                        (p.chunk_x + 1) as f32 * 16.0,
+                        y0 + 64.0,
+                        (p.chunk_z + 1) as f32 * 16.0,
+                    ],
+                ));
+                draw_index_counts.push((p.quads.len() * 6) as u32);
+            }
+            let chunk_materials: Vec<u32> = chunk_keys
+                .iter()
+                .map(|k| {
+                    self.pull_meshes
+                        .iter()
+                        .find(|p| p.chunk_x == k.0 && p.chunk_z == k.1)
+                        .and_then(|p| p.quads.first())
+                        .map(|q| crate::packed4::PackedPullQuad::unpack_tex(q.word0))
+                        .unwrap_or(0)
+                })
+                .collect();
+            let mut quad_positions: Vec<[f32; 3]> = Vec::new();
+            let mut quad_materials: Vec<u32> = Vec::new();
+            'quads: for p in &self.pull_meshes {
+                for q in p.quads.iter() {
+                    if quad_positions.len() >= 256 {
+                        break 'quads;
+                    }
+                    quad_positions.push([
+                        crate::packed4::PackedPullQuad::unpack_x(q.word0) as f32
+                            + p.chunk_x as f32 * 16.0,
+                        crate::packed4::PackedPullQuad::unpack_y(q.word0) as f32 + y0,
+                        crate::packed4::PackedPullQuad::unpack_z(q.word0) as f32
+                            + p.chunk_z as f32 * 16.0,
+                    ]);
+                    quad_materials.push(crate::packed4::PackedPullQuad::unpack_tex(q.word0));
+                }
+            }
+            let inputs = FrameWiringInputs {
+                delta_ms: delta_time * 1000.0,
+                frame_us_measured: (delta_time * 1_000_000.0) as u32,
+                frame_index: self.tick,
+                screen_w,
+                screen_h,
+                camera_pos: [self.camera.x, self.camera.y, self.camera.z],
+                camera_dir,
+                view_proj,
+                chunk_keys,
+                chunk_materials,
+                chunk_aabbs,
+                chunk_dists,
+                draw_index_counts,
+                section_palettes: wired_palettes,
+                quad_positions,
+                quad_materials,
+                quad_bytes: self.gpu_quad_bytes.len(),
+                camera_speed: self.last_camera_speed,
+                svo: self.svo_cache.values().next(),
+            };
+            let report = self.full_wiring.tick_world(&inputs);
+            // 実効果の適用: wiring レポートが次フレームの実入力へフィードバック。
+            self.dynamic_build_budget = report.next_build_budget;
+            self.wiring_power_skip_extra = report.power_skip_extra;
+            self.wiring_priority = report
+                .overdraw_order
+                .iter()
+                .enumerate()
+                .filter_map(|(rank, idx)| inputs.chunk_keys.get(*idx).map(|k| (*k, rank)))
+                .collect();
+            self.frame_stats.wiring_subsystems = report.subsystems_active;
         }
 
         self.frame_stats.clone()
@@ -918,7 +1089,13 @@ pub fn on_render_frame(width: u32, height: u32, delta_time: f32) {
 }
 
 /// Ingest one Minecraft chunk column (flat `section_count * 4096` block ids, 0 = air).
-pub fn ingest_world_column(cx: i32, cz: i32, base_section_y: i32, blocks: &[u16], section_count: usize) {
+pub fn ingest_world_column(
+    cx: i32,
+    cz: i32,
+    base_section_y: i32,
+    blocks: &[u16],
+    section_count: usize,
+) {
     if let Ok(mut pipe) = global_pipeline().lock() {
         pipe.world
             .ingest(cx, cz, base_section_y, blocks, section_count);
@@ -944,6 +1121,23 @@ pub fn set_world_camera(x: f32, y: f32, z: f32, yaw_deg: f32, pitch_deg: f32) {
     }
 }
 
+/// 現在の実カメラ (live ingest 優先、無ければ安定デフォルト)。
+/// (x, y, z, yaw, pitch) — C ABI VTable の自己検証や外部ブリッジ用。
+pub fn world_camera() -> (f32, f32, f32, f32, f32) {
+    global_pipeline()
+        .lock()
+        .ok()
+        .map(|p| {
+            let cam = if p.world.has_live_data {
+                p.world.camera
+            } else {
+                p.camera
+            };
+            (cam.x, cam.y, cam.z, cam.yaw, cam.pitch)
+        })
+        .unwrap_or((0.0, 32.0, 0.0, 0.0, 0.0))
+}
+
 pub fn prune_world_columns(center_cx: i32, center_cz: i32, radius: i32) {
     if let Ok(mut pipe) = global_pipeline().lock() {
         pipe.world.prune_outside(center_cx, center_cz, radius);
@@ -964,26 +1158,52 @@ pub fn production_frame_constants() -> Option<TerrainFrameConstants> {
 
 /// Zero-copy quad bytes for DX12 present (avoids cloning each frame).
 pub fn with_gpu_quad_bytes<R>(f: impl FnOnce(&[u8]) -> R) -> Option<R> {
-    global_pipeline()
-        .lock()
-        .ok()
-        .and_then(|p| {
-            // Prefer triple-buffer published slot when enabled.
-            if p.low_spec.triple_buffer_upload {
-                let published = p.upload_ring.begin_gpu_read();
-                if !published.is_empty() {
-                    return Some(f(&published));
-                }
+    global_pipeline().lock().ok().and_then(|p| {
+        // Prefer triple-buffer published slot when enabled.
+        if p.low_spec.triple_buffer_upload {
+            let published = p.upload_ring.begin_gpu_read();
+            if !published.is_empty() {
+                return Some(f(&published));
             }
-            if p.gpu_quad_bytes.is_empty() {
-                None
-            } else {
-                Some(f(&p.gpu_quad_bytes))
-            }
-        })
+        }
+        if p.gpu_quad_bytes.is_empty() {
+            None
+        } else {
+            Some(f(&p.gpu_quad_bytes))
+        }
+    })
 }
 
 /// Bytes for DX12 terrain SSBO upload (pull quads from last CPU mesh pass).
 pub fn last_gpu_quad_bytes() -> Option<Vec<u8>> {
     with_gpu_quad_bytes(|b| b.to_vec())
+}
+
+// ============================================================
+// Vanilla render hook counters (bytecode_transpiler が HEAD 挿入した
+// Java フックから JNI 経由で実到達する実測カウンタ)。
+// FullGraphWiring がデルタを読み、QualityGovernor の実入力に還元する。
+// ============================================================
+
+/// BakedModel.getQuads HEAD フックの実到達回数。
+static VANILLA_GETQUADS_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// LevelRenderer.renderChunkLayer HEAD フックの実到達回数。
+static VANILLA_CHUNKLAYER_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Java `RsiftRenderHooks.getQuadsHeadHook()` → JNI からの実記録 (戻り値 = 累計)。
+pub fn note_vanilla_get_quads_hook() -> u64 {
+    VANILLA_GETQUADS_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+}
+
+/// Java `RsiftRenderHooks.chunkLayerHeadHook()` → JNI からの実記録 (戻り値 = 累計)。
+pub fn note_vanilla_chunk_layer_hook() -> u64 {
+    VANILLA_CHUNKLAYER_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+}
+
+/// 実測値スナップショット (FullGraphWiring が実デルタ計算に使用)。
+pub fn vanilla_render_hook_hits() -> (u64, u64) {
+    (
+        VANILLA_GETQUADS_HITS.load(std::sync::atomic::Ordering::Relaxed),
+        VANILLA_CHUNKLAYER_HITS.load(std::sync::atomic::Ordering::Relaxed),
+    )
 }

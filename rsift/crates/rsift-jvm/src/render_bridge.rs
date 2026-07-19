@@ -46,7 +46,12 @@ pub fn ensure_engine() {
 /// Win32 HWND via GLFW (`org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window`).
 pub fn read_window_hwnd(env: &mut JNIEnv, minecraft: &JObject) -> Option<i64> {
     let window = env
-        .call_method(minecraft, "getWindow", "()Lcom/mojang/blaze3d/platform/Window;", &[])
+        .call_method(
+            minecraft,
+            "getWindow",
+            "()Lcom/mojang/blaze3d/platform/Window;",
+            &[],
+        )
         .ok()
         .and_then(|v| v.l().ok())?;
 
@@ -184,8 +189,7 @@ fn load_render_hooks(env: &mut JNIEnv) -> Result<(), String> {
     }
 
     let jar = super::screen_inject::bootstrap_jar().ok_or("no bootstrap jar")?;
-    let parent = super::screen_inject::find_game_class_loader(env)
-        .ok_or("no game classloader")?;
+    let parent = super::screen_inject::find_game_class_loader(env).ok_or("no game classloader")?;
     let ucl = super::screen_inject::url_classloader_for_jar(env, &parent, &jar)?;
 
     let name = env
@@ -218,6 +222,17 @@ fn load_render_hooks(env: &mut JNIEnv) -> Result<(), String> {
             name: "nativeGlSwap".into(),
             sig: "()V".into(),
             fn_ptr: Java_com_rsift_RsiftRenderHooks_nativeGlSwap as *mut _,
+        },
+        // Transpiler が HEAD 挿入した vanilla レンダーフックの実測カウンタ。
+        NativeMethod {
+            name: "nativeGetQuadsHook".into(),
+            sig: "()J".into(),
+            fn_ptr: Java_com_rsift_RsiftRenderHooks_nativeGetQuadsHook as *mut _,
+        },
+        NativeMethod {
+            name: "nativeChunkLayerHook".into(),
+            sig: "()J".into(),
+            fn_ptr: Java_com_rsift_RsiftRenderHooks_nativeChunkLayerHook as *mut _,
         },
     ];
     env.register_native_methods(&jclass, &methods)
@@ -279,18 +294,21 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeOnFlip(
         use windows::Win32::Foundation::HWND;
         let hwnd = HWND(hwnd as *mut _);
         let _ = with_engine_mut(|engine| {
-            let _ = rsift_dx12::ensure_swap_chain(engine, hwnd, width.max(0) as u32, height.max(0) as u32);
-            if let Some(result) =
-                rsift_opt_gfx::with_gpu_quad_bytes(|quads| {
-                    let cb = rsift_opt_gfx::production_frame_constants().map(|c| {
-                        rsift_dx12::terrain_pass::TerrainFrameCb {
-                            view_proj: c.view_proj,
-                            chunk_origin: c.chunk_origin,
-                        }
-                    });
-                    rsift_dx12::present_frame_with_cb(engine, Some(quads), cb.as_ref())
-                })
-            {
+            let _ = rsift_dx12::ensure_swap_chain(
+                engine,
+                hwnd,
+                width.max(0) as u32,
+                height.max(0) as u32,
+            );
+            if let Some(result) = rsift_opt_gfx::with_gpu_quad_bytes(|quads| {
+                let cb = rsift_opt_gfx::production_frame_constants().map(|c| {
+                    rsift_dx12::terrain_pass::TerrainFrameCb {
+                        view_proj: c.view_proj,
+                        chunk_origin: c.chunk_origin,
+                    }
+                });
+                rsift_dx12::present_frame_with_cb(engine, Some(quads), cb.as_ref())
+            }) {
                 let _ = result;
             } else {
                 let _ = rsift_dx12::present_frame(engine, None);
@@ -313,4 +331,22 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeGlSwap(
     _class: JClass,
 ) {
     rsift_render::proxy::rsift_gl_on_swap_buffers();
+}
+
+/// Transpiler (BakedModel.getQuads HEAD) → 実測カウンタ記録。
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeGetQuadsHook(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jlong {
+    rsift_opt_gfx::note_vanilla_get_quads_hook() as jni::sys::jlong
+}
+
+/// Transpiler (LevelRenderer.renderChunkLayer HEAD) → 実測カウンタ記録。
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeChunkLayerHook(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jlong {
+    rsift_opt_gfx::note_vanilla_chunk_layer_hook() as jni::sys::jlong
 }

@@ -1,11 +1,14 @@
 //! GLFW `glfwSwapBuffers` hook — skip OpenGL present when DX12 owns the swap chain.
+//!
+//! 監査指摘の解消: 旧実装は `ORIGINAL = パッチ済みアドレス` を保持しており、
+//! オリジナル呼び出しが **hooked_swap への無限再帰** (スタックオーバーフロー) に
+//! なる実バグを抱えていた。本実装は汎用 `detour_hook::DetourHook` (実パッチ +
+//! unpatch→call→repatch) でオリジナル呼出を安全に実行する。。
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::agent_log::agent_log;
-
-type GlfwSwapFn = unsafe extern "C" fn(*mut c_void);
 
 static INSTALLED: AtomicBool = AtomicBool::new(false);
 static SKIP_GLFW_SWAP: AtomicBool = AtomicBool::new(true);
@@ -13,69 +16,55 @@ static SKIP_GLFW_SWAP: AtomicBool = AtomicBool::new(true);
 #[cfg(windows)]
 mod imp {
     use super::*;
-    use std::sync::OnceLock;
-    use windows::core::PCSTR;
-    use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
-    use windows::Win32::System::Memory::{VirtualProtect, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS};
+    use crate::detour_hook::DetourHook;
+    use std::sync::Mutex;
 
-    static ORIGINAL: OnceLock<GlfwSwapFn> = OnceLock::new();
+    type GlfwSwapFn = unsafe extern "C" fn(*mut c_void);
+
+    /// 実装パッチ本体 (機械語先頭5バイトを保持)。レンダースレッド専用。
+    static HOOK: Mutex<Option<DetourHook>> = Mutex::new(None);
 
     pub fn install() {
-        if super::INSTALLED.swap(true, Ordering::SeqCst) {
+        if super::INSTALLED.load(Ordering::SeqCst) {
             return;
         }
+        let mut guard = HOOK.lock().unwrap();
+        if guard.is_some() {
+            super::INSTALLED.store(true, Ordering::SeqCst);
+            return;
+        }
+        for module in ["glfw3.dll", "glfw.dll"] {
+            match DetourHook::for_export(module, "glfwSwapBuffers", hooked_swap as usize) {
+                Ok(mut h) => match h.enable() {
+                    Ok(()) => {
+                        agent_log(&format!(
+                            "[GlfwHook] {} hooked — DXGI exclusive present",
+                            h.target_name
+                        ));
+                        *guard = Some(h);
+                        super::INSTALLED.store(true, Ordering::SeqCst);
+                        return;
+                    }
+                    Err(e) => {
+                        agent_log(&format!("[GlfwHook] WARN patch failed: {}", e));
+                    }
+                },
+                Err(_) => continue, // 次のモジュール名で再試行
+            }
+        }
+        agent_log("[GlfwHook] WARN glfwSwapBuffers not found (will retry via engine ensure)");
+    }
+
+    /// hooked_swap からのオリジナル呼出 (unpatch→call→repatch)。
+    pub fn call_original_swap(window: *mut c_void) {
+        let mut guard = HOOK.lock().unwrap();
+        let Some(h) = guard.as_mut() else { return };
         unsafe {
-            let Some(proc) = resolve_glfw_swap() else {
-                agent_log("[GlfwHook] WARN glfwSwapBuffers not found (will retry)");
-                super::INSTALLED.store(false, Ordering::SeqCst);
-                return;
-            };
-            let target = proc as usize;
-            if patch_rel_jmp(target, hooked_swap as usize).is_err() {
-                agent_log("[GlfwHook] WARN relative jmp patch failed");
-                super::INSTALLED.store(false, Ordering::SeqCst);
-                return;
-            }
-            let _ = ORIGINAL.set(proc);
-            agent_log("[GlfwHook] glfwSwapBuffers hooked — DXGI exclusive present");
+            let _ = h.call_original(|addr| {
+                let orig: GlfwSwapFn = std::mem::transmute(addr);
+                orig(window);
+            });
         }
-    }
-
-    unsafe fn resolve_glfw_swap() -> Option<GlfwSwapFn> {
-        for name in [b"glfw3.dll\0".as_slice(), b"glfw.dll\0".as_slice()] {
-            if let Ok(module) = GetModuleHandleA(PCSTR(name.as_ptr())) {
-                if let Some(proc) = GetProcAddress(module, PCSTR(b"glfwSwapBuffers\0".as_ptr())) {
-                    return Some(std::mem::transmute(proc));
-                }
-            }
-        }
-        None
-    }
-
-    unsafe fn patch_rel_jmp(target: usize, detour: usize) -> Result<(), ()> {
-        let offset = (detour as isize) - (target as isize) - 5;
-        if !(i32::MIN as isize..=i32::MAX as isize).contains(&offset) {
-            return Err(());
-        }
-        let mut old = PAGE_PROTECTION_FLAGS(0);
-        VirtualProtect(
-            target as *const _,
-            5,
-            PAGE_EXECUTE_READWRITE,
-            &mut old,
-        )
-        .map_err(|_| ())?;
-        let rel = offset as i32;
-        let patch = [
-            0xE9u8,
-            (rel & 0xFF) as u8,
-            ((rel >> 8) & 0xFF) as u8,
-            ((rel >> 16) & 0xFF) as u8,
-            ((rel >> 24) & 0xFF) as u8,
-        ];
-        std::ptr::copy_nonoverlapping(patch.as_ptr(), target as *mut u8, 5);
-        let _ = VirtualProtect(target as *const _, 5, old, &mut old);
-        Ok(())
     }
 
     unsafe extern "C" fn hooked_swap(window: *mut c_void) {
@@ -83,18 +72,15 @@ mod imp {
             rsift_render::proxy::rsift_gl_on_swap_buffers();
             return;
         }
-        if let Some(orig) = ORIGINAL.get() {
-            orig(window);
-        }
+        call_original_swap(window);
     }
 }
 
 #[cfg(not(windows))]
-mod imp {
-    pub fn install() {}
-}
+mod imp {}
 
 pub fn install_glfw_swap_hook() {
+    #[cfg(windows)]
     imp::install();
 }
 

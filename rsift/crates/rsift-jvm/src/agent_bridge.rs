@@ -1,21 +1,21 @@
 //! Java agent bridge — deferred mod load + safe JNI screen injection.
 
-#[path = "screen_inject.rs"]
-mod screen_inject;
-#[path = "screen_buttons.rs"]
-mod screen_buttons;
+#[path = "chunk_bridge.rs"]
+mod chunk_bridge;
 #[path = "glfw_hook.rs"]
 mod glfw_hook;
+#[path = "jvmti_events.rs"]
+mod jvmti_events;
 #[path = "mod_bridge.rs"]
 mod mod_bridge;
 #[path = "platform_bridge.rs"]
 mod platform_bridge;
-#[path = "chunk_bridge.rs"]
-mod chunk_bridge;
 #[path = "render_bridge.rs"]
 mod render_bridge;
-#[path = "jvmti_events.rs"]
-mod jvmti_events;
+#[path = "screen_buttons.rs"]
+mod screen_buttons;
+#[path = "screen_inject.rs"]
+mod screen_inject;
 
 use jni::objects::{JClass, JObject, JString, JValue};
 use jni::sys::{jarray, jbyteArray, jint, jstring};
@@ -69,7 +69,10 @@ pub fn agent_premain(agent_args: &str) {
     if MODS_LOADED.swap(true, Ordering::SeqCst) {
         return;
     }
-    agent_log_step("agent_premain", &format!("loading mods args={}", agent_args));
+    agent_log_step(
+        "agent_premain",
+        &format!("loading mods args={}", agent_args),
+    );
     let mod_dir = agent_opts::resolve_mod_dir(agent_args);
     agent_log_step("agent_premain", &format!("mod_dir={:?}", mod_dir));
     if !mod_dir.exists() {
@@ -78,6 +81,15 @@ pub fn agent_premain(agent_args: &str) {
     }
     let rt = runtime_or_init(mod_dir.clone());
     rt.set_mod_dir(mod_dir.clone());
+    // ABI 安定テーブルを実インストール (ネイティブ DLL Mod への受け渡し口を有効化)。
+    let abi = crate::abi_stable::install_api();
+    agent_log_step(
+        "agent_premain",
+        &format!(
+            "abi table installed v{}.{}.{}",
+            abi.version.major, abi.version.minor, abi.version.patch
+        ),
+    );
     let world_dir = mod_dir
         .parent()
         .map(|p| p.join("saves").join("rsift_sim"))
@@ -93,7 +105,10 @@ pub fn agent_premain(agent_args: &str) {
     );
     match load_mods_into_runtime(&mod_dir, rt, true) {
         Ok(result) => {
-            agent_log_step("agent_premain", &format!("mods loaded OK: {:?}", result.loaded));
+            agent_log_step(
+                "agent_premain",
+                &format!("mods loaded OK: {:?}", result.loaded),
+            );
         }
         Err(e) => agent_log_err("agent_premain", &format!("mod load FAILED: {}", e)),
     }
@@ -113,10 +128,7 @@ pub fn mark_agentpath_loaded() {
     if let Some(dir) = crate::agent_opts::dll_directory() {
         let marker = dir.join(".rsift-agentpath-active");
         let _ = std::fs::write(&marker, b"1");
-        crate::agent_log::agent_log_step(
-            "agentpath",
-            &format!("marker written {:?}", marker),
-        );
+        crate::agent_log::agent_log_step("agentpath", &format!("marker written {:?}", marker));
     }
 }
 
@@ -134,11 +146,17 @@ pub fn schedule_deferred_init(vm: *mut std::ffi::c_void, options: &str, from_age
     if from_agentpath {
         mark_agentpath_loaded();
     } else if AGENTPATH_LOADED.load(Ordering::SeqCst) {
-        agent_log_step("schedule_deferred_init", "skipped — agentpath already owns boot");
+        agent_log_step(
+            "schedule_deferred_init",
+            "skipped — agentpath already owns boot",
+        );
         return;
     }
     if DEFERRED_STARTED.swap(true, Ordering::SeqCst) {
-        agent_log_warn("schedule_deferred_init", "already started — ignoring duplicate call");
+        agent_log_warn(
+            "schedule_deferred_init",
+            "already started — ignoring duplicate call",
+        );
         return;
     }
     let opts = options.to_string();
@@ -159,13 +177,19 @@ pub fn schedule_deferred_init(vm: *mut std::ffi::c_void, options: &str, from_age
             }
         }) {
         Ok(_) => agent_log_step("schedule_deferred_init", "thread spawn OK"),
-        Err(e) => agent_log_err("schedule_deferred_init", &format!("thread spawn FAILED: {:?}", e)),
+        Err(e) => agent_log_err(
+            "schedule_deferred_init",
+            &format!("thread spawn FAILED: {:?}", e),
+        ),
     }
 }
 
 fn deferred_init_main(vm_addr: usize, opts: &str) {
     agent_log_step("deferred_init", "thread entered");
-    agent_log_step("deferred_init", "brief wait before JNI (agentpath-only, no javaagent)");
+    agent_log_step(
+        "deferred_init",
+        "brief wait before JNI (agentpath-only, no javaagent)",
+    );
     std::thread::sleep(Duration::from_secs(1));
     agent_log_step("deferred_init", "pre-JNI wait complete");
     if let Some(dir) = crate::agent_opts::dll_directory() {
@@ -186,15 +210,24 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
         agent_log_step("deferred_init", "mods already loaded — skip");
     }
 
-    agent_log_step("deferred_init", &format!("JavaVM::from_raw addr=0x{:x}", vm_addr));
+    agent_log_step(
+        "deferred_init",
+        &format!("JavaVM::from_raw addr=0x{:x}", vm_addr),
+    );
     let vm = match unsafe { jni::JavaVM::from_raw(vm_addr as *mut jni::sys::JavaVM) } {
         Ok(v) => v,
         Err(e) => {
-            agent_log_err("deferred_init", &format!("JavaVM::from_raw failed: {:?}", e));
+            agent_log_err(
+                "deferred_init",
+                &format!("JavaVM::from_raw failed: {:?}", e),
+            );
             return;
         }
     };
-    agent_log_step("deferred_init", "JavaVM::from_raw OK — starting attach loop");
+    agent_log_step(
+        "deferred_init",
+        "JavaVM::from_raw OK — starting attach loop",
+    );
 
     for attempt in 0..300 {
         match vm.attach_current_thread() {
@@ -316,7 +349,13 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
             TICK_ACTIVE_MS
         } else {
             rsift_api::runtime::runtime()
-                .map(|rt| if rt.has_render_handlers() { 16 } else { TICK_ACTIVE_MS })
+                .map(|rt| {
+                    if rt.has_render_handlers() {
+                        16
+                    } else {
+                        TICK_ACTIVE_MS
+                    }
+                })
                 .unwrap_or(TICK_ACTIVE_MS)
         };
         std::thread::sleep(Duration::from_millis(sleep_ms));
@@ -345,11 +384,39 @@ pub fn transform_class(class_name: &str, data: &[u8]) -> Option<Vec<u8>> {
     for rule in rsift_api::neoforge_coremod::all_coremod_rules() {
         rsift_parser::register_dynamic_target(&rule.target_class);
     }
-    match BytecodePatcher::patch_if_needed(&internal, data) {
+    let patched = match BytecodePatcher::patch_if_needed(&internal, data) {
         Ok(r) if r.was_modified && !r.new_bytecode.is_empty() => Some(r.new_bytecode),
+        _ => None,
+    };
+
+    // 第2パス (実配線): bytecode_transpiler の HEAD 挿入を ParserEngine の
+    // メモ化経由で実適用 (JVMTI Retransform 反復時も注入は 1 回で済む)。
+    let base: &[u8] = patched.as_deref().unwrap_or(data);
+    let transpiled = {
+        let tp = crate::bytecode_transpiler::BytecodeTranspiler::new();
+        let mut engine = TRANSPILE_ENGINE
+            .get_or_init(|| std::sync::Mutex::new(rsift_parser::ParserEngine::new()))
+            .lock()
+            .unwrap();
+        let internal_cp = internal.clone();
+        engine.transform(&internal_cp, base, |cf| {
+            let mut applied = 0usize;
+            for rule in tp.rules_for(&internal_cp) {
+                applied +=
+                    cf.inject_invokestatic_into(&rule.from_method, &rule.to_class, &rule.to_method);
+            }
+            applied > 0
+        })
+    };
+    match (patched, transpiled) {
+        (_, Ok(out)) if out.as_slice() != base => Some(out),
+        (Some(p), _) => Some(p),
         _ => None,
     }
 }
+
+static TRANSPILE_ENGINE: std::sync::OnceLock<std::sync::Mutex<rsift_parser::ParserEngine>> =
+    std::sync::OnceLock::new();
 
 fn button_at(screen_class: &str, index: usize) -> Option<ScreenButtonDescriptor> {
     rsift_api::runtime::runtime().and_then(|rt| {
@@ -406,9 +473,12 @@ pub fn client_tick(env: &mut JNIEnv) {
         Some(c) => c,
         None => return,
     };
-    let inst = match env
-        .call_static_method(minecraft, "getInstance", "()Lnet/minecraft/client/Minecraft;", &[])
-    {
+    let inst = match env.call_static_method(
+        minecraft,
+        "getInstance",
+        "()Lnet/minecraft/client/Minecraft;",
+        &[],
+    ) {
         Ok(v) => v.l().ok(),
         Err(_) => None,
     };
@@ -417,7 +487,12 @@ pub fn client_tick(env: &mut JNIEnv) {
         None => return,
     };
 
-    let screen = match env.call_method(&inst, "screen", "()Lnet/minecraft/client/gui/screens/Screen;", &[]) {
+    let screen = match env.call_method(
+        &inst,
+        "screen",
+        "()Lnet/minecraft/client/gui/screens/Screen;",
+        &[],
+    ) {
         Ok(v) => v.l().ok(),
         Err(_) => env
             .call_method(
@@ -463,7 +538,9 @@ pub fn client_tick(env: &mut JNIEnv) {
 }
 
 fn update_idle_state() {
-    let Some(rt) = rsift_api::runtime::runtime() else { return };
+    let Some(rt) = rsift_api::runtime::runtime() else {
+        return;
+    };
     let reg = rt.screen_registry();
     let title = reg.buttons_for_screen("net.minecraft.client.gui.screens.TitleScreen");
     let pause = reg.buttons_for_screen("net.minecraft.client.gui.screens.PauseScreen");
@@ -491,7 +568,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftBootstrapAgent_nativeLogAgentp
     _env: JNIEnv,
     _class: JClass,
 ) {
-    agent_log_step("javaagent", "ClassFileTransformer registered (agentpath owns native boot)");
+    agent_log_step(
+        "javaagent",
+        "ClassFileTransformer registered (agentpath owns native boot)",
+    );
 }
 
 #[no_mangle]
@@ -534,14 +614,19 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftScreenHooks_nativeLog(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn Java_com_rsift_RsiftClassTransformer_nativeCaptureGameLoader<'local>(
+pub unsafe extern "system" fn Java_com_rsift_RsiftClassTransformer_nativeCaptureGameLoader<
+    'local,
+>(
     mut env: JNIEnv<'local>,
     _class: JClass,
     loader: JObject<'local>,
 ) {
     if !loader.as_raw().is_null() {
         screen_inject::cache_game_loader_from_java(&mut env, &loader);
-        agent_log_step("transformer", "game ClassLoader captured (Minecraft class load)");
+        agent_log_step(
+            "transformer",
+            "game ClassLoader captured (Minecraft class load)",
+        );
     }
 }
 
@@ -655,7 +740,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftClassTransformer_nativeIsTarge
     _class: JClass,
     class_name: JString,
 ) -> jni::sys::jboolean {
-    let name: String = env.get_string(&class_name).map(|s| s.into()).unwrap_or_default();
+    let name: String = env
+        .get_string(&class_name)
+        .map(|s| s.into())
+        .unwrap_or_default();
     if rsift_parser::BytecodePatcher::is_target_class(&name) {
         jni::sys::JNI_TRUE
     } else {
@@ -733,7 +821,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftClassTransformer_nativeTransfo
     maybe_log_transform(&name, bytes.len());
     match transform_class(&name, &bytes) {
         Some(out) => {
-            agent_log_step("transformer", &format!("PATCHED {} (+{} bytes)", name, out.len()));
+            agent_log_step(
+                "transformer",
+                &format!("PATCHED {} (+{} bytes)", name, out.len()),
+            );
             match env.byte_array_from_slice(&out) {
                 Ok(a) => a.into_raw(),
                 Err(_) => std::ptr::null_mut(),
@@ -768,7 +859,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftUiBridge_nativeButtonCount(
     _class: JClass,
     screen_class: JString,
 ) -> jint {
-    let name: String = env.get_string(&screen_class).map(|s| s.into()).unwrap_or_default();
+    let name: String = env
+        .get_string(&screen_class)
+        .map(|s| s.into())
+        .unwrap_or_default();
     rsift_api::runtime::runtime()
         .map(|rt| {
             rt.screen_registry()
@@ -786,8 +880,13 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftUiBridge_nativeButtonId(
     screen_class: JString,
     index: jint,
 ) -> jint {
-    let name: String = env.get_string(&screen_class).map(|s| s.into()).unwrap_or_default();
-    button_at(&name, index as usize).map(|b| b.id as jint).unwrap_or(0)
+    let name: String = env
+        .get_string(&screen_class)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    button_at(&name, index as usize)
+        .map(|b| b.id as jint)
+        .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -797,8 +896,13 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftUiBridge_nativeButtonX(
     screen_class: JString,
     index: jint,
 ) -> jint {
-    let name: String = env.get_string(&screen_class).map(|s| s.into()).unwrap_or_default();
-    button_at(&name, index as usize).map(|b| b.rect.x).unwrap_or(0)
+    let name: String = env
+        .get_string(&screen_class)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    button_at(&name, index as usize)
+        .map(|b| b.rect.x)
+        .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -808,8 +912,13 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftUiBridge_nativeButtonY(
     screen_class: JString,
     index: jint,
 ) -> jint {
-    let name: String = env.get_string(&screen_class).map(|s| s.into()).unwrap_or_default();
-    button_at(&name, index as usize).map(|b| b.rect.y).unwrap_or(0)
+    let name: String = env
+        .get_string(&screen_class)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    button_at(&name, index as usize)
+        .map(|b| b.rect.y)
+        .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -819,8 +928,13 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftUiBridge_nativeButtonW(
     screen_class: JString,
     index: jint,
 ) -> jint {
-    let name: String = env.get_string(&screen_class).map(|s| s.into()).unwrap_or_default();
-    button_at(&name, index as usize).map(|b| b.rect.width).unwrap_or(0)
+    let name: String = env
+        .get_string(&screen_class)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    button_at(&name, index as usize)
+        .map(|b| b.rect.width)
+        .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -830,8 +944,13 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftUiBridge_nativeButtonH(
     screen_class: JString,
     index: jint,
 ) -> jint {
-    let name: String = env.get_string(&screen_class).map(|s| s.into()).unwrap_or_default();
-    button_at(&name, index as usize).map(|b| b.rect.height).unwrap_or(0)
+    let name: String = env
+        .get_string(&screen_class)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    button_at(&name, index as usize)
+        .map(|b| b.rect.height)
+        .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -841,7 +960,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftUiBridge_nativeButtonLabel(
     screen_class: JString,
     index: jint,
 ) -> jstring {
-    let name: String = env.get_string(&screen_class).map(|s| s.into()).unwrap_or_default();
+    let name: String = env
+        .get_string(&screen_class)
+        .map(|s| s.into())
+        .unwrap_or_default();
     let label = button_at(&name, index as usize)
         .map(|b| b.label)
         .unwrap_or_default();

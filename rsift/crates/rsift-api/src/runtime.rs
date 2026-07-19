@@ -1,5 +1,6 @@
 //! Global Rsift runtime — shared across launcher, JVMTI agent, and DLL mods.
 
+use crate::advancements::{AdvancementRegistry, PlayerAdvancementState};
 use crate::mod_api::{RsiftModOnPacketFn, RsiftModOnRenderFn};
 use crate::mod_menu::RsiftModMenuScreen;
 use crate::registry::ModRegistry;
@@ -17,6 +18,10 @@ pub struct RsiftRuntime {
     pub packet_handlers: RwLock<Vec<RsiftModOnPacketFn>>,
     pub render_handlers: RwLock<Vec<RsiftModOnRenderFn>>,
     pub mods_loaded: RwLock<bool>,
+    /// Mod 登録アドバンスメントの単一真実 (register 後は全クレートから可視)。
+    pub advancements: Mutex<AdvancementRegistry>,
+    /// ローカルプレイヤーの進捗状態機械 (grant_progress が実grant判定を実施)。
+    pub advancement_state: Mutex<PlayerAdvancementState>,
     render_tick_wanted: AtomicU32,
     idle_mode: AtomicBool,
 }
@@ -31,9 +36,35 @@ impl RsiftRuntime {
             packet_handlers: RwLock::new(Vec::new()),
             render_handlers: RwLock::new(Vec::new()),
             mods_loaded: RwLock::new(false),
+            advancements: Mutex::new(AdvancementRegistry::new()),
+            advancement_state: Mutex::new(PlayerAdvancementState::new()),
             render_tick_wanted: AtomicU32::new(0),
             idle_mode: AtomicBool::new(false),
         }
+    }
+
+    /// アドバンスメント進捗を加算し、(基準新規完了, アドバンスメント新規付与) を返す。
+    /// Mod は戻り値 true に反応してトースト等を実表示できる。
+    pub fn grant_advancement_progress(
+        &self,
+        adv_id: &crate::registry::RegistryKey,
+        criterion: &str,
+        amount: u32,
+    ) -> (bool, bool) {
+        let mut reg = self.advancements.lock().unwrap();
+        let mut state = self.advancement_state.lock().unwrap();
+        let (criterion_done, granted) = state.grant_progress(&reg, adv_id, criterion, amount);
+        if granted {
+            info!(
+                "[Advancement] granted {} (criterion '{}' complete: {})",
+                adv_id.as_str(),
+                criterion,
+                criterion_done
+            );
+        }
+        drop(state);
+        drop(reg);
+        (criterion_done, granted)
     }
 
     pub fn set_mod_dir(&self, dir: PathBuf) {
@@ -89,9 +120,11 @@ impl RsiftRuntime {
     }
 
     pub fn release_render_ticks(&self) {
-        self.render_tick_wanted.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-            Some(n.saturating_sub(1))
-        }).ok();
+        self.render_tick_wanted
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                Some(n.saturating_sub(1))
+            })
+            .ok();
     }
 
     pub fn needs_render_dispatch(&self) -> bool {

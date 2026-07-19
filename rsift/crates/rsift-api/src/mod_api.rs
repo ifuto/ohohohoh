@@ -45,6 +45,26 @@ impl<'a> ModContext<'a> {
         }
     }
 
+    /// アドバンスメントをグローバル runtime レジストリへ実登録 (登録後は
+    /// `runtime().advancements()` から全クレートで可視・grant_progress 対象)。
+    pub fn register_advancement(
+        &self,
+        adv: crate::advancements::Advancement,
+    ) -> Result<(), String> {
+        self.runtime.advancements.lock().unwrap().register(adv)
+    }
+
+    /// 進捗を加算。戻り値 true で Mod はトースト/効果音の実表示が可能。
+    pub fn grant_advancement_progress(
+        &self,
+        adv_id: &crate::registry::RegistryKey,
+        criterion: &str,
+        amount: u32,
+    ) -> (bool, bool) {
+        self.runtime
+            .grant_advancement_progress(adv_id, criterion, amount)
+    }
+
     pub fn screen_registry(&self) -> &crate::ui_ext::ScreenRegistry {
         self.runtime.screen_registry()
     }

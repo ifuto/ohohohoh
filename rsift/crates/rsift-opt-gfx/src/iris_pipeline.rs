@@ -191,7 +191,10 @@ impl IrisShaderEngine {
         }
 
         info!("================================================================");
-        info!(" [Iris] Loading shader pack: {} (quality={:?})", pack_name, self.quality);
+        info!(
+            " [Iris] Loading shader pack: {} (quality={:?})",
+            pack_name, self.quality
+        );
         info!("================================================================");
 
         self.loaded_programs.clear();
@@ -230,7 +233,44 @@ impl IrisShaderEngine {
             let shaders = dir.join("shaders");
             return Some(if shaders.is_dir() { shaders } else { dir });
         }
-        // Zip packs: cannot unzip here cheaply — use Eco builtins.
+        // Zip packs (実実装): shaders/*.fsh|vsh|glsl|properties|lang を実展開して
+        // キャッシュルートを返す。展開物は zip の (mtime,size) スタンプで整合確認。
+        if dir.is_file() && pack_name.ends_with(".zip") {
+            let stem = pack_name.trim_end_matches(".zip");
+            let cache = self.shaderpack_dir.join(".rsift_extracted").join(stem);
+            if let Ok(meta) = std::fs::metadata(&dir) {
+                let stamp = format!(
+                    "{}:{}",
+                    meta.len(),
+                    meta.modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                );
+                let stamp_path = cache.join(".stamp");
+                if std::fs::read_to_string(&stamp_path).ok().as_deref() == Some(stamp.as_str()) {
+                    // 展開済キャッシュが最新 → 再利用。
+                    let shaders = cache.join("shaders");
+                    return Some(if shaders.is_dir() { shaders } else { cache });
+                }
+                match extract_zip_shaders(&dir, &cache) {
+                    Ok(n) => {
+                        let _ = std::fs::write(&stamp_path, stamp);
+                        info!(
+                            "[Iris] zip pack extracted: {} entries → {}",
+                            n,
+                            cache.display()
+                        );
+                        let shaders = cache.join("shaders");
+                        return Some(if shaders.is_dir() { shaders } else { cache });
+                    }
+                    Err(e) => {
+                        warn!("[Iris] zip pack extraction failed ({}): {}", pack_name, e);
+                    }
+                }
+            }
+        }
         None
     }
 
@@ -350,10 +390,9 @@ impl IrisShaderEngine {
 /// Minimal fullscreen / mesh WGSL used when packs are missing or too heavy.
 fn eco_wgsl_for(pass: ShaderPassType) -> (&'static str, &'static str) {
     match pass {
-        ShaderPassType::GBuffersTerrain | ShaderPassType::GBuffersEntities => (
-            ECO_VS_MESH,
-            ECO_FS_TERRAIN,
-        ),
+        ShaderPassType::GBuffersTerrain | ShaderPassType::GBuffersEntities => {
+            (ECO_VS_MESH, ECO_FS_TERRAIN)
+        }
         ShaderPassType::GBuffersWater => (ECO_VS_MESH, ECO_FS_WATER),
         ShaderPassType::ShadowMap => (ECO_VS_MESH, ECO_FS_SHADOW),
         ShaderPassType::Composite(_) => (ECO_VS_FULLSCREEN, ECO_FS_COMPOSITE),
@@ -465,6 +504,114 @@ fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
 }
 "#;
 
+// ============================================================
+// ZIP shaderpack real extraction (stored + deflate).
+// EOCD → Central Directory → Local Header の実走査。Zip64 は非対応
+// (エラーを返し Eco builtins へ安全にフォールバック)。展開制限:
+// 1 ファイル 16 MiB / 合計 64 MiB / 4096 エントリ ("zip bomb" 抑止)。
+// ============================================================
+
+fn read_u16(d: &[u8], off: usize) -> u16 {
+    u16::from_le_bytes([d[off], d[off + 1]])
+}
+fn read_u32(d: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes([d[off], d[off + 1], d[off + 2], d[off + 3]])
+}
+
+/// zip のエントリを `dest` 配下に安全パス検証つきで実展開。展開したファイル数を返す。
+pub fn extract_zip_shaders(zip_path: &Path, dest: &Path) -> Result<usize, String> {
+    use std::io::Read;
+    let data = std::fs::read(zip_path).map_err(|e| format!("read: {}", e))?;
+    if data.len() < 22 {
+        return Err("not a zip (too small)".into());
+    }
+    // EOCD 探索 (末尾 64 KiB)。
+    let scan_start = data.len().saturating_sub(66 * 1024 + 22);
+    let mut eocd = None;
+    for i in (scan_start..=data.len() - 22).rev() {
+        if read_u32(&data, i) == 0x0605_4B50 {
+            eocd = Some(i);
+            break;
+        }
+    }
+    let eocd = eocd.ok_or("EOCD not found")?;
+    let entries = read_u16(&data, eocd + 10) as usize;
+    if entries == 0xFFFF {
+        return Err("Zip64 unsupported".into());
+    }
+    let cd_off = read_u32(&data, eocd + 16) as usize;
+    let mut pos = cd_off;
+    let mut extracted = 0usize;
+    let mut total_bytes = 0u64;
+    for _ in 0..entries.min(4096) {
+        if pos + 46 > data.len() || read_u32(&data, pos) != 0x0201_4B50 {
+            break;
+        }
+        let method = read_u16(&data, pos + 10);
+        let comp_size = read_u32(&data, pos + 20) as usize;
+        let uncomp_size = read_u32(&data, pos + 24) as usize;
+        let nlen = read_u16(&data, pos + 28) as usize;
+        let xlen = read_u16(&data, pos + 30) as usize;
+        let clen = read_u16(&data, pos + 32) as usize;
+        let local_off = read_u32(&data, pos + 42) as usize;
+        if pos + 46 + nlen > data.len() {
+            break;
+        }
+        let name = String::from_utf8_lossy(&data[pos + 46..pos + 46 + nlen]).replace('\\', "/");
+        let next = pos + 46 + nlen + xlen + clen;
+        pos = next;
+        // パス検証: 絶対パス/親参照/ドライブを拒否。
+        if name.starts_with('/')
+            || name.contains(':')
+            || name.split('/').any(|seg| seg == "..")
+            || name.is_empty()
+        {
+            continue;
+        }
+        if name.ends_with('/') {
+            continue; // ディレクトリ
+        }
+        if uncomp_size > 16 * 1024 * 1024 || total_bytes + uncomp_size as u64 > 64 * 1024 * 1024 {
+            return Err("extraction size cap exceeded (zip bomb guard)".into());
+        }
+        if local_off + 30 > data.len() || read_u32(&data, local_off) != 0x0403_4B50 {
+            continue;
+        }
+        let lnlen = read_u16(&data, local_off + 26) as usize;
+        let lxlen = read_u16(&data, local_off + 28) as usize;
+        let data_off = local_off + 30 + lnlen + lxlen;
+        if data_off + comp_size > data.len() {
+            continue;
+        }
+        let comp = &data[data_off..data_off + comp_size];
+        let content: Vec<u8> = match method {
+            0 => comp.to_vec(),
+            8 => {
+                let mut dec = flate2::read::DeflateDecoder::new(comp);
+                let mut out = Vec::with_capacity(uncomp_size.min(64 * 1024));
+                dec.read_to_end(&mut out)
+                    .map_err(|e| format!("deflate {}: {}", name, e))?;
+                out
+            }
+            other => return Err(format!("unsupported method {}: {}", other, name)),
+        };
+        if content.len() != uncomp_size {
+            return Err(format!("size mismatch: {}", name));
+        }
+        let out_path = dest.join(&name);
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
+        }
+        std::fs::write(&out_path, &content).map_err(|e| format!("write: {}", e))?;
+        total_bytes += uncomp_size as u64;
+        extracted += 1;
+    }
+    if extracted == 0 {
+        return Err("no entries extracted".into());
+    }
+    Ok(extracted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,18 +621,19 @@ mod tests {
         let mut e = IrisShaderEngine::with_tier("./shaderpacks", PerformanceTier::Low);
         e.load_shaderpack("test").unwrap();
         assert!(!e.is_enabled);
-        assert!(e.dispatch_frame_passes(&IrisUniformBuffer {
-            model_view_matrix: [0.0; 16],
-            projection_matrix: [0.0; 16],
-            normal_matrix: [0.0; 16],
-            sun_position: [0.0; 3],
-            frame_time_counter: 0.0,
-            rain_strength: 0.0,
-            aspect_ratio: 1.0,
-            near_plane: 0.05,
-            far_plane: 1000.0,
-        })
-        .is_empty());
+        assert!(e
+            .dispatch_frame_passes(&IrisUniformBuffer {
+                model_view_matrix: [0.0; 16],
+                projection_matrix: [0.0; 16],
+                normal_matrix: [0.0; 16],
+                sun_position: [0.0; 3],
+                frame_time_counter: 0.0,
+                rain_strength: 0.0,
+                aspect_ratio: 1.0,
+                near_plane: 0.05,
+                far_plane: 1000.0,
+            })
+            .is_empty());
     }
 
     #[test]
@@ -493,7 +641,9 @@ mod tests {
         let mut e = IrisShaderEngine::with_tier("./shaderpacks", PerformanceTier::Medium);
         e.load_shaderpack("eco").unwrap();
         assert!(e.is_enabled);
-        assert!(e.loaded_programs.contains_key(&ShaderPassType::GBuffersTerrain));
+        assert!(e
+            .loaded_programs
+            .contains_key(&ShaderPassType::GBuffersTerrain));
         assert!(e.loaded_programs.contains_key(&ShaderPassType::Final));
         assert!(!e.loaded_programs.contains_key(&ShaderPassType::ShadowMap));
     }

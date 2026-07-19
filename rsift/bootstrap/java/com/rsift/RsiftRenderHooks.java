@@ -67,6 +67,38 @@ public final class RsiftRenderHooks {
         nativeGlSwap();
     }
 
+    // ============================================================
+    // Transpiler HEAD-inject targets (bytecode_transpiler.rs の実注入先)。
+    // BakedModel.getQuads / LevelRenderer.renderChunkLayer の HEAD から
+    // invokestatic される。ネイティブ未登録時も絶対に落とさない (1度だけ警告)。
+    // ============================================================
+    private static boolean hookNativeWarned;
+
+    /** BakedModel.getQuads HEAD (vanilla bake 呼出の実測カウンタ。必ず即復帰)。 */
+    public static void getQuadsHeadHook() {
+        try {
+            nativeGetQuadsHook();
+        } catch (Throwable t) {
+            warnHookOnce(t);
+        }
+    }
+
+    /** LevelRenderer.renderChunkLayer HEAD (vanilla 描画ループ実測。必ず即復帰)。 */
+    public static void chunkLayerHeadHook() {
+        try {
+            nativeChunkLayerHook();
+        } catch (Throwable t) {
+            warnHookOnce(t);
+        }
+    }
+
+    private static void warnHookOnce(Throwable t) {
+        if (!hookNativeWarned) {
+            hookNativeWarned = true;
+            nativeLog("[RsiftRenderHooks] transpiled hook native unavailable: " + t);
+        }
+    }
+
     private static void hookFlipFrame(Object minecraft, ClassLoader loader) throws ReflectiveOperationException {
         Class<?> rsClass = Class.forName("com.mojang.blaze3d.systems.RenderSystem", true, loader);
         // Poll hook: register static callback field if MC exposes it; flip is invoked via onFlipFrame from agent tick.
@@ -95,4 +127,6 @@ public final class RsiftRenderHooks {
     private static native void nativeOnFlip(long hwnd, int width, int height);
     private static native boolean nativeGlDraw();
     private static native void nativeGlSwap();
+    private static native long nativeGetQuadsHook();
+    private static native long nativeChunkLayerHook();
 }
