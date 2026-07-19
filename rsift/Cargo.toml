@@ -1,0 +1,71 @@
+[workspace]
+members = [
+    "crates/rsift-launcher",
+    "crates/rsift-launch",
+    "crates/rsift-app",
+    "crates/rsift-jvm",
+    "crates/rsift-parser",
+    "crates/rsift-api",
+    "crates/rsift-render",
+    "crates/rsift-dx12",
+    "crates/rsift-opt-gfx",
+    "crates/rsift-installer",
+    "crates/rsift-gui-installer",
+    "crates/rsift-transpiler",
+    "crates/rsift-replay",
+    "crates/rsift-sim",
+    "mods-official/rscalc",
+    "mods-official/rsgraphics",
+    "mods-official/rsreplay",
+    "examples/sample-mod",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0-alpha.1.21.11"
+authors = ["Rsift Project Contributors", "Arena.ai Agent"]
+edition = "2021"
+description = "World's First Native-Injection Rust Mod Loader for Minecraft 1.21.11"
+repository = "https://github.com/rsift-mc/rsift"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+bytemuck = { version = "1.16", features = ["derive"] }
+jni = { version = "0.21", features = ["invocation"] }
+libloading = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+thiserror = "1.0"
+anyhow = "1.0"
+rayon = "1.10"
+wgpu = "0.20"
+winit = "0.29"
+raw-window-handle = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+memchr = "2.7" # SIMD-accelerated byte searching
+pollster = "0.3"
+clap = { version = "4.4", features = ["derive"] }
+glam = { version = "0.29", features = ["serde"] }
+zstd = "0.13"
+lz4_flex = "0.11"
+hashbrown = "0.15"
+rustc-hash = "2.1"
+roaring = "0.10"
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+memmap2 = "0.9"
+smallvec = "1.13"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+overflow-checks = false
+
+[profile.dev]
+opt-level = 1
+debug = true

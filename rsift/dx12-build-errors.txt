@@ -1,0 +1,1436 @@
+﻿cargo.exe : warning: unused import: `info`
+発生場所 C:\Users\sungs\AppData\Local\Temp\ps-script-ab46bab4-f996-4c90-ba38-d922708535b9.ps1:81 文字:1
++ & "$env:USERPROFILE\.cargo\bin\cargo.exe" build -p rsift-dx12 --manif ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: unused import: `info`:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ --> crates\rsift-api\src\lifecycle.rs:9:15
+  |
+9 | use tracing::{info, debug};
+  |               ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `DirectBufferSliceMut`
+ --> crates\rsift-api\src\networking.rs:7:40
+  |
+7 | use crate::packet::{DirectBufferSlice, DirectBufferSliceMut};
+  |                                        ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> crates\rsift-api\src\neoforge_event_bus.rs:9:5
+  |
+9 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `EventPriority`
+ --> crates\rsift-api\src\neoforge_registries.rs:8:46
+  |
+8 | use crate::neoforge_event_bus::{ModEventBus, EventPriority};
+  |                                              ^^^^^^^^^^^^^
+
+warning: unused imports: `debug` and `warn`
+  --> crates\rsift-api\src\neoforge_registries.rs:11:21
+   |
+11 | use tracing::{info, debug, warn};
+   |                     ^^^^^  ^^^^
+
+warning: unused import: `debug`
+ --> crates\rsift-api\src\neoforge_capabilities.rs:9:21
+  |
+9 | use tracing::{info, debug};
+  |                     ^^^^^
+
+warning: unused imports: `CancellableEvent`, `ConfigType`, `LivingDamageEvent`, `RegisterCapabilitiesEvent`, and `Regis
+tryType`
+  --> crates\rsift-api\src\neoforge_parity_check.rs:8:68
+   |
+ 8 |     neoforge_event_bus::{ModEventBus, GameEventBus, EventPriority, LivingDamageEvent, CancellableEvent},
+   |                                                                    ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+ 9 |     neoforge_registries::{DeferredRegister, RegistryType},
+   |                                             ^^^^^^^^^^^^
+10 |     neoforge_capabilities::{AttachmentType, AttachmentCodec, RegisterCapabilitiesEvent},
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^
+11 |     neoforge_config::{ModConfigSpecBuilder, ConfigType},
+   |                                             ^^^^^^^^^^
+
+warning: unused import: `warn`
+  --> crates\rsift-api\src\neoforge_parity_check.rs:15:21
+   |
+15 | use tracing::{info, warn, error};
+   |                     ^^^^
+
+warning: unused import: `std::ptr::NonNull`
+  --> crates\rsift-api\src\hyper_opt.rs:14:5
+   |
+14 | use std::ptr::NonNull;
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::os::windows::ffi::OsStringExt`
+   --> crates\rsift-api\src\adaptive_perf.rs:560:9
+    |
+560 |     use std::os::windows::ffi::OsStringExt;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::registry::RegistryKey`
+ --> crates\rsift-api\src\fabric_api_optimized.rs:8:5
+  |
+8 | use crate::registry::RegistryKey;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: ambiguous glob re-exports
+  --> crates\rsift-api\src\lib.rs:45:9
+   |
+45 | pub use lifecycle::*;
+   |         ^^^^^^^^^^^^ the name `ServerStartingFn` in the type namespace is first re-exported here
+...
+52 | pub use neoforge_event_bus::*;
+   |         --------------------- but the name `ServerStartingFn` in the type namespace is also re-exported here
+   |
+   = note: `#[warn(ambiguous_glob_reexports)]` on by default
+
+warning: unused variable: `mod_bus`
+   --> crates\rsift-api\src\neoforge_registries.rs:139:39
+    |
+139 |     pub fn register_to_bus(&mut self, mod_bus: &mut ModEventBus) {
+    |                                       ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mod_b
+us`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `select_mark`
+  --> crates\rsift-api\src\mod_menu.rs:69:21
+   |
+69 |                 let select_mark = if i == 0 { "曝 [ACTIVE]" } else { "笞ｪ" };
+   |                     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_select_mark`
+
+warning: unused variable: `url`
+  --> crates\rsift-api\src\mod_menu.rs:78:33
+   |
+78 |                     if let Some(ref url) = entry.homepage_url {
+   |                                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_url`
+
+warning: `rsift-api` (lib) generated 15 warnings (run `cargo fix --lib -p rsift-api` to apply 14 suggestions)
+   Compiling windows v0.58.0
+   Compiling rsift-dx12 v0.1.0-alpha.1.21.11 (C:\Users\sungs\Downloads\rsift\crates\rsift-dx12)
+error[E0432]: unresolved import `windows::Win32::Graphics::Dxgi::DXGI_FORMAT`
+  --> crates\rsift-dx12\src\terrain_pass.rs:16:5
+   |
+16 | use windows::Win32::Graphics::Dxgi::DXGI_FORMAT;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `DXGI_FORMAT` in `Win32::Graphics::Dxgi`
+
+error[E0425]: cannot find type `DXGI_FORMAT` in this scope
+  --> crates\rsift-dx12\src\swapchain.rs:17:17
+   |
+17 |     pub format: DXGI_FORMAT,
+   |                 ^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_R8G8B8A8_UNORM` in this scope
+  --> crates\rsift-dx12\src\swapchain.rs:42:21
+   |
+42 |             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `DXGI_SAMPLE_DESC` in this scope
+     --> crates\rsift-dx12\src\swapchain.rs:44:25
+      |
+   44 |             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+      |                         ^^^^^^^^^^^^^^^^
+      |
+     ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\
+Direct3D12\mod.rs:14017:1
+      |
+14017 | pub struct D3D12_SAMPLER_DESC {
+      | ----------------------------- similarly named struct `D3D12_SAMPLER_DESC` defined here
+      |
+help: a struct with a similar name exists
+      |
+   44 -             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+   44 +             SampleDesc: D3D12_SAMPLER_DESC { Count: 1, Quality: 0 },
+      |
+
+error[E0425]: cannot find value `DXGI_ALPHA_MODE_UNSPECIFIED` in this scope
+  --> crates\rsift-dx12\src\swapchain.rs:49:24
+   |
+49 |             AlphaMode: DXGI_ALPHA_MODE_UNSPECIFIED,
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_R8G8B8A8_UNORM` in this scope
+  --> crates\rsift-dx12\src\swapchain.rs:82:21
+   |
+82 |             format: DXGI_FORMAT_R8G8B8A8_UNORM,
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\resources.rs:33:21
+   |
+33 |             Format: DXGI_FORMAT_UNKNOWN,
+   |                     ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `DXGI_SAMPLE_DESC` in this scope
+     --> crates\rsift-dx12\src\resources.rs:34:25
+      |
+   34 |             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+      |                         ^^^^^^^^^^^^^^^^
+      |
+     ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\
+Direct3D12\mod.rs:14017:1
+      |
+14017 | pub struct D3D12_SAMPLER_DESC {
+      | ----------------------------- similarly named struct `D3D12_SAMPLER_DESC` defined here
+      |
+help: a struct with a similar name exists
+      |
+   34 -             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+   34 +             SampleDesc: D3D12_SAMPLER_DESC { Count: 1, Quality: 0 },
+      |
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\resources.rs:73:21
+   |
+73 |             Format: DXGI_FORMAT_UNKNOWN,
+   |                     ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `DXGI_SAMPLE_DESC` in this scope
+     --> crates\rsift-dx12\src\resources.rs:74:25
+      |
+   74 |             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+      |                         ^^^^^^^^^^^^^^^^
+      |
+     ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\
+Direct3D12\mod.rs:14017:1
+      |
+14017 | pub struct D3D12_SAMPLER_DESC {
+      | ----------------------------- similarly named struct `D3D12_SAMPLER_DESC` defined here
+      |
+help: a struct with a similar name exists
+      |
+   74 -             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+   74 +             SampleDesc: D3D12_SAMPLER_DESC { Count: 1, Quality: 0 },
+      |
+
+error[E0425]: cannot find type `DXGI_FORMAT` in this scope
+  --> crates\rsift-dx12\src\pso.rs:23:17
+   |
+23 |     rtv_format: DXGI_FORMAT,
+   |                 ^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\pso.rs:77:17
+   |
+77 |                 DXGI_FORMAT_UNKNOWN,
+   |                 ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\pso.rs:78:17
+   |
+78 |                 DXGI_FORMAT_UNKNOWN,
+   |                 ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\pso.rs:79:17
+   |
+79 |                 DXGI_FORMAT_UNKNOWN,
+   |                 ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\pso.rs:80:17
+   |
+80 |                 DXGI_FORMAT_UNKNOWN,
+   |                 ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\pso.rs:81:17
+   |
+81 |                 DXGI_FORMAT_UNKNOWN,
+   |                 ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\pso.rs:82:17
+   |
+82 |                 DXGI_FORMAT_UNKNOWN,
+   |                 ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\pso.rs:83:17
+   |
+83 |                 DXGI_FORMAT_UNKNOWN,
+   |                 ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `DXGI_FORMAT_D32_FLOAT` in this scope
+  --> crates\rsift-dx12\src\pso.rs:85:24
+   |
+85 |             DSVFormat: DXGI_FORMAT_D32_FLOAT,
+   |                        ^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `DXGI_SAMPLE_DESC` in this scope
+     --> crates\rsift-dx12\src\pso.rs:86:25
+      |
+   86 |             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+      |                         ^^^^^^^^^^^^^^^^
+      |
+     ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\
+Direct3D12\mod.rs:14017:1
+      |
+14017 | pub struct D3D12_SAMPLER_DESC {
+      | ----------------------------- similarly named struct `D3D12_SAMPLER_DESC` defined here
+      |
+help: a struct with a similar name exists
+      |
+   86 -             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+   86 +             SampleDesc: D3D12_SAMPLER_DESC { Count: 1, Quality: 0 },
+      |
+
+error[E0425]: cannot find value `DXGI_FORMAT_BC7_UNORM` in this scope
+  --> crates\rsift-dx12\src\tiled_resources.rs:59:21
+   |
+59 |             Format: DXGI_FORMAT_BC7_UNORM,
+   |                     ^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `DXGI_SAMPLE_DESC` in this scope
+     --> crates\rsift-dx12\src\tiled_resources.rs:60:25
+      |
+   60 |             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+      |                         ^^^^^^^^^^^^^^^^
+      |
+     ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\
+Direct3D12\mod.rs:14017:1
+      |
+14017 | pub struct D3D12_SAMPLER_DESC {
+      | ----------------------------- similarly named struct `D3D12_SAMPLER_DESC` defined here
+      |
+help: a struct with a similar name exists
+      |
+   60 -             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+   60 +             SampleDesc: D3D12_SAMPLER_DESC { Count: 1, Quality: 0 },
+      |
+
+error[E0425]: cannot find value `D3D12_RESOURCE_FLAG_ALLOW_SAMPLER_FEEDBACK` in this scope
+    --> crates\rsift-dx12\src\tiled_resources.rs:62:20
+     |
+  62 |             Flags: D3D12_RESOURCE_FLAG_ALLOW_SAMPLER_FEEDBACK,
+     |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+    ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\D
+irect3D12\mod.rs:6073:1
+     |
+6073 | pub const D3D12_RESOLVE_MODE_DECODE_SAMPLER_FEEDBACK: D3D12_RESOLVE_MODE = D3D12_RESOLVE_MODE(5i32);
+     | ------------------------------------------------------------------------ similarly named constant `D3D12_RESOLVE
+_MODE_DECODE_SAMPLER_FEEDBACK` defined here
+     |
+help: a constant with a similar name exists
+     |
+  62 -             Flags: D3D12_RESOURCE_FLAG_ALLOW_SAMPLER_FEEDBACK,
+  62 +             Flags: D3D12_RESOLVE_MODE_DECODE_SAMPLER_FEEDBACK,
+     |
+
+error[E0425]: cannot find value `DXGI_FORMAT_SAMPLER_FEEDBACK_MIN_MIP_OPAQUE` in this scope
+  --> crates\rsift-dx12\src\sfs.rs:56:21
+   |
+56 |             Format: DXGI_FORMAT_SAMPLER_FEEDBACK_MIN_MIP_OPAQUE,
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `DXGI_SAMPLE_DESC` in this scope
+     --> crates\rsift-dx12\src\sfs.rs:57:25
+      |
+   57 |             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+      |                         ^^^^^^^^^^^^^^^^
+      |
+     ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\
+Direct3D12\mod.rs:14017:1
+      |
+14017 | pub struct D3D12_SAMPLER_DESC {
+      | ----------------------------- similarly named struct `D3D12_SAMPLER_DESC` defined here
+      |
+help: a struct with a similar name exists
+      |
+   57 -             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+   57 +             SampleDesc: D3D12_SAMPLER_DESC { Count: 1, Quality: 0 },
+      |
+
+error[E0425]: cannot find value `DXGI_FORMAT_UNKNOWN` in this scope
+  --> crates\rsift-dx12\src\sfs.rs:78:21
+   |
+78 |             Format: DXGI_FORMAT_UNKNOWN,
+   |                     ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `DXGI_SAMPLE_DESC` in this scope
+     --> crates\rsift-dx12\src\sfs.rs:79:25
+      |
+   79 |             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+      |                         ^^^^^^^^^^^^^^^^
+      |
+     ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\
+Direct3D12\mod.rs:14017:1
+      |
+14017 | pub struct D3D12_SAMPLER_DESC {
+      | ----------------------------- similarly named struct `D3D12_SAMPLER_DESC` defined here
+      |
+help: a struct with a similar name exists
+      |
+   79 -             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+   79 +             SampleDesc: D3D12_SAMPLER_DESC { Count: 1, Quality: 0 },
+      |
+
+error[E0425]: cannot find value `D3D12_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATING` in this scope
+    --> crates\rsift-dx12\src\conservative_raster.rs:58:13
+     |
+  58 |             D3D12_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATING
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+    ::: C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\D
+irect3D12\mod.rs:4223:1
+     |
+4223 | pub const D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON: D3D12_CONSERVATIVE_RASTERIZATION_MODE = D3D12_CONSERVATIVE_R
+ASTERIZATION_MODE(...
+     | ----------------------------------------------------------------------------------------- similarly named consta
+nt `D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON` defined here
+     |
+help: a constant with a similar name exists
+     |
+  58 -             D3D12_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATING
+  58 +             D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON
+     |
+
+error[E0425]: cannot find value `DXGI_FORMAT_R8G8B8A8_UNORM` in this scope
+  --> crates\rsift-dx12\src\terrain_pass.rs:32:56
+   |
+32 |         let pso = create_terrain_pso(device, &vs, &ps, DXGI_FORMAT_R8G8B8A8_UNORM)?;
+   |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+warning: unused import: `windows::core::Interface`
+  --> crates\rsift-dx12\src\device.rs:16:5
+   |
+16 | use windows::core::Interface;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Dx12Error`
+ --> crates\rsift-dx12\src\swapchain.rs:4:20
+  |
+4 | use crate::error::{Dx12Error, Dx12Result};
+  |                    ^^^^^^^^^
+
+warning: unused import: `Dx12Error`
+ --> crates\rsift-dx12\src\resources.rs:4:20
+  |
+4 | use crate::error::{Dx12Error, Dx12Result};
+  |                    ^^^^^^^^^
+
+warning: unused import: `Dx12Error`
+ --> crates\rsift-dx12\src\pso.rs:5:20
+  |
+5 | use crate::error::{Dx12Error, Dx12Result};
+  |                    ^^^^^^^^^
+
+warning: unused import: `Dx12Error`
+ --> crates\rsift-dx12\src\direct_storage.rs:3:20
+  |
+3 | use crate::error::{Dx12Error, Dx12Result};
+  |                    ^^^^^^^^^
+
+warning: unused import: `Dx12Error`
+ --> crates\rsift-dx12\src\multi_view.rs:4:20
+  |
+4 | use crate::error::{Dx12Error, Dx12Result};
+  |                    ^^^^^^^^^
+
+error[E0277]: the trait bound `EnginePhase: Default` is not satisfied
+  --> crates\rsift-dx12\src\phase.rs:49:5
+   |
+47 | #[derive(Debug, Clone, Default)]
+   |                        ------- in this derive macro expansion
+48 | pub struct PhaseStatus {
+49 |     pub reached: EnginePhase,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `EnginePhase`
+   |
+help: consider annotating `EnginePhase` with `#[derive(Default)]`
+   |
+ 4 + #[derive(Default)]
+ 5 | pub enum EnginePhase {
+   |
+
+error[E0599]: no method named `map_err` found for raw pointer `*mut c_void` in the current scope
+  --> crates\rsift-dx12\src\agility.rs:65:14
+   |
+64 | /         AddDllDirectory(PCWSTR(wide.as_ptr()))
+65 | |             .map_err(|e| Dx12Error::Msg(format!("AddDllDirectory: {}", e)))?;
+   | |             -^^^^^^^ method not found in `*mut c_void`
+   | |_____________|
+   |
+
+error[E0308]: mismatched types
+  --> crates\rsift-dx12\src\device.rs:36:57
+   |
+36 |         let factory: IDXGIFactory6 = CreateDXGIFactory2(0)?;
+   |                                      ------------------ ^ expected `DXGI_CREATE_FACTORY_FLAGS`, found integer
+   |                                      |
+   |                                      arguments to this function are incorrect
+   |
+note: function defined here
+  --> C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\Dxg
+i\mod.rs:22:15
+   |
+22 | pub unsafe fn CreateDXGIFactory2<T>(flags: DXGI_CREATE_FACTORY_FLAGS) -> windows_core::Result<T>
+   |               ^^^^^^^^^^^^^^^^^^
+help: try wrapping the expression in `windows::Win32::Graphics::Dxgi::DXGI_CREATE_FACTORY_FLAGS`
+   |
+36 |         let factory: IDXGIFactory6 = CreateDXGIFactory2(windows::Win32::Graphics::Dxgi::DXGI_CREATE_FACTORY_FLAGS(
+0))?;
+   |                                                         ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ +
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\device.rs:36:59
+   |
+32 | pub fn create_device(caps: &EngineCaps) -> Dx12Result<Dx12Device> {
+   |                                            ---------------------- expected `Dx12Error` because of this
+...
+36 |         let factory: IDXGIFactory6 = CreateDXGIFactory2(0)?;
+   |                                      ---------------------^ the trait `From<windows_result::error::Error>` is not 
+implemented for `Dx12Error`
+   |                                      |
+   |                                      this can't be annotated with `?` because it has type `Result<_, windows_resul
+t::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\device.rs:38:38
+   |
+32 | pub fn create_device(caps: &EngineCaps) -> Dx12Result<Dx12Device> {
+   |                                            ---------------------- expected `Dx12Error` because of this
+...
+38 |         let desc = adapter.GetDesc1()?;
+   |                            ----------^ the trait `From<windows_result::error::Error>` is not implemented for `Dx12
+Error`
+   |                            |
+   |                            this can't be annotated with `?` because it has type `Result<_, windows_result::error::
+Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0308]: mismatched types
+  --> crates\rsift-dx12\src\device.rs:49:13
+   |
+48 |         check_hresult(
+   |         ------------- arguments to this function are incorrect
+49 |             D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_1, &mut device),
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `HRESULT`, found `Result<(),
+ Error>`
+   |
+   = note: expected struct `HRESULT`
+                found enum `Result<(), windows_result::error::Error>`
+note: function defined here
+  --> crates\rsift-dx12\src\error.rs:18:8
+   |
+18 | pub fn check_hresult(hr: windows::core::HRESULT, ctx: &'static str) -> Dx12Result<()> {
+   |        ^^^^^^^^^^^^^ --------------------------
+help: call `Into::into` on this expression to convert `Result<(), windows_result::error::Error>` into `HRESULT`
+   |
+49 |             D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_1, &mut device).into(),
+   |                                                                             +++++++
+
+error[E0609]: no field `BarycentricsSupported` on type `Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS`
+  --> crates\rsift-dx12\src\device.rs:68:25
+   |
+68 |                 options.BarycentricsSupported.as_bool()
+   |                         ^^^^^^^^^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `DoublePrecisionFloatShaderOps`, `OutputMergerLogicOp`, `MinPrecisionSupport`, `TiledR
+esourcesTier`, `ResourceBindingTier` ... and 10 others
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\device.rs:92:86
+   |
+32 | pub fn create_device(caps: &EngineCaps) -> Dx12Result<Dx12Device> {
+   |                                            ---------------------- expected `Dx12Error` because of this
+...
+92 |         let allocator = device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)?;
+   |                                ------------------------------------------------------^ the trait `From<windows_res
+ult::error::Error>` is not implemented for `Dx12Error`
+   |                                |
+   |                                this can't be annotated with `?` because it has type `Result<_, windows_result::err
+or::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\device.rs:93:78
+   |
+32 | pub fn create_device(caps: &EngineCaps) -> Dx12Result<Dx12Device> {
+   |                                            ---------------------- expected `Dx12Error` because of this
+...
+93 |         let fence: ID3D12Fence = device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
+   |                                         -------------------------------------^ the trait `From<windows_result::err
+or::Error>` is not implemented for `Dx12Error`
+   |                                         |
+   |                                         this can't be annotated with `?` because it has type `Result<_, windows_re
+sult::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\device.rs:99:10
+   |
+32 |   pub fn create_device(caps: &EngineCaps) -> Dx12Result<Dx12Device> {
+   |                                              ---------------------- expected `Dx12Error` because of this
+...
+94 |           let fence_event = windows::Win32::System::Threading::CreateEventA(
+   |  ___________________________-
+95 | |             None,
+96 | |             false,
+97 | |             false,
+98 | |             None,
+99 | |         )?;
+   | |         -^ the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+   | |_________|
+   |           this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0605]: non-primitive cast: `D3D12_TILED_RESOURCES_TIER` as `u32`
+  --> crates\rsift-dx12\src\device.rs:66:17
+   |
+66 |                 options.TiledResourcesTier as u32,
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ an `as` expression can only be used to convert between primitive
+ types or to coerce to a specific trait object
+
+error[E0605]: non-primitive cast: `D3D12_CONSERVATIVE_RASTERIZATION_TIER` as `u32`
+  --> crates\rsift-dx12\src\device.rs:67:17
+   |
+67 |                 options.ConservativeRasterizationTier as u32,
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ an `as` expression can only be used to convert betwee
+n primitive types or to coerce to a specific trait object
+
+error[E0282]: type annotations needed
+   --> crates\rsift-dx12\src\device.rs:123:23
+    |
+123 |         match factory.EnumAdapterByGpuPreference(
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type of the type parameter `T` declared on the meth
+od `EnumAdapterByGpuPreference`
+...
+128 |                 let desc = adapter.GetDesc1()?;
+    |                            ------- type must be known at this point
+    |
+help: consider specifying the generic argument
+    |
+123 |         match factory.EnumAdapterByGpuPreference::<T>(
+    |                                                 +++++
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+   --> crates\rsift-dx12\src\device.rs:148:40
+    |
+141 | unsafe fn create_command_queue(device: &ID3D12Device) -> Dx12Result<ID3D12CommandQueue> {
+    |                                                          ------------------------------ expected `Dx12Error` beca
+use of this
+...
+148 |     Ok(device.CreateCommandQueue(&desc)?)
+    |               -------------------------^ the trait `From<windows_result::error::Error>` is not implemented for `D
+x12Error`
+    |               |
+    |               this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+    |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+   --> crates\rsift-dx12\src\error.rs:4:1
+    |
+  4 | pub enum Dx12Error {
+    | ^^^^^^^^^^^^^^^^^^
+    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trai
+t
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+   --> crates\rsift-dx12\src\error.rs:3:17
+    |
+  3 | #[derive(Debug, Error)]
+    |                 ^^^^^
+    = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+    = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more 
+info)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+   --> crates\rsift-dx12\src\device.rs:156:61
+    |
+156 |             self.queue.Signal(&self.fence, self.fence_value)?;
+    |                        -------------------------------------^ the trait `From<windows_result::error::Error>` is n
+ot implemented for `Dx12Error`
+    |                        |
+    |                        this can't be annotated with `?` because it has type `Result<_, windows_result::error::Err
+or>`
+    |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+   --> crates\rsift-dx12\src\error.rs:4:1
+    |
+  4 | pub enum Dx12Error {
+    | ^^^^^^^^^^^^^^^^^^
+    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trai
+t
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+   --> crates\rsift-dx12\src\error.rs:3:17
+    |
+  3 | #[derive(Debug, Error)]
+    |                 ^^^^^
+    = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+    = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more 
+info)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+   --> crates\rsift-dx12\src\device.rs:159:78
+    |
+159 |                     .SetEventOnCompletion(self.fence_value, self.fence_event)?;
+    |                      --------------------------------------------------------^ the trait `From<windows_result::er
+ror::Error>` is not implemented for `Dx12Error`
+    |                      |
+    |                      this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error
+>`
+    |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+   --> crates\rsift-dx12\src\error.rs:4:1
+    |
+  4 | pub enum Dx12Error {
+    | ^^^^^^^^^^^^^^^^^^
+    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trai
+t
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+   --> crates\rsift-dx12\src\error.rs:3:17
+    |
+  3 | #[derive(Debug, Error)]
+    |                 ^^^^^
+    = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+    = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more 
+info)
+
+error[E0308]: mismatched types
+  --> crates\rsift-dx12\src\swapchain.rs:36:57
+   |
+36 |         let factory: IDXGIFactory6 = CreateDXGIFactory2(0)?;
+   |                                      ------------------ ^ expected `DXGI_CREATE_FACTORY_FLAGS`, found integer
+   |                                      |
+   |                                      arguments to this function are incorrect
+   |
+note: function defined here
+  --> C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\Dxg
+i\mod.rs:22:15
+   |
+22 | pub unsafe fn CreateDXGIFactory2<T>(flags: DXGI_CREATE_FACTORY_FLAGS) -> windows_core::Result<T>
+   |               ^^^^^^^^^^^^^^^^^^
+help: try wrapping the expression in `windows::Win32::Graphics::Dxgi::DXGI_CREATE_FACTORY_FLAGS`
+   |
+36 |         let factory: IDXGIFactory6 = CreateDXGIFactory2(windows::Win32::Graphics::Dxgi::DXGI_CREATE_FACTORY_FLAGS(
+0))?;
+   |                                                         ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ +
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\swapchain.rs:36:59
+   |
+34 | ) -> Dx12Result<Dx12SwapChain> {
+   |      ------------------------- expected `Dx12Error` because of this
+35 |     unsafe {
+36 |         let factory: IDXGIFactory6 = CreateDXGIFactory2(0)?;
+   |                                      ---------------------^ the trait `From<windows_result::error::Error>` is not 
+implemented for `Dx12Error`
+   |                                      |
+   |                                      this can't be annotated with `?` because it has type `Result<_, windows_resul
+t::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\swapchain.rs:37:60
+   |
+34 | ) -> Dx12Result<Dx12SwapChain> {
+   |      ------------------------- expected `Dx12Error` because of this
+...
+37 |         let queue: ID3D12CommandQueue = device.queue.cast()?;
+   |                                                      ------^ the trait `From<windows_result::error::Error>` is not
+ implemented for `Dx12Error`
+   |                                                      |
+   |                                                      this can't be annotated with `?` because it has type `Result<
+_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\swapchain.rs:53:95
+   |
+34 | ) -> Dx12Result<Dx12SwapChain> {
+   |      ------------------------- expected `Dx12Error` because of this
+...
+53 |         let swap_chain1 = factory.CreateSwapChainForHwnd(&queue, hwnd, &swap_desc, None, None)?;
+   |                                   ------------------------------------------------------------^ the trait `From<wi
+ndows_result::error::Error>` is not implemented for `Dx12Error`
+   |                                   |
+   |                                   this can't be annotated with `?` because it has type `Result<_, windows_result::
+error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\swapchain.rs:54:61
+   |
+34 | ) -> Dx12Result<Dx12SwapChain> {
+   |      ------------------------- expected `Dx12Error` because of this
+...
+54 |         let swap_chain: IDXGISwapChain3 = swap_chain1.cast()?;
+   |                                                       ------^ the trait `From<windows_result::error::Error>` is no
+t implemented for `Dx12Error`
+   |                                                       |
+   |                                                       this can't be annotated with `?` because it has type `Result
+<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\swapchain.rs:55:45
+   |
+34 | ) -> Dx12Result<Dx12SwapChain> {
+   |      ------------------------- expected `Dx12Error` because of this
+...
+55 |         swap_chain.SetMaximumFrameLatency(1)?;
+   |                    -------------------------^ the trait `From<windows_result::error::Error>` is not implemented fo
+r `Dx12Error`
+   |                    |
+   |                    this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\swapchain.rs:62:11
+   |
+34 |   ) -> Dx12Result<Dx12SwapChain> {
+   |        ------------------------- expected `Dx12Error` because of this
+...
+57 |           let rtv_heap = device.device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+   |  ______________________________________-
+58 | |             Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+59 | |             NumDescriptors: 2,
+60 | |             Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+61 | |             NodeMask: 0,
+62 | |         })?;
+   | |          -^ the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+   | |__________|
+   |            this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\swapchain.rs:71:65
+   |
+34 | ) -> Dx12Result<Dx12SwapChain> {
+   |      ------------------------- expected `Dx12Error` because of this
+...
+71 |             let buffer: ID3D12Resource = swap_chain.GetBuffer(i)?;
+   |                                                     ------------^ the trait `From<windows_result::error::Error>` i
+s not implemented for `Dx12Error`
+   |                                                     |
+   |                                                     this can't be annotated with `?` because it has type `Result<_
+, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: the `?` operator can only be applied to values that implement `Try`
+  --> crates\rsift-dx12\src\swapchain.rs:96:13
+   |
+96 |             self.swap_chain.Present(1, DXGI_PRESENT(0))?;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `?` operator cannot be applied to type `HRESULT`
+   |
+   = help: the nightly-only, unstable trait `Try` is not implemented for `HRESULT`
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\resources.rs:46:10
+   |
+17 |   pub fn create_upload_buffer(device: &Dx12Device, size: u64, label: &str) -> Dx12Result<GpuBuffer> {
+   |                                                                               --------------------- expected `Dx12
+Error` because of this
+...
+39 |           device.device.CreateCommittedResource(
+   |  _______________________-
+40 | |             &heap,
+41 | |             D3D12_HEAP_FLAG_NONE,
+42 | |             &desc,
+...  |
+45 | |             &mut resource,
+46 | |         )?;
+   | |         -^ the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+   | |_________|
+   |           this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\resources.rs:87:10
+   |
+61 |   ) -> Dx12Result<GpuBuffer> {
+   |        --------------------- expected `Dx12Error` because of this
+...
+80 |           device.device.CreateCommittedResource(
+   |  _______________________-
+81 | |             &heap,
+82 | |             D3D12_HEAP_FLAG_NONE,
+83 | |             &desc,
+...  |
+86 | |             &mut resource,
+87 | |         )?;
+   | |         -^ the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+   | |_________|
+   |           this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+   --> crates\rsift-dx12\src\resources.rs:101:70
+    |
+ 97 | pub fn upload_slice(buffer: &GpuBuffer, data: &[u8]) -> Dx12Result<()> {
+    |                                                         -------------- expected `Dx12Error` because of this
+...
+101 |         buffer.resource.Map(0, Some(mapped.as_ptr()), Some(&mut ptr))?;
+    |                         ---------------------------------------------^ the trait `From<windows_result::error::Err
+or>` is not implemented for `Dx12Error`
+    |                         |
+    |                         this can't be annotated with `?` because it has type `Result<_, windows_result::error::Er
+ror>`
+    |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+   --> crates\rsift-dx12\src\error.rs:4:1
+    |
+  4 | pub enum Dx12Error {
+    | ^^^^^^^^^^^^^^^^^^
+    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trai
+t
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+   --> crates\rsift-dx12\src\error.rs:3:17
+    |
+  3 | #[derive(Debug, Error)]
+    |                 ^^^^^
+    = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+    = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more 
+info)
+
+error[E0061]: this method takes 2 arguments but 3 arguments were supplied
+   --> crates\rsift-dx12\src\pso.rs:28:27
+    |
+ 28 |             device.device.CreateRootSignature(0, root_sig_blob.as_ptr(), root_sig_blob.len() as u32)?;
+    |                           ^^^^^^^^^^^^^^^^^^^                            -------------------------- unexpected ar
+gument #3 of type `u32`
+    |
+note: expected `&[u8]`, found `*const u8`
+   --> crates\rsift-dx12\src\pso.rs:28:50
+    |
+ 28 |             device.device.CreateRootSignature(0, root_sig_blob.as_ptr(), root_sig_blob.len() as u32)?;
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^
+    = note: expected reference `&[u8]`
+             found raw pointer `*const u8`
+note: method defined here
+   --> C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\Di
+rect3D12\mod.rs:718:19
+    |
+718 |     pub unsafe fn CreateRootSignature<T>(&self, nodemask: u32, pblobwithrootsignature: &[u8]) -> windows_core::Re
+sult<T>
+    |                   ^^^^^^^^^^^^^^^^^^^
+help: remove the extra argument
+    |
+ 28 -             device.device.CreateRootSignature(0, root_sig_blob.as_ptr(), root_sig_blob.len() as u32)?;
+ 28 +             device.device.CreateRootSignature(0, /* &[u8] */)?;
+    |
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\pso.rs:28:101
+   |
+24 | ) -> Dx12Result<TerrainPso> {
+   |      ---------------------- expected `Dx12Error` because of this
+...
+28 |             device.device.CreateRootSignature(0, root_sig_blob.as_ptr(), root_sig_blob.len() as u32)?;
+   |                           --------------------------------------------------------------------------^ the trait `F
+rom<windows_result::error::Error>` is not implemented for `Dx12Error`
+   |                           |
+   |                           this can't be annotated with `?` because it has type `Result<_, windows_result::error::E
+rror>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0308]: mismatched types
+  --> crates\rsift-dx12\src\pso.rs:35:34
+   |
+35 |                 pShaderBytecode: vs.bytecode.as_ptr(),
+   |                                  ^^^^^^^^^^^^^^^^^^^^ expected `*const c_void`, found `*const u8`
+   |
+   = note: expected raw pointer `*const c_void`
+              found raw pointer `*const u8`
+
+error[E0308]: mismatched types
+  --> crates\rsift-dx12\src\pso.rs:39:34
+   |
+39 |                 pShaderBytecode: ps.bytecode.as_ptr(),
+   |                                  ^^^^^^^^^^^^^^^^^^^^ expected `*const c_void`, found `*const u8`
+   |
+   = note: expected raw pointer `*const c_void`
+              found raw pointer `*const u8`
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\pso.rs:91:71
+   |
+24 | ) -> Dx12Result<TerrainPso> {
+   |      ---------------------- expected `Dx12Error` because of this
+...
+91 |         let pso = device.device.CreateGraphicsPipelineState(&pso_desc)?;
+   |                                 --------------------------------------^ the trait `From<windows_result::error::Err
+or>` is not implemented for `Dx12Error`
+   |                                 |
+   |                                 this can't be annotated with `?` because it has type `Result<_, windows_result::er
+ror::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0369]: binary operation `<` cannot be applied to type `D3D12_TILED_RESOURCES_TIER`
+     --> crates\rsift-dx12\src\tiled_resources.rs:43:36
+      |
+   43 |         if tier.TiledResourcesTier < D3D12_TILED_RESOURCES_TIER_2 {
+      |            ----------------------- ^ ---------------------------- D3D12_TILED_RESOURCES_TIER
+      |            |
+      |            D3D12_TILED_RESOURCES_TIER
+      |
+note: `D3D12_TILED_RESOURCES_TIER` does not implement `PartialOrd`
+     --> C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\
+Direct3D12\mod.rs:10019:1
+      |
+10019 | pub struct D3D12_TILED_RESOURCES_TIER(pub i32);
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `D3D12_TILED_RESOURCES_TIER` is defined in another crate
+
+error[E0308]: mismatched types
+  --> crates\rsift-dx12\src\tiled_resources.rs:58:24
+   |
+58 |             MipLevels: mips,
+   |                        ^^^^ expected `u16`, found `u32`
+
+error[E0061]: this method takes 4 arguments but 6 arguments were supplied
+   --> crates\rsift-dx12\src\tiled_resources.rs:67:23
+    |
+ 67 |         device.device.CreateReservedResource(
+    |                       ^^^^^^^^^^^^^^^^^^^^^^
+ 68 |             &heap,
+    |             ----- unexpected argument #1 of type `&Direct3D12::D3D12_HEAP_PROPERTIES`
+ 69 |             D3D12_HEAP_FLAG_NONE,
+    |             -------------------- unexpected argument #2 of type `D3D12_HEAP_FLAGS`
+    |
+note: method defined here
+   --> C:\Users\sungs\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows-0.58.0\src\Windows\Win32\Graphics\Di
+rect3D12\mod.rs:799:19
+    |
+799 |     pub unsafe fn CreateReservedResource<T>(&self, pdesc: *const D3D12_RESOURCE_DESC, initialstate: D3D12_RESOURC
+E_STATES, poptimiz...
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+help: remove the extra arguments
+    |
+ 68 -             &heap,
+ 69 -             D3D12_HEAP_FLAG_NONE,
+    |
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\tiled_resources.rs:74:10
+   |
+31 |   ) -> Dx12Result<TiledAtlas> {
+   |        ---------------------- expected `Dx12Error` because of this
+...
+67 |           device.device.CreateReservedResource(
+   |  _______________________-
+68 | |             &heap,
+69 | |             D3D12_HEAP_FLAG_NONE,
+70 | |             &desc,
+...  |
+73 | |             &mut texture,
+74 | |         )?;
+   | |         -^ the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+   | |_________|
+   |           this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0599]: no associated function or constant named `D3D12_TILE_RANGE_FLAG_NONE` found for struct `Direct3D12::D3D12
+_TILE_RANGE_FLAGS` in the current scope
+   --> crates\rsift-dx12\src\tiled_resources.rs:112:50
+    |
+112 |         let heap_range = D3D12_TILE_RANGE_FLAGS::D3D12_TILE_RANGE_FLAG_NONE;
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not f
+ound in `Direct3D12::D3D12_TILE_RANGE_FLAGS`
+
+error[E0599]: no method named `UpdateTileMappings` found for struct `Arc<Direct3D12::ID3D12Device>` in the current scop
+e
+   --> crates\rsift-dx12\src\tiled_resources.rs:114:23
+    |
+114 |         device.device.UpdateTileMappings(
+    |         --------------^^^^^^^^^^^^^^^^^^ method not found in `Arc<Direct3D12::ID3D12Device>`
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\sfs.rs:70:10
+   |
+25 |   ) -> Dx12Result<SamplerFeedbackStreaming> {
+   |        ------------------------------------ expected `Dx12Error` because of this
+...
+63 |           device.device.CreateCommittedResource(
+   |  _______________________-
+64 | |             &heap,
+65 | |             D3D12_HEAP_FLAG_NONE,
+66 | |             &feedback_desc,
+...  |
+69 | |             &mut feedback_texture,
+70 | |         )?;
+   | |         -^ the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+   | |_________|
+   |           this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0277]: `?` couldn't convert the error to `Dx12Error`
+  --> crates\rsift-dx12\src\sfs.rs:92:10
+   |
+25 |   ) -> Dx12Result<SamplerFeedbackStreaming> {
+   |        ------------------------------------ expected `Dx12Error` because of this
+...
+85 |           device.device.CreateCommittedResource(
+   |  _______________________-
+86 | |             &heap,
+87 | |             D3D12_HEAP_FLAG_NONE,
+88 | |             &resolve_desc,
+...  |
+91 | |             &mut resolve_buffer,
+92 | |         )?;
+   | |         -^ the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+   | |_________|
+   |           this can't be annotated with `?` because it has type `Result<_, windows_result::error::Error>`
+   |
+note: `Dx12Error` needs to implement `From<windows_result::error::Error>`
+  --> crates\rsift-dx12\src\error.rs:4:1
+   |
+ 4 | pub enum Dx12Error {
+   | ^^^^^^^^^^^^^^^^^^
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+help: the trait `From<windows_result::error::Error>` is not implemented for `Dx12Error`
+      but trait `From<std::io::Error>` is implemented for it
+  --> crates\rsift-dx12\src\error.rs:3:17
+   |
+ 3 | #[derive(Debug, Error)]
+   |                 ^^^^^
+   = help: for that trait implementation, expected `std::io::Error`, found `windows_result::error::Error`
+   = note: this error originates in the derive macro `Error` (in Nightly builds, run with -Z macro-backtrace for more i
+nfo)
+
+error[E0599]: no method named `SetViewInstancing` found for reference `&Direct3D12::ID3D12GraphicsCommandList` in the c
+urrent scope
+  --> crates\rsift-dx12\src\multi_view.rs:84:17
+   |
+84 |             cmd.SetViewInstancing(1, &desc);
+   |                 ^^^^^^^^^^^^^^^^^ method not found in `&Direct3D12::ID3D12GraphicsCommandList`
+
+error[E0599]: no method named `clone` found for struct `CompiledShader` in the current scope
+  --> crates\rsift-dx12\src\work_graphs.rs:40:35
+   |
+40 |                 record_shader: cs.clone(),
+   |                                   ^^^^^ method not found in `CompiledShader`
+   |
+  ::: crates\rsift-dx12\src\dxc.rs:7:1
+   |
+ 7 | pub struct CompiledShader {
+   | ------------------------- method `clone` not found for this struct
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `clone`, perhaps you need to implement it:
+           candidate #1: `Clone`
+
+error[E0599]: no method named `CreateStateObject` found for struct `Arc<Direct3D12::ID3D12Device>` in the current scope
+   --> crates\rsift-dx12\src\work_graphs.rs:114:10
+    |
+112 | /     device
+113 | |         .device
+114 | |         .CreateStateObject(&desc, &mut state)
+    | |         -^^^^^^^^^^^^^^^^^ method not found in `Arc<Direct3D12::ID3D12Device>`
+    | |_________|
+    |
+
+error[E0277]: the `?` operator can only be applied to values that implement `Try`
+  --> crates\rsift-dx12\src\terrain_pass.rs:74:13
+   |
+74 |             cmd.OMSetRenderTargets(1, Some(&rtv), false, Some(&dsv))?;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the `?` operator cannot be applied to type `
+()`
+   |
+   = help: the nightly-only, unstable trait `Try` is not implemented for `()`
+
+error[E0133]: call to unsafe function `libloading::Library::new` is unsafe and requires unsafe function or block
+  --> crates\rsift-dx12\src\direct_storage.rs:83:9
+   |
+83 |         libloading::Library::new("dstorage.dll").is_ok()
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+
+error[E0133]: call to unsafe function `libloading::Library::new` is unsafe and requires unsafe function or block
+  --> crates\rsift-dx12\src\direct_storage.rs:84:16
+   |
+84 |             || libloading::Library::new("dstoragecore.dll").is_ok()
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+   |
+   = note: consult the function's documentation for information on how to avoid undefined behavior
+
+Some errors have detailed explanations: E0061, E0133, E0277, E0282, E0308, E0369, E0422, E0425, E0432...
+For more information about an error, try `rustc --explain E0061`.
+warning: `rsift-dx12` (lib) generated 6 warnings
+error: could not compile `rsift-dx12` (lib) due to 76 previous errors; 6 warnings emitted
+warning: build failed, waiting for other jobs to finish...
