@@ -9,6 +9,11 @@ pub mod fluids;
 pub mod hopper;
 pub mod collision;
 pub mod pathfinding;
+pub mod task_scheduler;
+pub mod compact_entity;
+
+pub use task_scheduler::*;
+pub use compact_entity::*;
 
 use rsift_api::AdaptiveComputeProfile;
 use std::sync::atomic::{AtomicU64, Ordering};
