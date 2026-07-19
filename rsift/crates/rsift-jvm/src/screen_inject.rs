@@ -1,0 +1,735 @@
+//! Game classloader discovery + RsiftUiBridge bootstrap (agentpath mode).
+
+use jni::objects::{GlobalRef, JClass, JObject, JValue};
+use jni::JNIEnv;
+use jni::NativeMethod;
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+use super::{
+    Java_com_rsift_RsiftPressHandler_nativeOnButton,
+    Java_com_rsift_RsiftScreenHooks_nativeLog,
+    Java_com_rsift_RsiftUiBridge_nativeButtonCount,
+    Java_com_rsift_RsiftUiBridge_nativeButtonH,
+    Java_com_rsift_RsiftUiBridge_nativeButtonId,
+    Java_com_rsift_RsiftUiBridge_nativeButtonLabel,
+    Java_com_rsift_RsiftUiBridge_nativeButtonW,
+    Java_com_rsift_RsiftUiBridge_nativeButtonX,
+    Java_com_rsift_RsiftUiBridge_nativeButtonY,
+    Java_com_rsift_RsiftUiBridge_nativePrepareScreen,
+};
+use crate::agent_log::{agent_log, agent_log_step, agent_log_warn};
+use crate::agent_opts;
+
+static BRIDGE_CLASS: Mutex<Option<GlobalRef>> = Mutex::new(None);
+static HOOKS_CLASS: Mutex<Option<GlobalRef>> = Mutex::new(None);
+static PRESS_HANDLER_CLASS: Mutex<Option<GlobalRef>> = Mutex::new(None);
+static GAME_LOADER: Mutex<Option<GlobalRef>> = Mutex::new(None);
+static SCREEN_HOOKS_READY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn hooks_class<'local>(env: &mut JNIEnv<'local>) -> Option<JClass<'local>> {
+    let guard = HOOKS_CLASS.lock().ok()?;
+    let g = guard.as_ref()?;
+    env.new_local_ref(g.as_obj()).ok().map(JClass::from)
+}
+
+pub fn bridge_class<'local>(env: &mut JNIEnv<'local>) -> Option<JClass<'local>> {
+    let guard = BRIDGE_CLASS.lock().ok()?;
+    let g = guard.as_ref()?;
+    env.new_local_ref(g.as_obj()).ok().map(JClass::from)
+}
+
+pub fn game_class_loader<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+    let guard = GAME_LOADER.lock().ok()?;
+    let g = guard.as_ref()?;
+    env.new_local_ref(g.as_obj()).ok()
+}
+
+pub fn clear_pending_exception(env: &mut JNIEnv) {
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+}
+
+pub fn cache_game_loader_from_java<'local>(env: &mut JNIEnv<'local>, loader: &JObject<'local>) {
+    if loader.as_raw().is_null() {
+        return;
+    }
+    cache_game_loader(env, loader);
+}
+
+pub fn ensure_screen_hooks(env: &mut JNIEnv) -> bool {
+    if SCREEN_HOOKS_READY.load(std::sync::atomic::Ordering::Relaxed) {
+        return hooks_class(env).is_some();
+    }
+    if find_game_class_loader(env).is_none() {
+        return false;
+    }
+    match load_screen_hooks_minimal(env) {
+        Ok(_) => {
+            SCREEN_HOOKS_READY.store(true, std::sync::atomic::Ordering::Relaxed);
+            true
+        }
+        Err(e) => {
+            agent_log_warn("screen_hooks", &format!("load failed: {}", e));
+            false
+        }
+    }
+}
+
+/// Load `RsiftPressHandler` from bootstrap jar and register JNI natives.
+pub fn ensure_press_handler_class<'local>(
+    env: &mut JNIEnv<'local>,
+    game_loader: &JObject<'local>,
+) -> Result<JClass<'local>, String> {
+    if let Ok(guard) = PRESS_HANDLER_CLASS.lock() {
+        if let Some(g) = guard.as_ref() {
+            if let Ok(local) = env.new_local_ref(g.as_obj()) {
+                return Ok(JClass::from(local));
+            }
+        }
+    }
+    if let Ok(cls) = env.find_class("com/rsift/RsiftPressHandler") {
+        return Ok(cls);
+    }
+    clear_pending_exception(env);
+    let jar = bootstrap_jar_path().ok_or("bootstrap jar path unknown")?;
+    if !jar.is_file() {
+        return Err(format!("bootstrap jar missing: {:?}", jar));
+    }
+    let ucl = url_classloader_for_jar(env, game_loader, &jar)?;
+    let name = env
+        .new_string("com.rsift.RsiftPressHandler")
+        .map_err(|e| format!("{:?}", e))?;
+    let handler_obj = env
+        .call_method(
+            &ucl,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&name)],
+        )
+        .map_err(|e| format!("load PressHandler: {:?}", e))?
+        .l()
+        .map_err(|e| format!("{:?}", e))?;
+    let handler_jclass = JClass::from(handler_obj);
+    register_press_handler_natives(env, &handler_jclass)?;
+    let global = env
+        .new_global_ref(&handler_jclass)
+        .map_err(|e| format!("global ref handler: {:?}", e))?;
+    if let Ok(mut slot) = PRESS_HANDLER_CLASS.lock() {
+        *slot = Some(global);
+    }
+    Ok(handler_jclass)
+}
+
+fn load_screen_hooks_minimal(env: &mut JNIEnv) -> Result<(), String> {
+    if hooks_class(env).is_some() {
+        return Ok(());
+    }
+    let jar = bootstrap_jar_path().ok_or("dll directory unknown")?;
+    if !jar.is_file() {
+        return Err(format!("bootstrap jar missing: {:?}", jar));
+    }
+    let parent_loader = find_game_class_loader(env)
+        .ok_or("game ClassLoader not found (is Minecraft running?)")?;
+    let ucl = url_classloader_for_jar(env, &parent_loader, &jar)?;
+
+    let hooks_name = env
+        .new_string("com.rsift.RsiftScreenHooks")
+        .map_err(|e| format!("{:?}", e))?;
+    let hooks_obj = env
+        .call_method(
+            &ucl,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&hooks_name)],
+        )
+        .map_err(|e| format!("load ScreenHooks: {:?}", e))?
+        .l()
+        .map_err(|e| format!("{:?}", e))?;
+    let hooks_jclass = JClass::from(hooks_obj);
+    register_hooks_natives(env, &hooks_jclass)?;
+
+    let _ = ensure_press_handler_class(env, &parent_loader)?;
+
+    let bridge_name = env
+        .new_string("com.rsift.RsiftUiBridge")
+        .map_err(|e| format!("{:?}", e))?;
+    if let Ok(bridge_obj) = env.call_method(
+        &ucl,
+        "loadClass",
+        "(Ljava/lang/String;)Ljava/lang/Class;",
+        &[JValue::Object(&bridge_name)],
+    ) {
+        if let Ok(bridge_l) = bridge_obj.l() {
+            let bridge_jclass = JClass::from(bridge_l);
+            let _ = register_bridge_natives(env, &bridge_jclass);
+            if let Ok(global) = env.new_global_ref(bridge_jclass) {
+                if let Ok(mut slot) = BRIDGE_CLASS.lock() {
+                    if slot.is_none() {
+                        *slot = Some(global);
+                    }
+                }
+            }
+        }
+    }
+    clear_pending_exception(env);
+
+    let hooks_global = env
+        .new_global_ref(hooks_jclass)
+        .map_err(|e| format!("global ref hooks: {:?}", e))?;
+    if let Ok(mut slot) = HOOKS_CLASS.lock() {
+        *slot = Some(hooks_global);
+    }
+    agent_log("[Rsift] RsiftScreenHooks ready (minimal bootstrap)");
+    Ok(())
+}
+
+pub fn ensure_injector_loaded(env: &mut JNIEnv) -> bool {
+    if bridge_class(env).is_some() {
+        return true;
+    }
+    if ensure_screen_hooks(env) && bridge_class(env).is_some() {
+        return true;
+    }
+    if find_game_class_loader(env).is_none() {
+        return false;
+    }
+    match load_bridge(env) {
+        Ok(_) => {
+            agent_log("[Rsift] RsiftUiBridge loaded");
+            true
+        }
+        Err(e) => {
+            agent_log(&format!("[Rsift] WARN RsiftUiBridge load failed: {}", e));
+            false
+        }
+    }
+}
+
+fn bootstrap_jar_path() -> Option<PathBuf> {
+    agent_opts::dll_directory().map(|d| d.join("rsift-bootstrap.jar"))
+}
+
+pub fn bootstrap_jar() -> Option<PathBuf> {
+    bootstrap_jar_path()
+}
+
+pub fn url_classloader_for_jar<'local>(
+    env: &mut JNIEnv<'local>,
+    parent: &JObject<'local>,
+    jar: &PathBuf,
+) -> Result<JObject<'local>, String> {
+    let url_cls = env
+        .find_class("java/net/URL")
+        .map_err(|e| format!("URL class: {:?}", e))?;
+    let file_url = format!(
+        "file:///{}",
+        jar.display().to_string().replace('\\', "/")
+    );
+    let url_str = env
+        .new_string(&file_url)
+        .map_err(|e| format!("url string: {:?}", e))?;
+    let url = env
+        .new_object(url_cls, "(Ljava/lang/String;)V", &[JValue::Object(&url_str)])
+        .map_err(|e| format!("URL ctor: {:?}", e))?;
+    let url_array = env
+        .new_object_array(1, "java/net/URL", &url)
+        .map_err(|e| format!("URL[]: {:?}", e))?;
+    env.new_object(
+        "java/net/URLClassLoader",
+        "([Ljava/net/URL;Ljava/lang/ClassLoader;)V",
+        &[JValue::Object(&url_array), JValue::Object(parent)],
+    )
+    .map_err(|e| format!("URLClassLoader: {:?}", e))
+}
+
+pub fn minecraft_instance<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+    let mc = find_minecraft_class(env)?;
+    env.call_static_method(mc, "getInstance", "()Lnet/minecraft/client/Minecraft;", &[])
+        .ok()
+        .and_then(|v| v.l().ok())
+}
+
+fn load_bridge(env: &mut JNIEnv) -> Result<(), String> {
+    let jar = bootstrap_jar_path().ok_or("dll directory unknown")?;
+    if !jar.is_file() {
+        return Err(format!("bootstrap jar missing: {:?}", jar));
+    }
+
+    let parent_loader = find_game_class_loader(env)
+        .ok_or("game ClassLoader not found (is Minecraft running?)")?;
+
+    let global_loader = env
+        .new_global_ref(&parent_loader)
+        .map_err(|e| format!("global ref loader: {:?}", e))?;
+    if let Ok(mut slot) = GAME_LOADER.lock() {
+        *slot = Some(global_loader);
+    }
+
+    let url_cls = env
+        .find_class("java/net/URL")
+        .map_err(|e| format!("URL class: {:?}", e))?;
+    let file_url = format!(
+        "file:///{}",
+        jar.display().to_string().replace('\\', "/")
+    );
+    let url_str = env
+        .new_string(&file_url)
+        .map_err(|e| format!("url string: {:?}", e))?;
+    let url = env
+        .new_object(url_cls, "(Ljava/lang/String;)V", &[JValue::Object(&url_str)])
+        .map_err(|e| format!("URL ctor: {:?}", e))?;
+
+    let url_array = env
+        .new_object_array(1, "java/net/URL", &url)
+        .map_err(|e| format!("URL[]: {:?}", e))?;
+
+    let ucl = env
+        .new_object(
+            "java/net/URLClassLoader",
+            "([Ljava/net/URL;Ljava/lang/ClassLoader;)V",
+            &[JValue::Object(&url_array), JValue::Object(&parent_loader)],
+        )
+        .map_err(|e| format!("URLClassLoader: {:?}", e))?;
+
+    let bridge_name = env
+        .new_string("com.rsift.RsiftUiBridge")
+        .map_err(|e| format!("bridge name: {:?}", e))?;
+    let bridge_obj = env
+        .call_method(
+            &ucl,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&bridge_name)],
+        )
+        .map_err(|e| format!("loadClass UiBridge: {:?}", e))?
+        .l()
+        .map_err(|e| format!("loadClass result: {:?}", e))?;
+
+    let handler_name = env
+        .new_string("com.rsift.RsiftPressHandler")
+        .map_err(|e| format!("handler name: {:?}", e))?;
+    let handler_obj = env
+        .call_method(
+            &ucl,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&handler_name)],
+        )
+        .map_err(|e| format!("loadClass PressHandler: {:?}", e))?
+        .l()
+        .map_err(|e| format!("handler load result: {:?}", e))?;
+
+    let hooks_name = env
+        .new_string("com.rsift.RsiftScreenHooks")
+        .map_err(|e| format!("hooks name: {:?}", e))?;
+    let hooks_obj = env
+        .call_method(
+            &ucl,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&hooks_name)],
+        )
+        .map_err(|e| format!("loadClass ScreenHooks: {:?}", e))?
+        .l()
+        .map_err(|e| format!("hooks load result: {:?}", e))?;
+
+    let bridge_jclass = JClass::from(bridge_obj);
+    let handler_jclass = JClass::from(handler_obj);
+    let hooks_jclass = JClass::from(hooks_obj);
+    register_bridge_natives(env, &bridge_jclass)?;
+    register_press_handler_natives(env, &handler_jclass)?;
+    register_hooks_natives(env, &hooks_jclass)?;
+
+    let global = env
+        .new_global_ref(bridge_jclass)
+        .map_err(|e| format!("global ref bridge: {:?}", e))?;
+    let hooks_global = env
+        .new_global_ref(hooks_jclass)
+        .map_err(|e| format!("global ref hooks: {:?}", e))?;
+    if let Ok(mut slot) = BRIDGE_CLASS.lock() {
+        *slot = Some(global);
+    }
+    if let Ok(mut slot) = HOOKS_CLASS.lock() {
+        *slot = Some(hooks_global);
+    }
+    Ok(())
+}
+
+fn register_hooks_natives(env: &mut JNIEnv, class: &JClass) -> Result<(), String> {
+    let methods = [NativeMethod {
+        name: "nativeLog".into(),
+        sig: "(Ljava/lang/String;)V".into(),
+        fn_ptr: Java_com_rsift_RsiftScreenHooks_nativeLog as *mut _,
+    }];
+    env.register_native_methods(class, &methods)
+        .map_err(|e| format!("register ScreenHooks natives: {:?}", e))
+}
+
+fn register_bridge_natives(env: &mut JNIEnv, class: &JClass) -> Result<(), String> {
+    let methods = [
+        NativeMethod {
+            name: "nativePrepareScreen".into(),
+            sig: "(Ljava/lang/String;)V".into(),
+            fn_ptr: Java_com_rsift_RsiftUiBridge_nativePrepareScreen as *mut _,
+        },
+        NativeMethod {
+            name: "nativeButtonCount".into(),
+            sig: "(Ljava/lang/String;)I".into(),
+            fn_ptr: Java_com_rsift_RsiftUiBridge_nativeButtonCount as *mut _,
+        },
+        NativeMethod {
+            name: "nativeButtonId".into(),
+            sig: "(Ljava/lang/String;I)I".into(),
+            fn_ptr: Java_com_rsift_RsiftUiBridge_nativeButtonId as *mut _,
+        },
+        NativeMethod {
+            name: "nativeButtonLabel".into(),
+            sig: "(Ljava/lang/String;I)Ljava/lang/String;".into(),
+            fn_ptr: Java_com_rsift_RsiftUiBridge_nativeButtonLabel as *mut _,
+        },
+        NativeMethod {
+            name: "nativeButtonX".into(),
+            sig: "(Ljava/lang/String;I)I".into(),
+            fn_ptr: Java_com_rsift_RsiftUiBridge_nativeButtonX as *mut _,
+        },
+        NativeMethod {
+            name: "nativeButtonY".into(),
+            sig: "(Ljava/lang/String;I)I".into(),
+            fn_ptr: Java_com_rsift_RsiftUiBridge_nativeButtonY as *mut _,
+        },
+        NativeMethod {
+            name: "nativeButtonW".into(),
+            sig: "(Ljava/lang/String;I)I".into(),
+            fn_ptr: Java_com_rsift_RsiftUiBridge_nativeButtonW as *mut _,
+        },
+        NativeMethod {
+            name: "nativeButtonH".into(),
+            sig: "(Ljava/lang/String;I)I".into(),
+            fn_ptr: Java_com_rsift_RsiftUiBridge_nativeButtonH as *mut _,
+        },
+    ];
+    env.register_native_methods(class, &methods)
+        .map_err(|e| format!("register UiBridge natives: {:?}", e))?;
+    let log_methods = [NativeMethod {
+        name: "nativeLog".into(),
+        sig: "(Ljava/lang/String;)V".into(),
+        fn_ptr: Java_com_rsift_RsiftScreenHooks_nativeLog as *mut _,
+    }];
+    env.register_native_methods(class, &log_methods)
+        .map_err(|e| format!("register UiBridge nativeLog: {:?}", e))
+}
+
+fn register_press_handler_natives(env: &mut JNIEnv, class: &JClass) -> Result<(), String> {
+    let methods = [NativeMethod {
+        name: "nativeOnButton".into(),
+        sig: "(I)V".into(),
+        fn_ptr: Java_com_rsift_RsiftPressHandler_nativeOnButton as *mut _,
+    }];
+    env.register_native_methods(class, &methods)
+        .map_err(|e| format!("register PressHandler natives: {:?}", e))
+}
+
+pub fn jni_exception_message(env: &mut JNIEnv) -> Option<String> {
+    if !env.exception_check().ok()? {
+        return None;
+    }
+    let exc = env.exception_occurred().ok()?;
+    let _ = env.exception_clear();
+    let class_obj = env.call_method(&exc, "getClass", "()Ljava/lang/Class;", &[]).ok()?.l().ok()?;
+    let class_name = env
+        .call_method(&class_obj, "getName", "()Ljava/lang/String;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let cn: String = env.get_string((&class_name).into()).ok()?.into();
+    let msg_obj = env
+        .call_method(&exc, "getMessage", "()Ljava/lang/String;", &[])
+        .ok()
+        .and_then(|v| v.l().ok());
+    let msg: String = msg_obj
+        .and_then(|m| env.get_string((&m).into()).ok().map(|s| s.into()))
+        .unwrap_or_default();
+    Some(if msg.is_empty() {
+        cn
+    } else {
+        format!("{}: {}", cn, msg)
+    })
+}
+
+/// Like `find_game_class_loader` but logs which strategy succeeded/failed (for crash diagnosis).
+pub fn find_game_class_loader_verbose<'local>(
+    env: &mut JNIEnv<'local>,
+    attempt: u32,
+) -> Option<JObject<'local>> {
+    let verbose = attempt == 0 || attempt % 10 == 0;
+    if let Some(cached) = game_class_loader(env) {
+        if verbose {
+            agent_log_step("classloader", "using cached game ClassLoader");
+        }
+        return Some(cached);
+    }
+
+    // Minecraft client classes are not loadable for several seconds after JVM start.
+    // Calling getAllStackTraces repeatedly this early can overflow the agent thread stack.
+    if attempt < 5 {
+        if verbose {
+            agent_log_step(
+                "classloader",
+                &format!("attempt {} — game still booting, deferring JNI probes", attempt),
+            );
+        }
+        return None;
+    }
+
+    if javaagent_bootstrap_active() {
+        if verbose {
+            agent_log_step(
+                "classloader",
+                "probe: RsiftAgentState.gameLoader (javaagent cached loader)",
+            );
+        }
+        if let Some(loader) = loader_from_java_agent_state(env) {
+            cache_game_loader(env, &loader);
+            agent_log_step("classloader", "FOUND via RsiftAgentState.gameLoader");
+            return Some(loader);
+        }
+        if verbose {
+            log_jni_exception(env, "java_agent_state");
+        }
+    }
+
+    if verbose {
+        agent_log_step("classloader", "probe: Render/Game thread context ClassLoader");
+    }
+    if let Some(loader) = loader_from_priority_threads(env) {
+        cache_game_loader(env, &loader);
+        agent_log_step("classloader", "FOUND via named thread context ClassLoader");
+        return Some(loader);
+    }
+    if verbose {
+        log_jni_exception(env, "priority_threads");
+    }
+
+    if attempt >= 15 {
+        if verbose {
+            agent_log_step("classloader", "probe: Minecraft.getInstance() via cached loader");
+        }
+        if let Some(loader) = loader_from_minecraft_get_instance(env) {
+            cache_game_loader(env, &loader);
+            agent_log_step("classloader", "FOUND via Minecraft instance");
+            return Some(loader);
+        }
+        if verbose {
+            log_jni_exception(env, "minecraft_instance");
+            agent_log_warn("classloader", "all strategies failed this probe");
+        }
+    }
+    None
+}
+
+fn log_jni_exception(env: &mut JNIEnv, phase: &str) {
+    if let Some(msg) = jni_exception_message(env) {
+        agent_log_warn("classloader", &format!("{} JNI exception: {}", phase, msg));
+    }
+}
+
+/// Find Minecraft's application ClassLoader (JNI FindClass fails on agent threads).
+pub fn find_game_class_loader<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+    if let Some(cached) = game_class_loader(env) {
+        return Some(cached);
+    }
+    if javaagent_bootstrap_active() {
+        if let Some(loader) = loader_from_java_agent_state(env) {
+            cache_game_loader(env, &loader);
+            return Some(loader);
+        }
+    }
+    if let Some(loader) = loader_from_priority_threads(env) {
+        cache_game_loader(env, &loader);
+        return Some(loader);
+    }
+    if let Some(loader) = loader_from_minecraft_get_instance(env) {
+        cache_game_loader(env, &loader);
+        return Some(loader);
+    }
+    None
+}
+
+fn javaagent_bootstrap_active() -> bool {
+    crate::agent_opts::dll_directory()
+        .map(|d| d.join(".rsift-javaagent-ok").is_file())
+        .unwrap_or(false)
+}
+
+fn loader_from_java_agent_state<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+    let state = env.find_class("com/rsift/RsiftAgentState").ok()?;
+    clear_pending_exception(env);
+    let loader = env
+        .call_static_method(state, "getGameLoader", "()Ljava/lang/ClassLoader;", &[])
+        .ok()
+        .and_then(|v| v.l().ok())?;
+    clear_pending_exception(env);
+    if loader.as_raw().is_null() {
+        return None;
+    }
+    if load_class_with_loader(env, &loader, "net.minecraft.client.Minecraft").is_some() {
+        return Some(loader);
+    }
+    clear_pending_exception(env);
+    None
+}
+
+/// One `getAllStackTraces` call — try Render/Game/main threads in priority order.
+fn loader_from_priority_threads<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+    const PRIORITY: &[&str] = &["Render thread", "Game thread", "Server thread", "main"];
+    let thread_cls = env.find_class("java/lang/Thread").ok()?;
+    clear_pending_exception(env);
+    let map = env
+        .call_static_method(thread_cls, "getAllStackTraces", "()Ljava/util/Map;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    clear_pending_exception(env);
+    let key_set = env.call_method(&map, "keySet", "()Ljava/util/Set;", &[]).ok()?.l().ok()?;
+    let iter = env
+        .call_method(&key_set, "iterator", "()Ljava/util/Iterator;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let mut named: Vec<(usize, JObject<'local>)> = Vec::new();
+    while env.call_method(&iter, "hasNext", "()Z", &[]).ok()?.z().ok()? {
+        let thread = env
+            .call_method(&iter, "next", "()Ljava/lang/Object;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        let name_obj = env
+            .call_method(&thread, "getName", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        let name: String = env.get_string((&name_obj).into()).ok()?.into();
+        if let Some(priority) = PRIORITY.iter().position(|want| *want == name) {
+            named.push((priority, thread));
+        }
+    }
+    named.sort_by_key(|(priority, _)| *priority);
+    for (_, thread) in named {
+        if let Some(loader) = loader_from_thread(env, &thread) {
+            return Some(loader);
+        }
+    }
+    None
+}
+
+/// Resolve loader from a live Minecraft client — uses cached/priority-thread loader only (no recursion).
+fn loader_from_minecraft_get_instance<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+    let loader = game_class_loader(env).or_else(|| loader_from_priority_threads(env))?;
+    let mc = load_class_with_loader(env, &loader, "net.minecraft.client.Minecraft")?;
+    clear_pending_exception(env);
+    let inst = env
+        .call_static_method(
+            mc,
+            "getInstance",
+            "()Lnet/minecraft/client/Minecraft;",
+            &[],
+        )
+        .ok()
+        .and_then(|v| v.l().ok())?;
+    clear_pending_exception(env);
+    if inst.as_raw().is_null() {
+        return None;
+    }
+    loader_from_instance(env, &inst)
+}
+
+fn loader_from_thread<'local>(
+    env: &mut JNIEnv<'local>,
+    thread: &JObject<'local>,
+) -> Option<JObject<'local>> {
+    let loader = env
+        .call_method(
+            thread,
+            "getContextClassLoader",
+            "()Ljava/lang/ClassLoader;",
+            &[],
+        )
+        .ok()
+        .and_then(|v| v.l().ok())?;
+    clear_pending_exception(env);
+    if loader.as_raw().is_null() {
+        return None;
+    }
+    if load_class_with_loader(env, &loader, "net.minecraft.client.Minecraft").is_some() {
+        return Some(loader);
+    }
+    clear_pending_exception(env);
+    None
+}
+
+fn loader_from_instance<'local>(env: &mut JNIEnv<'local>, instance: &JObject<'local>) -> Option<JObject<'local>> {
+    let class_obj = env
+        .call_method(instance, "getClass", "()Ljava/lang/Class;", &[])
+        .ok()
+        .and_then(|v| v.l().ok())?;
+    let loader = env
+        .call_method(
+            &class_obj,
+            "getClassLoader",
+            "()Ljava/lang/ClassLoader;",
+            &[],
+        )
+        .ok()
+        .and_then(|v| v.l().ok())?;
+    if loader.as_raw().is_null() {
+        return None;
+    }
+    Some(loader)
+}
+
+fn cache_game_loader<'local>(env: &mut JNIEnv<'local>, loader: &JObject<'local>) {
+    if let Ok(global) = env.new_global_ref(loader) {
+        if let Ok(mut slot) = GAME_LOADER.lock() {
+            if slot.is_none() {
+                *slot = Some(global);
+                agent_log("[Rsift] game ClassLoader cached");
+            }
+        }
+    }
+}
+
+pub fn load_class_with_loader<'local>(
+    env: &mut JNIEnv<'local>,
+    loader: &JObject<'local>,
+    dotted: &str,
+) -> Option<JClass<'local>> {
+    let name = env.new_string(dotted).ok()?;
+    let cls = env
+        .call_method(
+            loader,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&name)],
+        )
+        .ok()
+        .and_then(|v| v.l().ok())?;
+    Some(JClass::from(cls))
+}
+
+pub fn find_minecraft_class<'local>(env: &mut JNIEnv<'local>) -> Option<JClass<'local>> {
+    if let Ok(c) = env.find_class("net/minecraft/client/Minecraft") {
+        return Some(c);
+    }
+    clear_pending_exception(env);
+    // Use cached loader only — find_game_class_loader() must not be called from here
+    // (minecraft_instance → find_minecraft_class → find_game_class_loader → minecraft_instance).
+    let loader = game_class_loader(env)?;
+    load_class_with_loader(env, &loader, "net.minecraft.client.Minecraft")
+}
+
+pub fn minecraft_class_ready(env: &mut JNIEnv) -> bool {
+    find_minecraft_class(env).is_some()
+}
