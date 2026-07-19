@@ -1,6 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
 
+if exist "%~dp0..\Cargo.toml" cd /d "%~dp0.."
+if exist "%~dp0..\rsift\Cargo.toml" cd /d "%~dp0..\rsift"
+if exist "rsift\Cargo.toml" cd /d "rsift"
+
 echo ==============================================================================
 echo  📦 [Rsift Build Engine] Compiling Self-Extracting One-Click Windows Installer
 echo  ⚡ Output: windows_binaries\Rsift-1.21.11-Setup.exe

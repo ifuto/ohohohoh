@@ -264,8 +264,12 @@ impl OfflineRenderer {
                         if a == 0 {
                             continue;
                         }
-                        for py in y.max(0) as usize..(y + rect_h).max(0) as usize.min(height) {
-                            for px in x.max(0) as usize..(x + rect_w).max(0) as usize.min(width) {
+                        let start_y = (y.max(0) as usize).min(height);
+                        let end_y = ((y + rect_h).max(0) as usize).min(height);
+                        let start_x = (x.max(0) as usize).min(width);
+                        let end_x = ((x + rect_w).max(0) as usize).min(width);
+                        for py in start_y..end_y {
+                            for px in start_x..end_x {
                                 let idx = (py * width + px) * 4;
                                 if a == 255 {
                                     rgba[idx] = r;
@@ -305,8 +309,12 @@ impl OfflineRenderer {
                         let r = ((tint_argb >> 16) & 0xFF) as u8;
                         let g = ((tint_argb >> 8) & 0xFF) as u8;
                         let b = (tint_argb & 0xFF) as u8;
-                        for py in y.max(0) as usize..(y + rect_h).max(0) as usize.min(height) {
-                            for px in x.max(0) as usize..(x + rect_w).max(0) as usize.min(width) {
+                        let start_y = (y.max(0) as usize).min(height);
+                        let end_y = ((y + rect_h).max(0) as usize).min(height);
+                        let start_x = (x.max(0) as usize).min(width);
+                        let end_x = ((x + rect_w).max(0) as usize).min(width);
+                        for py in start_y..end_y {
+                            for px in start_x..end_x {
                                 let idx = (py * width + px) * 4;
                                 rgba[idx] = r;
                                 rgba[idx + 1] = g;

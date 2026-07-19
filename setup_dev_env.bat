@@ -2,6 +2,9 @@
 setlocal enabledelayedexpansion
 title Rsift Dev Environment Setup and Automated Build Tool
 
+if exist "%~dp0rsift\Cargo.toml" cd /d "%~dp0rsift"
+if exist "rsift\Cargo.toml" cd /d "rsift"
+
 echo ===============================================================================
 echo            Rsift Project - Version 1.21.11 Edition                            
 echo         One-Click Developer Environment Setup and Workspace Builder            

@@ -7,6 +7,7 @@ description = "JVM Invocation API and JVMTI ClassFileLoadHook manager for Rsift 
 
 [dependencies]
 jni.workspace = true
+bytemuck.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 rsift-api = { path = "../rsift-api" }
