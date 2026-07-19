@@ -1,0 +1,30 @@
+[package]
+name = "rsift-jvm"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "JVM Invocation API and JVMTI ClassFileLoadHook manager for Rsift Mod Loader"
+
+[dependencies]
+jni.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+rsift-api = { path = "../rsift-api" }
+rsift-parser = { path = "../rsift-parser" }
+rsift-transpiler = { path = "../rsift-transpiler" }
+rsift-render = { path = "../rsift-render" }
+rsift-opt-gfx = { path = "../rsift-opt-gfx" }
+rsift-dx12 = { path = "../rsift-dx12" }
+rsift-sim = { path = "../rsift-sim" }
+libloading.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+] }
+
+[lib]
+name = "rsift_jvm"
+crate-type = ["rlib", "cdylib"]
