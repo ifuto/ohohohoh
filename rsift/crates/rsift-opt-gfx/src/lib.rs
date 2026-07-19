@@ -35,6 +35,8 @@ pub mod material_batch;
 pub mod texture_atlas;
 pub mod gl33_compat;
 pub mod ao_bake;
+pub mod cpu_saver;
+pub use cpu_saver::*;
 // Tier 2
 pub mod diff_mesh;
 pub mod triple_buffer;
