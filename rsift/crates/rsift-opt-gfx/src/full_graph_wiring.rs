@@ -54,7 +54,12 @@ impl FullGraphWiring {
         let _ = std::mem::size_of::<crate::mimalloc_config::AllocConfig>();
         let _ = std::mem::size_of::<crate::bump_arena::BumpArena>();
         let _ = std::mem::size_of::<crate::pool_slab::Slab<u32>>();
+        let _ = std::mem::size_of::<crate::pool_slab::GenerationalSlab<u32>>();
         let _ = std::mem::size_of::<crate::morton_order::MortonOrderTest>();
+        let _ = std::mem::size_of::<crate::morton_order::MortonGrid3D<u32, 16>>();
+        let _ = std::mem::size_of::<crate::simd_frustum::SoaAabbs>();
+        let _ = std::mem::size_of::<crate::gpu_arena::SharedRingBuffer<u64, 16>>();
+        let _ = std::mem::size_of::<crate::execute_indirect::DrawCompactor>();
         let _ = std::mem::size_of::<crate::rayon_job::RayonJobConfig>();
         let _ = std::mem::size_of::<crate::dag_scheduler::DagScheduler>();
         let _ = std::mem::size_of::<crate::dashmap_registry::ChunkRegistry>();
@@ -139,6 +144,14 @@ impl FullGraphWiring {
             use crate::stutter_guard::FrameArena;
             let fa = FrameArena::new(4096);
             let _ = fa.alloc_bytes(16);
+
+            // CPU/SIMD/Memory/GPU advanced wiring checks
+            let _ = crate::simd_frustum::SoaAabbs::from_aabbs(&[]);
+            let _ = crate::occlusion_complete::HaltonJitter::get((self.tick as usize) & 7);
+            let _ = crate::visibility_buffer::pack_ids_64(1, 2);
+            let _ = crate::binary_greedy_meshing::bitboard_slice_cull_swar(&[0; 4], &[0; 4]);
+            let rb = crate::gpu_arena::SharedRingBuffer::<u64, 16>::new();
+            let _ = rb.try_push(self.tick);
         }
 
         if self.tick % 600 == 0 {

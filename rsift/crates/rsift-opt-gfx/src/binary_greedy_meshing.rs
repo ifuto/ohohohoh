@@ -700,6 +700,47 @@ pub fn demo_column_rle(cx: i32, cz: i32) -> Vec<RleSection> {
         .collect()
 }
 
+/// SWAR 64-bit Bitboard Directional Mask Slice comparison for ultra-fast neighbor culling.
+/// A 16x16 slice (256 bits) is represented as `[u64; 4]`.
+#[inline]
+pub fn bitboard_slice_cull_swar(slice_curr: &[u64; 4], slice_next: &[u64; 4]) -> [u64; 4] {
+    [
+        slice_curr[0] & !slice_next[0],
+        slice_curr[1] & !slice_next[1],
+        slice_curr[2] & !slice_next[2],
+        slice_curr[3] & !slice_next[3],
+    ]
+}
+
+/// AVX2 256-bit Bitboard Directional Mask Slice comparison (`_mm256_andnot_si256`).
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+pub unsafe fn bitboard_slice_cull_avx2(slice_curr: &[u64; 4], slice_next: &[u64; 4]) -> [u64; 4] {
+    #[cfg(target_arch = "x86")]
+    use std::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use std::arch::x86_64::*;
+
+    let curr = _mm256_loadu_si256(slice_curr.as_ptr() as *const __m256i);
+    let next = _mm256_loadu_si256(slice_next.as_ptr() as *const __m256i);
+    let res = _mm256_andnot_si256(next, curr);
+    let mut out = [0u64; 4];
+    _mm256_storeu_si256(out.as_mut_ptr() as *mut __m256i, res);
+    out
+}
+
+/// Fast bit-scan (`trailing_zeros`) segment extraction from a 64-bit row mask.
+#[inline]
+pub fn extract_bitboard_span(mut row_mask: u64) -> Option<(u32, u32)> {
+    if row_mask == 0 {
+        return None;
+    }
+    let start = row_mask.trailing_zeros();
+    row_mask >>= start;
+    let len = (!row_mask).trailing_zeros().min(64 - start);
+    Some((start, len))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -729,5 +770,14 @@ mod tests {
         }
         let m = mesh_section(&p, 0, 0);
         assert!(m.vertices.len() <= 6 * 4);
+    }
+
+    #[test]
+    fn test_bitboard_swar_and_span() {
+        let curr = [0x00FF_00FF_00FF_00FF, 0, 0, 0];
+        let next = [0x000F_000F_000F_000F, 0, 0, 0];
+        let culled = bitboard_slice_cull_swar(&curr, &next);
+        assert_eq!(culled[0], 0x00F0_00F0_00F0_00F0);
+        assert_eq!(extract_bitboard_span(0x0000_0000_0000_00F0), Some((4, 4)));
     }
 }

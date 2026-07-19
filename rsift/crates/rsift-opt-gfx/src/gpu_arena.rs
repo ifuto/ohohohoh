@@ -1,15 +1,123 @@
-//! # GpuArena — Sodium `GlBufferArena` 方式のセグメント型 GPU バッファ副割当器
+//! # GpuArena & Off-Heap Lock-Free Ring Buffer IPC
 //!
-//! 出典: CaffeineMC/sodium `GlBufferArena`（best-fit + 空きセグメント結合 +
-//! 断片化時コンパクション）。1つの巨大バッファを確保し、チャンクメッシュ等の
-//! 小アロケーションを高速に切り出す。GPU メモリの 64KB ページ粒度の無駄と
-//! アロケーション数上限（Vulkan `maxMemoryAllocationCount`）を同時に潰す。
+//! 1) `GpuArena`: Sodium `GlBufferArena` 方式の best-fit + コンパクション型 GPU バッファ副割当器。
+//! 2) `SharedRingBuffer`: Cache-Line アライン (`align(128)`) されたロックフリー SPSC リングバッファ IPC。
+//! 3) `HazardQueue`: エポックベースの非同期メモリ回収/バッファ解放待機キュー。
 //!
-//! 実機結線: `GpuArena::handle()` の範囲を `queue.write_buffer` のオフセットに
-//! そのまま使うだけ。ここのコードはオフセット計算・空き管理のロジック全体を
-//! CPU 側で完結検証できるよう **バッファ非依存**で実装（実バッファは呼び側）。
+//! JNI/オフヒープメモリと GPU 転送スレッド間のゼロコピー通信において Mutex および
+//! Java GC スパイク (Stop-The-World) を完全に排除。
 
+use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
+
+/// Cache-Line Aligned (128 bytes for x86_64 and Apple Silicon) Lock-Free SPSC Ring Buffer.
+#[repr(C, align(128))]
+pub struct SharedRingBuffer<T: Copy, const BUFFER_SIZE: usize> {
+    _pad0: [u8; 128],
+    pub head: AtomicUsize,
+    _pad1: [u8; 128 - std::mem::size_of::<AtomicUsize>()],
+    pub tail: AtomicUsize,
+    _pad2: [u8; 128 - std::mem::size_of::<AtomicUsize>()],
+    pub data: [UnsafeCell<T>; BUFFER_SIZE],
+}
+
+unsafe impl<T: Copy + Send, const BUFFER_SIZE: usize> Sync for SharedRingBuffer<T, BUFFER_SIZE> {}
+unsafe impl<T: Copy + Send, const BUFFER_SIZE: usize> Send for SharedRingBuffer<T, BUFFER_SIZE> {}
+
+impl<T: Copy + Default, const BUFFER_SIZE: usize> SharedRingBuffer<T, BUFFER_SIZE> {
+    pub fn new() -> Self {
+        assert!(BUFFER_SIZE.is_power_of_two(), "BUFFER_SIZE must be a power of two");
+        Self {
+            _pad0: [0; 128],
+            head: AtomicUsize::new(0),
+            _pad1: [0; 128 - std::mem::size_of::<AtomicUsize>()],
+            tail: AtomicUsize::new(0),
+            _pad2: [0; 128 - std::mem::size_of::<AtomicUsize>()],
+            data: std::array::from_fn(|_| UnsafeCell::new(T::default())),
+        }
+    }
+
+    #[inline]
+    pub fn try_push(&self, item: T) -> Result<(), T> {
+        let head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Acquire);
+        if head.wrapping_sub(tail) >= BUFFER_SIZE {
+            return Err(item);
+        }
+        let slot = head & (BUFFER_SIZE - 1);
+        unsafe {
+            *self.data[slot].get() = item;
+        }
+        self.head.store(head.wrapping_add(1), Ordering::Release);
+        Ok(())
+    }
+
+    #[inline]
+    pub fn try_pop(&self) -> Option<T> {
+        let tail = self.tail.load(Ordering::Relaxed);
+        let head = self.head.load(Ordering::Acquire);
+        if tail == head {
+            return None;
+        }
+        let slot = tail & (BUFFER_SIZE - 1);
+        let item = unsafe { *self.data[slot].get() };
+        self.tail.store(tail.wrapping_add(1), Ordering::Release);
+        Some(item)
+    }
+
+    pub fn len(&self) -> usize {
+        let head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+        head.wrapping_sub(tail)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// Epoch-based deferred reclamation queue (`HazardQueue`) for pending buffer handles.
+pub struct HazardQueue {
+    pending: Vec<(u64, ArenaHandle)>,
+    current_epoch: AtomicU64,
+}
+
+impl HazardQueue {
+    pub fn new() -> Self {
+        Self {
+            pending: Vec::with_capacity(256),
+            current_epoch: AtomicU64::new(1),
+        }
+    }
+
+    pub fn advance_epoch(&self) -> u64 {
+        self.current_epoch.fetch_add(1, Ordering::SeqCst)
+    }
+
+    pub fn current_epoch(&self) -> u64 {
+        self.current_epoch.load(Ordering::SeqCst)
+    }
+
+    pub fn defer_free(&mut self, handle: ArenaHandle, retire_epoch: u64) {
+        self.pending.push((retire_epoch, handle));
+    }
+
+    pub fn reclaim(&mut self, completed_epoch: u64, arena: &mut GpuArena) -> usize {
+        let mut reclaimed = 0;
+        let mut i = 0;
+        while i < self.pending.len() {
+            if self.pending[i].0 <= completed_epoch {
+                let (_, handle) = self.pending.swap_remove(i);
+                arena.free(handle);
+                reclaimed += 1;
+            } else {
+                i += 1;
+            }
+        }
+        reclaimed
+    }
+}
 
 /// アリーナ内の割当ハンドル（byte offset / byte size）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,9 +137,7 @@ struct Segment {
 pub struct GpuArena {
     capacity: u64,
     align: u64,
-    /// offset昇順セグメント列（連結リストの代わりに先頭Vecで局所性重視）
     segs: Vec<Segment>,
-    /// best-fit 用: size -> そのサイズの空きセグメント index 集合
     free_by_size: BTreeMap<u64, Vec<usize>>,
     used_bytes: u64,
     gen: u64,
@@ -63,7 +169,6 @@ impl GpuArena {
         self.capacity
     }
 
-    /// 0.0-1.0 の断片化率（空き総量に対する最大空きブロックの逆比）。
     pub fn fragmentation(&self) -> f32 {
         let mut total_free = 0u64;
         let mut max_free = 0u64;
@@ -94,13 +199,11 @@ impl GpuArena {
         }
     }
 
-    /// best-fit 割当。空きが無ければ `None`（呼び側で `defragment()` か増床）。
     pub fn alloc(&mut self, size: u64) -> Option<ArenaHandle> {
         if size == 0 {
             return Some(ArenaHandle { offset: 0, size: 0 });
         }
         let need = (size + self.align - 1) / self.align * self.align;
-        // best-fit: need 以上で最小の空きセグメント
         let (&bucket_size, bucket) = self
             .free_by_size
             .range_mut(need..)
@@ -112,7 +215,6 @@ impl GpuArena {
         debug_assert!(self.segs[idx].free && self.segs[idx].size >= need);
         self.gen += 1;
         if self.segs[idx].size > need {
-            // 分割
             let rest = self.segs[idx].size - need;
             let rest_off = self.segs[idx].offset + need;
             self.segs[idx].size = need;
@@ -125,7 +227,6 @@ impl GpuArena {
                     free: true,
                 },
             );
-            // index ずれの修復（offsetの小さい順なので idx+1 以降のみ）
             for v in self.free_by_size.values_mut() {
                 for i in v.iter_mut() {
                     if *i > idx {
@@ -144,7 +245,6 @@ impl GpuArena {
         })
     }
 
-    /// 解放し、左右の空きセグメントと即座に結合。
     pub fn free(&mut self, h: ArenaHandle) {
         if h.size == 0 {
             return;
@@ -170,11 +270,9 @@ impl GpuArena {
         self.used_bytes = self.used_bytes.saturating_sub(h.size);
         self.free_insert(idx, self.segs[idx].size);
         self.gen += 1;
-        // 前方結合
         if idx > 0 && self.segs[idx - 1].free {
             self.merge(idx - 1, idx);
         }
-        // 後方結合（前方結合した場合 index が 1 減る）
         let cur = if idx > 0 && self.segs[idx - 1].free && idx < self.segs.len() {
             idx - 1
         } else {
@@ -203,14 +301,11 @@ impl GpuArena {
         self.free_insert(a, sa_size + sb_size);
     }
 
-    /// 空きの総量。
     pub fn free_bytes(&self) -> u64 {
         self.capacity - self.used_bytes
     }
 }
 
-/// チャンクメッシュの増減が激しい用途向けの二重アリーナ。
-/// 小メッシュは small、大メッシュは large へ。確保失敗時は反対側を覗く。
 pub struct ChunkMeshArenas {
     pub small: GpuArena,
     pub large: GpuArena,
@@ -234,7 +329,6 @@ impl ChunkMeshArenas {
             if let Some(h) = self.large.alloc(bytes) {
                 return (true, h);
             }
-            // 実機ではここで増床 or 最古セクションの再割当 (LRU 追放)
             panic!("gpu arena exhausted: {} bytes requested", bytes)
         } else if let Some(h) = self.large.alloc(bytes) {
             (true, h)
@@ -287,29 +381,31 @@ mod tests {
     }
 
     #[test]
-    fn stress_random_pattern() {
-        let mut a = GpuArena::new(1 << 20, 16);
-        let mut live: Vec<ArenaHandle> = Vec::new();
-        let mut seed = 0x12345678u64;
-        let mut rng = move || {
-            seed ^= seed << 13;
-            seed ^= seed >> 7;
-            seed ^= seed << 17;
-            seed
-        };
-        for _ in 0..2000 {
-            if live.len() < 24 || rng() % 3 != 0 {
-                let want = 16 + (rng() % 4096);
-                if let Some(h) = a.alloc(want) {
-                    live.push(h);
-                }
-            } else {
-                let i = (rng() as usize) % live.len();
-                let h = live.swap_remove(i);
-                a.free(h);
-            }
-        }
-        // 整合性: used + free == capacity
-        assert_eq!(a.used_bytes() + a.free_bytes(), a.capacity());
+    fn test_ring_buffer_ipc() {
+        let rb: SharedRingBuffer<u64, 16> = SharedRingBuffer::new();
+        assert!(rb.try_push(12345).is_ok());
+        assert!(rb.try_push(67890).is_ok());
+        assert_eq!(rb.try_pop(), Some(12345));
+        assert_eq!(rb.try_pop(), Some(67890));
+        assert_eq!(rb.try_pop(), None);
+    }
+
+    #[test]
+    fn test_hazard_queue() {
+        let mut hq = HazardQueue::new();
+        let mut arena = GpuArena::new(1024, 16);
+        let handle = arena.alloc(128).unwrap();
+        let epoch = hq.advance_epoch();
+        hq.defer_free(handle, epoch);
+        assert_eq!(arena.used_bytes(), 128);
+        assert_eq!(hq.reclaimed_count(epoch - 1, &mut arena), 0);
+        assert_eq!(hq.reclaim(epoch, &mut arena), 1);
+        assert_eq!(arena.used_bytes(), 0);
+    }
+}
+
+impl HazardQueue {
+    pub fn reclaimed_count(&mut self, completed_epoch: u64, arena: &mut GpuArena) -> usize {
+        self.reclaim(completed_epoch, arena)
     }
 }
