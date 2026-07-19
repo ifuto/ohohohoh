@@ -1,0 +1,17 @@
+[package]
+name = "rsift-render"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "DirectX 12 Agility render engine (no OpenGL/Vulkan/wgpu)"
+
+[dependencies]
+tracing.workspace = true
+thiserror.workspace = true
+bytemuck.workspace = true
+rsift-api = { path = "../rsift-api" }
+rsift-dx12 = { path = "../rsift-dx12" }
+
+[lib]
+name = "rsift_render"
+crate-type = ["rlib", "cdylib"]
