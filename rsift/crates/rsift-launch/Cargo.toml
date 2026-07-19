@@ -1,0 +1,16 @@
+[package]
+name = "rsift-launch"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Offline Minecraft launch — classpath, natives, JNI_CreateJavaVM (no GitHub)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+rsift-jvm = { path = "../rsift-jvm" }
+rsift-api = { path = "../rsift-api" }
