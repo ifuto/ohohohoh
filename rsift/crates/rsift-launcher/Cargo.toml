@@ -1,0 +1,25 @@
+[package]
+name = "rsift-launcher"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Native Rust launcher and core host process for Rsift Mod Loader"
+
+[[bin]]
+name = "rsift"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+libloading.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+bytemuck.workspace = true
+rsift-api = { path = "../rsift-api" }
+rsift-parser = { path = "../rsift-parser" }
+rsift-jvm = { path = "../rsift-jvm" }
+rsift-render = { path = "../rsift-render" }
+rsift-opt-gfx = { path = "../rsift-opt-gfx" }
+rsift-transpiler = { path = "../rsift-transpiler" }
