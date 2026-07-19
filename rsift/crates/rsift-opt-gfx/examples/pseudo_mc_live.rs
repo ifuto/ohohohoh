@@ -30,7 +30,7 @@ use std::io::Write;
 use std::time::Instant;
 
 use rsift_opt_gfx::chunk_mesh::{Quantized12ByteVertex, VERTEX_STRIDE_BYTES};
-use rsift_opt_gfx::entity_culling::{EntityCuller, EntityTarget};
+use rsift_opt_gfx::entity_culling::{EntityCuller, FastEntityCuller, EntityTarget};
 use rsift_opt_gfx::intern_pool::InternPool;
 use rsift_opt_gfx::region_zstd::{CodecChoice, RegionCodec};
 use rsift_opt_gfx::vertex_cache_opt::VertexCacheOptimizer;
@@ -667,7 +667,7 @@ struct RsiftPipe {
     shape_pool: InternPool<u64>,
     v_hits: u64,
     v_misses: u64,
-    culler: EntityCuller,
+    culler: FastEntityCuller,
     codec: RegionCodec,
     sec_cache: HashMap<(usize, usize, usize), u64>,
     pending_dirty: HashSet<(usize, usize)>,
@@ -856,7 +856,7 @@ fn run_pipe_c(w0: &PseudoWorld, sim: &SimOut) -> PipeOut {
         shape_pool: InternPool::<u64>::new(),
         v_hits: 0,
         v_misses: 0,
-        culler: EntityCuller::new(48, 64.0), // 距離ゲート64 + 近距離DDA, tick分割
+        culler: FastEntityCuller::new(128, 96.0),
         codec: RegionCodec::new(CodecChoice::auto(2, false)),
         sec_cache: HashMap::new(),
         pending_dirty: HashSet::new(),
@@ -864,9 +864,9 @@ fn run_pipe_c(w0: &PseudoWorld, sim: &SimOut) -> PipeOut {
         sample_weld: (0, 0),
         last_indices: None,
     };
-    // 本番ポテトPC設定: 距離ゲート + 近距離のみ DDA 遮蔽 + tick 分割 amortized
-    pipe.culler.period_ticks = 20;
-    pipe.culler.budget_per_tick = 48;
+    // 本番ポテトPC設定: 階層チャンクゲート + SIMDパケットDDA + ビットマスク
+    pipe.culler.period_ticks = 10;
+    pipe.culler.budget_per_tick = 128;
     let mut sampled = false;
     for rec in &sim.frames {
         let t0 = Instant::now();
@@ -874,7 +874,7 @@ fn run_pipe_c(w0: &PseudoWorld, sim: &SimOut) -> PipeOut {
             w.blocks[PseudoWorld::idx(ux, uy, uz)] = nb;
         }
         let opaque = |x: i32, y: i32, z: i32| w.get(x as i64, y as i64, z as i64).opaque();
-        // カリング (tick分割 amortized DDA オクルージョン)
+        // カリング (V2 高速階層＆SIMDパケットDDAオクルージョン)
         let ct = Instant::now();
         let targets: Vec<EntityTarget> = rec
             .view
@@ -886,15 +886,15 @@ fn run_pipe_c(w0: &PseudoWorld, sim: &SimOut) -> PipeOut {
                 is_block_entity: false,
             })
             .collect();
-        pipe.culler.replace_targets(targets);
-        let (visible, st) = pipe.culler.stats(rec.cam, &opaque);
+        pipe.culler.replace_targets_fast(&targets);
+        let (mask, st) = pipe.culler.cull_fast_mask(rec.cam, rec.fwd, &opaque);
         out.rays_total += st.rays_cast as u64;
         out.far_total += st.skipped_far as u64;
         out.cull_ms += ct.elapsed().as_secs_f64() * 1000.0;
         let mt = Instant::now();
         scratch.clear();
-        for (id, pos, yaw) in &rec.view {
-            if visible.contains(id) {
+        for (i, (id, pos, yaw)) in rec.view.iter().enumerate() {
+            if FastEntityCuller::is_visible_bit(mask, i) {
                 render_mob(&mut scratch, &w, *pos, *yaw, *id as f32);
                 out.mob_vtx_bytes += (MOB_VERTS * VERTEX_STRIDE_BYTES) as u64;
                 out.rendered_mobs += 1;

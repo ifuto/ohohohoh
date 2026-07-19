@@ -152,6 +152,9 @@ impl FullGraphWiring {
             let _ = crate::binary_greedy_meshing::bitboard_slice_cull_swar(&[0; 4], &[0; 4]);
             let rb = crate::gpu_arena::SharedRingBuffer::<u64, 16>::new();
             let _ = rb.try_push(self.tick);
+            let mut fec = crate::entity_culling::FastEntityCuller::new(16, 64.0);
+            fec.replace_targets_fast(&[]);
+            let _ = fec.cull_fast_mask([0.0; 3], [0.0, 0.0, 1.0], &|_, _, _| false);
         }
 
         if self.tick % 600 == 0 {
