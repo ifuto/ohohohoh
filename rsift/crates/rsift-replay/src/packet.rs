@@ -1,10 +1,13 @@
-//! Zero-copy packet capture & First-Person UI/HUD Snapshot types
+//! Zero-copy packet capture & Universal First-Person UI/HUD Snapshot types
 //!
 //! 1) `CameraSnapshot`: 一人称視点 (`First-Person Centric`) カメラ状態
 //! 2) `FirstPersonUiSnapshot`: Tab キープレイヤーリスト (`PlayerListHud`)、ホットバー選択枠、
 //!    手/アイテム振りモーション (`hand_swing_progress`)、チャット HUD、ボスバーの完全記録
-//! 3) パケット記録式 (`Packet-Recording`) でありながら、オフラインレンダリング時に
-//!    OBS や通常画面録画と全く同じ一画面表示 (`全く同じ表示`) を完全再現し、後からのリソパ・シェーダー変更に対応。
+//! 3) `UiDrawCommand`: サードパーティのあらゆる Mod が追加した Tab リスト拡張や
+//!    カスタム HUD オーバーレイ、GUI ウィジェットの 2D 描画命令 (`GuiGraphics` / `LWJGL` 2D) を
+//!    パケットストリーム内に完全記録するユニバーサル・コマンドバッファ
+//! 4) オフラインレンダリング時に、他 Mod のカスタム HUD ごと OBS や通常画面録画と全く同じ
+//!    一画面表示 (`全く同じ表示`) を完全再現し、後からのリソパ・シェーダー変更に 100% 対応。
 
 use bytemuck::{Pod, Zeroable};
 use rsift_api::packet::DirectBufferSlice;
@@ -72,7 +75,55 @@ pub struct BossBarState {
     pub color: u8,
 }
 
+/// Universal 2D UI command intercepted from `GuiGraphics` / `LWJGL` render passes.
+/// Captures custom widgets, custom Player List extensions, icons, stamina bars, and overlays
+/// added by *any* third-party Fabric/NeoForge/Rsift mod.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum UiCommandKind {
+    FillRect {
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        color_argb: u32,
+    },
+    Text {
+        x: i32,
+        y: i32,
+        text: String,
+        color_argb: u32,
+        shadow: bool,
+        font_id: String,
+    },
+    Texture {
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        u0: f32,
+        v0: f32,
+        u1: f32,
+        v1: f32,
+        texture_id: String,
+        tint_argb: u32,
+    },
+    CustomModQuad {
+        vertices: Vec<[f32; 4]>, // [x, y, u, v]
+        colors: Vec<u32>,        // ARGB per vertex
+        texture_id: Option<String>,
+        shader_id: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UiDrawCommand {
+    pub kind: UiCommandKind,
+    pub z_layer: i32,
+    pub mod_owner_id: String, // e.g. "vanilla.tab_list", "mod.better_tab", "mod.armor_status"
+}
+
 /// First-Person UI & HUD Snapshot — captures exact first-person screen elements
+/// and all third-party mod 2D UI draw commands (`mod_ui_commands`)
 /// so offline rendering matches live OBS/screen capture 100%.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct FirstPersonUiSnapshot {
@@ -87,6 +138,8 @@ pub struct FirstPersonUiSnapshot {
     pub is_blocking_or_using: bool,
     pub chat_messages: Vec<String>,
     pub boss_bars: Vec<BossBarState>,
+    /// Universal intercepted draw command stream from Vanilla & all third-party Mods
+    pub mod_ui_commands: Vec<UiDrawCommand>,
 }
 
 impl FirstPersonUiSnapshot {
@@ -102,7 +155,16 @@ impl FirstPersonUiSnapshot {
             is_blocking_or_using: false,
             chat_messages: Vec::new(),
             boss_bars: Vec::new(),
+            mod_ui_commands: Vec::new(),
         }
+    }
+
+    pub fn push_ui_command(&mut self, mod_id: impl Into<String>, z_layer: i32, kind: UiCommandKind) {
+        self.mod_ui_commands.push(UiDrawCommand {
+            kind,
+            z_layer,
+            mod_owner_id: mod_id.into(),
+        });
     }
 }
 
@@ -149,17 +211,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_first_person_ui_snapshot() {
+    fn test_first_person_ui_snapshot_with_mod_commands() {
         let mut snap = FirstPersonUiSnapshot::new(1000);
         snap.tab_list_visible = true;
-        snap.tab_entries.push(TabPlayerEntry {
-            uuid: [1; 16],
-            username: "Ifuto_mitai".into(),
-            ping_ms: 12,
-            game_mode: 0,
-            display_name_json: None,
-        });
+        snap.push_ui_command(
+            "mod.better_tab",
+            10,
+            UiCommandKind::Text {
+                x: 100,
+                y: 50,
+                text: "[Guild: Elite] Ifuto_mitai".into(),
+                color_argb: 0xFF55FF55,
+                shadow: true,
+                font_id: "minecraft:default".into(),
+            },
+        );
         assert!(snap.tab_list_visible);
-        assert_eq!(snap.tab_entries[0].username, "Ifuto_mitai");
+        assert_eq!(snap.mod_ui_commands[0].mod_owner_id, "mod.better_tab");
     }
 }

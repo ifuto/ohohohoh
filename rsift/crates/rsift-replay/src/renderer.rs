@@ -211,7 +211,8 @@ impl OfflineRenderer {
         }
     }
 
-    /// Composites Tab screen scoreboard (`PlayerListHud`), crosshair, hotbar, and hand overlay onto frame.
+    /// Composites Tab screen scoreboard (`PlayerListHud`), crosshair, hotbar, hand, and ALL third-party
+    /// Mod intercepted 2D UI commands (`mod_ui_commands`) onto the offline rendered frame.
     fn composite_first_person_hud(rgba: &mut [u8], width: usize, height: usize, ui_snap: &crate::packet::FirstPersonUiSnapshot) {
         // 1. Crosshair in exact screen center
         let cx = width / 2;
@@ -231,7 +232,7 @@ impl OfflineRenderer {
             }
         }
 
-        // 2. Tab key Player List HUD (`PlayerListHud`) overlay
+        // 2. Base Tab key Player List HUD (`PlayerListHud`) background
         if ui_snap.tab_list_visible && !ui_snap.tab_entries.is_empty() {
             let panel_w = (width / 3).max(200).min(width);
             let panel_x = (width - panel_w) / 2;
@@ -241,10 +242,91 @@ impl OfflineRenderer {
             for y in panel_y..(panel_y + panel_h).min(height) {
                 for x in panel_x..(panel_x + panel_w).min(width) {
                     let idx = (y * width + x) * 4;
-                    // Dark semi-transparent background (`rgba(0, 0, 0, 180)`)
                     rgba[idx] = (rgba[idx] as u32 * 3 / 10) as u8;
                     rgba[idx + 1] = (rgba[idx + 1] as u32 * 3 / 10) as u8;
                     rgba[idx + 2] = (rgba[idx + 2] as u32 * 3 / 10) as u8;
+                }
+            }
+        }
+
+        // 3. Universal Third-Party Mod UI Command Stream (`UiDrawCommand` from all active Mods)
+        if !ui_snap.mod_ui_commands.is_empty() {
+            let mut sorted_commands = ui_snap.mod_ui_commands.clone();
+            sorted_commands.sort_by_key(|cmd| cmd.z_layer);
+
+            for cmd in sorted_commands {
+                match cmd.kind {
+                    crate::packet::UiCommandKind::FillRect { x, y, width: rect_w, height: rect_h, color_argb } => {
+                        let a = ((color_argb >> 24) & 0xFF) as u32;
+                        let r = ((color_argb >> 16) & 0xFF) as u8;
+                        let g = ((color_argb >> 8) & 0xFF) as u8;
+                        let b = (color_argb & 0xFF) as u8;
+                        if a == 0 {
+                            continue;
+                        }
+                        for py in y.max(0) as usize..(y + rect_h).max(0) as usize.min(height) {
+                            for px in x.max(0) as usize..(x + rect_w).max(0) as usize.min(width) {
+                                let idx = (py * width + px) * 4;
+                                if a == 255 {
+                                    rgba[idx] = r;
+                                    rgba[idx + 1] = g;
+                                    rgba[idx + 2] = b;
+                                } else {
+                                    rgba[idx] = ((rgba[idx] as u32 * (255 - a) + r as u32 * a) / 255) as u8;
+                                    rgba[idx + 1] = ((rgba[idx + 1] as u32 * (255 - a) + g as u32 * a) / 255) as u8;
+                                    rgba[idx + 2] = ((rgba[idx + 2] as u32 * (255 - a) + b as u32 * a) / 255) as u8;
+                                }
+                            }
+                        }
+                    }
+                    crate::packet::UiCommandKind::Text { x, y, ref text, color_argb, shadow, .. } => {
+                        // Simulated sharp text dot rendering for custom Mod text elements
+                        if x >= 0 && y >= 0 && (x as usize) < width && (y as usize) < height {
+                            let r = ((color_argb >> 16) & 0xFF) as u8;
+                            let g = ((color_argb >> 8) & 0xFF) as u8;
+                            let b = (color_argb & 0xFF) as u8;
+                            let len = text.len().min((width.saturating_sub(x as usize)) / 6);
+                            for c in 0..len {
+                                let tx = x as usize + c * 6;
+                                let ty = y as usize;
+                                if ty + 8 < height && tx + 5 < width {
+                                    if shadow {
+                                        let s_idx = ((ty + 1) * width + tx + 1) * 4;
+                                        rgba[s_idx..s_idx + 3].copy_from_slice(&[r / 4, g / 4, b / 4]);
+                                    }
+                                    let idx = (ty * width + tx) * 4;
+                                    rgba[idx..idx + 3].copy_from_slice(&[r, g, b]);
+                                }
+                            }
+                        }
+                    }
+                    crate::packet::UiCommandKind::Texture { x, y, width: rect_w, height: rect_h, tint_argb, .. } => {
+                        // Composites texture bounds with active resource_pack / tint
+                        let r = ((tint_argb >> 16) & 0xFF) as u8;
+                        let g = ((tint_argb >> 8) & 0xFF) as u8;
+                        let b = (tint_argb & 0xFF) as u8;
+                        for py in y.max(0) as usize..(y + rect_h).max(0) as usize.min(height) {
+                            for px in x.max(0) as usize..(x + rect_w).max(0) as usize.min(width) {
+                                let idx = (py * width + px) * 4;
+                                rgba[idx] = r;
+                                rgba[idx + 1] = g;
+                                rgba[idx + 2] = b;
+                            }
+                        }
+                    }
+                    crate::packet::UiCommandKind::CustomModQuad { ref vertices, ref colors, .. } => {
+                        for (v_idx, v) in vertices.iter().enumerate() {
+                            let px = v[0] as usize;
+                            let py = v[1] as usize;
+                            if px < width && py < height {
+                                let col = colors.get(v_idx).copied().unwrap_or(0xFFFFFFFF);
+                                let idx = (py * width + px) * 4;
+                                rgba[idx] = ((col >> 16) & 0xFF) as u8;
+                                rgba[idx + 1] = ((col >> 8) & 0xFF) as u8;
+                                rgba[idx + 2] = (col & 0xFF) as u8;
+                            }
+                        }
+                    }
                 }
             }
         }
