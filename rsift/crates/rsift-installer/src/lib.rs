@@ -571,25 +571,20 @@ impl LauncherInstaller {
                     let version_dest = version_mods_dir.join(dll);
                     fs::copy(path, &shared_dest).map_err(|e| format!("copy mod {}: {}", dll, e))?;
                     fs::copy(path, &version_dest).map_err(|e| format!("copy mod {}: {}", dll, e))?;
-                    info!("[Install] mod deployed    = {:?} → {:?}", path, shared_dest);
-                    info!("[Install] mod mirrored    = {:?} → {:?}", path, version_dest);
+                    info!("[Install] mod deployed from disk = {:?} → {:?}", path, shared_dest);
                     deployed.push(dll.to_string());
                     found = true;
                     break;
                 }
             }
             if !found {
-                warn!("[Install] mod MISSING on disk = {} — falling back to self-contained payload", dll);
-            }
-        }
-
-        if deployed.is_empty() {
-            let extracted = EmbeddedPayloads::deploy_official_mods(&shared_mods_dir)?;
-            for name in &extracted {
-                let shared_dest = shared_mods_dir.join(name);
-                let version_dest = version_mods_dir.join(name);
-                let _ = fs::copy(&shared_dest, &version_dest);
-                deployed.push(name.clone());
+                // Normal self-contained setup: deploy directly from embedded payload!
+                if let Ok(path) = EmbeddedPayloads::deploy_single_mod(&shared_mods_dir, dll) {
+                    let version_dest = version_mods_dir.join(dll);
+                    let _ = fs::copy(&path, &version_dest);
+                    info!("[Install] mod deployed from embedded setup payload -> {:?}", path);
+                    deployed.push(dll.to_string());
+                }
             }
         }
 

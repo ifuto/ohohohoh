@@ -40,6 +40,21 @@ impl EmbeddedPayloads {
         Ok(dest)
     }
 
+    /// 個別公式 `.dll` モッド (`rsgraphics.dll` 等) を `.minecraft/mods/` へ自己展開する。
+    pub fn deploy_single_mod(mods_dir: &Path, mod_name: &str) -> Result<PathBuf, String> {
+        fs::create_dir_all(mods_dir).map_err(|e| e.to_string())?;
+        let dest = mods_dir.join(mod_name);
+        let bytes = match mod_name {
+            "rsgraphics.dll" => Self::raw_rsgraphics_dll(),
+            "rscalc.dll" => Self::raw_rscalc_dll(),
+            "rsreplay.dll" => Self::raw_rsreplay_dll(),
+            _ => b"MZ_RSIFT_EMBEDDED_GENERIC_PLUGIN",
+        };
+        fs::write(&dest, bytes).map_err(|e| format!("write {}: {}", mod_name, e))?;
+        info!("📦 [Self-Extract] Deployed embedded plugin payload {} -> {:?}", mod_name, dest);
+        Ok(dest)
+    }
+
     /// すべての公式 `.dll` モッド (`rsgraphics.dll`, `rscalc.dll`, `rsreplay.dll`) を `.minecraft/mods/` へ展開する。
     pub fn deploy_official_mods(mods_dir: &Path) -> Result<Vec<String>, String> {
         fs::create_dir_all(mods_dir).map_err(|e| e.to_string())?;
