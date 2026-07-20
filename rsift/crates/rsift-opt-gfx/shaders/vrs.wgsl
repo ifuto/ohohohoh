@@ -1,47 +1,68 @@
-// Variable Rate Shading mask generation (reference WGSL compute pass).
-// One invocation per rate-tile. Averages per-pixel motion magnitude and luma
-// variance, then picks a coarse/fine shading rate. Reducing the shading rate
-// directly cuts pixel-shader invocations — a cheap win on integrated GPUs.
+// Variable Rate Shading mask generation (実 dispatch 版)。
+//
+// CPU ミラー (完全一致): src/frame_postfx.rs の vrs_run_cpu
+// (= src/vrs.rs の Vrs::build_mask と同一規則)
+//   score = clamp(motion, 0, 1) * motion_weight - clamp(variance, 0, 1) * variance_weight
+//   code  : >0.6 → 4 / >0.3 → 3 / >0.05 → 2 / >-0.3 → 1 / それ以外 → 0
+//
+// iGPU コア: バッファのみ。旧版は sampler 宣言 `smp` 欠落 + サンプラ双一次で
+// GPU==CPU bitwise 不可能だったため、f32 バッファ直接読みに置き換え
+// (モーション/分散フィールドはホストが実フレームから生成したものを upload)。
+// ハードウェア VRS は wgpu/WebGPU に存在しないため、マスク生成が本モジュールの
+// 実効果 (粗レート画素の削減率メトリクスと可視化に実還元される)。
 
-struct U {
-    dims    : vec2<u32>,   // full-res pixel dims
-    tile    : u32,         // tile size in pixels
-    weights : vec2<f32>,   // (motion_weight, variance_weight)
+struct VrsParams {
+    dims: vec2<u32>,   // full-res pixel dims
+    tile: u32,         // tile size in pixels
+    motion_weight: f32,
+    variance_weight: f32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
 };
-@group(0) @binding(0) var<uniform> u : U;
-@group(0) @binding(1) var motionTex : texture_2d<f32>;
-@group(0) @binding(2) var varTex    : texture_2d<f32>;
-@group(0) @binding(3) var outTex    : texture_storage_2d<r32uint, write>;
+
+@group(0) @binding(0) var<uniform> params: VrsParams;
+@group(0) @binding(1) var<storage, read> motion_in: array<f32>;
+@group(0) @binding(2) var<storage, read> var_in: array<f32>;
+@group(0) @binding(3) var<storage, read_write> mask_out: array<u32>;
+
+fn select_code(motion: f32, variance: f32, mw: f32, vw: f32) -> u32 {
+    let score = clamp(motion, 0.0, 1.0) * mw - clamp(variance, 0.0, 1.0) * vw;
+    if (score > 0.6) {
+        return 4u;
+    } else if (score > 0.3) {
+        return 3u;
+    } else if (score > 0.05) {
+        return 2u;
+    } else if (score > -0.3) {
+        return 1u;
+    }
+    return 0u;
+}
 
 @compute @workgroup_size(8, 8, 1)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-    let tw = (u.dims.x + u.tile - 1u) / u.tile;
-    let th = (u.dims.y + u.tile - 1u) / u.tile;
-    if (gid.x >= tw || gid.y >= th) { return; }
-
+fn cs_vrs_mask(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let tw = (params.dims.x + params.tile - 1u) / params.tile;
+    let th = (params.dims.y + params.tile - 1u) / params.tile;
+    if (gid.x >= tw || gid.y >= th) {
+        return;
+    }
+    let y0 = gid.y * params.tile;
+    let y1 = min((gid.y + 1u) * params.tile, params.dims.y);
+    let x0 = gid.x * params.tile;
+    let x1 = min((gid.x + 1u) * params.tile, params.dims.x);
     var ms = 0.0;
     var vs = 0.0;
-    var cnt = 0.0;
-    for (var y : u32 = 0u; y < u.tile; y = y + 1u) {
-        let py = gid.y * u.tile + y;
-        if (py >= u.dims.y) { break; }
-        for (var x : u32 = 0u; x < u.tile; x = x + 1u) {
-            let px = gid.x * u.tile + x;
-            if (px >= u.dims.x) { break; }
-            let uv = (vec2<f32>(f32(px), f32(py)) + 0.5) / vec2<f32>(f32(u.dims.x), f32(u.dims.y));
-            ms = ms + textureSampleLevel(motionTex, smp, uv, 0.0).r;
-            vs = vs + textureSampleLevel(varTex, smp, uv, 0.0).r;
-            cnt = cnt + 1.0;
+    var cnt = 0u;
+    for (var y = y0; y < y1; y = y + 1u) {
+        for (var x = x0; x < x1; x = x + 1u) {
+            let i = y * params.dims.x + x;
+            ms = ms + motion_in[i];
+            vs = vs + var_in[i];
+            cnt = cnt + 1u;
         }
     }
-    let motion = ms / max(cnt, 1.0);
-    let variance = vs / max(cnt, 1.0);
-    let score = motion * u.weights.x - variance * u.weights.y;
-
-    var code : u32 = 1u; // default Rate1x2
-    if (score > 0.6) { code = 4u; }
-    else if (score > 0.3) { code = 3u; }
-    else if (score > 0.05) { code = 2u; }
-    else if (score <= -0.3) { code = 0u; }
-    textureStore(outTex, vec2<i32>(i32(gid.x), i32(gid.y)), vec4<u32>(code, 0u, 0u, 0u));
+    let motion = ms / f32(cnt);
+    let variance = vs / f32(cnt);
+    mask_out[gid.y * tw + gid.x] = select_code(motion, variance, params.motion_weight, params.variance_weight);
 }

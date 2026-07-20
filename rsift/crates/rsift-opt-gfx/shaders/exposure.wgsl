@@ -1,40 +1,45 @@
-// rsift-opt-gfx :: auto-exposure (log-luminance histogram)
-// Mirrors the Rust `build_histogram` / `target_exposure` / `adapt` pipeline,
-// matching Unreal's histogram auto-exposure metering.
+// rsift-opt-gfx :: auto-exposure (実 dispatch 版)
+//
+// 役割分担 (決定性設計):
+//  - GPU: 画素毎の luma 計算 (Rec.709、mul/add のみで IEEE 厳密) と
+//    露出スカラの画素適用 (clamp 付き乗算)。どちらも GPU==CPU bitwise。
+//  - CPU: ヒストグラム集計 + 目標露出 + 適応 (log/exp は WGSL 実装定義のため
+//    GPU には置かない — src/exposure.rs の build_histogram / target_exposure /
+//    adapt をそのまま使用。luma 入力が bitwise 一致するので計量結果も一致)。
+//
+// CPU ミラー (完全一致): src/frame_postfx.rs の luma_run_cpu / apply_run_cpu
+//   luma(c) = 0.2126 * r + 0.7152 * g + 0.0722 * b   (この加算順で固定)
+//   apply(c, e) = clamp(c * e, 0.0, 1.0)             (成分毎、alpha 透過)
+// (旧版は `target` 予約語違反 + ヒストグラムを GPU 側で log/exp 使いで
+//  非決定的だった問題を、上記の責務分離で解消)
 
-const HIST_BINS: u32 = 256u;
+struct ExposureParams {
+    count: u32,     // 画素数
+    exposure: f32,  // cs_apply で使うスカラ (CPU 計量結果を uniform で供給)
+    _pad0: u32,
+    _pad1: u32,
+};
 
-fn exposure_luma(c: vec3<f32>) -> f32 {
-  return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+@group(0) @binding(0) var<uniform> params: ExposureParams;
+@group(0) @binding(1) var<storage, read> src: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> luma_out: array<f32>;   // cs_luma
+@group(0) @binding(3) var<storage, read_write> dst: array<vec4<f32>>;  // cs_apply
+
+@compute @workgroup_size(64, 1, 1)
+fn cs_luma(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params.count) {
+        return;
+    }
+    let c = src[gid.x].xyz;
+    luma_out[gid.x] = 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z;
 }
 
-fn exposure_target(hist: array<f32, 256>, min_lum: f32, max_lum: f32,
-                   low_percent: f32, high_percent: f32) -> f32 {
-  var total = 0.0;
-  for (var b: u32 = 0u; b < HIST_BINS; b = b + 1u) {
-    total = total + hist[b];
-  }
-  if (total <= 0.0) { return 1.0; }
-  let lo = ceil(total * low_percent / 100.0);
-  let hi = ceil(total * (1.0 - high_percent / 100.0));
-  let log_min = log(max(min_lum, 1e-4));
-  let log_max = log(max(max_lum, min_lum * 1.001));
-  let range = max(log_max - log_min, 1e-6);
-  var count = 0.0;
-  var weighted = 0.0;
-  for (var b: u32 = 0u; b < HIST_BINS; b = b + 1u) {
-    if (count < lo) { count = count + hist[b]; continue; }
-    if (count >= hi) { break; }
-    let t = (f32(b) + 0.5) / f32(HIST_BINS);
-    let lum = exp(log_min + t * range);
-    weighted = weighted + lum * hist[b];
-    count = count + hist[b];
-  }
-  if (weighted <= 0.0) { return 1.0; }
-  return clamp(total / weighted, 0.05, 20.0);
-}
-
-fn exposure_adapt(prev: f32, target: f32, speed: f32, dt: f32) -> f32 {
-  let k = 1.0 - exp(-speed * dt);
-  return clamp(prev + (target - prev) * k, 0.05, 20.0);
+@compute @workgroup_size(64, 1, 1)
+fn cs_apply(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params.count) {
+        return;
+    }
+    let c = src[gid.x];
+    let rgb = clamp(c.xyz * params.exposure, vec3<f32>(0.0), vec3<f32>(1.0));
+    dst[gid.x] = vec4<f32>(rgb, c.w);
 }

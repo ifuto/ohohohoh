@@ -1,69 +1,55 @@
-// AMD FidelityFX-inspired Contrast Adaptive Sharpening (CAS) — Tier 4.
-// Sharpen + optional bilinear upscale from internal DRS resolution to display.
-
-@group(0) @binding(0) var input_tex: texture_2d<f32>;
-@group(0) @binding(1) var input_samp: sampler;
+// rsift-opt-gfx :: Contrast Adaptive Sharpening (実 dispatch 版)
+//
+// CPU ミラー (完全一致): src/frame_postfx.rs の cas_run_cpu
+// (= src/cas.rs の cas_sample を全画素に適用。演算順も同一)
+//   min_c/max_c : 上下左右 4 近傍 (ボーダーは端へ clamp) の成分別 min/max
+//   contour = clamp(1.0 - (mx - mn), 0, 1)
+//   peaking = 1.0 / (4.0 * (mx - mn) + 1.0)
+//   amp     = clamp(contour * peaking * sharpness, 0, 1)
+//   out     = c * (1.0 - amp) + ((mn + mx) * 0.5) * amp   (成分毎)
+//
+// iGPU コア: バッファのみ (sampler / storage texture 不使用)。
+// mul/add/div/clamp/min/max のみで IEEE 厳密丸め、GPU==CPU bitwise を保つ
+// (旧版は fs_main の vec3/scalar 混在 clamp で naga 検証に失敗していた)。
 
 struct CasParams {
-    // sharpness 0..1, inverted to AMD const0 style
+    width: u32,
+    height: u32,
     sharpness: f32,
-    display_w: f32,
-    display_h: f32,
     _pad: f32,
 };
-@group(0) @binding(2) var<uniform> params: CasParams;
 
-struct VsOut {
-    @builtin(position) clip: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-};
+@group(0) @binding(0) var<uniform> params: CasParams;
+@group(0) @binding(1) var<storage, read> src: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> dst: array<vec4<f32>>;
 
-@vertex
-fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
-    var pos = array<vec2<f32>, 3>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>( 3.0, -1.0),
-        vec2<f32>(-1.0,  3.0),
-    );
-    var o: VsOut;
-    o.clip = vec4<f32>(pos[vid], 0.0, 1.0);
-    o.uv = pos[vid] * 0.5 + vec2<f32>(0.5, 0.5);
-    return o;
+fn px(x: i32, y: i32) -> vec3<f32> {
+    let cx = clamp(x, 0, i32(params.width) - 1);
+    let cy = clamp(y, 0, i32(params.height) - 1);
+    return src[u32(cy) * params.width + u32(cx)].xyz;
 }
 
-fn cas_weight(a: f32, b: f32) -> f32 {
-    return 1.0 / (1.0 + abs(a - b));
+fn cas_run(x: i32, y: i32) -> vec3<f32> {
+    let n = px(x, y - 1);
+    let s = px(x, y + 1);
+    let e = px(x + 1, y);
+    let w = px(x - 1, y);
+    let c = px(x, y);
+    let mn = min(min(n, s), min(e, w));
+    let mx = max(max(n, s), max(e, w));
+    let contour = clamp(vec3<f32>(1.0) - (mx - mn), vec3<f32>(0.0), vec3<f32>(1.0));
+    let peaking = vec3<f32>(1.0) / ((mx - mn) * 4.0 + vec3<f32>(1.0));
+    let amp = clamp(contour * peaking * params.sharpness, vec3<f32>(0.0), vec3<f32>(1.0));
+    let avg = (mn + mx) * 0.5;
+    return c * (vec3<f32>(1.0) - amp) + avg * amp;
 }
 
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let tex_size = vec2<f32>(textureDimensions(input_tex));
-    let uv = in.uv;
-    // 3x3 neighborhood
-    let o = 1.0 / tex_size;
-    let a = textureSample(input_tex, input_samp, uv + vec2<f32>(-o.x, -o.y)).rgb;
-    let b = textureSample(input_tex, input_samp, uv + vec2<f32>( 0.0, -o.y)).rgb;
-    let c = textureSample(input_tex, input_samp, uv + vec2<f32>( o.x, -o.y)).rgb;
-    let d = textureSample(input_tex, input_samp, uv + vec2<f32>(-o.x,  0.0)).rgb;
-    let e = textureSample(input_tex, input_samp, uv).rgb;
-    let f = textureSample(input_tex, input_samp, uv + vec2<f32>( o.x,  0.0)).rgb;
-    let g = textureSample(input_tex, input_samp, uv + vec2<f32>(-o.x,  o.y)).rgb;
-    let h = textureSample(input_tex, input_samp, uv + vec2<f32>( 0.0,  o.y)).rgb;
-    let i = textureSample(input_tex, input_samp, uv + vec2<f32>( o.x,  o.y)).rgb;
-
-    let mn = min(e, min(min(b, d), min(f, h)));
-    let mx = max(e, max(max(b, d), max(f, h)));
-    // Adaptive amount — less sharpen where contrast already high
-    let amp = clamp(min(mn, 1.0 - mx) / (mx + 1e-4), 0.0, 1.0);
-    let peak = -0.125 - (params.sharpness * 0.25);
-    let w = amp * peak;
-
-    var sharp = e;
-    sharp = (b + d + f + h) * w + e;
-    sharp = sharp / (1.0 + 4.0 * w);
-
-    // Soft mix with cross taps for stability
-    let cross = (a + c + g + i) * 0.05 + sharp * 0.8;
-    let out_rgb = mix(e, cross, clamp(params.sharpness * 1.2, 0.0, 1.0));
-    return vec4<f32>(out_rgb, 1.0);
+@compute @workgroup_size(8, 8, 1)
+fn cs_cas(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params.width || gid.y >= params.height) {
+        return;
+    }
+    let rgb = cas_run(i32(gid.x), i32(gid.y));
+    let idx = gid.y * params.width + gid.x;
+    dst[idx] = vec4<f32>(rgb, src[idx].w);
 }

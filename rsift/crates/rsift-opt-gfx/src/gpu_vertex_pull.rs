@@ -137,8 +137,10 @@ impl GpuVertexPullEngine {
     fn detect_path(device: &wgpu::Device) -> PullRenderPath {
         let feats = device.features();
         // wgpu 0.20: mesh shaders not in stable Features — use vertex pull.
+        // SHADER_MESH_SHADER は破棄せず frame_worldgen::GpuMeshletCull が
+        // task/mesh 等価エミュレーションの meshlet カリング pass として実 dispatch
+        // する (mesh shader 自体は WGSL 非対応のためソフトエミュレーションが正)。
         let _ = feats;
-        let _ = SHADER_MESH_SHADER;
         PullRenderPath::VertexPull
     }
 

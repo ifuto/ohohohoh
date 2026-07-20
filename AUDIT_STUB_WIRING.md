@@ -595,3 +595,71 @@ atlas を GI 可視率として実フレーム画素に還元する。
 - DDGI 発展: プローブ生成の temporal 更新・移動型プローブ配置・
   sample 側の GPU 化 (現状は CPU サンプラ + atlas GPU==CPU 検証)。
 - VCT の複数コーン化・albedo 実データ接続 (中立 0.5 固定の継続課題)。
+## 追記 11: Phase E — naga FAIL 9 モジュールの全配線 (2026-07-20)
+
+### 目的
+ユーザー指示「配線されていない場所があるか確認して、配線されていなかったら
+すべて配線してください」。全 50 WGSL の最新 naga 走査で **FAIL 9 本**を特定
+(これらは wgpu でも確実にコンパイル不能 = 実質未配線) し、全て実配線した。
+
+### 障害の実態 (naga 最新で実測)
+| WGSL | 障害 | 処置 |
+|---|---|---|
+| bindless | `set` 予約語 (fn 引数名) | rename + ハンドル unpack 実 compute 化 |
+| cas | fs_main の vec3/scalar 混在 clamp が型エラー + CRLF 改行 | cas_sample 完全ミラーの compute 書換え (LF 化) |
+| checkerboard | 関数本体の暗黙 return 省略 | バッファ compute + ミラー規則で書換え |
+| exposure | `target` 予約語 (fn 引数名) | GPU luma/apply 分離設計で書換え (計量は CPU) |
+| half_vertex | WGSL 非標準 `u16` 型 + 実装定義 `pow` | 浮動小数ゼロのビット配置デコードへ全面書換え |
+| lbvh | fn 引数の `mut` 修飾 (現行 WGSL では予約語) | ローカル var 化 + morton/cull 実 compute 化 |
+| noise_upsample | Rust 風クロージャ `|cx, ...|` + hash3 へ f32 渡し (型バグ) | 値ノイズ正準化で全面書換え |
+| vrs | sampler `smp` 未宣言 + サンプラ双一次 | バッファ読み compute 化 (build_mask 完全ミラー) |
+| terrain_mesh_shader | `enable mesh_shader;` (WGSL 非対応、`gpu_vertex_pull.rs` で `let _ =` 破棄されていた AUDIT B2 違反スタブ) | task/mesh 等価エミュレーション (meshlet cull compute) へ実転用、元の `let _ =` 行を削除 |
+
+### 実装 (rsift-opt-gfx、全て iGPU コア機能のみ: compute + RO/RW storage buffer)
+- `src/frame_postfx.rs` (新規): CAS/Checkerboard/Exposure/VRS の CPU 精密ミラー
+  + Gpu dispatch (GpuCas/GpuCheckerboard/GpuExposure/GpuVrs)。
+- `src/frame_worldgen.rs` (新規): 値ノイズ upsample/LBVH/Bindless/Half-vertex/
+  Meshlet cull の CPU 精密ミラー + Gpu dispatch + Gribb/Hartmann frustum 平面
+  抽出 (列優先 + wgpu z∈[0,1]、向きは既知点テストで実検証)。
+- `gpu_vertex_pull.rs`: `let _ = SHADER_MESH_SHADER;` 破棄スタブ削除
+  (frame_worldgen::GpuMeshletCull が実 dispatch で消費)。
+- `examples/frame_proof_extra.rs` (新規): 9 モジュール × cpu/gpu 18 モード。
+  cpu-* は CPU ミラー実走 + BMP/メトリクス還元、gpu-* は実 dispatch +
+  GPU==CPU bitwise assert (fail-loud)。
+
+### 発見・是正した既存バグ (全て実測特定)
+1. **`noise_upsample.rs::perlin3d_dense` の退化**: i32 引数のみで勾配ノイズを
+   評価するため全整数ボクセルでラティス零点に退化し **常時 0.5** を返していた
+   (`render_pipeline.rs:313` が実使用 → ノイズ地形が事実上フラット)。
+   ラティスで変化する値ノイズ (vhash) を正準として WGSL/CPU 両側新設。
+   旧関数は消費者契約のため不触 (frame_worldgen 側に記録)。
+2. **旧 cas.wgsl は cas.rs と式が非対応** (min/max 近傍の扱い・係数が別物)。
+   正準 = cas.rs::cas_sample とし WGSL を演算順完全一致で書換え。
+3. **旧 exposure.wgsl は CPU と percentile 意味論が非対応**、かつ log/exp を
+   GPU に置く非決定設計 → 責務分離 (GPU luma/apply のみ、計量は既存 CPU fn)。
+4. **旧 vrs.wgsl は `smp` 宣言欠落で永遠にコンパイル不能** + textureSampleLevel
+   双一次で GPU==CPU bitwise 不可能 → バッファ直接読み化。
+5. **half_vertex.wgsl の f16 decode は pow 依存** → エンコーダの subnormal
+   flush と対になるビット配置デコードを正準化 (Inf/NaN/-0.0 も厳密)。
+
+### 検証 (全て sandbox 実測)
+- lib テスト **360/360 緑** (346 + 新規 14)。
+- naga 二系統: 最新 naga-wasi-cli **全 50 本 OK** (FAIL 9 → 0)、
+  in-crate naga 0.20 も新規 WGSL 全 parse OK。
+- `frame_proof_extra` 全 9 cpu モード実走: CAS Δlum +0.000023、
+  checker 再構成 MAD 0.0025/px、exposure target 6.10→adapted 1.33、
+  VRS shaded 21.4% (rates 1x2..4x4 実分布)、ノイズ 573/729 distinct
+  (退化でない実証)、LBVH visible 16/32 (近景/背後 = 期待どおり)、
+  bindless roundtrip 3356/3356、f16 50% 削減/max err 0.000483、
+  meshlet 実カメラ 105/105 vs 背向 31/105 (カリング実効果実測)。
+  BMP 7 種生成・目視確認 (VRS レート分布・ノイズボリューム・
+  LBVH 緑/赤カリング・meshlet 両カメラ比較散布図・実テラス描画)。
+- `cargo clippy -p rsift-opt-gfx --lib/--example` → error 0、新規ファイル警告 0。
+
+### 残課題 (backlog)
+- gpu-* モードの実機検証 (sandbox は GPU 無し、fail-loud 配線済み、
+  GPU==CPU bitwise assert 内蔵)。
+- ノイズ: `column_palettes_upsampled` (render_pipeline 実使用) を vhash 正準へ
+  移行するかは製品判断 (旧消費者の見た目互換とのトレードオフ)。
+- GPU 側 bindless 配列自体は wgpu コア非対応のため、本配線はハンドル解決
+  テーブルまで (テクスチャ実体は texture_atlas 側の既存機構が担う、を明文化)。
