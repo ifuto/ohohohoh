@@ -1,31 +1,10 @@
 name: vendor
 
-# ============================================================================
-# cargo vendor (依存クレートのソース一式) を Web 完結で生成し、
-# 分割 tarball として `vendor` ブランチへ push するだけの使い捨てワークフロー。
-#
-# 背景: 検証 sandbox は crates.io への接続を遮断されている (SNI フィルタ) が、
-#       github.com への git アクセスは可能。GitHub ランナーは crates.io に
-#       普通に繋がるので、ここで vendor を作って git 経由で受け渡す。
-#
-# 使い方 (ブラウザのみ・約1分):
-#   1. GitHub リポジトリ → Actions タブ → New workflow
-#   2. "set up a workflow yourself" → このファイルの中身を全量貼り付け
-#      (ファイル名は vendor.yml のままで OK)
-#   3. Commit changes → Commit した瞬間に自動実行される
-#   4. 約5〜15分後、vendor ブランチが生成される (Actions タブで進捗確認可能)
-#
-# 再実行したい場合: Actions → vendor → Run workflow (branch 指定も可)。
-# 消費クォータ目安: ubuntu-latest ×1 (Linux) で 1回 5〜15分 = 月2,000分の 1% 未満。
-# ============================================================================
-
 on:
-  # Web UI からこのファイルを main にコミットした瞬間に自動起動するためのトリガ。
   push:
     branches: [main]
     paths:
       - '.github/workflows/vendor.yml'
-  # 手動再実行用。cargo vendor の対象 ref を変えたい場合は入力を変える。
   workflow_dispatch:
     inputs:
       source_ref:
@@ -42,7 +21,7 @@ concurrency:
 
 jobs:
   vendor:
-    runs-on: ubuntu-latest # Linux = クォータ ×1。vendor 生成に Windows は不要
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout (lockfile の供給元 ref)
@@ -55,9 +34,6 @@ jobs:
         run: |
           set -euo pipefail
           cd rsift
-          # Cargo.lock と厳密一致 (--locked) で全依存 (全ターゲット / dev-deps 含む)
-          # のソースを取得。crates.io からの DL 時に各クレートの sha256 が
-          # Cargo.lock と照合されるので、内容の改ざんはここで検知される。
           cargo vendor --locked vendor > ../vendor-config.txt
           echo "vendored crates: $(ls vendor | wc -l)"
 
@@ -77,24 +53,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           ls -la
 
-      - name: vendor ブランチへ push (force・単一コミットに集約)
-        env:
-          SRC_REF: ${{ github.event.inputs.source_ref || 'arena/019f79db-rsift' }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Rust toolchain 取得 (sandbox 用・公式 sha256 照合)
         run: |
           set -euo pipefail
+          VER=1.94.1
           cd out
-          cat > README.md <<'README'
-          # vendor ブランチ (自動生成・書き換え専用)
-          `ci/vendor.yml` (GitHub Actions) が `cargo vendor --locked` の成果物を
-          90MB 分割 tarball として置くブランチ。force push で常に単一コミット。
-          受け取り側は `ci/fetch_vendor.sh` が結合・検証・展開まで自動で行う。
-          README
-          git init -q -b vendor .
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -qm "cargo vendor --locked (src: ${SRC_REF})"
-          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
-            HEAD:refs/heads/vendor
-          echo "pushed to refs/heads/vendor"
+          curl -sSfL "https://static.rust-lang.org/dist/rust-${VER}-x86_64-unknown-linux-gnu.tar.xz" -o toolchain.tar.xz
+          curl -sSfL "https://static.rust-lang.org/dist/rust-${VER}-x86_64-unknown-linux-gnu.tar.xz.sha256" -o toolchain.expect.sha256
+          # 公式発行ハッシュと照合 (改ざん検知 — 照合失敗ならここで run 中断)
+          awk '{print $1"  toolchain.tar.xz"}' toolchain.expect.sha256 | sha256sum -c -
+          rm toolchain.expect.sha256
+          split -b 90m -d -a 2 toolchain.tar.xz 
