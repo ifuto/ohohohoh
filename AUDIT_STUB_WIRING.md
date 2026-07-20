@@ -347,3 +347,101 @@ pseudo_mc_live) は revert して実編集のみ再適用した。
 - GPU 実 dispatch (`gpu-fsr`) は sandbox に adapter が無いためユーザー環境待ち。
   その際は `frame_proof gpu-fsr` の readback 画像と `cpu-fsr` 画像の統計突合
   (±1LSB 許容の画素一致率) で GPU/CPU 真値検証を行う。
+## 追記 8: RsGraphics 進化 Phase C — GPU Hi-Z 遮蔽カリング (iGPU コア機能のみ) (2026-07-20)
+
+### 目的
+「前フレーム深度 → Hi-Z (深度ミップ階層) → チャンク AABB との遮蔽判定 →
+次フレームの draw 抑制」を、**実データ駆動の GPU 実 dispatch** で構成する。
+ユーザー要件「**内蔵GPU勢もできるように**」= iGPU を第一級対象とし、
+WGSL **コアフィーチャのみ**で設計した:
+
+- compute `8x8` workgroup dispatch、storage texture は **WriteOnly のみ**
+  (wgpu で ReadOnly/ReadWrite storage は `TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES`
+  が必須 = vendored wgpu-core/src/device/resource.rs で一次確認。WriteOnly はコア)。
+- アトミック不使用・subgroups 不使用・mesh shader 不使用・bindless 不使用。
+- readback は coverage 配列のみで **≤16KiB** (`MAX_BLOCKS=4096 × 4B = 16,384B`)。
+  iGPU の重要帯域を圧迫しない。
+
+### 新規追加 (rsift-opt-gfx)
+- `shaders/depth_psychic.wgsl` (新規): 主深度 (`texture_depth_2d` + `textureLoad`)
+  → 64×64 Hi-Z へ **max ダウンサンプル** (8x8wg、r32float WriteOnly 出力)。
+- `shaders/hiz_raster.wgsl` (新規): `@workgroup_size(1)` per-block。
+  AABB 8 角を `view_proj` で変換し、**w≤1e-5 の角が 1 つでもあれば
+  判定不能=保守的可視** (near 面跨ぎで z_min が近接深度に偏って誤カリングする
+  古典的 Hi-Z バグの回避規則)。画面外/far 越えも保守的可視。
+  NDC bbox → Hi-Z セル矩形を全走査し `coverage = 可視セル数`、`vis` を
+  実バッファに実書き込みする (フェイクの「常に可視」ではない)。
+- `shaders/hiz_debug_view.wgsl` (新規): Hi-Z texel を画素化して rgba8unorm に
+  実書き出し (可視化 readback 用)。
+- `src/frame_hiz.rs` (新規, ~570行): `GpuHiz` — 3 実パイプライン
+  (downsample/raster/debug) + `QueryCore` 内蔵 + `update()` が
+  set_boxes→bg 生成→down dispatch→raster dispatch→debug→coverage copy→
+  map (`Maintain::Wait`) → `core.resolve` までを **実実行** する。
+  `aabb_from_mesh` は terrain_vertex_pull.wgsl と同一の face 別 corner 展開規則で
+  quad 占有矩形を厳密範囲化 (`unpack_width/height` は +1 デコード済み実幅)。
+- `src/frame_pipeline.rs`: 深度 usage に `TEXTURE_BINDING` 追加 + `depth_view()`
+  getter + `record_to_ldr_gated` / `render_to_image_gated`
+  (draw_mask の false 番目は **draw 自体を発行しない** = 実効果の還元面)。
+- `src/frame_reference.rs`: `CpuFrame.depth` 追加 + `hiz_downsample_reference` /
+  `hiz_test_reference` (WGSL の精度ミラー: w≤1e-5 → any_invalid 保守規則まで一致)。
+- `examples/frame_proof.rs`: `cpu-hiz` / `gpu-hiz` モード + `hiz_scene()`。
+
+### 設計検証で実発見した重要事実 (推測ではなく実測)
+**demo 地形は遮蔽シーンに使えない。** `demo_column_palettes` の占有は各 16 層
+セクションの底 (base_h∈[2,11]) のみで層間に水平空隙があり、水平視線が空隙を
+すり抜けて back が透ける (CPU 参照ミラーの実走で coverage=[1536,61] と
+カリング失敗を実測)。よって遮蔽実証シーンは **front=全面占有壁 (16×64×16、
+実 `mesh_chunk_column_pull_world` 経由)** + **back=demo 地形の最下 1 セクション**
+とし、実測 coverage=[1536,0]・全描画 vs culled 描画の深度 diff=0 (pixel-identical)
+を確認した (設計検証 Python ミラー + 実 crate テストの両方)。
+
+### 検証 (全て sandbox 実測)
+- 新規テスト 8 件 (frame_hiz 4 + frame_reference 4): WGSL naga パース・
+  Rust/WGSL 構造体レイアウト一致 (80B/32B)・face 別 AABB 厳密性・負 face 厚さ0・
+  max ダウンサンプル・壁遮蔽 coverage=0・画面外/背後=保守的可視・自己深度で
+  自己カリングしないこと。
+- `cargo test -p rsift-opt-gfx --locked --offline --lib` → **328 passed / 0 failed**。
+- `cargo clippy -p rsift-opt-gfx --all-targets --locked --offline` → error 0、
+  新規ファイルの新規警告 0 (既存 185 警告は原作者由来で不触: 方針)。
+- `frame_proof cpu-hiz` 実走: frame0 coverage=[1536,0]→draw=2 culled=0
+  (graced)、frame1 以降 draw=1 culled=1。full=culled=214,642 px の
+  **全ピクセル一致を実 assert** (culled 描画が安全=カリングの実効果還元)。
+- WGSL 健全性スキャン (naga-wasi-cli=npm,naga struct 実パース+SPIR-V 実生成):
+  shaders/ 全 49 本 → **OK 39 / FAIL 10**。新規 3 本は全て OK。
+
+### スキャンで実発見: 既存 WGSL 10 本が naga 現行でコンパイル不能 (Phase D 対象)
+既存資産 (Phase C 以前から存在) が現行 naga で **実エラー** になる事実を記録:
+- `bindless.wgsl`: `set` は予約語　`exposure.wgsl`: `target` は予約語
+  `lbvh.wgsl`: `mut` は予約語 (naga 厳格化による系)
+- `cas.wgsl`: `Entry point fs_main at Fragment is invalid`
+- `checkerboard.wgsl`: 構文 (expected assignment or increment/decrement)
+- `ddgi.wgsl`: 識別子 `_` 不可　`half_vertex.wgsl`: 未知型 `u16`
+- `noise_upsample.wgsl`: 構文 (expected expression, found `|`)
+- `terrain_mesh_shader.wgsl`: `mesh_shader` enable 未対応 (設計通り非対応のはず)
+- `vrs.wgsl`: 未定義識別子 `smp`
+
+これらは元来「書いただけで一度も実デバイスに載っていない」状態だった疑いが
+強い (追記 7 以前に GPU 側 entry 呼び出し無し)。Phase D で GI 系 (vct/ddgi)
+を実 dispatch する際に併せて修正する。
+
+### 発見・修正した既存バグ (Phase C と無関係に潜伏 — 全て実測で特定)
+1. **`azdo.rs`: テストが 824,633,720,832 bytes (=768GiB) を alloc して SIGABRT。**
+   `AzdoOrchestrator::new` の第2引数は名前 `vbo_capacity_bytes` だが実体は
+   `PersistentVboPool::new(pool_mb)` (**MiB** 仕様、内部 log も MB) に素通し。
+   テストの `1 << 20` は 1,048,576 MiB (=1TiB プール) 要求で vertex staging
+   768GiB に化けていた。**引数名を `vbo_capacity_mb` に改名** + テストを
+   MiB 4 に修正。
+2. **`full_graph_wiring.rs`: `AzdoOrchestrator::new(8192, 64 << 20)` = 64TiB 要求。**
+   同じ単位齟齬。本経路が本番実行されると即座に異常アロケーションだったものを
+   `64` (MiB) に修正。
+3. **テスト不整合 4 件** (実装は設計意図通りでテスト側が誤っていたもの:
+   azdo zeroed args は cull されるのが仕様 / bitpacked の `<400` は 1bit 時代の
+   古期待値で現 vanilla 4bit=2048B 設計と非整合 / entity_culling の FOV フィルタ
+   cos<0.35 正しいがテスト視線が直下ターゲットと直角 / transform_svdag の
+   y-octant→y=0-octant 変換は permute 定義上到達不能) — 全て実装を変えず
+   テスト入力/期待値を実装の設計意図に整合させ、修正理由をコメントで記録。
+
+### 未実施 (環境制約)
+- GPU 実 dispatch (`gpu-hiz`) は sandbox に adapter が無いためユーザー環境待ち。
+  その際は frame0..2 の GPU readback coverage が `[>0, 0]` 系列になることと、
+  最終 culled 実フレーム画像が cpu-hiz 画像と統計一致することで真値検証する。

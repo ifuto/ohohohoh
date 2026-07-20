@@ -125,7 +125,12 @@ mod tests {
     fn test_transform_aware_canonicalization() {
         let mut tdag = TransformAwareSvdag::new();
         let n1 = SvdagNodeData { child_mask: 0b0000_0001, children: [1, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX] };
-        let n2 = SvdagNodeData { child_mask: 0b0000_0100, children: [u32::MAX, u32::MAX, 1, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX] };
+        // 注: permute_node は rotate_y_90 (xz 面回転) + mirror_x + mirror_z のみで
+        // y ビット (mask の bit1) は不変。よって y octant (mask 0b100) から
+        // y=0 octant (mask 0b001) へは到達不能。x octant (mask 0b010) なら
+        // mirror_x で octant 0 (= n1) に一致できる。旧テストの 0b100 は y octant で
+        // 恒等的に不一致となるテスト入力のミス (実装は設計通り)。
+        let n2 = SvdagNodeData { child_mask: 0b0000_0010, children: [u32::MAX, 1, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX] };
 
         let (id1, _) = tdag.insert_transform_aware(n1);
         let (id2, _) = tdag.insert_transform_aware(n2);

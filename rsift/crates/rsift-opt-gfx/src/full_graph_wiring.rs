@@ -236,7 +236,10 @@ impl FullGraphWiring {
             svdag: None,
             t_svdag: crate::transform_svdag::TransformAwareSvdag::new(),
             aokana: crate::aokana::AokanaFramework::new(1920, 1080),
-            azdo: crate::azdo::AzdoOrchestrator::new(8192, 64 << 20),
+            // 第2引数は MiB (`PersistentVboPool` 仕様)。以前の `64 << 20` は
+            // 67108864 MiB (=64 TiB) プール要求で、本経路が実行されると
+            // 即座に異常アロケーションだった (作者意図は 64 MiB)。
+            azdo: crate::azdo::AzdoOrchestrator::new(8192, 64),
             gigabuffer: crate::gigabuffer::GigaBufferSuballocator::new(512),
             gb_handles: HashMap::new(),
             vram_cache: crate::lockfree_vram_cache::LockFreeVramMeshCache::new(1 << 16),

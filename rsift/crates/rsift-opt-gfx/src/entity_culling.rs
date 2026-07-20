@@ -608,7 +608,11 @@ mod tests {
             })
             .collect();
         c.replace_targets_fast(&targets);
-        let (mask, st) = c.cull_fast_mask([0.5, 20.0, 0.5], [0.0, 0.0, 1.0], &solid);
+        // 注: FOV フィルタ (`dist > 2.0 && cos < 0.35 → 不可視`) は実装の設計意図通り。
+        // ターゲット列はカメラ直下 (y=10..11) に並ぶので、視線は真下 `[0,-1,0]` を向ける。
+        // (旧テストの `[0,0,1]` は水平前方で、直下のターゲット全てが cos≈0 となり
+        //  FOV フィルタで全滅していた: テスト入力のミスで実装バグではない)
+        let (mask, st) = c.cull_fast_mask([0.5, 20.0, 0.5], [0.0, -1.0, 0.0], &solid);
         assert!(st.visible > 0);
         assert!(FastEntityCuller::is_visible_bit(mask, 0));
     }

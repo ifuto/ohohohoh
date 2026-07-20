@@ -15,9 +15,13 @@ pub struct AzdoOrchestrator {
 }
 
 impl AzdoOrchestrator {
-    pub fn new(max_commands: u32, vbo_capacity_bytes: usize) -> Self {
+    /// `max_commands`: MDI コマンド上限。`vbo_capacity_mb`: persistent VBO
+    /// プール容量 (**MiB 単位** — `PersistentVboPool::new` と同一仕様。
+    /// 以前の引数名 `vbo_capacity_bytes` は実態と乖離しており、
+    /// `1 << 20` 等を渡すと 768 GiB 要求で異常アロケーションとなった)。
+    pub fn new(max_commands: u32, vbo_capacity_mb: usize) -> Self {
         Self {
-            vbo_pool: PersistentVboPool::new(vbo_capacity_bytes),
+            vbo_pool: PersistentVboPool::new(vbo_capacity_mb),
             batcher: IndirectBatcher::new(max_commands),
             compactor: DrawCompactor::new(max_commands as usize),
             driver_overhead_saved_ns: AtomicU64::new(0),
@@ -43,13 +47,25 @@ impl AzdoOrchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execute_indirect::ChunkDrawCommand;
+    use crate::execute_indirect::{ChunkDrawCommand, DrawIndexedIndirectArgs};
 
     #[test]
     fn test_azdo_orchestrator_execution() {
-        let mut azdo = AzdoOrchestrator::new(100, 1 << 20);
+        // 第2引数は MiB (PersistentVboPool 仕様)。以前の `1 << 20` は
+        // bytes 意図の誤用で 1048576 MiB (=1 TiB プール → vertex staging
+        // 768 GiB) を要求し、テストが OOM SIGABRT で死んでいた。
+        let mut azdo = AzdoOrchestrator::new(100, 4);
+        // `compact_and_filter` は instance_count==0 / index_count==0 の
+        // コマンドを正しく除去する (AZDO 設計)。Zeroable::zeroed() の
+        // 全ゼロ args は除去対象なので、ここでは有効な描画コマンドを渡す。
         let cmd = ChunkDrawCommand {
-            args: bytemuck::Zeroable::zeroed(),
+            args: DrawIndexedIndirectArgs {
+                index_count_per_instance: 36,
+                instance_count: 1,
+                start_index_location: 0,
+                base_vertex_location: 0,
+                start_instance_location: 0,
+            },
             chunk_id: 1,
             material_id: 1,
             _pad: [0; 2],

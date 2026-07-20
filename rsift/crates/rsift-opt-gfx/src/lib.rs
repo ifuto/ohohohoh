@@ -11,6 +11,7 @@ pub mod chunk_mesh;
 pub mod cpu_occlusion;
 pub mod eco_render;
 pub mod frame_fsr1;
+pub mod frame_hiz;
 pub mod frame_pipeline;
 pub mod frame_reference;
 pub mod frame_reuse;

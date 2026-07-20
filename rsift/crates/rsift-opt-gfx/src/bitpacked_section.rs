@@ -184,6 +184,15 @@ mod tests {
         sec.set(5, 5, 5, 123);
         assert_eq!(sec.get(5, 5, 5), 123);
         assert_eq!(sec.get(0, 0, 0), 0);
-        assert!(sec.memory_footprint_bytes() < 400); // ~300 bytes instead of 8,192 bytes
+        // 実装は vanilla 1.16+ 準拠の最小 4 bits/block (= 4096*4bit = 2048B
+        // payload)。以前の `< 400` は 1-bit 時代の古い期待値で、vanilla
+        // フォーマット準拠の現設計と整合しなかった。
+        const VANILLA_4BIT_PAYLOAD: usize = 16 * 16 * 16 * 4 / 8; // 2048
+        let footprint = sec.memory_footprint_bytes();
+        assert!(
+            footprint <= VANILLA_4BIT_PAYLOAD + 128,
+            "vanilla 4bit payload + header を超過: {footprint}"
+        );
+        assert!(footprint < 8192, "生 u16 セクション (8192B) より小さいこと");
     }
 }

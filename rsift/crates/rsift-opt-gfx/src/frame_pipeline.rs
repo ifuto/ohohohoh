@@ -157,7 +157,11 @@ impl GpuFramePipeline {
         );
         let depth = mk_target(
             DEPTH_FORMAT,
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                // Phase C: Hi-Z ダウンサンプル (depth_psychic.wgsl) が
+                // texture_depth_2d として textureLoad するため
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             "Rsift Frame Depth",
         );
         let ldr = mk_target(
@@ -354,6 +358,11 @@ impl GpuFramePipeline {
         &self.ldr_view
     }
 
+    /// 深度テクスチャのビューを取得 (Phase C: Hi-Z ダウンサンプルの入力に使う)。
+    pub fn depth_view(&self) -> &wgpu::TextureView {
+        &self.depth_view
+    }
+
     /// ラスタ (深度付き) + ACES ポストを LDR テクスチャへ実描画して submit する
     /// (readback はしない)。FSR1 など後段パスが LDR を直接参照する場合に使う。
     /// 戻り値は (draw_calls, quads)。
@@ -364,6 +373,22 @@ impl GpuFramePipeline {
         view_proj: [[f32; 4]; 4],
         chunks: &[(PullBuiltMesh, [f32; 3])],
     ) -> Result<(u32, u32), String> {
+        self.record_to_ldr_gated(device, queue, view_proj, chunks, None)
+    }
+
+    /// `record_to_ldr` + Phase C カリングゲート。`draw_mask[i] == false` の
+    /// チャンクは draw を発行しない (Hi-Z `GpuHiz::should_draw` による
+    /// 実カリングの実行面)。`None` は全描画 (Phase A/B と同一挙動)。
+    /// culled チャンクが居てもクリア/ロード順序は保たれる (実 draw 数で
+    /// 先頭クリア判定しているため、先頭が culled でも次の実 draw でクリア)。
+    pub fn record_to_ldr_gated(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        view_proj: [[f32; 4]; 4],
+        chunks: &[(PullBuiltMesh, [f32; 3])],
+        draw_mask: Option<&[bool]>,
+    ) -> Result<(u32, u32), String> {
         queue.write_buffer(&self.exposure_buf, 0, bytemuck::bytes_of(&1.0f32));
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Rsift Frame Encoder"),
@@ -371,9 +396,15 @@ impl GpuFramePipeline {
 
         let mut draw_calls = 0u32;
         let mut quad_total = 0u32;
-        for (mesh, origin) in chunks {
+        for (i, (mesh, origin)) in chunks.iter().enumerate() {
             if mesh.is_empty {
                 continue;
+            }
+            // Phase C: Hi-Z culled チャンクは draw 自体を発行しない
+            if let Some(mask) = draw_mask {
+                if !mask.get(i).copied().unwrap_or(true) {
+                    continue;
+                }
             }
             let uniforms = FrameUniforms {
                 view_proj,
@@ -527,7 +558,20 @@ impl GpuFramePipeline {
         view_proj: [[f32; 4]; 4],
         chunks: &[(PullBuiltMesh, [f32; 3])],
     ) -> Result<FrameImage, String> {
-        let (draw_calls, quad_total) = self.record_to_ldr(device, queue, view_proj, chunks)?;
+        self.render_to_image_gated(device, queue, view_proj, chunks, None)
+    }
+
+    /// `render_to_image` + Phase C カリングゲート (`record_to_ldr_gated` 参照)。
+    pub fn render_to_image_gated(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        view_proj: [[f32; 4]; 4],
+        chunks: &[(PullBuiltMesh, [f32; 3])],
+        draw_mask: Option<&[bool]>,
+    ) -> Result<FrameImage, String> {
+        let (draw_calls, quad_total) =
+            self.record_to_ldr_gated(device, queue, view_proj, chunks, draw_mask)?;
         // Readback: LDR → staging buffer
         let padded = (self.width * 4).div_ceil(256) * 256;
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

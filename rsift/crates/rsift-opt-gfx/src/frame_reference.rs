@@ -28,6 +28,9 @@ pub struct CpuFrame {
     pub quads: u32,
     /// 被覆ピクセルの平均輝度 (内容があることの定量指標)。
     pub avg_lum: f32,
+    /// 全ピクセルの NDC z 深度 (1.0 = 未被覆 / far)。透視補正 z、
+    /// `Depth32Float` クリア値と同一規則。Phase C Hi-Z 参照の実入力。
+    pub depth: Vec<f32>,
 }
 
 /// WGSL `corner_pos` の face スイッチと同一。
@@ -185,6 +188,7 @@ pub fn render_reference(
         covered_px: covered,
         quads: quads_total,
         avg_lum,
+        depth,
     }
 }
 
@@ -355,6 +359,15 @@ pub fn render_reference_fsr(
                 (px[0] as f64 * 0.2126 + px[1] as f64 * 0.7152 + px[2] as f64 * 0.0722) / 255.0;
         }
     }
+    // 深度も画素と同一の位置対応で nearest 拡大 (Hi-Z 参照経路の整合のため)
+    let mut depth = vec![1.0f32; (full_w * full_h) as usize];
+    for y in 0..full_h {
+        let ly = ((y as u64 * low_h as u64) / full_h as u64).min(low_h as u64 - 1) as u32;
+        for x in 0..full_w {
+            let lx = ((x as u64 * low_w as u64) / full_w as u64).min(low_w as u64 - 1) as u32;
+            depth[(y * full_w + x) as usize] = lo.depth[(ly * low_w + lx) as usize];
+        }
+    }
     CpuFrame {
         width: full_w,
         height: full_h,
@@ -366,7 +379,109 @@ pub fn render_reference_fsr(
         } else {
             0.0
         },
+        depth,
     }
+}
+
+// ---------- Phase C: Hi-Z (保守的深度ダウンサンプル + AABB テスト) WGSL 精密ミラー ----------
+
+/// `depth_psychic.wgsl` と同一規則: 主深度を dim x dim の Hi-Z マップへ
+/// **セル内最遠深度 (max)** 集約でダウンサンプルする。floor/ceil の範囲決め、
+/// max の冪等性まで WGSL と一致 (GPU/CPU 交叉検証の参照面)。
+pub fn hiz_downsample_reference(depth: &[f32], width: u32, height: u32, dim: u32) -> Vec<f32> {
+    assert_eq!(
+        depth.len(),
+        (width * height) as usize,
+        "depth buffer size mismatch"
+    );
+    let mut out = vec![0.0f32; (dim * dim) as usize];
+    let sw = width as f32 / dim as f32;
+    let sh = height as f32 / dim as f32;
+    for gy in 0..dim {
+        for gx in 0..dim {
+            let x0 = (gx as f32 * sw).floor() as u32;
+            let y0 = (gy as f32 * sh).floor() as u32;
+            let x1 = ((gx + 1) as f32 * sw).ceil().min(width as f32) as u32;
+            let y1 = ((gy + 1) as f32 * sh).ceil().min(height as f32) as u32;
+            let mut m = 0.0f32;
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    m = m.max(depth[(y * width + x) as usize]);
+                }
+            }
+            out[(gy * dim + gx) as usize] = m;
+        }
+    }
+    out
+}
+
+/// `hiz_raster.wgsl` と同一規則の AABB オクルージョンカバレッジ。
+///
+/// 各箱の 8 角を `vp` で射影 → NDC bbox → Hi-Z セル矩形を全走査し、
+/// 「箱の最手前深度 z_min <= セル最遠深度 + DEPTH_EPS」のセル数を返す。
+/// カメラ後方 / 画面外 / far 越えは **保守的可視 (coverage=1)**。
+/// 返り値は `QueryCore::resolve` にそのまま渡せる per-box coverage。
+pub fn hiz_test_reference(
+    hiz: &[f32],
+    dim: u32,
+    boxes: &[crate::occlusion_query::QueryBox],
+    vp: &[[f32; 4]; 4],
+) -> Vec<u32> {
+    const DEPTH_EPS: f32 = 1e-4; // hiz_raster.wgsl と同値
+    assert_eq!(hiz.len(), (dim * dim) as usize, "hi-z map size mismatch");
+    let h = dim as f32;
+    boxes
+        .iter()
+        .map(|b| {
+            let mut ndc_min = [1e9f32; 2];
+            let mut ndc_max = [-1e9f32; 2];
+            let mut z_min = 1e9f32;
+            let mut any_invalid = false;
+            for i in 0..8u32 {
+                let px = if i & 1 != 0 { b.max[0] } else { b.min[0] };
+                let py = if i & 2 != 0 { b.max[1] } else { b.min[1] };
+                let pz = if i & 4 != 0 { b.max[2] } else { b.min[2] };
+                let clip = crate::frame_pipeline::mul_v4(vp, [px, py, pz, 1.0]);
+                let w = clip[3];
+                // near 面より手前の角が 1 つでもある = near 跨ぎ/後方 (WGSL と同一:
+                // z_min 偏りによる誤カリング防止のため全て判定不能=保守的可視)。
+                // partial_cmp 版は NaN も「不明」として保守的可視に倒れる (WGSL `w > 1e-5`
+                // の否定と完全一致)。
+                if w.partial_cmp(&1e-5) != Some(std::cmp::Ordering::Greater) {
+                    any_invalid = true;
+                    continue;
+                }
+                let (nx, ny, nz) = (clip[0] / w, clip[1] / w, clip[2] / w);
+                ndc_min[0] = ndc_min[0].min(nx);
+                ndc_min[1] = ndc_min[1].min(ny);
+                ndc_max[0] = ndc_max[0].max(nx);
+                ndc_max[1] = ndc_max[1].max(ny);
+                z_min = z_min.min(nz);
+            }
+            let offscreen = ndc_max[0] < -1.0
+                || ndc_min[0] > 1.0
+                || ndc_max[1] < -1.0
+                || ndc_min[1] > 1.0
+                || z_min > 1.0;
+            if any_invalid || offscreen {
+                return 1; // 保守的可視 (誤カリング絶対防止)
+            }
+            let cx0 = ((ndc_min[0] * 0.5 + 0.5) * h).floor().clamp(0.0, h - 1.0) as u32;
+            let cy0 = ((0.5 - ndc_max[1] * 0.5) * h).floor().clamp(0.0, h - 1.0) as u32;
+            let cx1 = (((ndc_max[0] * 0.5 + 0.5) * h).ceil().clamp(1.0, h) as u32).max(cx0 + 1);
+            let cy1 = (((0.5 - ndc_min[1] * 0.5) * h).ceil().clamp(1.0, h) as u32).max(cy0 + 1);
+            let mut cov = 0u32;
+            for cy in cy0..cy1 {
+                for cx in cx0..cx1 {
+                    let farthest = hiz[(cy * dim + cx) as usize];
+                    if z_min <= farthest + DEPTH_EPS {
+                        cov += 1;
+                    }
+                }
+            }
+            cov
+        })
+        .collect()
 }
 
 /// RGBA8 を 24-bit BMP (top-down, BGR) として実ファイルに書き出す。
@@ -415,6 +530,17 @@ mod tests {
         let palettes = crate::binary_greedy_meshing::demo_column_palettes(0, 0);
         let mesh = crate::binary_greedy_meshing::mesh_chunk_column_pull_world(
             &palettes, 0, 0, 0, 0, 0, 0, true,
+        );
+        vec![(mesh, [0.0, 0.0, 0.0])]
+    }
+
+    /// 全面占有の壁カラム (16x64x16)。実メッシュ生成ルート経由の決定的データ。
+    /// (demo 地形はセクション間に水平空隙があり遮蔽が破綻する — 設計検証で
+    /// 実測済のため、遮蔽成立テストでは空隙の無い壁を用いる)
+    fn wall_chunks() -> Vec<(PullBuiltMesh, [f32; 3])> {
+        let wall: Vec<crate::binary_greedy_meshing::SectionPalette> = vec![[1u16; 16 * 16 * 16]; 4];
+        let mesh = crate::binary_greedy_meshing::mesh_chunk_column_pull_world(
+            &wall, 0, 0, 0, 0, 0, 0, true,
         );
         vec![(mesh, [0.0, 0.0, 0.0])]
     }
@@ -504,6 +630,101 @@ mod tests {
         assert!(fr.covered_px > 0, "upscaled frame must show terrain");
         assert!(fr.covered_px < 384 * 288, "sky must remain");
         assert!(fr.avg_lum > 0.01);
+    }
+
+    // ---------- Phase C: Hi-Z 参照ミラーの実検証 ----------
+
+    #[test]
+    fn hiz_downsample_takes_cell_max() {
+        // 4x4 → 2x2: 各セルの max が取られること (手計算一致)
+        let depth = [
+            0.1, 0.5, 0.7, 0.2, //
+            0.9, 0.3, 0.4, 0.6, //
+            0.2, 0.8, 0.3, 0.9, //
+            0.4, 0.6, 0.1, 0.5,
+        ];
+        let hiz = hiz_downsample_reference(&depth, 4, 4, 2);
+        assert_eq!(hiz, vec![0.9, 0.7, 0.8, 0.9]);
+    }
+
+    #[test]
+    fn hiz_back_box_fully_occluded_by_wall_depth() {
+        // 実メッシュ深度 (全面占有の壁) で Hi-Z 構築 → 手前 AABB は coverage>0、
+        // 完全に背後の箱は coverage==0 (実遮蔽の実証、決定的)。
+        let chunks = wall_chunks(); // chunk (0,0): x 0..16, y 0..64, z 0..16 の実壁
+        let cam = FrameCamera {
+            eye: [8.0, 24.0, -30.0],
+            target: [8.0, 24.0, 16.0],
+            up: [0.0, 1.0, 0.0],
+            fov_y_deg: 60.0,
+            aspect: 640.0 / 480.0,
+            near: 0.1,
+            far: 500.0,
+        };
+        let vp = build_view_proj(&cam);
+        let frame = render_reference(&chunks, &vp, 640, 480);
+        assert!(
+            frame.covered_px > 0,
+            "wall must cover pixels for a meaningful test"
+        );
+        let dim = crate::frame_hiz::HIZ_DIM;
+        let hiz = hiz_downsample_reference(&frame.depth, 640, 480, dim);
+        let front = crate::frame_hiz::aabb_from_mesh(&chunks[0].0, chunks[0].1);
+        // 壁の完全に背後 (z 32..46) の箱
+        let back = crate::occlusion_query::QueryBox {
+            min: [2.0, 0.0, 32.0],
+            max: [14.0, 40.0, 46.0],
+        };
+        let cov = hiz_test_reference(&hiz, dim, &[front, back], &vp);
+        assert!(cov[0] > 0, "front wall box must be visible: {cov:?}");
+        assert_eq!(cov[1], 0, "box behind wall must be fully occluded: {cov:?}");
+    }
+
+    #[test]
+    fn hiz_conservative_when_offscreen_or_behind_camera() {
+        let cam = FrameCamera {
+            eye: [0.0, 0.0, 0.0],
+            target: [0.0, 0.0, 1.0],
+            up: [0.0, 1.0, 0.0],
+            fov_y_deg: 60.0,
+            aspect: 1.0,
+            near: 0.1,
+            far: 100.0,
+        };
+        let vp = build_view_proj(&cam);
+        let hiz = vec![0.5f32; 64 * 64]; // 全域に深度あるが関係しないはず
+        let far_side = crate::occlusion_query::QueryBox {
+            min: [1000.0, -1.0, 10.0],
+            max: [1002.0, 1.0, 12.0],
+        };
+        let behind = crate::occlusion_query::QueryBox {
+            min: [-1.0, -1.0, -20.0],
+            max: [1.0, 1.0, -10.0],
+        };
+        let cov = hiz_test_reference(&hiz, 64, &[far_side, behind], &vp);
+        assert_eq!(cov, vec![1, 1], "判定不能は保守的可視 (coverage=1)");
+    }
+
+    #[test]
+    fn hiz_self_depth_does_not_self_cull() {
+        // 箱自身から作った深度に対して自分をテスト → EPS で可視 (誤カリング防止)
+        let cam = FrameCamera {
+            eye: [8.0, 24.0, -30.0],
+            target: [8.0, 24.0, 8.0],
+            up: [0.0, 1.0, 0.0],
+            fov_y_deg: 60.0,
+            aspect: 1.0,
+            near: 0.1,
+            far: 500.0,
+        };
+        let vp = build_view_proj(&cam);
+        let chunks = wall_chunks();
+        let frame = render_reference(&chunks, &vp, 320, 240);
+        let dim = 64u32;
+        let hiz = hiz_downsample_reference(&frame.depth, 320, 240, dim);
+        let this = crate::frame_hiz::aabb_from_mesh(&chunks[0].0, chunks[0].1);
+        let cov = hiz_test_reference(&hiz, dim, &[this], &vp);
+        assert!(cov[0] > 0, "self depth must not self-cull: {cov:?}");
     }
 
     #[test]
