@@ -12,26 +12,22 @@
 // f32 演算順は CPU と同一に固定し、lod は floor(log2) をビット抽出で
 // 実装 (correctly-rounded log2f と一致、実装定義 libm 誤差の影響を排除)。
 
+// ==== SVO-TRACE SHARED REGION BEGIN ====
+// この領域は shaders/ddgi.wgsl と **バイト同一** で共有される
+// (frame_ddgi テストが両ファイルの共有領域一致を実 assert する。
+//  片方だけを編集してはいけない — 必ず両方を同時に更新すること)。
+
 struct VctParams {
     bounds: vec3<f32>,  // SVO ローカル論理境界 (16, 2 冪 pad 高さ, 16)
     root: u32,
     cap: u32,           // ツリー max_depth (16x64x16 → 6)
     node_count: u32,    // 監査用
-    cone_count: u32,
+    cone_count: u32,    // VCT ではコーン数、DDGI では未使用 (0)
     _pad: u32,
-};
-
-struct ConeWgsl {
-    o: vec3<f32>,       // SVO ローカル座標のコーン原点
-    aperture: f32,      // half-angle tan (例: 30° なら 0.577)
-    d: vec3<f32>,       // 正規化済み方向 (CPU 側で正規化して送る)
-    max_dist: f32,
 };
 
 @group(0) @binding(0) var<uniform> params: VctParams;
 @group(0) @binding(1) var<storage, read> nodes: array<u32>;
-@group(0) @binding(2) var<storage, read> cones: array<ConeWgsl>;
-@group(0) @binding(3) var<storage, read_write> out_radiance: array<vec4<f32>>;
 
 const NODE_STRIDE: u32 = 10u;
 const NEUTRAL_ALBEDO: vec3<f32> = vec3<f32>(0.5, 0.5, 0.5);
@@ -105,6 +101,18 @@ fn svo_sample_lod(p: vec3<f32>, lod: u32) -> vec4<f32> {
     // depth 上限到達 (cap<=8 の正常ツリーでは到達しない安全弁)
     return NO_HIT;
 }
+// ==== SVO-TRACE SHARED REGION END ====
+
+struct ConeWgsl {
+    o: vec3<f32>,       // SVO ローカル座標のコーン原点
+    aperture: f32,      // half-angle tan (例: 30° なら 0.577)
+    d: vec3<f32>,       // 正規化済み方向 (CPU 側で正規化して送る)
+    max_dist: f32,
+};
+
+@group(0) @binding(2) var<storage, read> cones: array<ConeWgsl>;
+@group(0) @binding(3) var<storage, read_write> out_radiance: array<vec4<f32>>;
+
 
 // CPU: VoxelConeTracing::trace_diffuse_cone と同一ループ・同一 f32 演算順。
 @compute @workgroup_size(64)

@@ -525,3 +525,73 @@ storage texture・アトミック・subgroups・bindless 不使用)。
   noise_upsample/terrain_mesh_shader/vrs) の切り分けと修正。
 - VCT の狭隘部 GI 品質向上 (複数コーン/ヘミスフィア、
   albedo 実データ接続) — 現状は中立 albedo 0.5 固定 (svo.rs の既存仕様踏襲)。
+## 追記 10: RsGraphics 進化 Phase D2 — DDGI probe volume 実 GPU dispatch + WGSL 走査一元化 (2026-07-20)
+
+### 目的
+GI 系 Phase D の後半として、stub だった `ddgi.wgsl` (`let _ = gid;` — naga
+予約語エラーで FAIL 10 本の一つ) を、**実 SVO + 実 probe ray-march +
+octahedral atlas blend + Chebyshev moments** の 2 compute pass 実装へ置き換え、
+atlas を GI 可視率として実フレーム画素に還元する。
+
+### 実装 (rsift-opt-gfx)
+- `shaders/ddgi.wgsl` (全面書換え、実在機能):
+  - **SVO-TRACE SHARED REGION** = `voxel_cone_tracing.wgsl` との共有領域
+    (VctParams/nodes binding/lod_from_diameter/svo_sample_lod) を
+    **バイト同一**で埋め込み。テスト `shared_svo_region_byte_identical` が
+    両ファイルの領域一致を実 assert し、将来の片側編集ドリフトを検出する
+    (runtime concat 型の不安定さを避けつつ一元化を強制する設計)。
+  - Pass 1 `probe_rays`: probe×ray の SVO 占有 march (0.5 刻み、命中距離 or
+    max_dist を実書き出し)。Pass 2 `atlas_blend`: octahedral 8x8texel ×
+    **dot^4** (pow 不使用: 二乗 x2) で sky 見通し irradiance 正規化値 +
+    Chebyshev depth moments を蓄積。
+  - iGPU コアのみ: compute 64x1x1、RO/RW storage buffer のみ (storage
+    texture/atomics/subgroups/bindless 不使用)。決定性設計: trig/pow 非使用
+    (ray 方向は CPU `fibonacci_dirs` 生成の f32 ビット列をアップロード)、
+    sqrt/除算は IEEE 厳密丸め、蓄積順固定。
+- `src/frame_ddgi.rs` (新規): `DdgiParams` (64B Pod) / `DdgiVolumeDef` /
+  WGSL 精密ミラー (`oct_encode/decode_wgsl`、`probe_march_cpu`、
+  `atlas_blend_cpu`、`ddgi_update_cpu`) / `DdgiAtlas::sample_visibility`
+  (トライリニア 8 プローブ + Chebyshev + oct 最近傍の実画素サンプラ) /
+  `GpuDdgi` (2 pipeline 実 dispatch + 双 atlas readback)。
+- `examples/frame_proof.rs`: `cpu-ddgi` / `gpu-ddgi` モード。
+  実フレーム深度 → unproject → 実画素毎に可視率サンプル → vis マップ +
+  GI 変調フレーム BMP 還元。
+
+### 検証 (全て sandbox 実測)
+- lib テスト **346/346 緑** (337 + 新規 9): naga パース+2 エントリ、共有
+  領域バイト同一、64B レイアウト、oct roundtrip、**buried probe 解析的真値
+  厳密一致** (全 ray t=0.5 命中 → moments (0.5, 0.25)、irr=0: IEEE `x*A/A==x`
+  の性質で厳密 assert 可能)、empty 全 miss → irr≈sky、**march 交差アンカー
+  24 サンプル bitwise 一致** (語列ミラー vs 実 `sample_lod`)、
+  サンプラ意味論 (空気 v≈0.45 > 地中 v≈0: slab 3 地形直下の下半球遮蔽を
+  実信号として確認)、atlas 決定性。
+- `frame_proof cpu-ddgi` 実走: 256 probes (rays=32, oct 8x8) → atlas
+  16,384×2 → spot: 最上段 probe blue irr 0.7717 / buried 0.0000 (厳密) →
+  可視率 mean=0.1602・range [0.0, 0.871] (92,831 px、遮蔽変調実在) →
+  vis/GI BMP 実生成・目視確認 (slab 間の暗部・壁の遮蔽グラデーション・
+  青空 irradiance 色付けが実 GI として成立)。
+- naga-wasi-cli 最新: ddgi.wgsl (SPIR-V 12,856B) / voxel_cone_tracing.wgsl
+  (6,812B、D1 と出力不変) 両 OK。in-crate naga 0.20 も両 OK。
+  **全 50 本スキャン: OK 41 / FAIL 9** (ddgi.wgsl 修復で 10 → 9 に改善)。
+- `cargo clippy -p rsift-opt-gfx --all-targets --locked --offline` → error 0、
+  新規ファイルの警告 0。
+
+### 発見・対処した設計論点 (実測/検証由来)
+- 最新 naga validator の **behavior 解析は return のみで break を持たない
+  無限 loop を拒否** → 走査を有界 for に (D1 で確立、D2 も共有領域として継承)。
+- クレート既存の **CPU oct (`ddgi.rs::oct_encode_unit`) と WGSL oct
+  (旧 `ddgi.wgsl`) は公式が非対応** (CPU は成分独立の 1-x 変形、WGSL は
+  標準 diamond wrap)。D2 では WGSL 標準形を正準とし、Rust ミラー
+  (`frame_ddgi::oct_*_wgsl`) を WGSL と同一演算に揃えた (既存 CPU oct は
+  他消費者の契約を変えないため不触)。
+- 空 SVO の irradiance は `x*A/A` の丸めで理論値 sky と最大 1ulp ずれる
+  (除算正規化の真性) — 解析 assert は厳密可能な buried 側で厳密、
+  sky 側は ≤1e-5 許容と誠実に分離した。
+
+### 残課題 ( backlog )
+- naga FAIL 9 本 (bindless/cas/checkerboard/exposure/half_vertex/lbvh/
+  noise_upsample/terrain_mesh_shader/vrs): 各モジュールの GPU 配線 phase
+  時に修正する (対応機能が未配線のまま WGSL だけ直しても意味がないため)。
+- DDGI 発展: プローブ生成の temporal 更新・移動型プローブ配置・
+  sample 側の GPU 化 (現状は CPU サンプラ + atlas GPU==CPU 検証)。
+- VCT の複数コーン化・albedo 実データ接続 (中立 0.5 固定の継続課題)。

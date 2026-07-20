@@ -9,12 +9,14 @@
 //!   cargo run --release -p rsift-opt-gfx --example frame_proof -- cpu-fsr # CPU 参照 + FSR1 拡大 (Phase B)
 //!   cargo run --release -p rsift-opt-gfx --example frame_proof -- cpu-hiz # CPU 参照 + Hi-Z カリング (Phase C)
 //!   cargo run --release -p rsift-opt-gfx --example frame_proof -- cpu-vct # CPU 参照 + SVO コーン走査 GI/AO (Phase D1)
+//!   cargo run --release -p rsift-opt-gfx --example frame_proof -- cpu-ddgi # CPU 参照 + DDGI probe atlas GI (Phase D2)
 //!   cargo run --release -p rsift-opt-gfx --example frame_proof -- gpu     # 実 GPU (wgpu adapter 必須)
 //!   cargo run --release -p rsift-opt-gfx --example frame_proof -- gpu-fsr # 実 GPU + FSR1 実 dispatch
 //!   cargo run --release -p rsift-opt-gfx --example frame_proof -- gpu-hiz # 実 GPU + Hi-Z 実 dispatch (Phase C)
 //!   cargo run --release -p rsift-opt-gfx --example frame_proof -- gpu-vct # 実 GPU + VCT 実 dispatch (Phase D1)
+//!   cargo run --release -p rsift-opt-gfx --example frame_proof -- gpu-ddgi # 実 GPU + DDGI 実 dispatch (Phase D2)
 //!
-//! 出力: 実行ディレクトリに frame_proof_{cpu,cpu_fsr,cpu_hiz_*,cpu_vct_*,gpu,gpu_fsr,gpu_hiz_*,gpu_vct_*}.bmp (実画素)。
+//! 出力: 実行ディレクトリに frame_proof_{cpu,cpu_fsr,cpu_hiz_*,cpu_vct_*,cpu_ddgi_*,gpu,gpu_fsr,gpu_hiz_*,gpu_vct_*,gpu_ddgi_*}.bmp (実画素)。
 //! GPU 環境が無い場合 `gpu*` モードはアダプタ無しとして失敗を明示する (fail-loud)。
 
 use rsift_opt_gfx::binary_greedy_meshing::{demo_column_palettes, mesh_chunk_column_pull_world};
@@ -352,14 +354,12 @@ fn mul4f(m: &[[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {
     out
 }
 
-/// 実フレーム (CPU 参照深度) から「表面点 + 推定法線 + 実コーン」を再構成。
-/// 戻り値: (コーン列, 元画素 index 列)。シルエット/不連続画素は除外。
-fn vct_cones_from_frame(
+/// 実フレーム (CPU 参照深度) から全画素のワールド位置を再構成
+/// (VCT 法線推定 / DDGI 直接サンプルで共有)。
+fn vct_world_positions(
     frame: &rsift_opt_gfx::frame_reference::CpuFrame,
     vp: &[[f32; 4]; 4],
-    eye: [f32; 3],
-) -> (Vec<rsift_opt_gfx::frame_vct::ConeWgsl>, Vec<usize>) {
-    use rsift_opt_gfx::frame_vct::ConeWgsl;
+) -> (Vec<[f32; 3]>, Vec<bool>) {
     let inv = invert_mat4(vp);
     let (w, h) = (frame.width as usize, frame.height as usize);
     let mut world = vec![[0.0f32; 3]; w * h];
@@ -377,6 +377,19 @@ fn vct_cones_from_frame(
             covered[y * w + x] = true;
         }
     }
+    (world, covered)
+}
+
+/// 実フレーム (CPU 参照深度) から「表面点 + 推定法線 + 実コーン」を再構成。
+/// 戻り値: (コーン列, 元画素 index 列)。シルエット/不連続画素は除外。
+fn vct_cones_from_frame(
+    frame: &rsift_opt_gfx::frame_reference::CpuFrame,
+    vp: &[[f32; 4]; 4],
+    eye: [f32; 3],
+) -> (Vec<rsift_opt_gfx::frame_vct::ConeWgsl>, Vec<usize>) {
+    use rsift_opt_gfx::frame_vct::ConeWgsl;
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    let (world, covered) = vct_world_positions(frame, vp);
     let mut cones = Vec::new();
     let mut map = Vec::new();
     for y in 0..h - 1 {
@@ -533,6 +546,191 @@ fn run_gpu_vct() -> Result<(), String> {
     Ok(())
 }
 
+// ---------- Phase D2: DDGI (probe volume + octahedral atlas + Chebyshev) ----------
+
+/// DDGI 体積定義: demo カラム (16x64x16) 全域を cell 4 で覆う実グリッド
+/// (4x16x4 = 256 プローブ、ray 32、octahedral 8x8texel)。
+fn ddgi_volume() -> rsift_opt_gfx::frame_ddgi::DdgiVolumeDef {
+    rsift_opt_gfx::frame_ddgi::DdgiVolumeDef {
+        origin: [0.0, 0.0, 0.0],
+        cell: [4.0, 4.0, 4.0],
+        dims: [4, 16, 4],
+        max_dist: 24.0,
+        sky: [0.55, 0.75, 0.95],
+        oct_w: 8,
+        ray_count: 32,
+    }
+}
+
+/// DDGI atlas → 実フレーム画素への GI 還元 (vis グレースケール + 変調フレーム)。
+fn ddgi_write_bmps(
+    tag: &str,
+    frame: &rsift_opt_gfx::frame_reference::CpuFrame,
+    atlas: &rsift_opt_gfx::frame_ddgi::DdgiAtlas,
+) {
+    let (w, h) = (frame.width, frame.height);
+    let vp = build_view_proj(&vct_camera());
+    let (world, covered) = vct_world_positions(frame, &vp);
+    let mut vis = vec![0u8; (w * h * 4) as usize];
+    let mut gi = frame.pixels.clone();
+    let mut v_list = Vec::new();
+    for i in 0..(w * h) as usize {
+        if !covered[i] {
+            vis[i * 4 + 3] = 255;
+            continue;
+        }
+        let v = atlas.sample_visibility(world[i]).clamp(0.0, 1.0);
+        v_list.push(v);
+        let g = (v * 255.0 + 0.5) as u8;
+        vis[i * 4] = g;
+        vis[i * 4 + 1] = g;
+        vis[i * 4 + 2] = g;
+        vis[i * 4 + 3] = 255;
+        // 実効果還元: 直接光画素を GI 可視率で変調 (25% 環境基底 + 75% GI)
+        let m = 0.25 + 0.75 * v;
+        for c in 0..3 {
+            gi[i * 4 + c] = (gi[i * 4 + c] as f32 * m).clamp(0.0, 255.0) as u8;
+        }
+    }
+    let n = v_list.len() as f64;
+    let v_mean = v_list.iter().map(|v| *v as f64).sum::<f64>() / n;
+    let v_min = v_list.iter().cloned().fold(f32::INFINITY, f32::min);
+    let v_max = v_list.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    println!(
+        "  visibility   : mean={:.4} min={:.4} max={:.4} ({} px)",
+        v_mean,
+        v_min,
+        v_max,
+        v_list.len()
+    );
+    assert!(v_max - v_min > 0.05, "可視率に遮蔽変調が実在しない (定数)");
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let out_v = cwd.join(format!("frame_proof_{tag}_vis.bmp"));
+    let out_g = cwd.join(format!("frame_proof_{tag}_gi_frame.bmp"));
+    write_bmp(&out_v, w, h, &vis).unwrap_or_else(|e| panic!("BMP 書き出し失敗: {e}"));
+    write_bmp(&out_g, w, h, &gi).unwrap_or_else(|e| panic!("BMP 書き出し失敗: {e}"));
+    println!("  output       : {} / {}", out_v.display(), out_g.display());
+}
+
+fn run_cpu_ddgi() {
+    use rsift_opt_gfx::frame_ddgi::{ddgi_update_cpu, fibonacci_dirs, DdgiAtlas};
+    use rsift_opt_gfx::frame_vct::VctScene;
+    use rsift_opt_gfx::svo::SparseVoxelOctree;
+    let chunks = demo_chunks();
+    let cam = vct_camera();
+    let vp = build_view_proj(&cam);
+    let frame = render_reference(&chunks, &vp, WIDTH, HEIGHT);
+    let palettes = demo_column_palettes(0, 0);
+    let svo = SparseVoxelOctree::from_column(&palettes);
+    let scene = VctScene::from_svo(&svo);
+    let vol = ddgi_volume();
+    let dirs = fibonacci_dirs(vol.ray_count as usize);
+    let (irr, mom) = ddgi_update_cpu(
+        &scene.words,
+        scene.bounds,
+        scene.root,
+        scene.cap,
+        &vol,
+        &dirs,
+    );
+    let atlas = DdgiAtlas { vol, irr, mom };
+    println!("[FrameProof/cpu-ddgi] DDGI 更新完了 (WGSL 精密ミラー)");
+    println!(
+        "  probes       : {} (rays={} oct={}x{}) atlas={}+{} texels",
+        vol.probe_count(),
+        vol.ray_count,
+        vol.oct_w,
+        vol.oct_w,
+        atlas.irr.len(),
+        atlas.mom.len()
+    );
+    // 解析的 spot check: 最上段プローブ (index 255, y=62) と
+    // 埋設プローブ (index 0, y=2) の明暗差
+    let th = vol.texel_count();
+    let p_top = vol.probe_count() - 1;
+    let sky_probe_irr: f32 = (0..th).map(|t| atlas.irr[p_top * th + t][2]).sum::<f32>() / th as f32;
+    let buried_irr: f32 = (0..th).map(|t| atlas.irr[t][2]).sum::<f32>() / th as f32;
+    println!(
+        "  spot         : topProbeBlueIrr={:.4} buriedProbeIrr={:.4}",
+        sky_probe_irr, buried_irr
+    );
+    ddgi_write_bmps("cpu_ddgi", &frame, &atlas);
+    let a2 = ddgi_update_cpu(
+        &scene.words,
+        scene.bounds,
+        scene.root,
+        scene.cap,
+        &vol,
+        &dirs,
+    );
+    assert_eq!(
+        atlas.irr[0].map(f32::to_bits),
+        a2.0[0].map(f32::to_bits),
+        "決定性"
+    );
+    println!("[FrameProof/cpu-ddgi] GI 画素還元・決定性 assert 完了");
+}
+
+fn run_gpu_ddgi() -> Result<(), String> {
+    use rsift_opt_gfx::frame_ddgi::{ddgi_update_cpu, fibonacci_dirs, DdgiAtlas, GpuDdgi};
+    use rsift_opt_gfx::frame_vct::VctScene;
+    use rsift_opt_gfx::svo::SparseVoxelOctree;
+    let rt = rsift_opt_gfx::gpu_runtime::runtime()
+        .ok_or_else(|| "wgpu adapter 無し — GPU パスは実行不可 (fail-loud)".to_string())?;
+    let chunks = demo_chunks();
+    let cam = vct_camera();
+    let vp = build_view_proj(&cam);
+    let frame = render_reference(&chunks, &vp, WIDTH, HEIGHT);
+    let palettes = demo_column_palettes(0, 0);
+    let svo = SparseVoxelOctree::from_column(&palettes);
+    let scene = VctScene::from_svo(&svo);
+    let vol = ddgi_volume();
+    let dirs = fibonacci_dirs(vol.ray_count as usize);
+
+    let mut gpu = GpuDdgi::new(&rt.device);
+    gpu.set_inputs(&rt.device, &rt.queue, &scene, &vol, &dirs)?;
+    let (irr_gpu, mom_gpu) = gpu.update(&rt.device, &rt.queue)?;
+
+    let (irr_cpu, mom_cpu) = ddgi_update_cpu(
+        &scene.words,
+        scene.bounds,
+        scene.root,
+        scene.cap,
+        &vol,
+        &dirs,
+    );
+    assert_eq!(irr_gpu.len(), irr_cpu.len());
+    assert_eq!(mom_gpu.len(), mom_cpu.len());
+    let mut mism = 0usize;
+    for (i, (g, c)) in irr_gpu.iter().zip(irr_cpu.iter()).enumerate() {
+        if g.map(f32::to_bits) != c.map(f32::to_bits) {
+            if mism < 4 {
+                eprintln!("  [gpu-ddgi] irr mismatch tex#{i}: gpu={g:?} cpu={c:?}");
+            }
+            mism += 1;
+        }
+    }
+    for (g, c) in mom_gpu.iter().zip(mom_cpu.iter()) {
+        if g.map(f32::to_bits) != c.map(f32::to_bits) {
+            mism += 1;
+        }
+    }
+    println!("[FrameProof/gpu-ddgi] 実 GPU dispatch + readback 完了");
+    println!(
+        "  GPU==CPU    : mismatch {} / {} texels (bitwise)",
+        mism,
+        irr_gpu.len() + mom_gpu.len()
+    );
+    assert_eq!(mism, 0, "GPU readback が CPU ミラーと bitwise 不一致");
+    let atlas = DdgiAtlas {
+        vol,
+        irr: irr_gpu,
+        mom: mom_gpu,
+    };
+    ddgi_write_bmps("gpu_ddgi", &frame, &atlas);
+    Ok(())
+}
+
 fn main() {
     tracing_subscriber::fmt::try_init().ok();
     let mode = std::env::args().nth(1).unwrap_or_else(|| "cpu".to_string());
@@ -554,6 +752,7 @@ fn main() {
         "cpu-fsr" => run_cpu_fsr(&chunks),
         "cpu-hiz" => run_cpu_hiz(),
         "cpu-vct" => run_cpu_vct(),
+        "cpu-ddgi" => run_cpu_ddgi(),
         "gpu" => {
             if let Err(e) = run_gpu(&chunks) {
                 eprintln!("[FrameProof/gpu] {e}");
@@ -578,9 +777,15 @@ fn main() {
                 std::process::exit(2);
             }
         }
+        "gpu-ddgi" => {
+            if let Err(e) = run_gpu_ddgi() {
+                eprintln!("[FrameProof/gpu-ddgi] {e}");
+                std::process::exit(2);
+            }
+        }
         other => {
             eprintln!(
-                "unknown mode '{other}' — 'cpu' (既定) / 'cpu-fsr' / 'cpu-hiz' / 'cpu-vct' / 'gpu' / 'gpu-fsr' / 'gpu-hiz' / 'gpu-vct' を指定"
+                "unknown mode '{other}' — 'cpu' (既定) / 'cpu-fsr' / 'cpu-hiz' / 'cpu-vct' / 'cpu-ddgi' / 'gpu' / 'gpu-fsr' / 'gpu-hiz' / 'gpu-vct' / 'gpu-ddgi' を指定"
             );
             std::process::exit(2);
         }
