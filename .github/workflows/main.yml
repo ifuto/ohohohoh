@@ -1,66 +1,39 @@
-name: vendor
+name: toolchain
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/vendor.yml'
   workflow_dispatch:
-    inputs:
-      source_ref:
-        description: 'cargo vendor を実行する ref (Cargo.lock を含むブランチ)'
-        required: true
-        default: 'arena/019f79db-rsift'
 
 permissions:
-  contents: write # vendor ブランチへの push に必要
-
-concurrency:
-  group: vendor
-  cancel-in-progress: true
+  contents: write
 
 jobs:
-  vendor:
+  toolchain:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
-      - name: Checkout (lockfile の供給元 ref)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.source_ref || 'arena/019f79db-rsift' }}
-          persist-credentials: false
-
-      - name: cargo vendor --locked
-        run: |
-          set -euo pipefail
-          cd rsift
-          cargo vendor --locked vendor > ../vendor-config.txt
-          echo "vendored crates: $(ls vendor | wc -l)"
-
-      - name: tar.gz 化 + 90MB 分割 (GitHub の 100MB/ファイル上限対策)
-        run: |
-          set -euo pipefail
-          tar -czf vendor-parts.tar.gz -C rsift vendor
-          mkdir -p out
-          cd out
-          split -b 90m -d -a 2 ../vendor-parts.tar.gz vendor.tar.gz.part-
-          sha256sum vendor.tar.gz.part-* > SHA256SUMS
-          cp ../vendor-config.txt VENDOR-CONFIG.txt
-          { echo "### cargo vendor 結果"
-            echo "- vendored crates: $(ls ../rsift/vendor | wc -l)"
-            echo "- tarball size: $(du -h ../vendor-parts.tar.gz | cut -f1)"
-            echo "- parts: $(ls vendor.tar.gz.part-* | wc -l)"
-          } >> "$GITHUB_STEP_SUMMARY"
-          ls -la
-
-      - name: Rust toolchain 取得 (sandbox 用・公式 sha256 照合)
+      - name: Rust toolchain 取得 (公式 sha256 照合)
         run: |
           set -euo pipefail
           VER=1.94.1
-          cd out
+          mkdir -p out && cd out
           curl -sSfL "https://static.rust-lang.org/dist/rust-${VER}-x86_64-unknown-linux-gnu.tar.xz" -o toolchain.tar.xz
-          curl -sSfL "https://static.rust-lang.org/dist/rust-${VER}-x86_64-unknown-linux-gnu.tar.xz.sha256" -o toolchain.expect.sha256
-          # 公式発行ハッシュと照合 (改ざん検知 — 照合失敗ならここで run 中断)
-          awk '{print $1"  toolchain.tar.xz"}' toolchain.expect.sha256 | sha256sum -c -
-          rm toolchain.expect.sha256
-          split -b 90m -d -a 2 toolchain.tar.xz 
+          curl -sSfL "https://static.rust-lang.org/dist/rust-${VER}-x86_64-unknown-linux-gnu.tar.xz.sha256" -o expect.sha256
+          awk '{print $1"  toolchain.tar.xz"}' expect.sha256 | sha256sum -c -
+          split -b 90m -d -a 2 toolchain.tar.xz toolchain.tar.xz.part-
+          sha256sum toolchain.tar.xz.part-* > TOOLCHAIN-SHA256SUMS
+          rm toolchain.tar.xz expect.sha256
+
+      - name: vendor ブランチへ追記 push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git clone --depth 1 --branch vendor "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" vbr
+          cd vbr
+          cp ../out/toolchain.tar.xz.part-* .
+          cp ../out/TOOLCHAIN-SHA256SUMS .
+          git add -A
+          git commit -qm "add rust toolchain parts"
+          git push -q origin HEAD:refs/heads/vendor
