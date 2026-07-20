@@ -28,14 +28,14 @@ const FACE_UV: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>(0.0, 1.0),
 );
 
-fn unpack_x(w: u32) -> u32 { w & COORD_MASK }
-fn unpack_y(w: u32) -> u32 { (w >> 6u) & COORD_MASK }
-fn unpack_z(w: u32) -> u32 { (w >> 12u) & COORD_MASK }
-fn unpack_tex(w: u32) -> u32 { (w >> 18u) & TEX_MASK }
-fn unpack_light_ao(w: u32) -> u32 { (w >> 30u) & 3u }
-fn unpack_face(w1: u32) -> u32 { w1 & 7u }
-fn unpack_width(w1: u32) -> u32 { ((w1 >> 3u) & 63u) + 1u }
-fn unpack_height(w1: u32) -> u32 { ((w1 >> 9u) & 63u) + 1u }
+fn unpack_x(w: u32) -> u32 { return w & COORD_MASK; }
+fn unpack_y(w: u32) -> u32 { return (w >> 6u) & COORD_MASK; }
+fn unpack_z(w: u32) -> u32 { return (w >> 12u) & COORD_MASK; }
+fn unpack_tex(w: u32) -> u32 { return (w >> 18u) & TEX_MASK; }
+fn unpack_light_ao(w: u32) -> u32 { return (w >> 30u) & 3u; }
+fn unpack_face(w1: u32) -> u32 { return w1 & 7u; }
+fn unpack_width(w1: u32) -> u32 { return ((w1 >> 3u) & 63u) + 1u; }
+fn unpack_height(w1: u32) -> u32 { return ((w1 >> 9u) & 63u) + 1u; }
 
 fn face_normal(face: u32) -> vec3<f32> {
     switch face {

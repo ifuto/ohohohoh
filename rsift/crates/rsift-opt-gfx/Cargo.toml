@@ -28,3 +28,8 @@ name = "rsift_opt_gfx"
 crate-type = ["rlib"]
 
 [dev-dependencies]
+# WGSL の GPU 非依存パース検証 (frame_pipeline テスト) と例のログ出力用
+# default-features + compact: wgpu の dev-deps 由来の tokio/proc-macro2 等が
+# Cargo.lock 上の dev エッジに載るのを避けるため (lock 完全性の防衛)
+naga = { version = "0.20", default-features = false, features = ["compact", "wgsl-in"] }
+tracing-subscriber.workspace = true

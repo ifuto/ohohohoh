@@ -265,3 +265,45 @@ pseudo_mc_live) は revert して実編集のみ再適用した。
 
 `ci/dev-assets/` の分割パーツは受領・検証完了後に tip から除去 (履歴には完全残存。
 再現が必要なら `git checkout af0b387^..af0b387 -- ci/dev-assets/` 相当で回復可能)。
+
+---
+
+## 追記 6: RsGraphics 進化 Phase A — 深度付き実フレームパイプライン (2026-07-20)
+
+### 目的
+独立実装だったパス群 (vertex-pull ラスタ / ACES トーンマップ / readback) を
+「深度付き 1 フレーム完結」に統合し、実画素レベルで動作証明する。
+
+### 新規追加 (rsift-opt-gfx)
+- `src/frame_pipeline.rs`: `GpuFramePipeline` — `terrain_vertex_pull.wgsl` を
+  Depth32Float 付きで HDR `Rgba16Float` にラスタ → `aces_tonemap.wgsl`
+  (全画面三角形) で LDR `Rgba8Unorm` へ → 256B アライン readback。
+  `build_view_proj` (RH lookat × wgpu式 z∈[0,1] 透視、列優先) を GPU/CPU 共用。
+  既存 `GpuVertexPullEngine` (painter-order 前提) とは別建てで無改変。
+- `src/frame_reference.rs`: WGSL と同一数学規則 (corner展開/Lambert/ACES/sRGB/
+  透視補正 z) の CPU 参照ラスタ + 24bit BMP 書出。GPU 非依存の同一画像検証経路。
+- `examples/frame_proof.rs`: 実メッシュ (demo_column_palettes →
+  mesh_chunk_column_pull_world) を cpu (既定/GPU不要) / gpu (fail-loud) で実描画。
+
+### シェーダの潜在バグ修正 (naga 検証で実発見 — コミット済み元コードに存在)
+- `terrain_vertex_pull.wgsl`: `fn f(...) -> u32 { expr }` 式本体 8 関数は
+  WGSL 仕様外 (stmt 必須) で **実デバイスで受理されない**状態だった → `return` 明示。
+  併せて fs_pull を Lambert 化 (法線×固定平行光で奥行き表現)。
+- `aces_tonemap.wgsl`: fragment main が `@builtin(position)` を 2 引数に取る
+  無効 WGSL → 全画面三角形 `vs_main` + `fs_main` に正規化。
+
+### 検証 (全て sandbox 実測)
+- `naga` (dev-dep, features=["compact","wgsl-in"]) で 2 WGSL パース + エントリ
+  ポイント実在テスト。view_proj のクリップ体積内写像テスト。
+- CPU 参照ラスタ: 3,356 実 quads → 被覆 65,682/307,200 px・平均輝度 0.86 で
+  部分被覆+描画内容を実 assert。
+- `cargo run --example frame_proof` 実走 → 640x480 BMP 実生成し目視確認
+  (テラス柱状メッシュ・セクション分離・Lambert 陰影を実画像で確認済)。
+- `cargo check/clippy -p rsift-opt-gfx --all-targets --locked --offline` → EXIT 0。
+- Cargo.lock の差分は rsift-opt-gfx dev エッジ +2 件 (naga / tracing-subscriber)
+  のみ。`cargo update --dry-run` で新規パッケージ 0 を確認済。
+
+### 未実施 (環境制約 — 推測で語らない)
+- sandbox には wgpu adapter (Vulkan/swrast 系) が存在せず GPU パスの実走は不可。
+  `frame_proof gpu` は adapter 無しで明示失敗する設計。実 GPU での真値検証は
+  ユーザー PC での実行待ち (次フェーズで readback 画像の GPU/CPU 突合を行う)。
