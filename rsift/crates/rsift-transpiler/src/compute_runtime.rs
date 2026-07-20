@@ -411,6 +411,7 @@ mod tests {
     fn eco_tier_respects_budget() {
         let profile = AdaptiveComputeProfile {
             tier: PerformanceTier::Minimal,
+            speed_first: false,
             rayon_threads: 1,
             aot_transpile_enabled: false,
             simd_parallel_scan: false,

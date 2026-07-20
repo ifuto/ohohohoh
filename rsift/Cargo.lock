@@ -2747,6 +2747,7 @@ dependencies = [
 name = "rsift-jvm"
 version = "0.1.0-alpha.1.21.11"
 dependencies = [
+ "bytemuck",
  "jni 0.21.1",
  "libloading 0.8.9",
  "rsift-api",
@@ -2832,6 +2833,8 @@ dependencies = [
  "bytemuck",
  "rsift-api",
  "rsift-dx12",
+ "rsift-installer",
+ "rsift-opt-gfx",
  "thiserror 1.0.69",
  "tracing",
 ]

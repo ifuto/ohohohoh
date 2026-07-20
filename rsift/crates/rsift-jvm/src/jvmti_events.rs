@@ -42,7 +42,8 @@ struct JvmtiInterface {
 
 type AllocateFn = unsafe extern "system" fn(*mut c_void, i64, *mut *mut c_uchar) -> c_int;
 type AddCapabilitiesFn = unsafe extern "system" fn(*mut c_void, *const JvmtiCapabilities) -> c_int;
-type SetEventCallbacksFn = unsafe extern "system" fn(*mut c_void, *const JvmtiEventCallbacks, c_int) -> c_int;
+type SetEventCallbacksFn =
+    unsafe extern "system" fn(*mut c_void, *const JvmtiEventCallbacks, c_int) -> c_int;
 type SetEventNotificationModeFn =
     unsafe extern "system" fn(*mut c_void, c_int, c_int, *mut c_void) -> c_int;
 type DeallocateFn = unsafe extern "system" fn(*mut c_void, *mut c_uchar) -> c_int;
@@ -140,7 +141,11 @@ unsafe fn jvmti_fn(env: *mut c_void, index: usize) -> Option<*mut c_void> {
 }
 
 /// Install ClassFileLoadHook using the live JavaVM pointer from deferred attach.
-pub fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
+///
+/// # Safety
+/// `java_vm` はプロセス内で生存中の JavaVM (JNIInvokeInterface) への
+/// 有効なポインタでなければならない。vtable を逆参照して GetEnv を呼ぶため。
+pub unsafe fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
     if HOOK_INSTALLED.load(Ordering::SeqCst) {
         return true;
     }
@@ -201,7 +206,12 @@ pub fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
         for idx in [58usize, 75] {
             if let Some(f) = jvmti_fn(jvmti, idx) {
                 let set_mode: SetEventNotificationModeFn = std::mem::transmute(f);
-                if set_mode(jvmti, JVMTI_ENABLE, JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, ptr::null_mut()) == 0
+                if set_mode(
+                    jvmti,
+                    JVMTI_ENABLE,
+                    JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
+                    ptr::null_mut(),
+                ) == 0
                 {
                     HOOK_INSTALLED.store(true, Ordering::SeqCst);
                     agent_log("[JVMTI] ClassFileLoadHook enabled");

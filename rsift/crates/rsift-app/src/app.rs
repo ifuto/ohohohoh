@@ -469,7 +469,7 @@ impl RsiftApp {
         let stroke = if active {
             Stroke::new(1.5, AQUA_GLOW)
         } else {
-            Stroke::none()
+            Stroke::NONE // vendored epaint では関連定数 NONE (none() は廃止)
         };
         ui.painter().rect(rect, 14.0, fill, stroke);
         if active {

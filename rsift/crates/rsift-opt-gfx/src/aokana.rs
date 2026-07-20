@@ -34,7 +34,14 @@ impl AokanaFramework {
         }
     }
 
-    pub fn insert_shallow_region(&mut self, rx: i32, ry: i32, rz: i32, mut dag: SparseVoxelDag, lod: u8) {
+    pub fn insert_shallow_region(
+        &mut self,
+        rx: i32,
+        ry: i32,
+        rz: i32,
+        mut dag: SparseVoxelDag,
+        lod: u8,
+    ) {
         let root_id = dag.root_id;
         self.shallow_dags.insert(
             (rx, ry, rz),
@@ -49,7 +56,12 @@ impl AokanaFramework {
 
     /// Execute one Aokana GPU-driven frame: evaluate region AABB against Hi-Z,
     /// emit visibility buffer commands, and skip occluded shallow SVDAGs.
-    pub fn evaluate_visible_regions(&self, cam_pos: [f32; 3], frustum_planes: &[[f32; 4]; 6]) -> Vec<(i32, i32, i32)> {
+    /// (`_cam_pos` は将来の距離ベース LOD 選択用に保持 — 現行は frustum+Hi-Z のみ)
+    pub fn evaluate_visible_regions(
+        &self,
+        _cam_pos: [f32; 3],
+        frustum_planes: &[[f32; 4]; 6],
+    ) -> Vec<(i32, i32, i32)> {
         let mut visible = Vec::with_capacity(self.shallow_dags.len());
         for (&coords, dag) in &self.shallow_dags {
             let min = [

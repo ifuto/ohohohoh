@@ -62,8 +62,9 @@ impl RleSection {
 
     /// True if every voxel is opaque block `block`.
     pub fn is_solid(&self, block: u16) -> bool {
+        // `|| (r.block == 0 && false)` は恒偽の冗長項 (常に r.block == block と同値)。
         !self.is_empty()
-            && self.runs.iter().all(|r| r.block == block || (r.block == 0 && false))
+            && self.runs.iter().all(|r| r.block == block)
             && self.runs.len() == 1
             && self.runs[0].block == block
             && self.runs[0].count as usize == VOLUME

@@ -26,7 +26,6 @@ use rsift_api::runtime::runtime_or_init;
 use rsift_api::ui_ext::ScreenButtonDescriptor;
 use rsift_parser::BytecodePatcher;
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -38,7 +37,6 @@ static INJECTED_SCREENS: Mutex<Option<HashSet<usize>>> = Mutex::new(None);
 static DEFERRED_STARTED: AtomicBool = AtomicBool::new(false);
 static MODS_LOADED: AtomicBool = AtomicBool::new(false);
 static AGENTPATH_LOADED: AtomicBool = AtomicBool::new(false);
-static ALL_SCREENS_INJECTED: AtomicBool = AtomicBool::new(false);
 static TRANSFORM_LOG_COUNT: AtomicU64 = AtomicU64::new(0);
 
 const TICK_ACTIVE_MS: u64 = 250;
@@ -249,7 +247,11 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
                         let bridge_ok = screen_inject::ensure_injector_loaded(&mut env);
                         let mod_ok = mod_bridge::ensure_mod_bridge(&mut env);
                         let _ = platform_bridge::ensure_platform_bridge(&mut env);
-                        let _ = jvmti_events::install_class_file_load_hook(vm_addr as *mut _);
+                        // SAFETY: vm_addr は JVM から取得した生存中 JavaVM の
+                        // アドレス (本スレッドは JVM 上で実行されている)。
+                        let _ = unsafe {
+                            jvmti_events::install_class_file_load_hook(vm_addr as *mut _)
+                        };
                         register_transformer_natives(&mut env);
                         register_hooks_natives(&mut env);
                         notify_transformer_ready(&mut env);
@@ -391,8 +393,8 @@ pub fn transform_class(class_name: &str, data: &[u8]) -> Option<Vec<u8>> {
 
     // 第2パス (実配線): bytecode_transpiler の HEAD 挿入を ParserEngine の
     // メモ化経由で実適用 (JVMTI Retransform 反復時も注入は 1 回で済む)。
-    let base: &[u8] = patched.as_deref().unwrap_or(data);
     let transpiled = {
+        let base: &[u8] = patched.as_deref().unwrap_or(data);
         let tp = crate::bytecode_transpiler::BytecodeTranspiler::new();
         let mut engine = TRANSPILE_ENGINE
             .get_or_init(|| std::sync::Mutex::new(rsift_parser::ParserEngine::new()))
@@ -408,8 +410,17 @@ pub fn transform_class(class_name: &str, data: &[u8]) -> Option<Vec<u8>> {
             applied > 0
         })
     };
+    // patched への借用 (base) をここで打ち切る。トランスパイル後に内容が
+    // 変わった (=注入が実際に行われた) かを先に評価して比較結果だけ保持する。
+    let transpiled_changed = match &transpiled {
+        Ok(out) => {
+            let base: &[u8] = patched.as_deref().unwrap_or(data);
+            out.as_slice() != base
+        }
+        Err(_) => false,
+    };
     match (patched, transpiled) {
-        (_, Ok(out)) if out.as_slice() != base => Some(out),
+        (_, Ok(out)) if transpiled_changed => Some(out),
         (Some(p), _) => Some(p),
         _ => None,
     }

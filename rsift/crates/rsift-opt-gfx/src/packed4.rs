@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn word0_fits_32_bits() {
         let w = PackedPullQuad::pack_word0(63, 63, 63, 4095, 3);
-        assert!(w <= u32::MAX);
+        // u32 への格納自体が「32bit に収まる」の実証 (恒真の `w <= u32::MAX` は削除)。
         assert_eq!(PackedPullQuad::unpack_x(w), 63);
     }
 }

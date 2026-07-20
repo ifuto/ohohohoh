@@ -42,7 +42,8 @@ fn block_on<F: std::future::Future>(fut: F) -> F::Output {
     let mut cx = Context::from_waker(&waker);
     let mut fut = std::pin::pin!(fut);
     loop {
-        match std::pin::Pin::new(&mut fut).poll(&mut cx) {
+        // pin! マクロの戻り値は既に Pin<&mut F>。as_mut() で再借用して poll。
+        match fut.as_mut().poll(&mut cx) {
             Poll::Ready(v) => return v,
             Poll::Pending => std::thread::yield_now(),
         }

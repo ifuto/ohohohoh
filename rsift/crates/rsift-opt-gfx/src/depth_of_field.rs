@@ -89,24 +89,22 @@ pub fn circle_of_confusion(depth: f32, p: &DofParams) -> f32 {
 }
 
 /// 8-tap disc gather; returns the centre sample when CoC is ~0.
-pub fn gather_blur(
-    uv: Vec3,
-    coc: f32,
-    sample: &dyn Fn(Vec3) -> Vec4,
-) -> Vec4 {
+pub fn gather_blur(uv: Vec3, coc: f32, sample: &dyn Fn(Vec3) -> Vec4) -> Vec4 {
     if coc < 1e-3 {
         return sample(uv);
     }
     // 8 evenly spaced points on a unit disc.
+    // (s = sin/cos 45° = FRAC_1_SQRT_2。リテラル近似 0.7071 から正確な定数へ)
+    const S: f32 = std::f32::consts::FRAC_1_SQRT_2;
     let taps: [(f32, f32); 8] = [
         (1.0, 0.0),
-        (0.7071, 0.7071),
+        (S, S),
         (0.0, 1.0),
-        (-0.7071, 0.7071),
+        (-S, S),
         (-1.0, 0.0),
-        (-0.7071, -0.7071),
+        (-S, -S),
         (0.0, -1.0),
-        (0.7071, -0.7071),
+        (S, -S),
     ];
     let mut acc = Vec4::new(0.0, 0.0, 0.0, 0.0);
     for &(dx, dy) in taps.iter() {
@@ -142,11 +140,9 @@ mod tests {
     }
     #[test]
     fn blur_of_constant_color_is_constant() {
-        let c = gather_blur(
-            Vec3::new(0.5, 0.5, 0.0),
-            8.0,
-            &|_u: Vec3| Vec4::new(0.2, 0.3, 0.4, 1.0),
-        );
+        let c = gather_blur(Vec3::new(0.5, 0.5, 0.0), 8.0, &|_u: Vec3| {
+            Vec4::new(0.2, 0.3, 0.4, 1.0)
+        });
         assert!((c.x - 0.2).abs() < 1e-6 && (c.y - 0.3).abs() < 1e-6);
     }
 }

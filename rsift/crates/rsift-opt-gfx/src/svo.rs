@@ -1,7 +1,7 @@
 //! Sparse Voxel Octree (SVO) — far-LOD / zero-polygon path with branchless DDA leaf refine.
 
-use crate::binary_greedy_meshing::{idx, SectionPalette, SECTION_SIZE, SECTIONS_PER_COLUMN};
-use crate::branchless_dda::{Ray3, VoxelHit, trace_section};
+use crate::binary_greedy_meshing::{idx, SectionPalette, SECTIONS_PER_COLUMN, SECTION_SIZE};
+use crate::branchless_dda::{trace_section, Ray3, VoxelHit};
 use tracing::trace;
 
 const MAX_DEPTH: u32 = 4; // 2^4 = 16
@@ -50,7 +50,11 @@ impl SparseVoxelOctree {
         Self {
             nodes: Vec::new(),
             root: 0,
-            bounds: [SECTION_SIZE, SECTION_SIZE, SECTION_SIZE * SECTIONS_PER_COLUMN],
+            bounds: [
+                SECTION_SIZE,
+                SECTION_SIZE,
+                SECTION_SIZE * SECTIONS_PER_COLUMN,
+            ],
             node_count: 0,
             leaf_count: 0,
         }
@@ -227,6 +231,67 @@ impl SparseVoxelOctree {
         })
     }
 
+    /// Voxel Cone Tracing 用ボクセルサンプリング: 実 SVO ノードを LOD 深度まで下降する。
+    /// `lod` はコーン直径の log2 (0 = 葉レベルで最深まで下降、大きいほど浅く打ち切る)。
+    /// 到達ノードが Uniform なら実ブロック状態を、Branch で深さ打ち切りなら直下 8 子の
+    /// 実占有率を返す。空気・範囲外なら None。
+    /// 色はクレート内にブロック状態→albedo の実データが存在しないため中性アルベド
+    /// (典型的地形平均の 0.5) とし、遮蔽・占有 (alpha) を実ノードデータで駆動する。
+    pub fn sample_lod(&self, x: f32, y: f32, z: f32, lod: u32) -> Option<([f32; 3], f32)> {
+        const NEUTRAL_ALBEDO: [f32; 3] = [0.5, 0.5, 0.5];
+        if self.nodes.is_empty() {
+            return None;
+        }
+        let b = [
+            self.bounds[0] as f32,
+            self.bounds[1] as f32,
+            self.bounds[2] as f32,
+        ];
+        if !(x >= 0.0 && y >= 0.0 && z >= 0.0 && x < b[0] && y < b[1] && z < b[2]) {
+            return None;
+        }
+        // 下降してよい残り深度 (太いコーンほど浅く打ち切る)。
+        let budget = MAX_DEPTH.saturating_sub(lod.min(MAX_DEPTH));
+        let mut node_idx = self.root as usize;
+        let mut org = [0.0f32; 3];
+        let mut size = b;
+        let mut depth = 0u32;
+        loop {
+            let node = &self.nodes[node_idx];
+            match node.kind {
+                NodeKind::Empty => return None,
+                NodeKind::Uniform(_block) => return Some((NEUTRAL_ALBEDO, 1.0)),
+                NodeKind::Branch => {
+                    if depth >= budget {
+                        // 粗 LOD: 直下 8 子の実占有率を alpha として返す。
+                        let solid = node
+                            .children
+                            .iter()
+                            .filter(|&&c| !matches!(self.nodes[c as usize].kind, NodeKind::Empty))
+                            .count() as f32;
+                        return if solid > 0.0 {
+                            Some((NEUTRAL_ALBEDO, solid / 8.0))
+                        } else {
+                            None
+                        };
+                    }
+                    let half = [size[0] * 0.5, size[1] * 0.5, size[2] * 0.5];
+                    let dx = (x >= org[0] + half[0]) as usize;
+                    let dy = (y >= org[1] + half[1]) as usize;
+                    let dz = (z >= org[2] + half[2]) as usize;
+                    // build_node_column と同じ子並び (ci = dz*4 + dy*2 + dx)。
+                    let ci = dx + dy * 2 + dz * 4;
+                    org[0] += half[0] * dx as f32;
+                    org[1] += half[1] * dy as f32;
+                    org[2] += half[2] * dz as f32;
+                    size = half;
+                    node_idx = node.children[ci] as usize;
+                    depth += 1;
+                }
+            }
+        }
+    }
+
     /// Octree-guided ray trace; refines with branchless DDA inside non-uniform leaves.
     pub fn trace(&self, ray: &Ray3, section_palette: Option<&SectionPalette>) -> Option<SvoHit> {
         if self.nodes.is_empty() {
@@ -285,7 +350,13 @@ impl SparseVoxelOctree {
     }
 }
 
-fn region_uniform(palette: &SectionPalette, ox: usize, oy: usize, oz: usize, size: usize) -> (bool, u16) {
+fn region_uniform(
+    palette: &SectionPalette,
+    ox: usize,
+    oy: usize,
+    oz: usize,
+    size: usize,
+) -> (bool, u16) {
     let mut first = None;
     for z in oz..oz + size {
         for y in oy..oy + size {

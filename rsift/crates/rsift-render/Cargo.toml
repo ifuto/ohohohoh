@@ -11,6 +11,7 @@ thiserror.workspace = true
 bytemuck.workspace = true
 rsift-api = { path = "../rsift-api" }
 rsift-dx12 = { path = "../rsift-dx12" }
+rsift-installer = { path = "../rsift-installer" }
 rsift-opt-gfx = { path = "../rsift-opt-gfx" }
 
 [lib]

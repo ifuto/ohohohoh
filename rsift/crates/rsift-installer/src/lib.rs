@@ -861,11 +861,16 @@ impl LauncherInstaller {
     }
 
     fn register_to_system_path(&self, install_dir: &Path) -> Result<(), String> {
-        let abs_path = install_dir
-            .canonicalize()
-            .unwrap_or_else(|_| install_dir.to_path_buf());
-        let path_str = abs_path.to_string_lossy().to_string();
-        if cfg!(target_os = "windows") {
+        // Windows 専用処理: PowerShell でユーザー環境変数 Path に冪等登録する。
+        // std::os::windows はコンパイル時にのみ存在するため、
+        // `if cfg!(windows)` (実行時判定=Linux でもコンパイル対象) ではなく
+        // `#[cfg(windows)]` (コンパイル時門) で囲む必要がある。
+        #[cfg(windows)]
+        {
+            let abs_path = install_dir
+                .canonicalize()
+                .unwrap_or_else(|_| install_dir.to_path_buf());
+            let path_str = abs_path.to_string_lossy().to_string();
             let ps_cmd = format!(
                 "$old = [Environment]::GetEnvironmentVariable('Path', 'User'); \
                  if ($old -notlike '*{}*') {{ \
@@ -886,6 +891,10 @@ impl LauncherInstaller {
             ]);
             cmd.creation_flags(0x08000000);
             let _ = cmd.output();
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = install_dir;
         }
         Ok(())
     }

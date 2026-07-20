@@ -3,7 +3,7 @@
 //! ロックフリー FIFO ページ置換方式による VRAM メッシュキャッシュ。
 //! マルチスレッドでの並行チャンクメッシュ生成とロックフリーアップロードを実現する。
 
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VramCacheHandle {

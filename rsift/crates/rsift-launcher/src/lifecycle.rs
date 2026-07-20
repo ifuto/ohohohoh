@@ -162,7 +162,10 @@ impl RsiftOrchestrator {
 
         // 1. Zero-Allocation Bump Arena テスト
         unsafe {
-            let slice = self.frame_arena.alloc_slice(1024, 64).unwrap();
+            let ptr = self.frame_arena.alloc_slice(1024, 64).unwrap();
+            // SAFETY: アリーナは CAS バンプで互いに素な領域を保証し、
+            // reset() は本ブロック脱出後にのみ呼ばれる (借用境界を観察済み)。
+            let slice = std::slice::from_raw_parts_mut(ptr, 1024);
             slice[0] = 42;
             info!("BumpArena allocation test: success (aligned to 64 bytes, no malloc)");
         }

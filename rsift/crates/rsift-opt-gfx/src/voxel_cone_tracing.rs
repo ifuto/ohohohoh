@@ -50,13 +50,14 @@ impl VoxelConeTracing {
     }
 }
 
+/// 空の SVO ではコーンは何にも当たらず、alpha は 0 のまま規格内を保つ。
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_voxel_cone_tracing() {
-        let svo = SparseVoxelOctree::new(256.0);
+        let svo = SparseVoxelOctree::empty();
         let cone = ConeRay {
             origin: [0.0, 64.0, 0.0],
             dir: [0.0, 1.0, 0.0],

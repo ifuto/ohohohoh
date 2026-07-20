@@ -99,7 +99,7 @@ pub struct FullGraphWiring {
     aokana: crate::aokana::AokanaFramework,
     azdo: crate::azdo::AzdoOrchestrator,
     gigabuffer: crate::gigabuffer::GigaBufferSuballocator,
-    gb_handles: HashMap<(i32, i32), crate::gigabuffer::ArenaHandle>,
+    gb_handles: HashMap<(i32, i32), crate::gpu_arena::ArenaHandle>,
     vram_cache: crate::lockfree_vram_cache::LockFreeVramMeshCache,
     paging: Option<crate::out_of_core_paging::OutOfCoreMmapPaging>,
     page_handles: HashMap<(i32, i32), crate::out_of_core_paging::PageHandle>,
@@ -150,6 +150,7 @@ pub struct FullGraphWiring {
     hud: crate::hud_batch::HudBatch,
     decals: Vec<crate::decals::Decal>,
     vrs_inst: crate::vrs::Vrs,
+    wboit: crate::wboit::Wboit,
     gtao_inst: crate::gtao::Gtao,
     shadow_lod_inst: crate::shadow_lod::ShadowLod,
     fxaa_inst: crate::fxaa::Fxaa,
@@ -292,6 +293,7 @@ impl FullGraphWiring {
             hud: crate::hud_batch::HudBatch::new(1024),
             decals: Vec::new(),
             vrs_inst: crate::vrs::Vrs::new(),
+            wboit: crate::wboit::Wboit::new(),
             gtao_inst: crate::gtao::Gtao::new(),
             shadow_lod_inst: crate::shadow_lod::ShadowLod::new(),
             fxaa_inst: crate::fxaa::Fxaa::new(),
@@ -959,7 +961,7 @@ impl FullGraphWiring {
             }
             // Intern: section の代表状態を実登録し dedup 効果を実測。
             for sample in palette.iter().step_by(61) {
-                let _ = self.intern_pool.intern(*sample);
+                let _ = self.intern_pool.intern(u32::from(*sample));
             }
         }
         let palette_stats = crate::palette_pack::stats_for(&packed_sections);

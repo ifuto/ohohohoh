@@ -19,11 +19,12 @@ dashmap = "6.0"
 smallvec.workspace = true
 memmap2.workspace = true
 rsift-api = { path = "../rsift-api" }
+# iris シェーダーパック ZIP (method 8 = raw deflate) の実展開に使用
+# (lock 上のエッジは dev-dependencies 時代から既存のため変更不要)
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [lib]
 name = "rsift_opt_gfx"
 crate-type = ["rlib"]
 
 [dev-dependencies]
-# 疑似Minecraftハーネス: バニラAnvil互換の zlib(deflate) 計測に使用
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

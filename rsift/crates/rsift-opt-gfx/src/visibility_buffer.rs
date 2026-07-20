@@ -46,6 +46,34 @@ pub fn unpack_ids_64(packed: u64) -> (u32, u32) {
     (packed as u32, (packed >> 32) as u32)
 }
 
+/// Visibility Buffer リゾルバ — GPU ラスタが書いた ID バッファ
+/// (1px = [`pack_ids`] パック値) を CPU リードバック後に解釈する実データ集計器。
+/// Aokana の可視リージョン判定や Hi-Z カリングの実測検証に使用する。
+#[derive(Debug, Clone, Copy)]
+pub struct VisibilityBufferResolver {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl VisibilityBufferResolver {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+
+    /// ID バッファの全サンプルを展開し、instance 毎の出現ピクセル数を数える。
+    /// 「0 番 = 背景」等の規約は呼び出し側のラスタ設定に委ね、ここでは
+    /// 実データの集計のみを行う。`id_buffer` が画面より短い場合は実長で打ち切る。
+    pub fn histogram_instances(&self, id_buffer: &[u32]) -> std::collections::HashMap<u32, u32> {
+        let max = (self.width as usize) * (self.height as usize);
+        let mut hist = std::collections::HashMap::new();
+        for &packed in id_buffer.iter().take(max) {
+            let (_primitive, instance) = unpack_ids(packed);
+            *hist.entry(instance).or_insert(0) += 1;
+        }
+        hist
+    }
+}
+
 /// Reconstruct a fragment attribute by interpolating barycentric weights across
 /// the primitive's 3 vertices (referenced by `primitive_id`). `w` are the three
 /// barycentric weights.
@@ -66,7 +94,13 @@ pub fn interpolate_rgb(a: Vec4, b: Vec4, c: Vec4, w: [f32; 3]) -> Vec4 {
 
 /// Compute barycentric weights $(u, v, w)$ given screen-space coordinates and triangle NDC/screen vertices.
 #[inline]
-pub fn compute_barycentrics(px: f32, py: f32, v0: [f32; 2], v1: [f32; 2], v2: [f32; 2]) -> [f32; 3] {
+pub fn compute_barycentrics(
+    px: f32,
+    py: f32,
+    v0: [f32; 2],
+    v1: [f32; 2],
+    v2: [f32; 2],
+) -> [f32; 3] {
     let denom = (v1[1] - v2[1]) * (v0[0] - v2[0]) + (v2[0] - v1[0]) * (v0[1] - v2[1]);
     if denom.abs() < 1e-6 {
         return [0.3333333, 0.3333333, 0.3333333];

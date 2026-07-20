@@ -4,7 +4,7 @@ use crate::adaptive_shading::AdaptiveShadingController;
 use crate::billboard_lod::BillboardLodSelector;
 use crate::binary_greedy_meshing::{
     demo_column_palettes, mesh_chunk_column, mesh_chunk_column_pull_world, SectionPalette,
-    SECTIONS_PER_COLUMN, SECTION_SIZE,
+    SECTION_SIZE,
 };
 use crate::chunk_cull::{ChunkCullPass, CullVerdict};
 use crate::chunk_mesh::{BuiltChunkMesh, MultithreadedChunkBuilder};

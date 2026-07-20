@@ -154,7 +154,6 @@ pub fn clusterize(vertices: &[NanoVertex], indices: &[u32]) -> NanoClusterSet {
                 centroid[1] += vertices[vi].pos[1];
                 centroid[2] += vertices[vi].pos[2];
                 vcount += 1;
-
             }
         }
         if vcount > 0 {
@@ -189,8 +188,13 @@ pub fn clusterize(vertices: &[NanoVertex], indices: &[u32]) -> NanoClusterSet {
     }
 
     // --- 親鎖: 最大共有エッジ相手に merge (ヘューリスティック) ---
+    // NOTE (簡略版): 実運用の Nanite は 4 stage で stage ごとに再クラスタ化して
+    // DAG を再構成する。本実装は 1 stage (level = 1) 固定に簡略化している。
+    // (元々 `for level in 1..=4 { ... break; }` で先頭 stage のみ実行しており、
+    //  実挙動を変えずに明示化したもの)
     let meshlet_count = meshlets.len();
-    for level in 1..=4u32 {
+    let level = 1u32;
+    {
         let stride = 1u32 << level; // 階層ごとに 2 個ずつ merge
         let _ = stride;
         let mut parent_of = vec![u32::MAX; meshlet_count];
@@ -209,9 +213,12 @@ pub fn clusterize(vertices: &[NanoVertex], indices: &[u32]) -> NanoClusterSet {
                 );
                 let r = max3(
                     dist3(meshlets[root].sphere_center, merged_c) + meshlets[root].sphere_radius,
-                    dist3(meshlets[partner].sphere_center, merged_c) + meshlets[partner].sphere_radius,
+                    dist3(meshlets[partner].sphere_center, merged_c)
+                        + meshlets[partner].sphere_radius,
                 );
-                let child_max = meshlets[root].sphere_radius.max(meshlets[partner].sphere_radius);
+                let child_max = meshlets[root]
+                    .sphere_radius
+                    .max(meshlets[partner].sphere_radius);
                 meshlets[root].error = (r - child_max).max(0.0);
                 meshlets[root].level = level - 1;
                 i += 2;
@@ -220,11 +227,13 @@ pub fn clusterize(vertices: &[NanoVertex], indices: &[u32]) -> NanoClusterSet {
             }
         }
         let _ = parent_of;
-        // NOTE: 4 stage 簡略: 実運用では stage ごとの再クラスタ化が必要 (Nanite は DAG を再構成)
-        break;
     }
 
-    NanoClusterSet { meshlets, clustered_indices, source_triangle_count: tri_count as u32 }
+    NanoClusterSet {
+        meshlets,
+        clustered_indices,
+        source_triangle_count: tri_count as u32,
+    }
 }
 
 fn next_seed(assigned: &[bool], tri_count: usize) -> Option<u32> {
@@ -307,7 +316,10 @@ mod tests {
         assert_eq!(set.source_triangle_count, 128);
         let total: u32 = set.meshlets.iter().map(|m| m.triangle_count).sum();
         assert_eq!(total, 128);
-        assert!(set.meshlets.iter().all(|m| m.triangle_count <= MAX_TRIS_PER_CLUSTER as u32));
+        assert!(set
+            .meshlets
+            .iter()
+            .all(|m| m.triangle_count <= MAX_TRIS_PER_CLUSTER as u32));
         assert_eq!(set.clustered_indices.len(), 128 * 3);
     }
 

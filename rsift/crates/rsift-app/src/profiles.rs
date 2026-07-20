@@ -43,6 +43,7 @@ impl ProfileStore {
             install_root: default_install_root(),
             profiles: vec![],
             selected: 0,
+            java_override: String::new(), // 空 = 自動検出 (serde default と同義)
         };
         s.profiles.push(default_profile(&s));
         s

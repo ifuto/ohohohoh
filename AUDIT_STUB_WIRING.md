@@ -197,3 +197,71 @@ pub fn transpile(&self, bytecode: &mut Vec<u8>, rule: &TranspileRule) -> bool {
   - `rsift-installer/build.rs` を **rustc で実単体コンパイル成功** (cargo 外実行時は CARGO_MANIFEST_DIR 不在で fail-fast panic = 想定どおり)
   - `cargo fmt --check`: 私の変更ファイルは edition 2021 で一部スタイル差分あり → **rustfmt 実適用で全件 CLEAN 化して修正コミット**。全リポジトリ換算では 141 ファイルに edition 2021 基準の歴史的差分 (CRLF/旧版フォーマット時代由来) が残存 — `rustfmt lib.rs` は子モジュールまで再帰適用されるため迂闊に全適用すると波及的 (一度 115 ファイル波及→私の編集外は全 revert 済)。全リポジトリ一括 `cargo fmt --all` はブランチの最小差分原則に反するためユーザー判断に委ねる
   - `cargo check --workspace --all-targets --locked`: **crates.io index 遮断で失敗 (`https://index.crates.io/config.json` TLS EOF)** — 残る唯一の欠片は cargo vendor のみ。ユーザーに `cargo vendor --locked vendor` の ZIP 分割アップロードを依頼中
+
+---
+
+## 追記5: 実 toolchain による `cargo check` / `cargo clippy` 完全実検証 (2026-07-20)
+
+### vendor 供給 (GitHub 障害下の迂回)
+
+GitHub Actions 障害 (`ci/vendor.yml` 経路が停止) により、ユーザーの Windows PC 上で
+`rustup` 導入 → `cargo vendor` (これ自体が **リポジトリの潜在不具合を発見**) →
+`vendor.zip` 122,737,382 bytes を `ci/dev-assets/splitter.html` で 25MB × 5 分割 →
+arena ブランチ `ci/dev-assets/` に配置。sandbox 側で結合: 34,755 entries / 全 CRC OK /
+454 crates (lock 472 package のうち 18 が workspace 内部 = vendored 対象外、数が一致)。
+
+### 発見したリポジトリ潜在不具合 (ユーザーの `cargo vendor --locked` 失敗が発端)
+
+`Cargo.lock` が Cargo.toml 群とズレたままコミットされていた (main でも同じ。
+`--locked` 系コマンドは全滅する状態 = CI の `--locked` check も必ず落ちていた):
+
+- `rsift-jvm` の `bytemuck` 依存エッジが lock に未記録
+- `rsift-render` → `rsift-opt-gfx` の依存エッジが lock に未記録
+
+対処: ユーザーの `cargo vendor` (lock 再生成) で 2 行修正 + 本セッションの
+`rsift-render` → `rsift-installer` 追加で、結果 lock 差分は正味 +3 行に収束。
+
+### `cargo check --workspace --all-targets --locked`: 24 箇所の compile error を全修正
+
+| クレート | 件数 | 代表例 |
+|---|---|---|
+| rsift-opt-gfx | 16 | Pin 再借用 (`fut.as_mut().poll`)、`AtomicU64` import 欠落、非存在モジュール名 (`VisibilityBufferResolver` → 実装新規追加、`sample_lod` → svo.rs に実装)、`intern` への u16/u32 不一致、未宣言フィールド `wboit` (Wboit 実体型を配線)、非公開パス `gigabuffer::ArenaHandle` → 正規 `gpu_arena::ArenaHandle`、`*mut u8`/`NonNull<u8>` の Send (BumpArena/FrameArena に SAFETY コメント付き `unsafe impl Send`)、`flate2` を dev-dep → 通常 dep (lock 変更不要と実証) |
+| rsift-render | 1 | `FullGraphWiring::new(game_dir)` 新シグネチャへ呼出追従 (`rsift-installer::detect_minecraft_dir` 正規検出で実データ駆動) |
+| rsift-installer | 2 | `if cfg!(windows)` (実行時判定) で `std::os::windows` を参照 → Linux コンパイル不能、**原作者由来の既存不具合**。`#[cfg(windows)]` コンパイル時門に修正 |
+| rsift-jvm | 2 | `JPrimitiveArray.clone()` 不存在 → `new_local_ref`+`from_raw` 正規 API で所有権複製 (二重解放回避を検証)、`patched` 借用/移動競合を比較結果先行評価で解消 |
+| rsift-app | 2 | `Stroke::none()` → vendored epaint の `Stroke::NONE`、`ProfileStore` initializer の `java_override` 漏れ |
+| rsift-transpiler (test) | 1 | `AdaptiveComputeProfile` initializer の `speed_first` 漏れ |
+
+### `cargo clippy --workspace --all-targets --locked`: deny 級 lint を全修正
+
+- `clippy::mut_from_ref` (deny): `hyper_opt::BumpArena::alloc_slice` が `&self` から
+  `&mut [u8]` を返す健全性違反 → 生ポインタ返却 + 呼出側で SAFETY 検証済みの
+  `from_raw_parts_mut` に変更 (唯一の呼出 lifecycle.rs を SAFETY コメント付きで追従)
+- `clippy::logic_bug` ×2: `r.block == block || (r.block == 0 && false)` の恒偽冗長項を除去
+- `approximate constants` ×9: depth_of_field.rs の `0.7071` → `FRAC_1_SQRT_2`、
+  half_vertex.rs / pseudo_mc_live.rs の `3.14159` / `3.14` → `PI` に正確化
+- `clippy::never_loop` ×1: nanite_clusters.rs の `for level...{...break}` →
+  「1 stage 固定の簡略版」と実挙動を変えず明示化
+- `clippy::not_unsafe_ptr_arg_deref` ×3: `Agent_OnLoad` / `install_class_file_load_hook`
+  を `unsafe` 契約化 + 呼出側 unsafe ブロック化 (jvmti_events/agent_bridge)
+- 恒真比較 `w <= u32::MAX` (テスト) を除去し roundtrip assert を保持
+
+### 最終結果 (sandbox 実測、vendor/offline 環境)
+
+```
+$ cargo check --workspace --all-targets --locked   → Finished (EXIT 0)
+$ cargo clippy --workspace --all-targets --locked  → Finished (EXIT 0)
+```
+
+残存: 警告約 510 件はほぼ原作者コードのスタイル系 (unused import 等) で
+非ブロッキング。最小差分原則により一括整形は実施せず (141 ファイル規模の
+歴史的 fmt 差分も owner 判断事項として温存)。rustfmt は「本セッションで編集した
+ファイル」に限定適用し、rustfmt の mod 再帰で波及した未編集 4 ファイル
+(mod_bridge/platform_bridge/screen_buttons/screen_inject) と
+編集対に対し fmt ドリフ卜が過大だった 4 ファイル (compute_runtime/app/profiles/
+pseudo_mc_live) は revert して実編集のみ再適用した。
+
+### vendor 資産の保全
+
+`ci/dev-assets/` の分割パーツは受領・検証完了後に tip から除去 (履歴には完全残存。
+再現が必要なら `git checkout af0b387^..af0b387 -- ci/dev-assets/` 相当で回復可能)。

@@ -11,8 +11,6 @@
 //! 4. **Lock-Free RCU Event Dispatcher (`LockFreeDispatcher<T>`)**: `Mutex`/`RwLock` 競合ゼロで数千の DLL リスナーへ超並列イベント発火。
 
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-use std::ptr::NonNull;
-use std::slice;
 use tracing::trace;
 
 /// CPUキャッシュラインサイズ (x86_64 / ARM64 標準の 64 bytes)
@@ -59,11 +57,17 @@ impl BumpArena {
         }
     }
 
-    /// アリーナから `size` バイトのメモリを `align` のアライメントで O(1) 確保する
+    /// アリーナから `size` バイトを `align` アライメントで O(1) 確保し先頭ポインタを返す。
     ///
-    /// # Safety
-    /// 返されたスライスは次の `reset()` 呼び出しまでのみ有効です。
-    pub unsafe fn alloc_slice<'a>(&'a self, size: usize, align: usize) -> Option<&'a mut [u8]> {
+    /// # Safety / 返却規約
+    /// * 返された領域は次の [`reset`](Self::reset) まで有効。reset 後の使用は UB。
+    /// * 連続呼び出しは CAS バンプにより常に互いに素な領域を返すため、呼び出し側が
+    ///   `slice::from_raw_parts_mut(ptr, size)` しても他の貸出とは重複しない。
+    /// * 容量超過時は `None`。
+    ///
+    /// (`&self` から `&mut [u8]` を直接返す設計は clippy::mut_from_ref で禁止のうえ、
+    ///  返却借用の生存境界を reset() に紐付けられないため、規約明示した生ポインタで返す)
+    pub unsafe fn alloc_slice(&self, size: usize, align: usize) -> Option<*mut u8> {
         let mut current = self.offset.load(Ordering::Relaxed);
         loop {
             let aligned = (current + (align - 1)) & !(align - 1);
@@ -71,10 +75,15 @@ impl BumpArena {
             if next > self.buffer.len() {
                 return None; // アリーナ容量オーバー
             }
-            match self.offset.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            match self.offset.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => {
-                    let ptr = self.buffer.as_ptr().add(aligned) as *mut u8;
-                    return Some(slice::from_raw_parts_mut(ptr, size));
+                    let ptr = unsafe { self.buffer.as_ptr().add(aligned) } as *mut u8;
+                    return Some(ptr);
                 }
                 Err(val) => current = val,
             }
@@ -160,7 +169,9 @@ impl<T: Clone + 'static> LockFreeDispatcher<T> {
         new_vec.push(listener);
         let new_ptr = Box::into_raw(Box::new(new_vec));
         let prev = self.ptr.swap(new_ptr, Ordering::SeqCst);
-        unsafe { let _ = Box::from_raw(prev); }
+        unsafe {
+            let _ = Box::from_raw(prev);
+        }
     }
 
     /// ロックフリーで現在のリスナー配列スライスを取得する（読み取りコスト: アトミックロード 1回のみ！）
@@ -175,7 +186,9 @@ impl<T: Clone + 'static> Drop for LockFreeDispatcher<T> {
     fn drop(&mut self) {
         let raw = self.ptr.swap(std::ptr::null_mut(), Ordering::SeqCst);
         if !raw.is_null() {
-            unsafe { let _ = Box::from_raw(raw); }
+            unsafe {
+                let _ = Box::from_raw(raw);
+            }
         }
     }
 }

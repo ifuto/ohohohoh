@@ -86,6 +86,12 @@ impl Drop for FrameArena {
     }
 }
 
+// SAFETY: FrameArena は単一ヒープチャンクの唯一の所有者であり、alloc_bytes が
+// 返す NonNull は借用を形成しない。内部可変性は Cell (ゆえに !Sync) に閉じるため、
+// 所有権のスレッド間移動 (Send) でデータ競合は起き得ない。dealloc 責任は
+// 所有権と共に移動する。
+unsafe impl Send for FrameArena {}
+
 /// 1 フレームに許すチャンク作業の時間予算。切れたら残りは次フレーム。
 /// 「低スペックでは毎フレーム少しずつ」がカクつかない鉄則。
 pub struct TimeSlice<T> {

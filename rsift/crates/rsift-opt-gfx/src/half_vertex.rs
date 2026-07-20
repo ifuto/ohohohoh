@@ -114,7 +114,7 @@ mod tests {
     }
     #[test]
     fn roundtrip_within_precision() {
-        for &v in &[0.123, 3.14159, -7.25, 12.0, 0.0009] {
+        for &v in &[0.123, std::f32::consts::PI, -7.25, 12.0, 0.0009] {
             let r = f16_to_f32(f32_to_f16(v));
             // f16 has ~3 decimal digits; allow relative error.
             let rel = (r - v).abs() / v.abs().max(1e-3);

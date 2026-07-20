@@ -17,9 +17,12 @@ fn bootstrap_log(line: &str) {
 }
 
 /// JVM `-agentpath:rsift_jvm.dll` entry. Must stay minimal to avoid 0xC0000005.
+/// JVMTI エントリポイント。JVM がシンボル解決して直接呼ぶ。
+/// (options は C 文字列への生ポインタのため unsafe 契約。
+///  JVM 仕様上 options は Agent_OnLoad 呼出中のみ有効)
 #[no_mangle]
 #[allow(non_snake_case)]
-pub extern "C" fn Agent_OnLoad(
+pub unsafe extern "C" fn Agent_OnLoad(
     vm: *mut c_void,
     options: *mut c_char,
     _reserved: *mut c_void,

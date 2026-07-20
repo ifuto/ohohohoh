@@ -19,8 +19,12 @@ pub enum ActiveRenderBackend {
 impl ActiveRenderBackend {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::DirectX12Explicit => "DirectX 12 Agility Explicit (RootSig 1.1 + Descriptor Ring)",
-            Self::VulkanWgpuBindless => "Vulkan / wgpu Bindless (SoA SIMD Culling + Vertex Pulling)",
+            Self::DirectX12Explicit => {
+                "DirectX 12 Agility Explicit (RootSig 1.1 + Descriptor Ring)"
+            }
+            Self::VulkanWgpuBindless => {
+                "Vulkan / wgpu Bindless (SoA SIMD Culling + Vertex Pulling)"
+            }
         }
     }
 }
@@ -54,11 +58,17 @@ impl Dx12RenderBridge {
         {
             match rsift_dx12::Dx12Engine::create(caps.clone()) {
                 Ok(engine) => {
-                    info!("========================================================================");
-                    info!(" 🚀 [RenderBridge] Active Hardware Backend: DirectX 12 Agility Explicit");
+                    info!(
+                        "========================================================================"
+                    );
+                    info!(
+                        " 🚀 [RenderBridge] Active Hardware Backend: DirectX 12 Agility Explicit"
+                    );
                     info!("    Report: {}", engine.phase_report());
                     info!("    Features: Root Signature 1.1 | Static Samplers | Descriptor Ring");
-                    info!("========================================================================");
+                    info!(
+                        "========================================================================"
+                    );
                     crate::proxy::global_proxy().enable();
                     return Ok(Self {
                         engine: Some(engine),
@@ -83,7 +93,12 @@ impl Dx12RenderBridge {
         info!("    Engine: rsift-opt-gfx v2.0 (100% Feature & Culling Parity Maintained)");
         info!("    Features: SoA AVX2/SWAR Frustum | FastEntityCuller V2 | 12B Quantized");
         info!("========================================================================");
-        let _wiring = rsift_opt_gfx::full_graph_wiring::FullGraphWiring::new();
+        // 経路の構築健全性を実確認 (破棄するが、生成時に実ゲームディレクトリの
+        // キャッシュ配置 (.rsift_cache) まで検証される)。game dir は
+        // rsift-installer の正規検出ロジック (OS 別標準パス) を使用する。
+        let game_dir = rsift_installer::LauncherInstaller::detect_minecraft_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let _wiring = rsift_opt_gfx::full_graph_wiring::FullGraphWiring::new(&game_dir);
         crate::proxy::global_proxy().enable();
 
         Ok(Self {
@@ -100,7 +115,9 @@ impl Dx12RenderBridge {
                 .as_ref()
                 .map(|e| e.phase_report())
                 .unwrap_or_else(|| "dx12=active_explicit".into()),
-            ActiveRenderBackend::VulkanWgpuBindless => "backend=vulkan_wgpu_bindless_v2".to_string(),
+            ActiveRenderBackend::VulkanWgpuBindless => {
+                "backend=vulkan_wgpu_bindless_v2".to_string()
+            }
         }
     }
 }
