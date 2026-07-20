@@ -307,3 +307,43 @@ pseudo_mc_live) は revert して実編集のみ再適用した。
 - sandbox には wgpu adapter (Vulkan/swrast 系) が存在せず GPU パスの実走は不可。
   `frame_proof gpu` は adapter 無しで明示失敗する設計。実 GPU での真値検証は
   ユーザー PC での実行待ち (次フェーズで readback 画像の GPU/CPU 突合を行う)。
+
+---
+
+## 追記 7: RsGraphics 進化 Phase B — FSR1 (EASU+RCAS) 実 GPU dispatch 配線 (2026-07-20)
+
+### 目的
+「低解像度レンダ → FSR1 アップスケール」を実パス駆動で構成し、既存資産
+(`fsr1.rs` CPU 参照 / `shaders/fsr1.wgsl` 実 compute シェーダ) を GPU 実行まで繋ぐ
+(これまでは CPU チェーン内呼び出しのみで GPU では未実行だった)。
+
+### 変更点 (rsift-opt-gfx)
+- `src/frame_fsr1.rs` (新規): `GpuFsr1Pass` — fsr1.wgsl を entry 別の明示 BGL
+  (EASU: 0=Params/1=srcTex/2=samp/3=dstTex storage、RCAS: 0=Params/4=casTex/5=casOut)
+  で 2 実 compute pipeline 化。Params ユニフォーム (24B) を実値で更新し
+  EASU→RCAS を実 dispatch、最終 LDR を 256B アライン readback。
+- `src/frame_pipeline.rs`: `record_to_ldr` (ラスタ+ACES 録画のみ) を分離し
+  FSR 入力経路を公開 (`ldr_view`/LDR usage +TEXTURE_BINDING)。readback 共通部を
+  `read_rgba8` に抽出 (frame_fsr1 と共有)。`render_to_image` の既存 API/挙動は不変。
+- `src/frame_reference.rs`: `fsr1_reference` (WGSL 精密ミラー: Rチャネ勾配・
+  位置寄せ・RCAS ラプラシアン・OOB textureLoad=0 規則まで一致) と
+  `render_reference_fsr` (低解像度ラスタ→拡大の e2e CPU 参照)。
+- `examples/frame_proof.rs`: `cpu-fsr` / `gpu-fsr` モード追加
+  (320x240 → 640x480、sharpness 0.2)。
+
+### 検証 (全て sandbox 実測)
+- テスト 16/16: FSR1 WGSL naga パース+両エントリ実在、平坦部恒等 (境界は
+  WGSL OOB=0 規則の微小暗転を ±範囲で実 assert)、ハードエッジ保持+
+  プレーンバイリニアとの非等値 (EASU+RCAS の実効果証明)、実メッシュ e2e。
+- `cargo run --example frame_proof -- cpu-fsr` 実走: 3,356 quads → 320x240
+  ラスタ → FSR1 → 640x480 BMP 実生成・目視確認 (柱状メッシュの輪郭が
+  バイリニア滲みでなくエッジ保持で復元されること)。
+  低解像度起因の実測差: covered 65,682→35,485 px (細いスパイクの消失=
+  空間アップスケーラの真性のロス) / avg_lum 0.86→0.33 (エッジ遷移画素の混入
+  による平均低下)。両者とも実挙動として正当性を確認済み。
+- `cargo check/clippy -p rsift-opt-gfx --all-targets --locked --offline` → EXIT 0 (新規警告なし)。
+
+### 未実施 (環境制約)
+- GPU 実 dispatch (`gpu-fsr`) は sandbox に adapter が無いためユーザー環境待ち。
+  その際は `frame_proof gpu-fsr` の readback 画像と `cpu-fsr` 画像の統計突合
+  (±1LSB 許容の画素一致率) で GPU/CPU 真値検証を行う。

@@ -239,6 +239,136 @@ fn raster_tri(
     }
 }
 
+// ---------- Phase B: FSR1 (EASU + RCAS) の WGSL 精密ミラー ----------
+
+/// `shaders/fsr1.wgsl` の fsr_easu + fsr_rcas と同一数学で RGBA8 を拡大する。
+/// 入力は低解像度 RGBA8 (ACES 後 LDR)。出力は全解像度 RGBA8。
+/// 差異は float→unorm 格納の丸めのみ (WGSL は round-to-nearest、こちらは +0.5 切捨て。
+/// 境界での ±1LSB は統計比較の許容内 — ビット等値は要求しない)。
+pub fn fsr1_reference(
+    low: &[u8],
+    low_w: u32,
+    low_h: u32,
+    full_w: u32,
+    full_h: u32,
+    sharpness: f32,
+) -> Vec<u8> {
+    assert_eq!(low.len(), (low_w * low_h * 4) as usize, "low px size");
+    let px = |x: i64, y: i64| -> [f32; 3] {
+        // sampler ClampToEdge 相当
+        let cx = x.clamp(0, low_w as i64 - 1) as usize;
+        let cy = y.clamp(0, low_h as i64 - 1) as usize;
+        let s = (cy * low_w as usize + cx) * 4;
+        [
+            low[s] as f32 / 255.0,
+            low[s + 1] as f32 / 255.0,
+            low[s + 2] as f32 / 255.0,
+        ]
+    };
+
+    // --- fsr_easu (輝度勾配は WGSL 同様 R チャンネルのみ) ---
+    let mut inter = vec![[0.0f32; 3]; (full_w * full_h) as usize];
+    for gy in 0..full_h {
+        for gx in 0..full_w {
+            // uv = (gid+0.5)/outputSize; lr = uv*inputSize - 0.5
+            let ux = (gx as f32 + 0.5) / full_w as f32;
+            let uy = (gy as f32 + 0.5) / full_h as f32;
+            let lx = ux * low_w as f32 - 0.5;
+            let ly = uy * low_h as f32 - 0.5;
+            let bx = lx.floor();
+            let by = ly.floor();
+            let fx = lx - bx;
+            let fy = ly - by;
+            let (bx, by) = (bx as i64, by as i64);
+            let p00 = px(bx, by);
+            let p10 = px(bx + 1, by);
+            let p01 = px(bx, by + 1);
+            let p11 = px(bx + 1, by + 1);
+            let grx = ((p10[0] + p11[0]) - (p00[0] + p01[0])).abs();
+            let gry = ((p00[0] + p10[0]) - (p01[0] + p11[0])).abs();
+            let ex = grx / (grx + 0.5);
+            let ey = gry / (gry + 0.5);
+            let fx2 = fx + (0.5 - fx) * ex;
+            let fy2 = fy + (0.5 - fy) * ey;
+            let mut outc = [0.0f32; 3];
+            for ch in 0..3 {
+                let top = p00[ch] + (p10[ch] - p00[ch]) * fx2;
+                let bot = p01[ch] + (p11[ch] - p01[ch]) * fx2;
+                outc[ch] = top + (bot - top) * fy2;
+            }
+            inter[(gy * full_w + gx) as usize] = outc;
+        }
+    }
+
+    // --- fsr_rcas (OOB textureLoad = 0、WGSL 準拠) ---
+    let load = |x: i64, y: i64| -> [f32; 3] {
+        if x < 0 || y < 0 || x >= full_w as i64 || y >= full_h as i64 {
+            [0.0; 3]
+        } else {
+            inter[(y as u32 * full_w + x as u32) as usize]
+        }
+    };
+    let mut out = Vec::with_capacity((full_w * full_h * 4) as usize);
+    for gy in 0..full_h as i64 {
+        for gx in 0..full_w as i64 {
+            let c = load(gx, gy);
+            let n = load(gx, gy + 1);
+            let s = load(gx, gy - 1);
+            let e = load(gx + 1, gy);
+            let w = load(gx - 1, gy);
+            for ch in 0..3 {
+                let lap = (n[ch] + s[ch] + e[ch] + w[ch]) * 0.25 - c[ch];
+                let v = (c[ch] + lap * sharpness).clamp(0.0, 1.0);
+                out.push((v * 255.0 + 0.5) as u8);
+            }
+            out.push(255);
+        }
+    }
+    out
+}
+
+/// 低解像度で CPU 参照レンダリング → FSR1 (WGSL ミラー) で全解像度へ。
+/// 被覆統計は空色 (ACES エンコード済み) と異なる画素を全解像度側で計測。
+pub fn render_reference_fsr(
+    chunks: &[(PullBuiltMesh, [f32; 3])],
+    vp: &[[f32; 4]; 4],
+    low_w: u32,
+    low_h: u32,
+    full_w: u32,
+    full_h: u32,
+    sharpness: f32,
+) -> CpuFrame {
+    let lo = render_reference(chunks, vp, low_w, low_h);
+    let pixels = fsr1_reference(&lo.pixels, low_w, low_h, full_w, full_h, sharpness);
+    let sky_f = aces_srgb([0.02, 0.03, 0.05]);
+    let sky = [
+        (sky_f[0].clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        (sky_f[1].clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+        (sky_f[2].clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+    ];
+    let mut covered = 0u32;
+    let mut lum_sum = 0.0f64;
+    for px in pixels.chunks_exact(4) {
+        if px[0] != sky[0] || px[1] != sky[1] || px[2] != sky[2] {
+            covered += 1;
+            lum_sum +=
+                (px[0] as f64 * 0.2126 + px[1] as f64 * 0.7152 + px[2] as f64 * 0.0722) / 255.0;
+        }
+    }
+    CpuFrame {
+        width: full_w,
+        height: full_h,
+        pixels,
+        covered_px: covered,
+        quads: lo.quads,
+        avg_lum: if covered > 0 {
+            (lum_sum / covered as f64) as f32
+        } else {
+            0.0
+        },
+    }
+}
+
 /// RGBA8 を 24-bit BMP (top-down, BGR) として実ファイルに書き出す。
 /// top-down は高さを負値で書く DIB 形式 (主要ビューア互換)。
 pub fn write_bmp(
@@ -287,6 +417,93 @@ mod tests {
             &palettes, 0, 0, 0, 0, 0, 0, true,
         );
         vec![(mesh, [0.0, 0.0, 0.0])]
+    }
+
+    #[test]
+    fn fsr1_flat_region_is_identity() {
+        // 全面同一色の低解像度入力 → EASU+RCAS 後も同一色 (勾配ゼロ、lap=0)
+        // ただし外周は WGSL の OOB textureLoad=0 規則により近傍がゼロ扱いとなり
+        // lap<0 でわずかに暗転する (GPU も同一規則 — CPU ミラーはこれを再現している)。
+        let lo = vec![120u8; 4 * 4 * 4];
+        let out = fsr1_reference(&lo, 4, 4, 8, 8, 0.2);
+        assert_eq!(out.len(), 8 * 8 * 4);
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let v = out[(y * 8 + x) * 4];
+                if (1..7).contains(&x) && (1..7).contains(&y) {
+                    assert_eq!(v, 120, "interior must stay flat");
+                } else {
+                    // 境界: 辺は近傍ゼロ1個 (≈0.95倍→114)、角は2個 (≈0.9倍→108) まで低下
+                    assert!((108..=120).contains(&v), "border darkening bounded: {v}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fsr1_preserves_hard_edge_and_differs_from_plain_bilinear() {
+        // 垂直ハードエッジ (左=暗 0, 右=明 255) 4x4 → 8x8
+        let mut lo = vec![0u8; 4 * 4 * 4];
+        for y in 0..4usize {
+            for x in 2..4usize {
+                for ch in 0..3 {
+                    lo[(y * 4 + x) * 4 + ch] = 255;
+                }
+            }
+        }
+        let out = fsr1_reference(&lo, 4, 4, 8, 8, 0.2);
+        let get = |x: usize, y: usize| out[(y * 8 + x) * 4];
+        // 明部の内側は明のまま、暗部の内側は暗のまま
+        assert!(get(6, 4) >= 200, "bright interior preserved: {}", get(6, 4));
+        assert!(get(0, 4) <= 20, "dark interior preserved: {}", get(0, 4));
+        // ただのバイリニアとの差分が非ゼロ (EASU の位置寄せ + RCAS が実効果あり)
+        let mut bil = vec![0u8; 8 * 8 * 4];
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let lx = ((x as f32 + 0.5) * 4.0 / 8.0 - 0.5).clamp(0.0, 3.0);
+                let ly = ((y as f32 + 0.5) * 4.0 / 8.0 - 0.5).clamp(0.0, 3.0);
+                let (x0, y0) = (lx as usize, ly as usize);
+                let (x1, y1) = ((x0 + 1).min(3), (y0 + 1).min(3));
+                let (fx, fy) = (lx.fract(), ly.fract());
+                for ch in 0..3 {
+                    let a = lo[(y0 * 4 + x0) * 4 + ch] as f32;
+                    let b = lo[(y0 * 4 + x1) * 4 + ch] as f32;
+                    let c = lo[(y1 * 4 + x0) * 4 + ch] as f32;
+                    let d = lo[(y1 * 4 + x1) * 4 + ch] as f32;
+                    let v = (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
+                    bil[(y * 8 + x) * 4 + ch] = v as u8;
+                }
+            }
+        }
+        let mad: u64 = out
+            .iter()
+            .zip(bil.iter())
+            .map(|(a, b)| (*a as i32 - *b as i32).unsigned_abs() as u64)
+            .sum();
+        assert!(
+            mad > 0,
+            "FSR1 must differ from plain bilinear (edge-aware + sharpen)"
+        );
+    }
+
+    #[test]
+    fn fsr1_reference_e2e_real_mesh() {
+        let cam = FrameCamera {
+            eye: [-28.0, 72.0, -28.0],
+            target: [8.0, 16.0, 8.0],
+            up: [0.0, 1.0, 0.0],
+            fov_y_deg: 60.0,
+            aspect: 192.0 / 144.0,
+            near: 0.1,
+            far: 500.0,
+        };
+        let vp = build_view_proj(&cam);
+        let chunks = demo_chunks();
+        let fr = render_reference_fsr(&chunks, &vp, 192, 144, 384, 288, 0.2);
+        assert!(fr.quads > 0);
+        assert!(fr.covered_px > 0, "upscaled frame must show terrain");
+        assert!(fr.covered_px < 384 * 288, "sky must remain");
+        assert!(fr.avg_lum > 0.01);
     }
 
     #[test]

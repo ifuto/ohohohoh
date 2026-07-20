@@ -162,7 +162,9 @@ impl GpuFramePipeline {
         );
         let ldr = mk_target(
             LDR_FORMAT,
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING // Phase B: FSR1 compute の入力として参照
+                | wgpu::TextureUsages::COPY_SRC,
             "Rsift Frame LDR",
         );
         let hdr_view = hdr.create_view(&Default::default());
@@ -347,16 +349,21 @@ impl GpuFramePipeline {
         }
     }
 
-    /// 1 実フレームを描き、実画素 (RGBA8) と統計を返す。
-    /// `chunks`: (実プルメッシュ, ワールド原点 [x,y,z]) — 各要素 1 draw call。
-    /// 深度クリア・HDR クリア (夜空色) → 全メッシュラスタ → ACES → リードバック。
-    pub fn render_to_image(
+    /// 最終 LDR テクスチャのビューを取得 (Phase B: FSR1 compute の入力に使う)。
+    pub fn ldr_view(&self) -> &wgpu::TextureView {
+        &self.ldr_view
+    }
+
+    /// ラスタ (深度付き) + ACES ポストを LDR テクスチャへ実描画して submit する
+    /// (readback はしない)。FSR1 など後段パスが LDR を直接参照する場合に使う。
+    /// 戻り値は (draw_calls, quads)。
+    pub fn record_to_ldr(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         view_proj: [[f32; 4]; 4],
         chunks: &[(PullBuiltMesh, [f32; 3])],
-    ) -> Result<FrameImage, String> {
+    ) -> Result<(u32, u32), String> {
         queue.write_buffer(&self.exposure_buf, 0, bytemuck::bytes_of(&1.0f32));
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Rsift Frame Encoder"),
@@ -506,8 +513,26 @@ impl GpuFramePipeline {
             post.draw(0..3, 0..1);
         }
 
+        queue.submit([encoder.finish()]);
+        Ok((draw_calls, quad_total))
+    }
+
+    /// 1 実フレームを描き、実画素 (RGBA8) と統計を返す。
+    /// `chunks`: (実プルメッシュ, ワールド原点 [x,y,z]) — 各要素 1 draw call。
+    /// 深度クリア・HDR クリア (夜空色) → 全メッシュラスタ → ACES → リードバック。
+    pub fn render_to_image(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        view_proj: [[f32; 4]; 4],
+        chunks: &[(PullBuiltMesh, [f32; 3])],
+    ) -> Result<FrameImage, String> {
+        let (draw_calls, quad_total) = self.record_to_ldr(device, queue, view_proj, chunks)?;
         // Readback: LDR → staging buffer
         let padded = (self.width * 4).div_ceil(256) * 256;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Rsift Frame Copy Encoder"),
+        });
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
                 texture: &self.ldr,
@@ -530,24 +555,7 @@ impl GpuFramePipeline {
             },
         );
         queue.submit([encoder.finish()]);
-
-        let slice = self.readback.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx.send(r);
-        });
-        // 実デバイスの完了待ち (wgpu::Maintain::Wait は完了までブロック)。
-        while rx.try_recv().is_err() {
-            let _ = device.poll(wgpu::Maintain::Wait);
-        }
-        let data = slice.get_mapped_range();
-        let mut pixels = Vec::with_capacity((self.width * self.height * 4) as usize);
-        for y in 0..self.height as usize {
-            let s = y * padded as usize;
-            pixels.extend_from_slice(&data[s..s + (self.width * 4) as usize]);
-        }
-        drop(data);
-        self.readback.unmap();
+        let pixels = read_rgba8(device, &self.readback, padded, self.width, self.height);
         debug!(
             "[FramePipeline] draws={} quads={} pixels={}B",
             draw_calls,
@@ -564,6 +572,35 @@ impl GpuFramePipeline {
     }
 }
 
+/// RGBA8 テクスチャコピー済み staging バッファを map して実画素 (行圧縮除去済み) を返す。
+/// `padded` は 256B アライン済み bytes_per_row。frame_pipeline / frame_fsr1 共有。
+pub(crate) fn read_rgba8(
+    device: &wgpu::Device,
+    buf: &wgpu::Buffer,
+    padded: u32,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    let slice = buf.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    // 実デバイスの完了待ち (wgpu::Maintain::Wait は完了までブロック)。
+    while rx.try_recv().is_err() {
+        let _ = device.poll(wgpu::Maintain::Wait);
+    }
+    let data = slice.get_mapped_range();
+    let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+    for y in 0..height as usize {
+        let s = y * padded as usize;
+        pixels.extend_from_slice(&data[s..s + (width * 4) as usize]);
+    }
+    drop(data);
+    buf.unmap();
+    pixels
+}
+
 #[cfg(test)]
 mod tests {
     /// WGSL 実妥当性 + エントリポイント実在: Phase A で使う2ソースを naga パース
@@ -571,7 +608,11 @@ mod tests {
     #[test]
     fn frame_pipeline_wgsl_parses_with_entry_points() {
         for (name, src, entries) in [
-            ("terrain_vertex_pull", SHADER_VERTEX_PULL, &["vs_pull", "fs_pull"][..]),
+            (
+                "terrain_vertex_pull",
+                SHADER_VERTEX_PULL,
+                &["vs_pull", "fs_pull"][..],
+            ),
             (
                 "aces_tonemap",
                 crate::aces_tonemap::ACES_WGSL,
