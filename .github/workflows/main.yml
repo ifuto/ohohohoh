@@ -28,10 +28,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git clone --depth 1 --branch vendor "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" vbr
           cd vbr
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           cp ../out/toolchain.tar.xz.part-* .
           cp ../out/TOOLCHAIN-SHA256SUMS .
           git add -A
