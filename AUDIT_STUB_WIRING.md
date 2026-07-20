@@ -445,3 +445,83 @@ WGSL **コアフィーチャのみ**で設計した:
 - GPU 実 dispatch (`gpu-hiz`) は sandbox に adapter が無いためユーザー環境待ち。
   その際は frame0..2 の GPU readback coverage が `[>0, 0]` 系列になることと、
   最終 culled 実フレーム画像が cpu-hiz 画像と統計一致することで真値検証する。
+## 追記 9: RsGraphics 進化 Phase D1 — Voxel Cone Tracing 実 GPU dispatch + SVO 根本修正 (2026-07-20)
+
+### 目的
+GI (グローバルイルミネーション) 系 Phase D の前半として、既存 CPU-only の
+Voxel Cone Tracing (`voxel_cone_tracing.rs`) を **実 SVO データ → GPU 実 dispatch
+→ readback → GI/AO 画素還元** まで繋ぐ。iGPU 制約は Phase C と同一
+(コア WGSL のみ: compute 64x1x1、read-only / read_write storage buffer、
+storage texture・アトミック・subgroups・bindless 不使用)。
+
+### 実装前の精読で発見した既存バグ 3 件 (全て実測で特定・実修正)
+1. **SVO `from_column` builder がカラムの 3/4 を捨てていた (重大)**:
+   `build_node_column` は min 軸で **cubic 半分割** (16x64x16 root の子が
+   8x8x8) するため、**y>=16 の領域がツリーに一切生成されない**。
+   一方 `sample_lod` は **軸別半分割** (16x64x16 → 8x32x8) を仮定しており、
+   builder と sampler が幾何不整合だった。`svo.trace` は幾何を使わない
+   DFS なので従来テストでは検出されなかった。
+   → **builder を軸別半分割に修正** (最深 1x1x1 葉、max_depth は
+   ceil_log2(64)=6 を struct に保存し sampler budget と一致)。
+   非 2 冪高さ (3 セクション=48) は next_pow2 (64) にゼロパディングで
+   正確半分分割を成立させた (パディング部は空気 uniform 折り畳み)。
+2. **凍結軸 (軸幅 1) の縮退分裂でツリーが爆発 (計測 135,177 nodes /
+   4.87MB/列)**: 最深域で x,z が凍結し y のみ分裂する際、同一領域を
+   表す子を 4 重に生成していた。**DAG 共有** (縮退スロットは同一
+   サブツリー id を指す) で **15,513 nodes / 0.55MB/列** に抑制 (実測)。
+   `frame_reuse` 軌道メモリ裁定テストは修正後も緑を維持。
+3. **LOD 選択の log2f 丸めアーティファクト**: `diameter.log2().clamp(0,10)
+   as u32` は 2 冪の 1ulp 下 (例: 7.9999995) で、correctly-rounded log2f が
+   丁度整数 (3.0) に丸まりレベルが 1 跳ぶ。**GPU (実装定義精度 log2) との
+   一致が原理的に不可能**だった。→ **ビット抽出 floor(log2) の共有 helper
+   `lod_from_diameter` を新設** (bucket 意味論: 2^lod ≤ d < 2^(lod+1)) し、
+   CPU 実経路・Rust ミラー・WGSL の 3 者で一元化。
+
+### 新規追加 (rsift-opt-gfx)
+- `shaders/voxel_cone_tracing.wgsl`: `sample_lod` + `trace_diffuse_cone` の
+  完全ミラー (**loop+break の while 禁止・最新 naga validator 対応の
+  有界 for**、NaN は !(...) 否定形で CPU と同一挙動、f32 演算順固定)。
+  1 invocation = 1 コーン (64x1x1)、出力 vec4<f32> (rgb, alpha)。
+- `src/frame_vct.rs`: `ConeWgsl`/`VctParams` (32B Pod, WGSL 一致)、
+  `sample_lod_words` / `trace_cone_words` (WGSL の Rust 精密ミラー)、
+  `VctScene` (SVO 語列一元 = CPU 参照と GPU の同一入力)、
+  `GpuVct` (BGL/pipeline/dispatch/copy/map+Wait readback 実装)。
+- `svo.rs`: `GPU_NODE_STRIDE=10` / `to_gpu_words()` (word0 = 0:Empty /
+  1:Branch / 2+b:Uniform(b)、子並び dz*4+dy*2+dx)。
+- `examples/frame_proof.rs`: `cpu-vct` / `gpu-vct` モード。
+  実フレーム深度 → invVP unproject + 深度勾配法線 (シルエット除外・
+  カメラ側向き) → 実表面コーン → 走査 → AO/GI BMP 画素還元。
+
+### 検証 (全て sandbox 実測)
+- lib テスト **337/337 緑** (328 + 新規 9): SVO 回帰 3 (y=20 単一 voxel
+  占有の観測、直上 voxel が空気=1x1x1 葉の正確性、語列レイアウト一致)、
+  VCT 6 (naga パース+entry、32B レイアウト、lod bucket 契約+境界回帰、
+  **語列ミラー vs 実ツリー経路の 128 ランダムコーン bitwise 一致**、
+  sky/ground 意味論、solid 飽和)。
+- `frame_proof cpu-vct` 実走: 実 SVO nodes=15,513 → 実フレーム深度から
+  86,660 コーン再構成 → alpha mean=0.3455・occluded(>0.5)=29,569・
+  sky(=0)=53,460 (遮蔽変調の実在を画素と数値で確認) → AO/GI BMP 実生成・
+  目視確認 (demo 地形の棚構造と一致) → 決定性 assert。
+- WGSL 2 系統検証: クレート dev-dep naga 0.20 (in-test パース) と
+  naga-wasi-cli 最新 (SPIR-V 6,812B 実生成) の両方で OK。全 50 本スキャン
+  → OK 40 / FAIL 10 (FAIL は追記8 の既存 10 本と同一、新規 VCT は OK)。
+- `cargo clippy -p rsift-opt-gfx --all-targets --locked --offline` → error 0、
+  新規ファイルの警告 0 (svo.rs の 9 引数警告・vct.rs の contains 警告は
+  ベースライン由来で不触: 方針)。
+
+### 設計判断の記録
+- WGSL の無限 `loop` (return のみ・break 無し) は最新 naga の behavior
+  解析で拒否されるため有界 `for` に変更 (in-crate naga 0.20 とも両立)。
+- GPU==CPU bitwise 一致は l2/log2 等の libm 非依存化 (lod ビット抽出) と
+  f32 演算順固定で **構造的に** 保証する設計。sandbox に GPU adapter が
+  無いため `gpu-vct` の実 dispatch 検証はユーザー環境待ち (その際は
+  gpu readback と cpu-vct 出力の **全コーン bitwise 一致 assert** が走る)。
+
+### 未実施 (Phase D2 へ引き継ぎ)
+- DDGI (probe volume + octahedral atlas + Chebyshev moments) の実 dispatch:
+  `ddgi.wgsl` の stub `main` (`let _ = gid;` = naga 予約語エラー) を
+  実 ray-march (sample_lod 占有判定ベース、決定的) + 実 atlas 書き出しへ置き換え。
+- naga FAIL 残り 9 本 (bindless/cas/checkerboard/exposure/half_vertex/lbvh/
+  noise_upsample/terrain_mesh_shader/vrs) の切り分けと修正。
+- VCT の狭隘部 GI 品質向上 (複数コーン/ヘミスフィア、
+  albedo 実データ接続) — 現状は中立 albedo 0.5 固定 (svo.rs の既存仕様踏襲)。

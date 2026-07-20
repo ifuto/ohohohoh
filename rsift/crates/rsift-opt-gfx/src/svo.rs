@@ -4,7 +4,23 @@ use crate::binary_greedy_meshing::{idx, SectionPalette, SECTIONS_PER_COLUMN, SEC
 use crate::branchless_dda::{trace_section, Ray3, VoxelHit};
 use tracing::trace;
 
-const MAX_DEPTH: u32 = 4; // 2^4 = 16
+const MAX_DEPTH: u32 = 4; // 2^4 = 16 (16^3 セクションキューブ用)
+
+/// 2 冪天井 log2 (1→0, 16→4, 64→6)。カラム octree のキャップに使う。
+fn ceil_log2_usize(mut v: usize) -> u32 {
+    let mut l = 0u32;
+    while v > 1 {
+        v = v.div_ceil(2);
+        l += 1;
+    }
+    l
+}
+
+/// GPU アップロード用語列の 1 ノードあたりストライド (u32 数)。
+/// レイアウト: word0 = 0:Empty / 1:Branch / (2+b):Uniform(block b)、
+/// words 1..=8 = 8 子インデックス、word9 = pad。
+/// `shaders/voxel_cone_tracing.wgsl` の実走査と一致する。
+pub const GPU_NODE_STRIDE: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NodeKind {
@@ -36,6 +52,9 @@ pub struct SparseVoxelOctree {
     pub bounds: [usize; 3],
     pub node_count: u32,
     pub leaf_count: u32,
+    /// ツリー最大深度 (16³ セクションは 4、16x64x16 カラムは 6)。
+    /// `sample_lod` の降下 budget と GPU 走査 (VctParams.cap) が一致するために必須。
+    pub max_depth: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +76,7 @@ impl SparseVoxelOctree {
             ],
             node_count: 0,
             leaf_count: 0,
+            max_depth: MAX_DEPTH,
         }
     }
 
@@ -75,8 +95,15 @@ impl SparseVoxelOctree {
     }
 
     /// Stack 4 sections into one 16×64×16 column octree.
+    ///
+    /// 注: ツリーは軸別「正確半分」分割のため論理高さは 2 冪に揃える
+    /// (3 セクション=48 のような非 2 冪高さは 64 にゼロパディング。
+    /// パディング部は空気として uniform 折り畳みされ、`sample_lod` は
+    /// 実高さより上の問い合わせに None=空気 で正しく答える)。
+    /// `bounds` はこのパディング後の論理境界を示す。
     pub fn from_column(sections: &[SectionPalette]) -> Self {
         let height = SECTION_SIZE * sections.len().min(SECTIONS_PER_COLUMN);
+        let height = height.next_power_of_two();
         let mut column = vec![0u16; SECTION_SIZE * height * SECTION_SIZE];
         for (sy, sec) in sections.iter().enumerate().take(SECTIONS_PER_COLUMN) {
             for y in 0..SECTION_SIZE {
@@ -91,6 +118,9 @@ impl SparseVoxelOctree {
         }
         let mut tree = Self::empty();
         tree.bounds = [SECTION_SIZE, height, SECTION_SIZE];
+        // 最深キャップは最大軸の 2 冪 log2 (16x64x16 → 6)。ツリーは軸別半分割で
+        // 最深 1x1x1 葉まで到達する (`build_node_column` 参照)。
+        tree.max_depth = ceil_log2_usize(SECTION_SIZE.max(height));
         tree.root = tree.build_node_column(&column, 0, 0, 0, SECTION_SIZE, height, SECTION_SIZE, 0);
         tree.node_count = tree.nodes.len() as u32;
         trace!(
@@ -194,7 +224,7 @@ impl SparseVoxelOctree {
                 children: [0; 8],
             });
         }
-        if depth >= MAX_DEPTH || size <= 1 {
+        if depth >= self.max_depth || (sx <= 1 && sy <= 1 && sz <= 1) {
             let dominant = dominant_block_column(column, ox, oy, oz, sx, sy, sz);
             return self.alloc_node(Node {
                 kind: if dominant == 0 {
@@ -205,23 +235,46 @@ impl SparseVoxelOctree {
                 children: [0; 8],
             });
         }
-        let half = size / 2;
-        let mut children = [0u32; 8];
-        let mut ci = 0usize;
-        for dz in 0..2 {
-            for dy in 0..2 {
-                for dx in 0..2 {
-                    children[ci] = self.build_node_column(
+        // 軸別半分割 (16x64x16 → 8x32x8 → … → 1x1x1)。
+        // 注: 以前は min 軸の cubic 半分割 (8^3 固定) で、カラムでは
+        // root 直下から y>=16 の領域がツリーに一切生成されず、
+        // `sample_lod` (軸別仮定) とも幾何が不一致だった (Phase D で実修正)。
+        // 軸幅 1 の場合はその軸の分割を凍結する。**凍結軸の 2 スロットは
+        // 同一サブツリーを共有 (DAG 化)**: 縮退分裂で最悪 ~6.5x に膨張した
+        // メモリ (実測 4.87MB/列) を正味ツリー規模へ抑えるための実対策。
+        // sampler の dx 選択は半幅比較なので共有しても選択結果は同一。
+        let hx = (sx / 2).max(1);
+        let hy = (sy / 2).max(1);
+        let hz = (sz / 2).max(1);
+        let xs = if sx > 1 { 2 } else { 1 };
+        let ys = if sy > 1 { 2 } else { 1 };
+        let zs = if sz > 1 { 2 } else { 1 };
+        // 実 (非縮退) の組み合わせのみ 1 回ずつ構築
+        let mut real = [0u32; 8]; // index = dxv + 2*dyv + 4*dzv
+        for dzv in 0..zs {
+            for dyv in 0..ys {
+                for dxv in 0..xs {
+                    real[dxv + 2 * dyv + 4 * dzv] = self.build_node_column(
                         column,
-                        ox + dx * half,
-                        oy + dy * half,
-                        oz + dz * half,
-                        half.max(1),
-                        half.max(1),
-                        half.max(1),
+                        ox + if sx > 1 { dxv * hx } else { 0 },
+                        oy + if sy > 1 { dyv * hy } else { 0 },
+                        oz + if sz > 1 { dzv * hz } else { 0 },
+                        if sx > 1 { hx } else { sx },
+                        if sy > 1 { hy } else { sy },
+                        if sz > 1 { hz } else { sz },
                         depth + 1,
                     );
-                    ci += 1;
+                }
+            }
+        }
+        let mut children = [0u32; 8];
+        for dz in 0..2usize {
+            for dy in 0..2usize {
+                for dx in 0..2usize {
+                    let rx = if sx > 1 { dx } else { 0 };
+                    let ry = if sy > 1 { dy } else { 0 };
+                    let rz = if sz > 1 { dz } else { 0 };
+                    children[dx + 2 * dy + 4 * dz] = real[rx + 2 * ry + 4 * rz];
                 }
             }
         }
@@ -251,7 +304,8 @@ impl SparseVoxelOctree {
             return None;
         }
         // 下降してよい残り深度 (太いコーンほど浅く打ち切る)。
-        let budget = MAX_DEPTH.saturating_sub(lod.min(MAX_DEPTH));
+        // キャップはツリー実深度に一致させる (カラムは 6)。
+        let budget = self.max_depth.saturating_sub(lod.min(self.max_depth));
         let mut node_idx = self.root as usize;
         let mut org = [0.0f32; 3];
         let mut size = b;
@@ -347,6 +401,25 @@ impl SparseVoxelOctree {
 
     pub fn memory_bytes(&self) -> usize {
         self.nodes.len() * std::mem::size_of::<Node>()
+    }
+
+    /// GPU アップロード用の語列化 (`GPU_NODE_STRIDE` = 10 u32 / node)。
+    /// `shaders/voxel_cone_tracing.wgsl` の実走査と一致するレイアウト:
+    /// word0 = 0:Empty / 1:Branch / (2+b):Uniform(block b)、
+    /// words 1..=8 = 8 子インデックス (build_* の子並び = dz*4+dy*2+dx)、word9 = pad。
+    pub fn to_gpu_words(&self) -> Vec<u32> {
+        let mut w = Vec::with_capacity(self.nodes.len() * GPU_NODE_STRIDE);
+        for n in &self.nodes {
+            let tag = match n.kind {
+                NodeKind::Empty => 0u32,
+                NodeKind::Branch => 1u32,
+                NodeKind::Uniform(b) => 2u32 + b as u32,
+            };
+            w.push(tag);
+            w.extend_from_slice(&n.children);
+            w.push(0);
+        }
+        w
     }
 }
 
@@ -488,5 +561,65 @@ mod tests {
         let ray = Ray3::new([8.0, -1.0, 8.0], [0.0, 1.0, 0.0]);
         let hit = svo.trace(&ray, Some(&p));
         assert!(hit.is_some());
+    }
+
+    /// 回帰 (Phase D で実修正): 旧 builder は min 軸 cubic 半分割で、
+    /// 16x64x16 カラムの y>=16 領域がツリーに一切到達しなかった。
+    /// 軸別半分割化後は y=20 の単一 voxel 占有を sample_lod が観測できる。
+    #[test]
+    fn column_svo_covers_full_height() {
+        let mut col = [[0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE]; 4];
+        col[1][idx(5, 4, 7)] = 1; // world (5, 20, 7)
+        let svo = SparseVoxelOctree::from_column(&col);
+        assert_eq!(svo.bounds, [16, 64, 16]);
+        assert_eq!(svo.max_depth, 6, "16x64x16 → ceil_log2(64) = 6");
+        let hit = svo.sample_lod(5.5, 20.5, 7.5, 0);
+        assert!(
+            matches!(hit, Some((_, a)) if (a - 1.0).abs() < 1e-6),
+            "y=20 の占有が最深 LOD で観測できること: {hit:?}"
+        );
+        assert!(
+            svo.sample_lod(5.5, 40.5, 7.5, 0).is_none(),
+            "空気域 (y=40) は None"
+        );
+    }
+
+    /// 葉解像度が 1x1x1 voxel で正確 (1x4x1 粗葉 + dominant による
+    /// 空気多数での占有消失が無い) こと: 占有 voxel の直上は空気。
+    #[test]
+    fn column_leaf_is_exact_voxel() {
+        let mut col = [[0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE]; 4];
+        col[1][idx(5, 4, 7)] = 1; // world (5, 20, 7)
+        let svo = SparseVoxelOctree::from_column(&col);
+        assert!(
+            svo.sample_lod(5.5, 21.5, 7.5, 0).is_none(),
+            "占有 voxel 直上 (5,21,7) は空気のはず — 粗い葉で潰れていないこと"
+        );
+    }
+
+    /// GPU 語列化レイアウト: ストライド / kind tag / 子並び (dz*4+dy*2+dx) の一致性。
+    #[test]
+    fn gpu_words_layout_matches_tree() {
+        let mut col = [[0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE]; 4];
+        col[1][idx(5, 4, 7)] = 1;
+        col[0][idx(0, 0, 0)] = 3;
+        let svo = SparseVoxelOctree::from_column(&col);
+        let words = svo.to_gpu_words();
+        assert_eq!(words.len(), svo.nodes.len() * GPU_NODE_STRIDE);
+        let root = svo.root as usize;
+        // root は Branch (2 箇所に占有) かつ全子参照が nodes と一致
+        assert_eq!(words[root * GPU_NODE_STRIDE], 1, "root kind = Branch");
+        for i in 0..8 {
+            assert_eq!(
+                words[root * GPU_NODE_STRIDE + 1 + i],
+                svo.nodes[root].children[i],
+                "child[{i}] (dz*4+dy*2+dx 並び) が語列と一致"
+            );
+        }
+        // Uniform(3) の葉が tag = 2+3 で存在
+        assert!(
+            words.chunks(GPU_NODE_STRIDE).any(|c| c[0] == 2 + 3),
+            "Uniform(3) 葉の tag 規則 (2+b)"
+        );
     }
 }

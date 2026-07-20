@@ -15,6 +15,7 @@ pub mod frame_hiz;
 pub mod frame_pipeline;
 pub mod frame_reference;
 pub mod frame_reuse;
+pub mod frame_vct;
 pub mod gpu_culling;
 pub mod gpu_vertex_pull;
 pub mod gui_settings;

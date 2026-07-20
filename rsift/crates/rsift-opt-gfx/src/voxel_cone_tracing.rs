@@ -14,6 +14,27 @@ pub struct ConeRay {
     pub max_dist: f32,
 }
 
+/// コーン直径 → SVO LOD レベル (floor log2、0..=10 clamp)。
+///
+/// **ビット抽出による厳密 floor(log2(d))** (2^k ≤ d < 2^(k+1) の bucket)。
+/// 以前の `diameter.log2().clamp(0.0, 10.0) as u32` は、2 冪の 1ulp 下の値で
+/// log2f の最近接丸めが丁度整数になる (= レベルが 1 跳ぶ) 丸めアーティファクト
+/// を持ち、GPU (実装定義精度の log2) との一致が原理的に保てなかった。
+/// この厳密版は `voxel_cone_tracing.wgsl::lod_from_diameter` と同一規則で、
+/// GPU/CPU の LOD 選択が **構造的に bitwise 一致** する (Phase D で導入)。
+/// 挙動差は境界 1ulp のみで、旧値は bucket 意味論の誤差側だった。
+pub fn lod_from_diameter(d: f32) -> u32 {
+    // partial_cmp 版: NaN も「1.0 以下扱い」で lod 0 (WGSL の !(d > 1.0) と完全一致)
+    if !matches!(d.partial_cmp(&1.0), Some(std::cmp::Ordering::Greater)) {
+        return 0;
+    }
+    let e = ((d.to_bits() >> 23) as i32) - 127;
+    if e <= 0 {
+        return 0;
+    }
+    (e as u32).min(10)
+}
+
 pub struct VoxelConeTracing;
 
 impl VoxelConeTracing {
@@ -31,7 +52,7 @@ impl VoxelConeTracing {
             ];
 
             let diameter = (2.0 * cone.aperture * dist).max(1.0);
-            let lod_level = diameter.log2().clamp(0.0, 10.0) as u32;
+            let lod_level = lod_from_diameter(diameter);
 
             if let Some((color_rgb, alpha)) = svo.sample_lod(pos[0], pos[1], pos[2], lod_level) {
                 if alpha > 0.001 {
