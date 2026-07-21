@@ -28,17 +28,74 @@ pub fn ensure_engine() {
     if DX12_ENGINE.with(|s| s.borrow().is_some()) {
         return;
     }
+    // 2026-07-21: DX12 優先バックエンドラダー (rsift_render::backend) に従う。
+    // 一度 GlPassthrough 確定したら DX12 init は再試行しない (プロセス実行中に
+    // ドライバ供給状況は変わらないため。旧来は flip 毎に create を再試行していた)。
+    if matches!(
+        rsift_render::backend::realized_backend(),
+        Some(rsift_render::backend::RenderBackendKind::GlPassthrough)
+    ) {
+        return;
+    }
+    let (force, force_reason) = std::env::var("rsift.render.backend")
+        .ok()
+        .map(|v| rsift_render::backend::parse_force_env(&v))
+        .unwrap_or((rsift_render::backend::ForceMode::Auto, "env 未指定 → auto"));
+    let sel = rsift_render::backend::select(
+        &rsift_render::backend::BackendProbe::default(),
+        force,
+    );
+    if sel.kind != rsift_render::backend::RenderBackendKind::Dx12 {
+        // 強制 GL、または (present 未実装の) DX11/Vulkan 強制: 実 present は
+        // バニラ GL に委ねる。未実装系の強制は黙って約束しないよう fail-loud。
+        agent_log(&format!(
+            "[RsiftRender] backend ladder: {} を要求 ({}) — 実 present はバニラ GL パススルーで継続します{}",
+            sel.kind.label(),
+            force_reason,
+            if sel.kind.present_implemented() && sel.kind == rsift_render::backend::RenderBackendKind::GlPassthrough {
+                ""
+            } else {
+                " (要求系統の present は未実装)"
+            }
+        ));
+        rsift_render::backend::record_realized_backend(
+            rsift_render::backend::RenderBackendKind::GlPassthrough,
+        );
+        super::glfw_hook::install_glfw_swap_hook();
+        return;
+    }
     let caps = rsift_api::engine_caps::EngineCaps::from_jvm_props().or_else(|| {
         let probe = rsift_api::engine_caps::GpuCapabilityProbe::probe();
         rsift_api::engine_caps::EngineCaps::install_default(&probe, None).ok()
     });
     if let Some(caps) = caps {
-        if let Ok(engine) = rsift_dx12::Dx12Engine::create(caps) {
-            install_engine(engine);
-            rsift_render::proxy::global_proxy().enable();
-            super::glfw_hook::install_glfw_swap_hook();
+        match rsift_dx12::Dx12Engine::create(caps) {
+            Ok(engine) => {
+                install_engine(engine);
+                rsift_render::proxy::global_proxy().enable();
+                rsift_render::backend::record_realized_backend(
+                    rsift_render::backend::RenderBackendKind::Dx12,
+                );
+                super::glfw_hook::install_glfw_swap_hook();
+            }
+            Err(e) => {
+                // 旧来は失敗時に無言で GL に落ちていた。ラダー契約として fail-loud。
+                agent_log(&format!(
+                    "[RsiftRender] DX12 init FAILED ({e}) — 旧 DX/Vulkan は present 未実装のため、バニラ GL パススルーで描画を継続します (黒画面ではありません)"
+                ));
+                rsift_render::backend::record_realized_backend(
+                    rsift_render::backend::RenderBackendKind::GlPassthrough,
+                );
+                super::glfw_hook::install_glfw_swap_hook();
+            }
         }
     } else {
+        agent_log(
+            "[RsiftRender] DX12 caps 取得不可 — バニラ GL パススルーで描画を継続します",
+        );
+        rsift_render::backend::record_realized_backend(
+            rsift_render::backend::RenderBackendKind::GlPassthrough,
+        );
         super::glfw_hook::install_glfw_swap_hook();
     }
 }

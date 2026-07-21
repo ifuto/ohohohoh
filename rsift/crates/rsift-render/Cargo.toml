@@ -3,7 +3,7 @@ name = "rsift-render"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-description = "DirectX 12 Agility render engine (no OpenGL/Vulkan/wgpu)"
+description = "Render backend ladder (DX12 first → DX11/Vulkan pending → vanilla GL passthrough); selection logic unit-tested"
 
 [dependencies]
 tracing.workspace = true
