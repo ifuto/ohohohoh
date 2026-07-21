@@ -107,3 +107,67 @@ impl RsiftModMenuScreen {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mod_api::ModManifest;
+
+    fn manifest(id: &str) -> ModManifest {
+        ModManifest {
+            id: id.into(),
+            name: format!("Mod {id}"),
+            version: "1.0.0".into(),
+            author: "tester".into(),
+            description: "test".into(),
+            target_rsift_version: "1.21.11".into(),
+        }
+    }
+
+    #[test]
+    fn register_mod_counts_distinct_ids() {
+        let m = RsiftModMenuScreen::new();
+        assert_eq!(m.entries.read().unwrap().len(), 0);
+        m.register_mod(manifest("a"), None, None, None);
+        m.register_mod(manifest("b"), Some(50000), Some("https://example.com"), None);
+        let map = m.entries.read().unwrap();
+        assert_eq!(map.len(), 2);
+        let b = map.get("b").unwrap();
+        assert_eq!(b.icon_gpu_texture_id, Some(50000));
+        assert_eq!(b.homepage_url.as_deref(), Some("https://example.com"));
+        assert_eq!(b.manifest.name, "Mod b");
+    }
+
+    #[test]
+    fn register_mod_same_id_overwrites_not_duplicates() {
+        // タイトルの Mods (N) 表示が参照するカタログ数は排他的 id 数で
+        // なければならない (同一 id の再登録 = バージョン更新)。
+        let m = RsiftModMenuScreen::new();
+        let mut v1 = manifest("a");
+        v1.version = "1.0.0".into();
+        m.register_mod(v1, None, None, None);
+        let mut v2 = manifest("a");
+        v2.version = "2.0.0".into();
+        m.register_mod(v2, None, None, None);
+        let map = m.entries.read().unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("a").unwrap().manifest.version, "2.0.0");
+    }
+
+    #[test]
+    fn open_close_selection_state_machine_is_noop_safe() {
+        let m = RsiftModMenuScreen::new();
+        assert!(!*m.is_open.read().unwrap());
+        m.open_screen();
+        assert!(*m.is_open.read().unwrap());
+        m.close_screen();
+        assert!(!*m.is_open.read().unwrap());
+        // 未選択・未登録 id 選択の両方で config/homepage は no-op (panic しない)。
+        m.open_selected_config();
+        m.open_selected_homepage();
+        m.select_mod("missing");
+        m.open_selected_config();
+        m.open_selected_homepage();
+        assert_eq!(m.selected_mod_id.read().unwrap().as_deref(), Some("missing"));
+    }
+}

@@ -59,3 +59,49 @@ impl TextureBudget {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_feather_is_passthrough_uncompressed() {
+        let t = TextureBudget::from_profile(false, true, 2.0);
+        assert_eq!(t.compression, AtlasCompression::Uncompressed);
+        assert_eq!(t.mipmap_bias, 0.0); // bias 指定は破棄される
+        assert!(t.use_mipmaps);
+    }
+
+    #[test]
+    fn feather_compressed_uses_platform_format() {
+        let b = TextureBudget::from_profile(true, true, 1.5);
+        let want = if cfg!(target_os = "macos") {
+            AtlasCompression::Astc4x4
+        } else {
+            AtlasCompression::Bc7
+        };
+        assert_eq!(b.compression, want);
+        assert_eq!(b.mipmap_bias, 1.5);
+        assert!(b.use_mipmaps);
+    }
+
+    #[test]
+    fn feather_uncompressed_keeps_bias() {
+        let b = TextureBudget::from_profile(true, false, 1.5);
+        assert_eq!(b.compression, AtlasCompression::Uncompressed);
+        assert_eq!(b.mipmap_bias, 1.5);
+    }
+
+    #[test]
+    fn bandwidth_factor_and_labels_exact() {
+        assert_eq!(TextureBudget::from_profile(false, false, 0.0).bandwidth_factor(), 1.0);
+        let mut t = TextureBudget::from_profile(false, false, 0.0);
+        assert_eq!(t.label(), "RGBA8 atlas");
+        t.compression = AtlasCompression::Bc7;
+        assert_eq!(t.bandwidth_factor(), 0.25);
+        assert_eq!(t.label(), "BC7 compressed atlas");
+        t.compression = AtlasCompression::Astc4x4;
+        assert_eq!(t.bandwidth_factor(), 0.2);
+        assert_eq!(t.label(), "ASTC 4×4 atlas");
+    }
+}

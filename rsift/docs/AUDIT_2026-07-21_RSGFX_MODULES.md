@@ -377,6 +377,19 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   (`greedy_merge_2d_bits`)、Y 層 skip は yc OR 導出。旧経路
   (face_visible/greedy_merge_2d) は cfg(test) オラクルとして保持し、
   `bitcols_12b_match_face_visible_fuzz` (6 密度 × 6 軸 × skip on/off) +
-  破損境界 で頂点列・index 列の完全一致を照合 (437→439)。
+  破損境界で頂点列・index 列の完全一致を照合 (437→439)。
 - caves liderar merge rewrite 完了後も lz4/zstd の構造起因フラグは残る
   (外部ライブラリ内部の話、本プロジェクト改変対象外)。
+
+## F. 第5セッション追記 (2026-07-21 午後)
+- **zero-test 消化 (opt-gfx 439→456)**: bump_arena (アライン丸め・
+  容量帳簿・失敗時 offset 不変・reset 再利用 — 4件), vertex_compression_r10g10
+  (pack/unpack bit 厳密・f16 既知 encoding・stream — 5件), texture_budget
+  (プロファイル分岐・帯域係数・ラベル — 4件), temporal_mesh_diff
+  (dirty 集合意味論・generation カウンタ・diff 厳密 index — 4件)。
+  rsift-api の mod_menu にも 3 件追加 (distinct id 計数・同一 id 上書き・
+  open/close + noop 安全)。
+- **正直性修正 (rsgraphics)**: TitleScreen の `Mods (N)` ボタン表示数が
+  `3u32` ハードコードで /mods/ 追加 DLL が反映されない虚偽表示だった。
+  `RsiftModMenuScreen.entries` の実登録数 (init 時点スナップショット) から
+  動的導出へ修正 (B 節の規律「UI/ログは事実のみ」に一致)。

@@ -43,3 +43,53 @@ impl TemporalDiff {
         MeshPatch { removed_quads: vec![block_idx as u32], added_quads: Vec::new() }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(cx: i32, cz: i32, sy: i32) -> SectionKey {
+        SectionKey { cx, cz, sy }
+    }
+
+    #[test]
+    fn take_dirty_is_set_semantics_with_generation_counter() {
+        let mut d = TemporalDiff::new();
+        assert!(d.take_dirty().is_empty());
+        assert_eq!(d.generation, 0);
+        d.mark_dirty(key(0, 0, 0));
+        d.mark_dirty(key(1, 0, 0));
+        d.mark_dirty(key(0, 0, 0)); // 同一 key の再 mark は重複登録されない
+        assert_eq!(d.generation, 3);
+        let mut keys = d.take_dirty();
+        keys.sort_by(|a, b| (a.cx, a.cz, a.sy).cmp(&(b.cx, b.cz, b.sy)));
+        assert_eq!(keys, vec![key(0, 0, 0), key(1, 0, 0)]);
+    }
+
+    #[test]
+    fn take_dirty_clears_queue() {
+        let mut d = TemporalDiff::new();
+        d.mark_dirty(key(0, 0, 1));
+        assert_eq!(d.take_dirty().len(), 1);
+        assert!(d.take_dirty().is_empty()); // 2 回目以降は空
+        d.mark_dirty(key(0, 0, 1));
+        assert_eq!(d.take_dirty().len(), 1); // 再 mark で再出現
+    }
+
+    #[test]
+    fn diff_section_reports_exact_changed_indices() {
+        let a = [7u16; 4096];
+        let mut b = a;
+        assert!(TemporalDiff::diff_section(&a, &b).is_empty());
+        b[100] = 8;
+        b[2000] = 9;
+        assert_eq!(TemporalDiff::diff_section(&a, &b), vec![100, 2000]);
+    }
+
+    #[test]
+    fn patch_for_block_shape() {
+        let p = TemporalDiff::patch_for_block(7);
+        assert_eq!(p.removed_quads, vec![7u32]);
+        assert!(p.added_quads.is_empty());
+    }
+}
