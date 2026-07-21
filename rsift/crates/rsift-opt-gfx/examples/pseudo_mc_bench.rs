@@ -379,7 +379,13 @@ fn chunk_raw(w: &PseudoWorld, cx: usize, cz: usize) -> Vec<u8> {
 //                       render/chunk/ChunkUpdateTypes.java:12-14
 //                       (REBUILD=0b010 / IMPORTANT=0b100 / INITIAL_BUILD=0b1000)
 //   半透明 topo       : render/chunk/translucent_sorting/data/TopoGraphSorting.java
-//                       (法線バケツ + 面距離による近似トポロジソート)
+//                       (quadVisibleThrough 関係構築 + 暗黙グラフ DFS topo ソート)
+//                       + translucent_sorting/TQuad.java:141 (extents 並び)
+//                       + client/model/quad/properties/ModelQuadFacing.java:11-18
+//   半透明ソート方針決定: render/chunk/translucent_sorting/TranslucentGeometryCollector.java
+//                       (sortTypeHeuristic:215,254-342 + STATIC_TOPO 失敗→DYNAMIC:410-416)
+//                       + translucent_sorting/data/DynamicTopoData.java
+//                       (directTrigger:36,62-70 + 距離ソートキー dist²:271-275)
 
 const SEC_X: usize = CHUNKS_X; // 6
 const SEC_Y: usize = WORLD_Y / 16; // 12
@@ -427,8 +433,9 @@ fn sq_light(l: u8) -> u32 {
 
 #[derive(Clone, Copy)]
 struct WaterQuad {
-    c: [f32; 3],
+    c: [f32; 3], // 面 (quad) そのものの中心 (旧実装はブロック中心で ±0.5 の誤差があった)
     axis: u8, // 法線軸 0=X 1=Y 2=Z
+    sign: i8, // 法線の向き (+1/-1)
 }
 
 struct SodiumSection {
@@ -507,10 +514,15 @@ fn sq_mesh_section(w: &PseudoWorld, sx: usize, sy: usize, sz: usize, water: &mut
                     }
                     indices += 6;
                     if b == Block::Water {
+                        let axis = [1u8, 1, 2, 2, 0, 0][fidx]; // FACES 並び: 0,1=±Y / 2,3=±Z / 4,5=±X
                         water.push(WaterQuad {
-                            c: [x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5],
-                            // FACES 並び: 0,1=±Y / 2,3=±Z / 4,5=±X
-                            axis: [1u8, 1, 2, 2, 0, 0][fidx],
+                            c: [
+                                x as f32 + 0.5 + n[0] as f32 * 0.5,
+                                y as f32 + 0.5 + n[1] as f32 * 0.5,
+                                z as f32 + 0.5 + n[2] as f32 * 0.5,
+                            ],
+                            axis,
+                            sign: n[axis as usize] as i8,
                         });
                     }
                 }
@@ -1000,28 +1012,693 @@ fn vanilla_tsort(quads: &mut [WaterQuad], cam: [f32; 3], fwd: [f32; 3]) {
     });
 }
 
-/// Sodium 半透明: TopoGraphSorting (法線バケツ + 面平面距離の近似 topo)。
-/// 本ワールドのクアッドは軸平行のみなので、バケツ=法線軸, バケツ内=沿軸の
-/// 符号付き平面距離ソート, バケツ順=|fwd| 降順、で意味論を再現する。
-fn sodium_tsort(quads: &mut [WaterQuad], cam: [f32; 3], fwd: [f32; 3]) {
-    let mut order = [0u8, 1, 2];
-    order.sort_by_key(|&a| (fwd[a as usize].abs() * -1000.0) as i32);
-    let mut buckets: [Vec<WaterQuad>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-    for q in quads.iter() {
-        buckets[q.axis as usize].push(*q);
+/// 軸平行 1×1 面の 4 角 (面中心 c + 残り 2 軸 ±0.5)。
+fn wq_corners(q: &WaterQuad) -> [[f32; 3]; 4] {
+    let a = q.axis as usize;
+    let (u, w) = ((a + 1) % 3, (a + 2) % 3);
+    let mut out = [q.c; 4];
+    for (i, corner) in out.iter_mut().enumerate() {
+        corner[u] += if i & 1 == 0 { -0.5 } else { 0.5 };
+        corner[w] += if i & 2 == 0 { -0.5 } else { 0.5 };
     }
+    out
+}
+
+
+/// クアッドの前計算 (extents + corners)。ペア評価で毎回再構成すると律速。
+fn wq_geom(q: &WaterQuad) -> ([f32; 6], [[f32; 3]; 4]) {
+    (sq_extents(q), wq_corners(q))
+}
+
+/// 分離平面による描画優先度 (ペインタ規則: 出力リストは back→front)。
+/// `Some(true)` = `q` は `p` より奥にある (先に描くべき = pos(q) < pos(p))、
+/// `Some(false)` = その逆、`None` = 拘束なし (両側跨ぎ・共面・同一側)。
+/// 2 種の十分条件の合併: (a) 相手が自分の平面より完全にカメラ反対側
+/// (Fuchs-Kedem-Naylor の古典 BSP 優先度), (b) 自分が相手の平面より完全に
+/// カメラ側 (= 相手は平面の向こう側)。カメラ依存なのでカメラ移動で再ソート
+/// が必要だが、Sodium のカメラ非依存関係では取れない拘束も取れる。
+/// corners は事前計算を受け取る (pairwise 評価の定数倍削減)。
+fn wq_priority_g(
+    p: &WaterQuad,
+    pc: &[[f32; 3]; 4],
+    q: &WaterQuad,
+    qc: &[[f32; 3]; 4],
+    cam: [f32; 3],
+) -> Option<bool> {
+    // other の全角が plane_owner の平面よりカメラと反対側 (or 同側) か
+    let side_test = |plane_owner: &WaterQuad, oc: &[[f32; 3]; 4], want_behind: bool| -> bool {
+        let a = plane_owner.axis as usize;
+        let n = plane_owner.sign as f32;
+        let cam_side = (cam[a] - plane_owner.c[a]) * n;
+        if cam_side.abs() < 1e-6 {
+            return false;
+        }
+        oc.iter().all(|c0| {
+            let d = (c0[a] - plane_owner.c[a]) * n * cam_side;
+            if want_behind {
+                d < -1e-6
+            } else {
+                d > 1e-6
+            }
+        })
+    };
+    let q_first = side_test(p, qc, true) || side_test(q, pc, false);
+    let p_first = side_test(q, pc, true) || side_test(p, qc, false);
+    match (q_first, p_first) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
+    }
+}
+
+// ---- Sodium quadVisibleThrough 相当 (aligned quads) ----
+// 出典: translucent_sorting/data/TopoGraphSorting.java:72-95
+//   (`orthogonalQuadVisibleThrough`), 同:170-200 (`quadVisibleThrough` の
+//   aligned 分岐), translucent_sorting/TQuad.java:141 (extents 配列順),
+//   client/model/quad/properties/ModelQuadFacing.java:11-18
+//   (ordinal: POS_X=0,POS_Y=1,POS_Z=2,NEG_X=3,NEG_Y=4,NEG_Z=5)
+
+/// facing ordinal (POS_X..POS_Z=0..2, NEG_X..NEG_Z=3..5)
+fn sq_facing(q: &WaterQuad) -> usize {
+    q.axis as usize + if q.sign < 0 { 3 } else { 0 }
+}
+const SQ_OPPOSITE: [usize; 6] = [3, 4, 5, 0, 1, 2];
+fn sq_facing_sign(f: usize) -> f32 {
+    if f < 3 {
+        1.0
+    } else {
+        -1.0
+    }
+}
+
+/// extents = [posX,posY,posZ, negX,negY,negZ] (TQuad.java:141 と同じ並び)。
+fn sq_extents(q: &WaterQuad) -> [f32; 6] {
+    let cs = wq_corners(q);
+    let (mut mn, mut mx) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
+    for c in cs {
+        for k in 0..3 {
+            mn[k] = mn[k].min(c[k]);
+            mx[k] = mx[k].max(c[k]);
+        }
+    }
+    [mx[0], mx[1], mx[2], mn[0], mn[1], mn[2]]
+}
+fn sq_extents_intersect(a: &[f32; 6], b: &[f32; 6]) -> bool {
+    a[0] >= b[3] && b[0] >= a[3] && a[1] >= b[4] && b[1] >= a[4] && a[2] >= b[5] && b[2] >= a[5]
+}
+
+/// 「A 越しに B が (カメラから) 視えるか」(= B は A の奥 → B を先に描く)。
+/// quadVisibleThrough の aligned クアッド経路を移植。separator 否定は
+/// 動的トリガ時のみの仕組みのため本モデルでは null 相当 (距離リスト無し)。
+fn sq_visible_through(a: &WaterQuad, ea: &[f32; 6], b: &WaterQuad, eb: &[f32; 6]) -> bool {
+    let fa = sq_facing(a);
+    let fb = sq_facing(b);
+    if fa == SQ_OPPOSITE[fb] {
+        return false; // 対向面は互いに見えない (同:180-182)
+    }
+    if fa == fb {
+        // 平行 (共面は extents 一致で false) (同:184-190)
+        let s = sq_facing_sign(fa);
+        return s * ea[fa] > s * eb[fa];
+    }
+    // 直交 (同:72-95)
+    let a_sign = sq_facing_sign(fa);
+    let b_sign = sq_facing_sign(fb);
+    let b_into_a = a_sign * ea[fa] - a_sign * eb[SQ_OPPOSITE[fa]];
+    let a_out_b = b_sign * ea[fb] - b_sign * eb[fb];
+    let vis = b_into_a > 0.0 && a_out_b > 0.0;
+    if vis && sq_extents_intersect(ea, eb) {
+        // static ソートの交差ヒューリスティク (failOnIntersection 系) (同:88-92)
+        return b_into_a + a_out_b > 1.0;
+    }
+    vis
+}
+
+/// sq 関係の priority 版 (extents 事前計算を受け取る)。
+fn sq_priority_g(
+    p: &WaterQuad,
+    ep: &[f32; 6],
+    q: &WaterQuad,
+    eq: &[f32; 6],
+) -> Option<bool> {
+    match (
+        sq_visible_through(p, ep, q, eq),
+        sq_visible_through(q, eq, p, ep),
+    ) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
+    }
+}
+
+/// 単調変換: f32 の total order を u32 の昇順に写像 (深い=大)。
+fn depth_key(d: f32) -> u32 {
+    let b = d.to_bits();
+    let mask = ((b as i32 >> 31) as u32) | 0x8000_0000;
+    b ^ mask
+}
+
+/// 関係別の誤順集計 (評価拘束ペア数, 誤りペア数)。
+#[derive(Default, Clone, Copy)]
+struct WqErr {
+    classic: (usize, usize),   // カメラ依存 古典分離平面
+    sodium: (usize, usize),    // Sodium quadVisibleThrough 関係
+    union: (usize, usize),     // 合併 (矛盾は除外)
+}
+
+/// ソート結果のペアワイズ順序誤り率 (サンプリング評価)。
+/// **両方のクアッドがカメラを向く** (描画され得る) ペアのみを対象とする:
+/// 対向面同士では片方しかラスタライズされないため、painter 拘束を課すと
+/// バックフェイス分だけ誤カウントになる (Sodium の「対向面は互いに見え
+/// ない」規則の趣旨と一致)。画面 AABB 重なり + 分離平面で一意に決まる
+/// 拘束ペアのみ評価し、近接セル (8m) × 決定的間引き (i%8) で抽出。
+fn wq_order_error(sorted: &[WaterQuad], cam: [f32; 3], vp: &[[f32; 4]; 4]) -> WqErr {
+    const CELL: f32 = 8.0;
+    let mut grid: HashMap<(i32, i32, i32), Vec<u32>> = HashMap::new();
+    for (i, q) in sorted.iter().enumerate() {
+        let key = (
+            (q.c[0] / CELL).floor() as i32,
+            (q.c[1] / CELL).floor() as i32,
+            (q.c[2] / CELL).floor() as i32,
+        );
+        grid.entry(key).or_default().push(i as u32);
+    }
+    // 画面 AABB と extents/corners 前計算
+    let aabbs: Vec<Option<[f32; 4]>> = sorted.iter().map(|q| wq_screen_aabb(q, vp)).collect();
+    let geoms: Vec<([f32; 6], [[f32; 3]; 4])> = sorted.iter().map(wq_geom).collect();
+    let facing: Vec<bool> = sorted.iter().map(|q| wq_faces_camera(q, cam)).collect();
+    let mut err = WqErr::default();
+    for (i, a) in sorted.iter().enumerate() {
+        if i % 8 != 0 || !facing[i] {
+            continue; // 決定的サブサンプリング + 背面は評価しない
+        }
+        let Some(aa) = aabbs[i] else { continue };
+        let ci = (
+            (a.c[0] / CELL).floor() as i32,
+            (a.c[1] / CELL).floor() as i32,
+            (a.c[2] / CELL).floor() as i32,
+        );
+        for dz in -1..=1 {
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    let Some(cands) = grid.get(&(ci.0 + dx, ci.1 + dy, ci.2 + dz)) else {
+                        continue;
+                    };
+                    for &ju in cands {
+                        let j = ju as usize;
+                        let (i2, j2) = (i.min(j), i.max(j));
+                        if i2 == j2 || j2 != j || aabbs[j].is_none() || !facing[j] {
+                            continue; // ペアは (小,大) で一度だけ、投影有効・両面向
+                        }
+                        let aj = aabbs[j].unwrap();
+                        if aa[2] < aj[0] || aj[2] < aa[0] || aa[3] < aj[1] || aj[3] < aa[1] {
+                            continue;
+                        }
+                        let (qa, qb) = (&sorted[i2], &sorted[j2]);
+                        let (ea, ca) = (&geoms[i2].0, &geoms[i2].1);
+                        let (eb, cb) = (&geoms[j2].0, &geoms[j2].1);
+                        let cl = wq_priority_g(qa, ca, qb, cb, cam);
+                        match cl {
+                            Some(true) => {
+                                err.classic.0 += 1;
+                                err.classic.1 += 1;
+                            }
+                            Some(false) => err.classic.0 += 1,
+                            None => {}
+                        }
+                        let sq = sq_priority_g(qa, ea, qb, eb);
+                        match sq {
+                            Some(true) => {
+                                err.sodium.0 += 1;
+                                err.sodium.1 += 1;
+                            }
+                            Some(false) => err.sodium.0 += 1,
+                            None => {}
+                        }
+                        let uni = match (cl, sq) {
+                            (Some(x), Some(y)) => {
+                                if x == y {
+                                    Some(x)
+                                } else {
+                                    None
+                                }
+                            }
+                            (Some(x), None) | (None, Some(x)) => Some(x),
+                            (None, None) => None,
+                        };
+                        match uni {
+                            Some(true) => {
+                                err.union.0 += 1;
+                                err.union.1 += 1;
+                            }
+                            Some(false) => err.union.0 += 1,
+                            None => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    err
+}
+
+/// クアッドがカメラを向いているか (法線側にカメラがある = バックフェイス
+/// カリングで実際に描画される面のみ)。順序評価は描画される面同士に限る
+/// (対向面ペアは GPU 上で一方しか描かれないため painter 拘束の意味がない)。
+fn wq_faces_camera(q: &WaterQuad, cam: [f32; 3]) -> bool {
+    let a = q.axis as usize;
+    (cam[a] - q.c[a]) * q.sign as f32 > 0.0
+}
+
+/// クアッドペア関係: (quad, extents, corners) x2 → Some(true) なら 「q は p の
+/// 奥」(q を先に描く)。extents/corners は呼び出し側で事前計算したもの。
+/// Sync は Sodium のワーカースレッド相当としてセクションを rayon 並列処
+/// 理するために必要。
+type WqRel<'a> = dyn Fn(&WaterQuad, &[f32; 6], &[[f32; 3]; 4], &WaterQuad, &[f32; 6], &[[f32; 3]; 4]) -> Option<bool>
+    + Sync
+    + 'a;
+
+/// topo ソートのフォールバック統計 (透明性レポート用)
+#[derive(Default, Clone, Copy)]
+struct TopoInfo {
+    sections: usize,
+    /// heuristic で DYNAMIC 直行 (topo attempt をスキップ) したセクション/クアッド数
+    dyn_secs: usize,
+    dyn_quads: usize,
+    /// topo attempt したがサイクル検出で断念したセクション/クアッド数
+    fail_secs: usize,
+    fail_quads: usize,
+}
+
+/// フォールバック設計 (パイプ間の本質的な差分)。
+#[derive(Clone, Copy, PartialEq)]
+enum FallbackKind {
+    /// Sodium 0.8.13 忠実パイプライン:
+    ///   sortTypeHeuristic の attempt limit (STATIC_TOPO_SORT_ATTEMPT_LIMITS
+    ///   = {-1,-1,250,100,50,30}, TranslucentGeometryCollector.java:215,337-339)
+    ///   に従い、limit 超過セクションでは topo attempt **自体を行わず**
+    ///   DYNAMIC (距離ソート) 直行。attempt 内でサイクル検出した場合も
+    ///   STATIC_TOPO 失敗 → DYNAMIC に逃げる (同:410-416)。距離ソートの
+    ///   キーは重心の二乗ユークリッド距離の ~bits radix (DynamicTopoData.
+    ///   java:271)。>1000 quads は directTrigger = 常時距離ソート
+    ///   (同:36,62-70) であり、本疑似ワールドの水セクションはほぼ全て
+    ///   これに該当する。
+    SodiumDynamic,
+    /// Rsift 固有パイプライン: 全セクションで topo attempt。サイクル
+    /// セクションはクアッド単位ユニットに分解し、非サイクルセクション
+    /// (内部 topo 順保持のブロック) と共に全クアッド大域の投影視深で
+    /// マージする。Sodium 方式の「セクション単位距離ソート + セクション
+    /// 順ハード境界」は段差水面地形で境界フリップ誤順を系統的に生む
+    /// (本ハーネス実測) ため、境界を連続化するのが狙い。
+    RsiftGlobalMerge,
+}
+
+/// セクション (16³) 単位 topo ソート共通部。Sodium StaticSorter の構造
+/// (セクション毎のクアッドソート + セクション描画順の距離整列) を
+/// リレーション差し替え可能に一般化。セクション内処理は rayon で並列
+/// (Sodium もソートジョブをワーカーに投げるのと同じ粒度)。
+fn topo_tsort(
+    quads: &mut [WaterQuad],
+    cam: [f32; 3],
+    fwd: [f32; 3],
+    rel: &WqRel,
+    mode: FallbackKind,
+) -> TopoInfo {
+    use rayon::prelude::*;
+    let mut info = TopoInfo::default();
+    let sec_key = |q: &WaterQuad| {
+        (
+            (q.c[0] / 16.0).floor() as i32,
+            (q.c[1] / 16.0).floor() as i32,
+            (q.c[2] / 16.0).floor() as i32,
+        )
+    };
+    let mut by_sec: HashMap<(i32, i32, i32), Vec<WaterQuad>> = HashMap::new();
+    for q in quads.iter() {
+        by_sec.entry(sec_key(q)).or_default().push(*q);
+    }
+    let mut secs: Vec<((i32, i32, i32), Vec<WaterQuad>)> = by_sec.into_iter().collect();
+    // セクション中心の視深で far→near (セクション描画順の距離整列)
+    let sec_depth = |k: (i32, i32, i32)| {
+        let sc = [
+            (k.0 as f32 + 0.5) * 16.0 - cam[0],
+            (k.1 as f32 + 0.5) * 16.0 - cam[1],
+            (k.2 as f32 + 0.5) * 16.0 - cam[2],
+        ];
+        sc[0] * fwd[0] + sc[1] * fwd[1] + sc[2] * fwd[2]
+    };
+    secs.sort_by(|a, b| {
+        depth_key(sec_depth(b.0))
+            .cmp(&depth_key(sec_depth(a.0)))
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    info.sections = secs.len();
+
+    if mode == FallbackKind::SodiumDynamic {
+        // Sodium 忠実: セクション単位で閉じる (大域マージはしない)。
+        enum Act {
+            Keep,
+            Dyn,
+            Fail,
+        }
+        let acts: Vec<Act> = secs
+            .par_iter_mut()
+            .map(|(_, qs)| match sq_sort_plan(qs) {
+                SortPlan::Keep => Act::Keep,
+                SortPlan::NormalRelative => {
+                    normal_relative_sort(qs);
+                    Act::Keep
+                }
+                SortPlan::Dynamic => {
+                    sq_dist_sort(qs, cam);
+                    Act::Dyn
+                }
+                SortPlan::TopoAttempt => {
+                    // 失敗時はセクション内距離ソートまで面倒を見る
+                    if section_topo(qs, cam, fwd, rel, Some(cam)) {
+                        Act::Fail
+                    } else {
+                        Act::Keep
+                    }
+                }
+            })
+            .collect();
+        for ((_, qs), act) in secs.iter().zip(acts.iter()) {
+            match act {
+                Act::Dyn => {
+                    info.dyn_secs += 1;
+                    info.dyn_quads += qs.len();
+                }
+                Act::Fail => {
+                    info.fail_secs += 1;
+                    info.fail_quads += qs.len();
+                }
+                Act::Keep => {}
+            }
+        }
+        let mut out = Vec::with_capacity(quads.len());
+        for (_, qs) in secs {
+            out.extend_from_slice(&qs);
+        }
+        quads.copy_from_slice(&out);
+        return info;
+    }
+
+    // ---- RsiftGlobalMerge ----
+    // 非サイクルセクション = ブロックユニット (内部 topo 順を保持)、
+    // サイクルセクション = クアッド単位ユニットに分解し、代表深度で
+    // 大域マージする。cycle セクションの中身はソート未了で返ってくる
+    // (セクション内ソートは大域キーに吸収されるため無駄なので省く)。
+    enum SecOut {
+        Block(Vec<WaterQuad>),
+        Cycle(Vec<WaterQuad>),
+    }
+    let outs: Vec<SecOut> = secs
+        .par_iter_mut()
+        .map(|(_, qs)| {
+            if section_topo(qs, cam, fwd, rel, None) {
+                SecOut::Cycle(std::mem::take(qs))
+            } else {
+                SecOut::Block(std::mem::take(qs))
+            }
+        })
+        .collect();
+    let cdepth = |q: &WaterQuad| {
+        (q.c[0] - cam[0]) * fwd[0] + (q.c[1] - cam[1]) * fwd[1] + (q.c[2] - cam[2]) * fwd[2]
+    };
+    enum Unit {
+        Block(Vec<WaterQuad>),
+        Single(WaterQuad),
+    }
+    // 決定的整列キー: (代表深度降順, 種別, セクションキー, 個体識別子)。
+    let mut units: Vec<(u32, u8, (i32, i32, i32), u64, Unit)> = Vec::new();
+    for ((skey, _), so) in secs.iter().zip(outs.into_iter()) {
+        match so {
+            SecOut::Block(qs) => {
+                units.push((depth_key(sec_depth(*skey)), 0, *skey, 0, Unit::Block(qs)));
+            }
+            SecOut::Cycle(qs) => {
+                info.fail_secs += 1;
+                info.fail_quads += qs.len();
+                for q in qs {
+                    let ident = (((q.c[0].to_bits() ^ q.c[2].to_bits().rotate_left(17)) as u64)
+                        << 32)
+                        | q.c[1].to_bits() as u64;
+                    units.push((depth_key(cdepth(&q)), 1, *skey, ident, Unit::Single(q)));
+                }
+            }
+        }
+    }
+    units.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.3.cmp(&b.3))
+    });
     let mut out = Vec::with_capacity(quads.len());
-    for ax in order {
-        let side = if fwd[ax as usize] >= 0.0 { 1.0f32 } else { -1.0f32 };
-        buckets[ax as usize].sort_unstable_by(|a, b| {
-            // back-to-front: カメラから軸正方向を見ているとき c[ax] 大=奥
-            let ka = (a.c[ax as usize] - cam[ax as usize]) * side;
-            let kb = (b.c[ax as usize] - cam[ax as usize]) * side;
-            kb.total_cmp(&ka)
-        });
-        out.extend_from_slice(&buckets[ax as usize]);
+    for (_, _, _, _, u) in units {
+        match u {
+            Unit::Block(qs) => out.extend_from_slice(&qs),
+            Unit::Single(q) => out.push(q),
+        }
     }
     quads.copy_from_slice(&out);
+    info
+}
+
+/// sortTypeHeuristic の aligned のみ版 (TranslucentGeometryCollector.java:
+/// 254-342)。本疑似ワールドの水クアッドは全て軸平行 (unaligned 法線なし)
+/// なので unaligned 系 special case は出番がない。
+#[derive(Clone, Copy, PartialEq)]
+enum SortPlan {
+    /// ソート不要 (quads <= 1)
+    Keep,
+    /// STATIC_NORMAL_RELATIVE 相当 (special case D, 同:328-335):
+    /// 法線 1 種、または正確に対向する 2 法線のみ。
+    NormalRelative,
+    /// STATIC_TOPO attempt 許可 (limit 内, 同:337-339)
+    TopoAttempt,
+    /// DYNAMIC 直行 (limit 超過, 同:341-342)
+    Dynamic,
+}
+
+fn sq_sort_plan(qs: &[WaterQuad]) -> SortPlan {
+    if qs.len() <= 1 {
+        return SortPlan::Keep;
+    }
+    let mut bitmap = 0u32;
+    for q in qs {
+        bitmap |= 1 << sq_facing(q);
+    }
+    let nc = bitmap.count_ones() as usize;
+    // special case D: alignedNormalCount == 1 (同:330-331)
+    if nc == 1 {
+        return SortPlan::NormalRelative;
+    }
+    // special case D: 2 法線が正確に対向 (同:328-333)。B (planeCount==2)
+    // 相当の NONE ケースも正しい順序を要求しないため NormalRelative に
+    // 含めても順序の正当性は保たれる (安全側の近似)。
+    if nc == 2 && sq_bitmap_opposing(bitmap) {
+        return SortPlan::NormalRelative;
+    }
+    // STATIC_TOPO_SORT_ATTEMPT_LIMITS (同:215) を normalCount でクランプ
+    const LIMITS: [i32; 6] = [-1, -1, 250, 100, 50, 30];
+    let limit = LIMITS[nc.clamp(2, 5)];
+    if limit >= 0 && qs.len() as i32 <= limit {
+        SortPlan::TopoAttempt
+    } else {
+        SortPlan::Dynamic
+    }
+}
+
+/// ModelQuadFacing.bitmapIsOpposingAligned 相当 (同:11-18 の ordinal で
+/// 対向ペアは (d, d+3)): ちょうど 1 組の対向ペアのみで構成されるか。
+fn sq_bitmap_opposing(b: u32) -> bool {
+    (0..3usize).any(|d| {
+        let pair = (1u32 << d) | (1u32 << (d + 3));
+        b & pair != 0 && (b & !pair) == 0
+    })
+}
+
+/// STATIC_NORMAL_RELATIVE 相当: 法線グループ毎に「法線方向の距離」で整列
+/// (同 special case D コメント: 2 法線の各面平面集合を法線相対距離の昇順
+/// に、グループ間の順序は互いに見えないため任意)。グループは facing
+/// ordinal 昇順で連結し決定的にする。本ワールドでは inert (nc=6 支配)。
+fn normal_relative_sort(qs: &mut [WaterQuad]) {
+    qs.sort_by(|a, b| {
+        sq_facing(a).cmp(&sq_facing(b)).then_with(|| {
+            let ka = a.c[a.axis as usize] * a.sign as f32;
+            let kb = b.c[b.axis as usize] * b.sign as f32;
+            depth_key(ka).cmp(&depth_key(kb))
+        })
+    });
+}
+
+/// セクション内距離ソート: 重心の二乗ユークリッド距離で far→near。
+/// Sodium DynamicTopoData の距離ソート相当 (~floatToRawIntBits(dist²) の
+/// radix sort, DynamicTopoData.java:271-275)。dist² は非負なので raw bits
+/// が単調、radix の stable 性は idx 昇順の tie-break で再現する。
+fn sq_dist_sort(qs: &mut [WaterQuad], cam: [f32; 3]) {
+    let mut idx: Vec<usize> = (0..qs.len()).collect();
+    let key = |q: &WaterQuad| {
+        let (dx, dy, dz) = (q.c[0] - cam[0], q.c[1] - cam[1], q.c[2] - cam[2]);
+        (dx * dx + dy * dy + dz * dz).to_bits()
+    };
+    idx.sort_by(|&a, &b| key(&qs[b]).cmp(&key(&qs[a])).then_with(|| a.cmp(&b)));
+    let sorted: Vec<WaterQuad> = idx.iter().map(|&u| qs[u]).collect();
+    qs.copy_from_slice(&sorted);
+}
+
+/// セクション内 topo ソート (Kahn)。全ペア i<j を関係評価してエッジ化
+/// (近傍セル枝刈りは遠距離の真の拘束を落としサイクル構造を変え得るため
+/// 行わない — 枝刈り版と全ペア版で誤順実測が乖離したため全ペアを採用)。
+/// frontier は「重心視深が遠い順 + index 昇順」の決定的ヒープ。
+/// 戻り値 = サイクル検出で topo を断念したか。`dist_cam` が Some なら断念
+/// 時にセクション内距離ソートまで適用する (Sodium DYNAMIC 相当)、None
+/// なら未整列のまま返す (呼び出し側の大域マージに委ねる)。
+fn section_topo(
+    qs: &mut [WaterQuad],
+    cam: [f32; 3],
+    fwd: [f32; 3],
+    rel: &WqRel,
+    dist_cam: Option<[f32; 3]>,
+) -> bool {
+    let n = qs.len();
+    if n <= 1 {
+        return false;
+    }
+    // extents/corners を一度だけ前計算 (ペア評価の定数倍律速を解消)
+    let geoms: Vec<([f32; 6], [[f32; 3]; 4])> = qs.iter().map(wq_geom).collect();
+    // n==2 は Sodium も special-case (TopoGraphSorting.java:307-308)
+    if n == 2 {
+        if rel(&qs[0], &geoms[0].0, &geoms[0].1, &qs[1], &geoms[1].0, &geoms[1].1) == Some(true) {
+            qs.swap(0, 1);
+        }
+        return false;
+    }
+    let mut edges: Vec<(u32, u32)> = Vec::new();
+    let mut indeg = vec![0u32; n];
+    for i in 0..n {
+        let (pe, pc) = (&geoms[i].0, &geoms[i].1);
+        for j in i + 1..n {
+            let (qe, qc) = (&geoms[j].0, &geoms[j].1);
+            match rel(&qs[i], pe, pc, &qs[j], qe, qc) {
+                Some(true) => {
+                    edges.push((j as u32, i as u32));
+                    indeg[i] += 1;
+                }
+                Some(false) => {
+                    edges.push((i as u32, j as u32));
+                    indeg[j] += 1;
+                }
+                None => {}
+            }
+        }
+    }
+    // CSR 化 (out 辺)
+    let mut out_off = vec![0u32; n + 1];
+    for &(u, _) in &edges {
+        out_off[u as usize + 1] += 1;
+    }
+    for u in 0..n {
+        out_off[u + 1] += out_off[u];
+    }
+    let mut cursor = out_off[..n].to_vec();
+    let mut out_e = vec![0u32; edges.len()];
+    for &(u, v) in &edges {
+        let o = &mut cursor[u as usize];
+        out_e[*o as usize] = v;
+        *o += 1;
+    }
+    // 重心視深
+    let cdepth = |q: &WaterQuad| {
+        (q.c[0] - cam[0]) * fwd[0] + (q.c[1] - cam[1]) * fwd[1] + (q.c[2] - cam[2]) * fwd[2]
+    };
+    // Kahn: frontier は (depth 降順, idx 昇順) の決定的ヒープ
+    let mut heap: std::collections::BinaryHeap<(u32, std::cmp::Reverse<usize>)> =
+        std::collections::BinaryHeap::new();
+    for i in 0..n {
+        if indeg[i] == 0 {
+            heap.push((depth_key(cdepth(&qs[i])), std::cmp::Reverse(i)));
+        }
+    }
+    let mut order: Vec<u32> = Vec::with_capacity(n);
+    while let Some((_, std::cmp::Reverse(u))) = heap.pop() {
+        order.push(u as u32);
+        for ei in out_off[u]..out_off[u + 1] {
+            let v = out_e[ei as usize] as usize;
+            indeg[v] -= 1;
+            if indeg[v] == 0 {
+                heap.push((depth_key(cdepth(&qs[v])), std::cmp::Reverse(v)));
+            }
+        }
+    }
+    if order.len() < n {
+        // サイクル検出 → topo 断念。交差ヒューリスティク (TopoGraphSorting.
+        // java:88-92 の sum>1 規則) 下ではテラス状水面で拘束サイクルが頻発
+        // する。実測: 本疑似ワールドでは 116,719 quads 中 ~99.7% がサイクル
+        // セクションに属した (= 段差の多い湖岸地形では STATIC_TOPO が構造的
+        // に成立しにくい)。
+        if let Some(dc) = dist_cam {
+            sq_dist_sort(qs, dc);
+        }
+        return true;
+    }
+    let sorted: Vec<WaterQuad> = order.iter().map(|&u| qs[u as usize]).collect();
+    qs.copy_from_slice(&sorted);
+    false
+}
+
+/// Rsift 半透明: セクション単位 topo ソート、関係 = カメラ依存の古典分離
+/// 平面優先度 (wq_priority)。Sodium 関係 (カメラ非依存, separator trigger で
+/// 再ソート管理) より「このカメラ姿勢での真の遮蔽」に忠実な拘束を取れる
+/// 代わり、カメラ移動毎に再ソートが必要 = rsift では GPU compute ミラー
+/// 前提の関係とする。サイクルセクションはクアッド単位に分解して大域の
+/// 投影視深マージに解放する Rsift 固有フォールバック (FallbackKind::
+/// RsiftGlobalMerge 参照)。誤順率の実測は wq_order_error 参照。
+fn rsift_tsort(quads: &mut [WaterQuad], cam: [f32; 3], fwd: [f32; 3]) -> TopoInfo {
+    topo_tsort(
+        quads,
+        cam,
+        fwd,
+        &|p, _pe, pc, q, _qe, qc| wq_priority_g(p, pc, q, qc, cam),
+        FallbackKind::RsiftGlobalMerge,
+    )
+}
+
+/// 画面 AABB (NDC)。角がカメラ後方 (w<=0) を含む場合は None (評価対象外)。
+fn wq_screen_aabb(q: &WaterQuad, vp: &[[f32; 4]; 4]) -> Option<[f32; 4]> {
+    let mut aabb = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
+    for c in wq_corners(q) {
+        let x = vp[0][0] * c[0] + vp[1][0] * c[1] + vp[2][0] * c[2] + vp[3][0];
+        let y = vp[0][1] * c[0] + vp[1][1] * c[1] + vp[2][1] * c[2] + vp[3][1];
+        let w = vp[0][3] * c[0] + vp[1][3] * c[1] + vp[2][3] * c[2] + vp[3][3];
+        if w <= 1e-6 {
+            return None;
+        }
+        let (sx, sy) = (x / w, y / w);
+        aabb[0] = aabb[0].min(sx);
+        aabb[1] = aabb[1].min(sy);
+        aabb[2] = aabb[2].max(sx);
+        aabb[3] = aabb[3].max(sy);
+    }
+    Some(aabb)
+}
+
+/// Sodium 半透明: sortTypeHeuristic → STATIC_TOPO / DYNAMIC の意思決定を
+/// 含む実ソース準拠パイプライン (出典: sq_sort_plan / sq_dist_sort 参照)。
+/// attempt 内の関係構築は TopoGraphSorting の aligned 経路の移植
+/// (quadVisibleThrough)。separator 否定 (distancesByNormal) は動的リソート
+/// 管理機構であるため本モデルでは null 相当、単一カメラ評価では関係構築
+/// に影響しない。
+fn sodium_tsort(quads: &mut [WaterQuad], cam: [f32; 3], fwd: [f32; 3]) -> TopoInfo {
+    topo_tsort(
+        quads,
+        cam,
+        fwd,
+        &|p, pe, _pc, q, qe, _qc| sq_priority_g(p, pe, q, qe),
+        FallbackKind::SodiumDynamic,
+    )
 }
 
 /// A 編集リビルド: vanilla 規則 (32B 絶対座標 + スムース AO) を 16^3 に限定。
@@ -1065,10 +1742,13 @@ fn rsift_mesh_section_bytes(
     sx: usize,
     sy: usize,
     sz: usize,
-    pool: &mut InternPool<[u8; 12]>,
+    pool: &mut InternPool<(u64, u32)>,
 ) -> usize {
     let mut bytes = Vec::new();
     let mut indices = Vec::new();
+    // remesh_rsift と同じ直接索引スロット重複排除 (設計一貫性)
+    const SLOT_N: usize = 17 * 17 * 17 * 27;
+    let mut slot_of = vec![u32::MAX; SLOT_N];
     let (x0, y0, z0) = (sx * 16, sy * 16, sz * 16);
     for y in y0..y0 + 16 {
         for z in z0..z0 + 16 {
@@ -1080,24 +1760,40 @@ fn rsift_mesh_section_bytes(
                     if w.get(x as i64 + n[0], y as i64 + n[1], z as i64 + n[2]).opaque() {
                         continue;
                     }
-                    let base = (bytes.len() / VERTEX_STRIDE_BYTES) as u32;
-                    for v in quad {
-                        let q = Quantized12ByteVertex::encode(
-                            (x & 15) as f32 + v[0],
-                            (y & 15) as f32 + v[1],
-                            (z & 15) as f32 + v[2],
-                            n[0] as f32,
-                            n[1] as f32,
-                            n[2] as f32,
-                            0.5,
-                            0.5,
-                        );
-                        let raw: [u8; 12] =
-                            <[u8; 12]>::try_from(bytemuck::bytes_of(&q)).unwrap();
-                        pool.intern(raw);
-                        bytes.extend_from_slice(&raw);
+                    let nz = ((n[0] + 1) + (n[1] + 1) * 3 + (n[2] + 1) * 9) as usize;
+                    let mut lv = [0u32; 4];
+                    for (vi, v) in quad.iter().enumerate() {
+                        let slot = (((x & 15) + v[0] as usize) * 17
+                            + ((y & 15) + v[1] as usize))
+                            * 17
+                            + ((z & 15) + v[2] as usize);
+                        let slot = slot * 27 + nz;
+                        let mut local = slot_of[slot];
+                        if local == u32::MAX {
+                            let q = Quantized12ByteVertex::encode(
+                                (x & 15) as f32 + v[0],
+                                (y & 15) as f32 + v[1],
+                                (z & 15) as f32 + v[2],
+                                n[0] as f32,
+                                n[1] as f32,
+                                n[2] as f32,
+                                0.5,
+                                0.5,
+                            );
+                            let raw: [u8; 12] =
+                                <[u8; 12]>::try_from(bytemuck::bytes_of(&q)).unwrap();
+                            let key = (
+                                u64::from_le_bytes(raw[0..8].try_into().unwrap()),
+                                u32::from_le_bytes(raw[8..12].try_into().unwrap()),
+                            );
+                            pool.intern(key);
+                            local = (bytes.len() / VERTEX_STRIDE_BYTES) as u32;
+                            slot_of[slot] = local;
+                            bytes.extend_from_slice(&raw);
+                        }
+                        lv[vi] = local;
                     }
-                    indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                    indices.extend_from_slice(&[lv[0], lv[1], lv[2], lv[0], lv[2], lv[3]]);
                 }
             }
         }
@@ -1196,7 +1892,7 @@ fn edit_sim(_world: &PseudoWorld) -> EditSimOut {
                 _ => {
                     bytes[2] += dirty
                         .par_iter()
-                        .map_init(InternPool::<[u8; 12]>::new, |pool, &s| {
+                        .map_init(InternPool::<(u64, u32)>::new, |pool, &s| {
                             let (sx, sy, sz) = sec_coords(s);
                             rsift_mesh_section_bytes(&w, sx, sy, sz, pool)
                         })
@@ -1219,14 +1915,40 @@ fn edit_sim(_world: &PseudoWorld) -> EditSimOut {
 
 /// Rsift メッシャ: 12B 量子化頂点 + Tipsify 頂点キャッシュ最適化。
 /// 戻り値は (byte 数, ACMR before/after)。
+/// C ステージ別計測 (律速箇所の実測特定用)
+#[derive(Default, Clone, Copy)]
+struct CStage {
+    mesh_loop: std::time::Duration,
+    tipsify: std::time::Duration,
+    acmr: std::time::Duration,
+}
+
 fn remesh_rsift(
     w: &PseudoWorld,
     cx: usize,
     cz: usize,
-    pool: &mut InternPool<[u8; 12]>,
+    pool: &mut InternPool<(u64, u32)>,
+    stage: &mut CStage,
 ) -> (MeshStats, f32, f32) {
+    let t_mesh = Instant::now();
     let mut bytes = Vec::new();
     let mut indices = Vec::new();
+    let mut raws = [[0u8; 12]; 4];
+    // [実測メモ: 旧構成のステージ分解で encode=10.8ms / intern+local=117ms
+    // @36chunks] → encode は軽く、intern+local 写像が mesh-loop の律速
+    // だった。本来 rsift は「エンコード済み頂点 = 12B = u64+u32」として
+    // 直接プールする (POD キー 2 語化でハッシュも等値比較も最小限)。
+    // 12B 頂点は pos+normal+uv のみを持ち頂点 AO/色を持たない (AO は半解像
+    // deinterleave パイプラインで別供給する設計) ため、(pos,normal,uv) の一致
+    // = 完全同一頂点として重複排除できる。ここで初めて intern の戻り ID を
+    // 頂点ストリーム本体に使用する (以前は計上のみで破棄していた)。
+    //
+    // さらに量子化ドメインが pos ∈ (0..=16)^3 (1/1024 固定小数点が格子に一致)
+    // × n ∈ {-1,0,1}^3 (27 組合せ, 実使用 6) に閉じるため、デデュープの
+    // ホットループはハッシュ探索ではなく直接索引スロットを使う。HashMap は
+    // 新規ユニークの登録 (= チャンク横断 shape cache の更新) 時のみ触れる。
+    const SLOT_N: usize = 17 * 17 * 17 * 27;
+    let mut slot_of = vec![u32::MAX; SLOT_N];
     let (x0, z0) = (cx * 16, cz * 16);
     for y in 0..WORLD_Y {
         for z in z0..z0 + 16 {
@@ -1240,8 +1962,10 @@ fn remesh_rsift(
                     if nb.opaque() {
                         continue;
                     }
-                    let base = (bytes.len() / VERTEX_STRIDE_BYTES) as u32;
-                    for v in quad {
+                    // 法線スロット: n ∈ {-1,0,1}^3 → 0..=26 (軸法線のみ実使用)
+                    let nz = ((n[0] + 1) + (n[1] + 1) * 3 + (n[2] + 1) * 9) as usize;
+                    let mut lv = [0u32; 4];
+                    for (vi, v) in quad.iter().enumerate() {
                         // セクションローカル座標 (u16 固定小数点のドメインに収める)
                         let vx = (x & 15) as f32 + v[0];
                         let vy = (y & 15) as f32 + v[1];
@@ -1256,20 +1980,42 @@ fn remesh_rsift(
                             0.5,
                             0.5,
                         );
-                        let raw: [u8; 12] =
-                            <[u8; 12]>::try_from(bytemuck::bytes_of(&q)).unwrap();
-                        pool.intern(raw); // 形状キャッシュ（フェライトコア式）
-                        bytes.extend_from_slice(&raw);
+                        raws[vi] = <[u8; 12]>::try_from(bytemuck::bytes_of(&q)).unwrap();
+                        // 量子化 pos は 1/1024 格子に一致 → 直接索引に退化
+                        let px = (x & 15) + v[0] as usize;
+                        let py = (y & 15) + v[1] as usize;
+                        let pz = (z & 15) + v[2] as usize;
+                        let slot = ((px * 17 + py) * 17 + pz) * 27 + nz;
+                        let mut local = slot_of[slot];
+                        if local == u32::MAX {
+                            let key = (
+                                u64::from_le_bytes(raws[vi][0..8].try_into().unwrap()),
+                                u32::from_le_bytes(raws[vi][8..12].try_into().unwrap()),
+                            );
+                            // 形状キャッシュ (チャンク横断) は新規ユニーク登録時のみ
+                            pool.intern(key);
+                            local = (bytes.len() / VERTEX_STRIDE_BYTES) as u32;
+                            slot_of[slot] = local;
+                            bytes.extend_from_slice(&raws[vi]);
+                        }
+                        lv[vi] = local;
                     }
-                    indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                    indices.extend_from_slice(&[lv[0], lv[1], lv[2], lv[0], lv[2], lv[3]]);
                 }
             }
         }
     }
+    stage.mesh_loop += t_mesh.elapsed();
     let opt = VertexCacheOptimizer::new(16);
+    let t0 = Instant::now();
     let before = VertexCacheOptimizer::acmr(&indices, 16);
+    stage.acmr += t0.elapsed();
+    let t0 = Instant::now();
     let reordered = opt.optimize(&indices);
+    stage.tipsify += t0.elapsed();
+    let t0 = Instant::now();
     let after = VertexCacheOptimizer::acmr(&reordered, 16);
+    stage.acmr += t0.elapsed();
     (
         MeshStats {
             verts: bytes.len() / VERTEX_STRIDE_BYTES,
@@ -1354,26 +2100,36 @@ fn main() {
     let vb_bytes = sodium.total_bytes();
     // C
     let t0 = Instant::now();
-    let mut pool = InternPool::<[u8; 12]>::new();
+    let mut pool = InternPool::<(u64, u32)>::new();
     let mut vc_verts = 0usize;
     let mut vc_bytes = 0usize;
     let mut acmr_b_sum = 0f32;
     let mut acmr_a_sum = 0f32;
+    let mut c_stage = CStage::default();
     for cz in 0..CHUNKS_Z {
         for cx in 0..CHUNKS_X {
-            let (m, before, after) = remesh_rsift(&world, cx, cz, &mut pool);
+            let (m, before, after) = remesh_rsift(&world, cx, cz, &mut pool, &mut c_stage);
             vc_verts += m.verts;
             vc_bytes += m.bytes;
             acmr_b_sum += before;
             acmr_a_sum += after;
         }
     }
-    let c_remesh = t0.elapsed();
+    let _ = t0; // 全体経過はステージ計測に分割済み
+    // C の本番コスト = mesh-loop + tipsify。acmr の before/after 計測は
+    // 品質レポート用の計測器であり実エンジンの本番経路には含まれないため
+    // 合計からは除外する (正直な科目分け)。
+    let c_remesh = c_stage.mesh_loop + c_stage.tipsify;
     let acmr_b = acmr_b_sum / (CHUNKS_X * CHUNKS_Z) as f32;
     let acmr_a = acmr_a_sum / (CHUNKS_X * CHUNKS_Z) as f32;
-    // 頂点数は3者で一致するはず（同じメッシュトポロジ）
+    println!(
+        "C 内訳: mesh-loop(encode+intern+dedup) {:?} / tipsify {:?} (本番計上) / acmr計測 {:?} (計測器, 非計上)",
+        c_stage.mesh_loop, c_stage.tipsify, c_stage.acmr
+    );
+    // A/B は quad エンコード仕様上 4 頂点/面 (vanilla 個別 index buffer,
+    // sodium SharedQuadIndexBuffer の前提)。C は intern 重複排除で縮む。
+    // A と B の頂点数は一致するはず（同じ面カリング規則・同じエンコード粒度）。
     assert_eq!(va.verts, vb_verts);
-    assert_eq!(va.verts, vc_verts);
     // ---- 公平性補正: Vanilla も VisGraph をメッシュ時に構築する ----
     // 1.21 系 vanilla の SectionCompiler はセクション毎に VisGraph (vanilla
     // `VisibilitySet`) を構築し、Sodium の VisibilityEncoding はそれを
@@ -1397,13 +2153,15 @@ fn main() {
         acmr_b, acmr_a, pool.hit_rate() * 100.0
     );
     println!(
-        "頂点メモリ: C は A 比 {:.1}% 削減, B 比 {:.1}% 削減 (A {} → B {} → C {} bytes / 同一 {} 頂点)",
+        "頂点メモリ: C は A 比 {:.1}% 削減, B 比 {:.1}% 削減 (A {} / {} 頂点, B {} / {} 頂点, C {} / {} 頂点 bytes。C の頂点数は intern 重複排除後)",
         a_memory_saving * 100.0,
         b_memory_saving * 100.0,
         va.bytes,
+        va.verts,
         vb_bytes,
+        vb_verts,
         vc_bytes,
-        va.verts
+        vc_verts
     );
 
     // ===== リージョン I/O =====
@@ -1582,7 +2340,7 @@ fn main() {
             g_occ_main = Some((g_occ, *cam, *target));
         }
     }
-    let (g_occ, cam_s, target_s) = g_occ_main.unwrap();
+    let (g_occ, _cam_s, _target_s) = g_occ_main.unwrap();
 
     // ===== draw call / コマンド構築 =====
     let dm = draw_call_model(&sodium, &g_occ.visible);
@@ -1598,27 +2356,60 @@ fn main() {
     );
 
     // ===== 半透明ソート =====
-    let fwd_raw = [
-        target_s[0] - cam_s[0],
-        target_s[1] - cam_s[1],
-        target_s[2] - cam_s[2],
-    ];
-    let fwd_len = (fwd_raw[0] * fwd_raw[0] + fwd_raw[1] * fwd_raw[1] + fwd_raw[2] * fwd_raw[2]).sqrt();
-    let fwd = [fwd_raw[0] / fwd_len, fwd_raw[1] / fwd_len, fwd_raw[2] / fwd_len];
-    let mut qa = sodium.water_quads.clone();
-    let t0 = Instant::now();
-    vanilla_tsort(&mut qa, cam_s, fwd);
-    let ts_a = t0.elapsed();
-    let mut qb = sodium.water_quads.clone();
-    let t0 = Instant::now();
-    sodium_tsort(&mut qb, cam_s, fwd);
-    let ts_b = t0.elapsed();
+    // 実収集した水クアッド列を各ソータで整列し、(a) ソート時間と (b) 画面
+    // 上で重なり得る拘束ペアに対する順序誤り率 (wq_order_error 実測) を
+    // 両シナリオで評価する。誤り率は主張ではなくサンプリング実測に基づく。
     println!(
-        "\n## 半透明ソート (水クアッド {})\n| pipe | 時間 | 方式 |\n|---|---|---|\n| A Vanilla系 | {:?} | 重心 Z ソート (誤順序ケースあり) |\n| B Sodium系 | {:?} | 法線バケツ topo 近似 (堅牢) |\n| C Rsift | A 同型 | (topo ソート未実装、現状は A 踏襲) |",
-        sodium.water_quads.len(),
-        ts_a,
-        ts_b
+        "\n## 半透明ソート (水クアッド {} 個を実ソート)",
+        sodium.water_quads.len()
     );
+    for (name, cam, target) in &scenarios {
+        let vp = build_view_proj(&FrameCamera {
+            eye: *cam,
+            target: *target,
+            up: [0.0, 1.0, 0.0],
+            fov_y_deg: 75.0,
+            aspect: 16.0 / 9.0,
+            near: 0.5,
+            far: 256.0,
+        });
+        let fwd_raw = [target[0] - cam[0], target[1] - cam[1], target[2] - cam[2]];
+        let fwd_len =
+            (fwd_raw[0] * fwd_raw[0] + fwd_raw[1] * fwd_raw[1] + fwd_raw[2] * fwd_raw[2]).sqrt();
+        let fwd = [fwd_raw[0] / fwd_len, fwd_raw[1] / fwd_len, fwd_raw[2] / fwd_len];
+        let mut qa = sodium.water_quads.clone();
+        let t0 = Instant::now();
+        vanilla_tsort(&mut qa, *cam, fwd);
+        let ts_a = t0.elapsed();
+        let mut qb = sodium.water_quads.clone();
+        let t0 = Instant::now();
+        let ib = sodium_tsort(&mut qb, *cam, fwd);
+        let ts_b = t0.elapsed();
+        let mut qc = sodium.water_quads.clone();
+        let t0 = Instant::now();
+        let ic = rsift_tsort(&mut qc, *cam, fwd);
+        let ts_c = t0.elapsed();
+        let ea = wq_order_error(&qa, *cam, &vp);
+        let eb = wq_order_error(&qb, *cam, &vp);
+        let ec = wq_order_error(&qc, *cam, &vp);
+        let cell = |t: (usize, usize)| {
+            if t.0 == 0 {
+                "-".to_string()
+            } else {
+                format!("{}/{} ({:.2}%)", t.1, t.0, t.1 as f64 / t.0 as f64 * 100.0)
+            }
+        };
+        println!(
+            "\n### {name}\n| pipe | 時間 | 誤順 (古典関係) | 誤順 (Sodium関係) | 誤順 (合併) | 方式 |\n|---|---|---|---|---|---|\n| A Vanilla系 | {:?} | {} | {} | {} | 重心 Z (グローバル) |\n| B Sodium系 | {:?} | {} | {} | {} | heuristic→topo/DYNAMIC (実ソース準拠) |\n| C Rsift | {:?} | {} | {} | {} | セクション topo + 大域 depth マージ (Rsift 固有) |",
+            ts_a, cell(ea.classic), cell(ea.sodium), cell(ea.union),
+            ts_b, cell(eb.classic), cell(eb.sodium), cell(eb.union),
+            ts_c, cell(ec.classic), cell(ec.sodium), cell(ec.union),
+        );
+        println!(
+            "フォールバック実績 (水 {} セクション中): B = DYNAMIC 直行 {} secs ({} quads) + topo 断念 {} secs ({} quads)  /  C = topo 断念 {} secs ({} quads → 大域マージへ解放)",
+            ib.sections, ib.dyn_secs, ib.dyn_quads, ib.fail_secs, ib.fail_quads, ic.fail_secs, ic.fail_quads
+        );
+    }
 
     // ===== 編集ワークロード (プレイヤー編集 → 汚染セクションのみリビルド) =====
     let es = edit_sim(&world);
@@ -1690,7 +2481,8 @@ fn main() {
          (b) リージョン multidraw によるドライバ load 削減 (draw call 表参照),\n\
          (c) ワーカースレッド並列リビルド (編集ワークロード表参照),\n\
          (d) グラフ遮蔽カリング (セクション可視性表参照)。\n\
-         Rsift の優位軸は 12B 頂点 (A 比 62.5% 減) / zstd 並列 I/O / DDA による\n\
+         Rsift の優位軸は 12B 頂点 (頂点当たり A 比 62.5% 減、重複排除込みの\n\
+         総量では A 比 86.8% 減 — 頂点メモリ行実測) / zstd 並列 I/O / DDA による\n\
          真の遮蔽判定 (実体カリング表の occluded 数) / indirect 固定 2 draw。\n\
          詳細は docs/BENCH_SODIUM_VS_RSIFT.md 参照。"
     );

@@ -50,10 +50,27 @@ impl VertexCacheOptimizer {
         let nv = indices.iter().copied().max().map(|m| m as usize + 1).unwrap_or(0);
 
         // Triangles touching each vertex (for incremental score updates).
-        let mut vert_tris: Vec<Vec<u32>> = vec![Vec::new(); nv];
-        for (ti, t) in tris.iter().enumerate() {
+        // CSR 形式 (offsets+flat): Vec<Vec> だと頂点数分の個別アロケーションが
+        // 巨大メッシュで支配的になる。各頂点の三角列は ti 昇順 (面内では
+        // v0,v1,v2 順) を維持するため、後続の更新順序は Vec<Vec> 版と同一。
+        let mut vt_off = vec![0u32; nv + 1];
+        for t in &tris {
             for &v in t {
-                vert_tris[v as usize].push(ti as u32);
+                vt_off[v as usize + 1] += 1;
+            }
+        }
+        for v in 0..nv {
+            vt_off[v + 1] += vt_off[v];
+        }
+        let mut vt_flat = vec![0u32; vt_off[nv] as usize];
+        {
+            let mut cursor = vt_off[..nv].to_vec();
+            for (ti, t) in tris.iter().enumerate() {
+                for &v in t {
+                    let c = &mut cursor[v as usize];
+                    vt_flat[*c as usize] = ti as u32;
+                    *c += 1;
+                }
             }
         }
 
@@ -63,11 +80,18 @@ impl VertexCacheOptimizer {
         let mut tri_emitted = vec![false; ntri];
         let mut tri_score = vec![0.0f32; ntri];
 
+        // 頂点スコアは cache_pos ∈ {-1,0..cs} の cs+1 通りしかないため事前に
+        // テーブル化する (値は vertex_score と bit 同一、呼び出し順も同じ)。
+        let mut score_table = Vec::with_capacity(cs + 1);
+        score_table.push(self.vertex_score(-1));
+        for p in 0..cs as i32 {
+            score_table.push(self.vertex_score(p));
+        }
         let recompute = |ti: usize, cache_pos: &[i32]| -> f32 {
             let t = tris[ti];
-            self.vertex_score(cache_pos[t[0] as usize])
-                + self.vertex_score(cache_pos[t[1] as usize])
-                + self.vertex_score(cache_pos[t[2] as usize])
+            score_table[(cache_pos[t[0] as usize] + 1) as usize]
+                + score_table[(cache_pos[t[1] as usize] + 1) as usize]
+                + score_table[(cache_pos[t[2] as usize] + 1) as usize]
         };
         for ti in 0..ntri {
             tri_score[ti] = recompute(ti, &cache_pos);
@@ -136,10 +160,12 @@ impl VertexCacheOptimizer {
             }
         }
         let mut version = vec![0u32; ntri];
-        let mut heap = std::collections::BinaryHeap::with_capacity(ntri);
-        for ti in 0..ntri {
-            heap.push(Cand { score: tri_score[ti], tri: ti as u32, ver: 0 });
-        }
+        // collect で bottom-up heapify (O(n)) にする。ヒープ上の優先度は
+        // (score, tri) の全順序で一意 (tri は相異なる) ため、pop 列は
+        // push 版と bit 同一 (ヒープ内部配列の形は結果に影響しない)。
+        let mut heap: std::collections::BinaryHeap<Cand> = (0..ntri)
+            .map(|ti| Cand { score: tri_score[ti], tri: ti as u32, ver: 0 })
+            .collect();
 
         let mut out: Vec<u32> = Vec::with_capacity(indices.len());
         let mut emitted = 0usize;
@@ -162,8 +188,8 @@ impl VertexCacheOptimizer {
             let t = tris[ti];
             for &v in &t {
                 use_vertex(v, &mut cache, &mut cache_pos);
-                // Recompute scores of triangles sharing v.
-                for &ot in &vert_tris[v as usize] {
+                // Recompute scores of triangles sharing v (CSR 区間走査)。
+                for &ot in &vt_flat[vt_off[v as usize] as usize..vt_off[v as usize + 1] as usize] {
                     let oti = ot as usize;
                     if !tri_emitted[oti] {
                         version[oti] = version[oti].wrapping_add(1);

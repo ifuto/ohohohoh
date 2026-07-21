@@ -13,7 +13,91 @@
 //! どちらもアクセスは O(1)（ハッシュ 1 回）。メモリはユニーク数に比例する。
 
 use std::collections::HashMap;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash, Hasher};
+
+/// Firefox/rustc-hash 系の乗算回転ハッシャ (SipHash 代替)。
+/// インターンプールのキーは同一プロセス内で自分が生成した頂点バイト列等の
+/// 信頼できるデータであり、HashDoS 耐性よりホットループ速度を取る設計。
+/// 等値判定は `Eq` が担保するため、ハッシュ弱化は正しさに影響しない
+/// (影響するのは衝突率 = perf のみ)。
+/// 12B 頂点キーで実測されるように固定小数/整数ドメインで偏りが小さい
+/// 乗算回転 (rotate 5 ^ word) * SEED を採用する。
+#[derive(Clone, Default)]
+pub struct FoldHasher {
+    hash: u64,
+}
+
+impl FoldHasher {
+    const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+
+    #[inline]
+    fn add(&mut self, word: u64) {
+        self.hash = (self.hash.rotate_left(5) ^ word).wrapping_mul(Self::SEED);
+    }
+}
+
+impl Hasher for FoldHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        // 8B チャンクで畳み、末尾はリトルエンディアン詰めで 1 語にする
+        let mut b = bytes;
+        while b.len() >= 8 {
+            self.add(u64::from_le_bytes(b[..8].try_into().unwrap()));
+            b = &b[8..];
+        }
+        if !b.is_empty() {
+            let mut word = 0u64;
+            for (i, &x) in b.iter().enumerate() {
+                word |= (x as u64) << (i * 8);
+            }
+            self.add(word);
+        }
+    }
+
+    #[inline]
+    fn write_u8(&mut self, v: u8) {
+        self.add(v as u64);
+    }
+    #[inline]
+    fn write_u16(&mut self, v: u16) {
+        self.add(v as u64);
+    }
+    #[inline]
+    fn write_u32(&mut self, v: u32) {
+        self.add(v as u64);
+    }
+    #[inline]
+    fn write_u64(&mut self, v: u64) {
+        self.add(v);
+    }
+    #[inline]
+    fn write_usize(&mut self, v: usize) {
+        self.add(v as u64);
+    }
+    #[inline]
+    fn write_u128(&mut self, v: u128) {
+        self.add(v as u64);
+        self.add((v >> 64) as u64);
+    }
+}
+
+/// [`FoldHasher`] 用の BuildHasher (HashMap の第 3 型引数に使う)。
+#[derive(Clone, Default)]
+pub struct FoldBuildHasher;
+
+impl BuildHasher for FoldBuildHasher {
+    type Hasher = FoldHasher;
+
+    #[inline]
+    fn build_hasher(&self) -> FoldHasher {
+        FoldHasher::default()
+    }
+}
 
 /// プール内実体を指す軽量 ID（コピー・比較が u32 1 個）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -28,7 +112,7 @@ struct Entry {
 
 /// 汎用インターンプール（値 → 単一実体）。
 pub struct InternPool<T: Hash + Eq> {
-    map: HashMap<T, InternId>,
+    map: HashMap<T, InternId, FoldBuildHasher>,
     entries: Vec<Entry>,
     values: Vec<Option<T>>,
     free_slots: Vec<u32>,
@@ -39,7 +123,7 @@ pub struct InternPool<T: Hash + Eq> {
 impl<T: Hash + Eq + Clone> InternPool<T> {
     pub fn new() -> Self {
         Self {
-            map: HashMap::new(),
+            map: HashMap::default(),
             entries: Vec::new(),
             values: Vec::new(),
             free_slots: Vec::new(),
