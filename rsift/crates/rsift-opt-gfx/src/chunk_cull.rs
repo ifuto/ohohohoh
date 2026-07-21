@@ -77,3 +77,145 @@ impl ChunkCullPass {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::binary_greedy_meshing::SectionPalette;
+
+    fn pass(view_radius_blocks: f32, visgraph: bool) -> ChunkCullPass {
+        ChunkCullPass {
+            view_radius_blocks,
+            visgraph_enabled: visgraph,
+            max_section_draw: SECTIONS_PER_COLUMN as u32,
+        }
+    }
+
+    fn air_sections(n: usize) -> Vec<RleSection> {
+        let air: SectionPalette = [0u16; 4096];
+        (0..n).map(|_| RleSection::encode(&air)).collect()
+    }
+
+    fn sections_with_one_block(n: usize) -> Vec<RleSection> {
+        let mut v = air_sections(n);
+        let mut p: SectionPalette = [0u16; 4096];
+        p[0] = 7; // 1 voxel だけ非空
+        v[0] = RleSection::encode(&p);
+        v
+    }
+
+    #[test]
+    fn all_air_column_is_empty_fast_path() {
+        let c = pass(128.0, false);
+        assert_eq!(
+            c.verdict_column(0, 0, 0.0, 0.0, &air_sections(4)),
+            CullVerdict::EmptyColumn
+        );
+    }
+
+    #[test]
+    fn empty_check_precedes_distance_check() {
+        // 遠方でも空列は EmptyColumn が返る順序 (早期 return の固定)。
+        let c = pass(128.0, false);
+        assert_eq!(
+            c.verdict_column(400, 0, 0.0, 0.0, &air_sections(4)),
+            CullVerdict::EmptyColumn
+        );
+    }
+
+    #[test]
+    fn beyond_view_radius_is_out_of_range() {
+        let c = pass(128.0, false);
+        // チャンク(20,0) 中心 (328,8): camera (0,0) から ~328 > 128。
+        assert_eq!(
+            c.verdict_column(20, 0, 0.0, 0.0, &sections_with_one_block(4)),
+            CullVerdict::OutOfRange
+        );
+    }
+
+    #[test]
+    fn in_range_occupied_column_is_visible() {
+        let c = pass(128.0, false);
+        assert_eq!(
+            c.verdict_column(0, 0, 0.0, 0.0, &sections_with_one_block(4)),
+            CullVerdict::Visible
+        );
+    }
+
+    #[test]
+    fn range_boundary_is_strictly_greater() {
+        // チャンク(0,0) 中心 (8,8) → dist = hypot(8,8) ≈ 11.313708。
+        let d = 8f32.hypot(8.0);
+        let inside = pass(d + 1e-3, false);
+        let outside = pass(d - 1e-3, false);
+        let secs = sections_with_one_block(4);
+        assert_eq!(
+            inside.verdict_column(0, 0, 0.0, 0.0, &secs),
+            CullVerdict::Visible
+        );
+        assert_eq!(
+            outside.verdict_column(0, 0, 0.0, 0.0, &secs),
+            CullVerdict::OutOfRange
+        );
+    }
+
+    #[test]
+    fn visgraph_enabled_never_returns_occluded_by_design() {
+        // 旧実装は近傍データ無しに Occluded を返してカメラ移動時に
+        // 「透明な穴」が開く事故を起こした。verdict_column は統計のみで
+        // チャンク丸ごとの遮蔽判定をしない、という設計決定を固定する。
+        let c = pass(128.0, true);
+        assert_eq!(
+            c.verdict_column(0, 0, 0.0, 0.0, &sections_with_one_block(4)),
+            CullVerdict::Visible
+        );
+    }
+
+    #[test]
+    fn apply_accumulates_each_verdict() {
+        let c = pass(128.0, false);
+        let mut st = CullStats::default();
+        for v in [
+            CullVerdict::Visible,
+            CullVerdict::EmptyColumn,
+            CullVerdict::Occluded,
+            CullVerdict::OutOfRange,
+            CullVerdict::Visible,
+        ] {
+            c.apply(v, &mut st);
+        }
+        assert_eq!(st.tested, 5);
+        assert_eq!(st.visible, 2);
+        assert_eq!(st.empty_skipped, 1);
+        assert_eq!(st.occluded_skipped, 1);
+        assert_eq!(st.range_skipped, 1);
+    }
+
+    #[test]
+    fn from_profile_floors_zero_advisory_distance_at_8_chunks() {
+        // 全 tier の render_distance は advisory 0 (vanilla 尊重)。
+        // from_profile は max(8) 適用で 8*16=128 blocks の下限になる。
+        use rsift_api::adaptive_perf::{AdaptivePerfEngine, HardwareProfile, PerformanceTier};
+        let hw = HardwareProfile {
+            tier: PerformanceTier::Minimal,
+            cpu_cores: 2,
+            cpu_threads: 4,
+            cpu_model: "bench-cpu".to_string(),
+            ram_gb: 4.0,
+            gpu_score: 0,
+            gpu_name: "bench-gpu".to_string(),
+            is_mobile_gpu: false,
+            is_software_renderer: true,
+            flagship_boost: false,
+        };
+        let profile = AdaptivePerfEngine::render_profile(&hw);
+        assert_eq!(profile.render_distance, 0); // 仕様の前提確認
+        let c = ChunkCullPass::from_profile(&profile);
+        assert_eq!(c.view_radius_blocks, 8.0 * 16.0);
+        assert_eq!(c.visgraph_enabled, profile.visgraph_occlusion);
+        assert_eq!(
+            c.max_section_draw as usize,
+            crate::binary_greedy_meshing::SECTIONS_PER_COLUMN
+        );
+    }
+}

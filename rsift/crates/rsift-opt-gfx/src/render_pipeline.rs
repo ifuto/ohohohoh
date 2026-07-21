@@ -1201,3 +1201,65 @@ pub fn vanilla_render_hook_hits() -> (u64, u64) {
         VANILLA_CHUNKLAYER_HITS.load(std::sync::atomic::Ordering::Relaxed),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// カメラ/フレーム定数テストはグローバルパイプライン経由のため、
+    /// テストスレッド並列での相互汚染を防ぐ直列化ロック。
+    /// (poison 耐性: 片方のテストが失敗しても他方へ伝播させない)
+    static CAMERA_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn camera_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        CAMERA_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn vanilla_hook_counters_are_monotonic_deltas() {
+        // 絶対値ではなくデルタで検証 (他テストや将来のフック経路と並列安全)。
+        let (g0, c0) = vanilla_render_hook_hits();
+        let r1 = note_vanilla_get_quads_hook();
+        let r2 = note_vanilla_get_quads_hook();
+        let r3 = note_vanilla_chunk_layer_hook();
+        let (g1, c1) = vanilla_render_hook_hits();
+        assert_eq!(g1 - g0, 2);
+        assert_eq!(c1 - c0, 1);
+        assert_eq!(r2, r1 + 1, "戻り値は加算後の累計");
+        assert!(r3 > c0);
+    }
+
+    #[test]
+    fn world_camera_roundtrip_degrees_to_radians() {
+        let _g = camera_test_guard();
+        set_world_camera(10.0, 70.0, -25.0, 90.0, 45.0);
+        let (x, y, z, yaw, pitch) = world_camera();
+        assert_eq!((x, y, z), (10.0, 70.0, -25.0));
+        // yaw_deg/pitch_deg はセット時にラジアン化されて保持される。
+        assert!((yaw - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert!((pitch - std::f32::consts::FRAC_PI_4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn production_frame_constants_track_camera_and_mesh_origin() {
+        let _g = camera_test_guard();
+        set_world_camera(10.0, 70.0, -25.0, 30.0, -10.0);
+        let fc = production_frame_constants().expect("pipeline must init lazily");
+        // mesh_origin の語彙はブロック座標で (chunk - 1) * 16
+        // (world_column_store::recompute_mesh_origin の実仕様。
+        //  カメラ (10,70,-25) → chunk (0,4,-2) → origin (-16,48,-48))。
+        assert_eq!(fc.chunk_origin, [-16.0, 48.0, -48.0, 0.0]);
+        for row in &fc.view_proj {
+            for v in row {
+                assert!(v.is_finite(), "view_proj must be finite, got {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn gpu_quad_bytes_absent_before_any_cpu_mesh_pass() {
+        // 新鮮状態 (frame()/CPU mesh 未実行) では publish も quad bytes も無く None。
+        // DX12 present 側の「無ければ描かない」前提を固定する。
+        assert!(last_gpu_quad_bytes().is_none());
+    }
+}
