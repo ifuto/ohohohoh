@@ -53,9 +53,7 @@ impl CompactChunkSection {
         match self {
             Self::SingleValue(_) => 2,
             Self::Bitpacked(sec) => {
-                std::mem::size_of::<BitpackedSection>()
-                    + sec.palette.len() * 2
-                    + sec.data.len() * 8
+                std::mem::size_of::<BitpackedSection>() + sec.palette.len() * 2 + sec.data.len() * 8
             }
         }
     }
@@ -96,7 +94,8 @@ impl BitpackedSection {
         } else {
             let first_part = self.data[word_idx] >> bit_offset;
             let second_bits = bit_offset + self.bits_per_block - 64;
-            let second_part = (self.data[word_idx + 1] & ((1u64 << second_bits) - 1)) << (64 - bit_offset);
+            let second_part =
+                (self.data[word_idx + 1] & ((1u64 << second_bits) - 1)) << (64 - bit_offset);
             ((first_part | second_part) & mask) as usize
         };
 
@@ -194,5 +193,62 @@ mod tests {
             "vanilla 4bit payload + header を超過: {footprint}"
         );
         assert!(footprint < 8192, "生 u16 セクション (8192B) より小さいこと");
+    }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+
+    #[test]
+    fn single_value_mode_and_expansion_semantics() {
+        let mut cs = CompactChunkSection::new_air();
+        assert_eq!(cs.memory_footprint_bytes(), 2, "SingleValue は 2B 固定");
+        for i in 0..64 {
+            assert_eq!(cs.get(i % 16, (i / 16) % 16, i / 256), 0);
+        }
+        cs.set(3, 4, 5, 7);
+        assert!(cs.memory_footprint_bytes() > 2, "expand で Bitpacked 化");
+        assert_eq!(cs.get(3, 4, 5), 7);
+        assert_eq!(cs.get(3, 4, 6), 0, "expand 前の air は保持");
+        assert_eq!(cs.get(0, 0, 0), 0);
+    }
+
+    /// 全 4096 セルへの決定的パターン書き込み→全セル読み戻しが厳密一致。
+    /// 2 段階書き (先に少数パレットで埋めてから 450 状態へ成長) で
+    /// パレット幅成長中の既存データ欠落を検出する。
+    #[test]
+    fn full_volume_roundtrip_across_palette_growth() {
+        let mut cs = CompactChunkSection::new_air();
+        // phase 1: 8 状態に限定
+        for i in 0..SECTION_VOL {
+            cs.set(i % 16, (i / 16) % 16, i / 256, (i % 8) as u16);
+        }
+        // phase 2: 450 状態へ拡張
+        for i in 0..SECTION_VOL {
+            cs.set(i % 16, (i / 16) % 16, i / 256, (i % 450) as u16);
+        }
+        for i in 0..SECTION_VOL {
+            let got = cs.get(i % 16, (i / 16) % 16, i / 256);
+            assert_eq!(got, (i % 450) as u16, "cell {i} corrupt after growth");
+        }
+        let foot = cs.memory_footprint_bytes();
+        // 幅 9 bit × 4096 = 4608B データ域。構造体+パレット込みで ~5.6KB 近傍。
+        assert!(
+            (4096..10240).contains(&foot),
+            "footprint {foot}B out of band for 450 states"
+        );
+    }
+
+    #[test]
+    fn max_state_id_roundtrips() {
+        // 16bit blockstate 全文域の端 (u16::MAX) でも可逆であること。
+        let mut cs = CompactChunkSection::new_air();
+        cs.set(0, 0, 0, u16::MAX);
+        cs.set(15, 15, 15, 0);
+        cs.set(7, 7, 7, 0x00FF);
+        assert_eq!(cs.get(0, 0, 0), u16::MAX);
+        assert_eq!(cs.get(15, 15, 15), 0);
+        assert_eq!(cs.get(7, 7, 7), 0x00FF);
     }
 }

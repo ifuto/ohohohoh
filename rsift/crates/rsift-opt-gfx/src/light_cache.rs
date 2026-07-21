@@ -92,7 +92,14 @@ impl LightPropagationCache {
     }
 
     /// BFS propagate block light within a section (opaque mask: true = blocks light).
-    pub fn propagate_dirty(&mut self, cx: i32, cy: i32, cz: i32, opaque: &[bool; SEC_VOL], max_steps: usize) -> u32 {
+    pub fn propagate_dirty(
+        &mut self,
+        cx: i32,
+        cy: i32,
+        cz: i32,
+        opaque: &[bool; SEC_VOL],
+        max_steps: usize,
+    ) -> u32 {
         let Some(sec) = self.sections.get_mut(&(cx, cy, cz)) else {
             return 0;
         };
@@ -170,5 +177,89 @@ mod tests {
         assert!(steps > 0);
         let (b, _) = c.get_light(2, 0, 0);
         assert!(b > 0 && b < 15);
+    }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+
+    #[test]
+    fn missing_section_reads_zero_even_at_negative_coords() {
+        let c = LightPropagationCache::new();
+        assert_eq!(c.get_light(0, 0, 0), (0, 0));
+        assert_eq!(c.get_light(-100, 320, 7), (0, 0));
+        assert_eq!(c.get_light(i32::MIN, i32::MIN, i32::MIN), (0, 0));
+    }
+
+    #[test]
+    fn set_emitter_clamps_preserves_sky_and_addresses_negative() {
+        let mut c = LightPropagationCache::new();
+        assert_eq!(c.set_emitter(3, 70, -5, 14), ());
+        assert_eq!(c.get_light(3, 70, -5), (14, 0));
+        c.set_emitter(3, 70, -5, 250);
+        assert_eq!(c.get_light(3, 70, -5).0, 15, "level は 15 に clamp");
+        // 負座標のアドレッシング (div_euclid/rem_euclid 規約) も往復する。
+        c.set_emitter(-8, -1, -3, 12);
+        assert_eq!(c.get_light(-8, -1, -3), (12, 0));
+        assert_eq!(c.get_light(-8, -1, -4), (0, 0), "近傍は非影響");
+        // sky ニブルは set_emitter が保持する。
+        {
+            let s = c.section_mut(0, 0, 0);
+            let (b, _) = s.get(5, 5, 5);
+            s.set(5, 5, 5, b, 9);
+        }
+        c.set_emitter(5, 5, 5, 7);
+        assert_eq!(c.get_light(5, 5, 5), (7, 9), "set_emitter は sky を保持");
+    }
+
+    #[test]
+    fn propagate_decrements_by_manhattan_distance_and_zero_beyond_15() {
+        let mut c = LightPropagationCache::new();
+        c.set_emitter(1, 1, 1, 15);
+        let opaque = [false; SEC_VOL];
+        let _ = c.propagate_dirty(0, 0, 0, &opaque, 10_000);
+        assert_eq!(c.get_light(2, 1, 1).0, 14, "dist 1");
+        assert_eq!(c.get_light(1, 3, 2).0, 12, "manhattan 3 → 15-3");
+        assert_eq!(c.get_light(1, 1, 15).0, 1, "dist 14 → 1");
+        assert_eq!(
+            c.get_light(15, 15, 15).0,
+            0,
+            "dist 42 > 15 → 減衰しきって 0"
+        );
+    }
+
+    #[test]
+    fn opaque_wall_blocks_propagation() {
+        let mut c = LightPropagationCache::new();
+        c.set_emitter(1, 1, 1, 15);
+        let mut opaque = [false; SEC_VOL];
+        // x=2 平面を全面壁に。
+        for y in 0..16 {
+            for z in 0..16 {
+                opaque[(y * 16 + z) * 16 + 2] = true;
+            }
+        }
+        let _ = c.propagate_dirty(0, 0, 0, &opaque, 10_000);
+        assert_eq!(c.get_light(3, 1, 1).0, 0, "壁の向こうは照らされない");
+        assert_eq!(c.get_light(1, 1, 1).0, 15, "エミッタ自身は残る");
+        assert_eq!(c.get_light(1, 2, 1).0, 14, "壁の手前側は通常どおり減衰");
+    }
+
+    #[test]
+    fn dirty_cleared_after_full_flood_and_zero_steps_is_noop() {
+        let mut c = LightPropagationCache::new();
+        c.set_emitter(1, 1, 1, 15);
+        let opaque = [false; SEC_VOL];
+        let first = c.propagate_dirty(0, 0, 0, &opaque, 10_000);
+        assert!(first > 0);
+        let second = c.propagate_dirty(0, 0, 0, &opaque, 10_000);
+        assert_eq!(second, 0, "完遂後 dirty=false で再 flood は no-op");
+        // max_steps=0: 何も処理されない (dirty は立ったまま消費されない)。
+        let mut c2 = LightPropagationCache::new();
+        c2.set_emitter(1, 1, 1, 15);
+        let s = c2.propagate_dirty(0, 0, 0, &opaque, 0);
+        assert_eq!(s, 0);
+        assert_eq!(c2.get_light(2, 1, 1).0, 0, "steps 消費 0 で伝播なし");
     }
 }
