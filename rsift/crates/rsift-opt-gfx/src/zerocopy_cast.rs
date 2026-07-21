@@ -49,9 +49,15 @@ mod tests {
     fn cast_bytes_to_slice_rejects_ragged_buffer() {
         let raw = [0u8; 13]; // 頂点 12B の倍数でない → None
         assert!(cast_bytes_to_slice::<Quantized12ByteVertex>(&raw).is_none());
-        let empty: [u8; 0] = [];
-        let ok: &[Quantized12ByteVertex] = cast_bytes_to_slice(&empty).unwrap();
-        assert!(ok.is_empty()); // 0 % 12 == 0 → Some(空)
+        // 空バッファは Some(空) (0 % 12 == 0)。bytemuck は bytemuck::cast_slice
+        // で目的型 align (4B) のポインタ検査を走らせるため、スタックの
+        // [u8; 0] (align 1、番地は実行依存) ではなく align(4) 保証の受け皿で
+        // 固定する (テストをポインタ配置の偶然に寄せない)。
+        #[repr(align(4))]
+        struct Aligned4([u8; 0]);
+        let empty = Aligned4([]);
+        let ok: &[Quantized12ByteVertex] = cast_bytes_to_slice(&empty.0).unwrap();
+        assert!(ok.is_empty());
     }
 
     #[test]
