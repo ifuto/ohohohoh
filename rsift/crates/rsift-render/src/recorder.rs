@@ -1,7 +1,7 @@
 //! Synchronous frame capture — fail-loud until a real encoder is plugged in.
 
-use tracing::{info, warn};
 use std::path::PathBuf;
+use tracing::{info, warn};
 
 pub struct FrameSyncRecorder {
     pub is_recording: bool,
@@ -61,5 +61,44 @@ impl FrameSyncRecorder {
             return;
         }
         self.frame_count += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn without_encoder_start_fails_loud_and_never_claims_recording() {
+        // 「フェイク MP4 成功を出さない」契約 (構造体フィールド doc) の機械固定。
+        let mut r = FrameSyncRecorder::new(1920, 1080, 60);
+        assert!(!r.encoder_available);
+        let err = r.start_recording("out.mp4").unwrap_err();
+        assert!(err.contains("no video encoder wired"));
+        assert!(!r.is_recording);
+        assert!(r.output_path.is_none());
+        r.on_frame_render(&[1, 2, 3, 4]);
+        assert_eq!(r.frame_count, 0, "非記録中のフレームは数えない");
+    }
+
+    #[test]
+    fn with_encoder_lifecycle_counts_only_nonempty_frames() {
+        let mut r = FrameSyncRecorder::new(1280, 720, 30);
+        r.encoder_available = true; // libav リンク済みの想定状態
+        r.start_recording("cap.mp4").expect("encoder wired");
+        assert!(r.is_recording);
+        assert_eq!(r.frame_count, 0);
+        r.on_frame_render(&vec![0u8; 1280 * 720 * 4]);
+        r.on_frame_render(&vec![1u8; 16]);
+        assert_eq!(r.frame_count, 2);
+        r.on_frame_render(&[]); // 空バッファは skip (warn)
+        assert_eq!(r.frame_count, 2, "empty RGBA は計数しない");
+        r.stop_recording();
+        assert!(!r.is_recording);
+        assert!(r.output_path.is_none());
+        // stop 後の二重 stop / on_frame_render は no-op。
+        r.stop_recording();
+        r.on_frame_render(&vec![9u8; 16]);
+        assert_eq!(r.frame_count, 2);
     }
 }

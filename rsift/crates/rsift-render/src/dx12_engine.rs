@@ -3,9 +3,13 @@
 //! 1) Windows 10/11 かつ D3D12 Agility 対応 GPU 環境では、低レイヤ明示的制御エンジン
 //!    `rsift-dx12` (`Root Signature 1.1`, `Static Samplers`, `Descriptor Heap Ring`,
 //!    `ExecuteIndirect`, `DirectStorage`) を自動選択・起動。
-//! 2) DX12 非対応の環境（Linux / macOS / Vulkan 専用 / 古い iGPU 等）では、自動的に
-//!    `wgpu / Vulkan Bindless` バックエンド (`rsift-opt-gfx`) へフォールバックし、
-//!    100% 同等のカリング・高速化パイプラインをシームレスに維持。
+//! 2) DX12 が使えない環境では opt-gfx の wiring 経路 (FullGraphWiring) を構築して
+//!    backend 簿記を `VulkanWgpuBindless` とする。【2026-07-21 監査の事実注記】
+//!    game 内の **present** は Vulkan/wgpu では未実装であり、実際の描画経路は
+//!    rsift-jvm `render_bridge` のバックエンドラダー (DX12 present → GL パス
+//!    スルー) が担う。このブリッジはランチャープロセスの初期化健全性確認
+//!    (game dir 検出 + wiring 構築) と backend 種別の簿記が実役割であり、
+//!    「wgpu で描画が維持される」ことを意味しない。
 
 use rsift_api::engine_caps::{EngineCaps, RenderBackend};
 use tracing::{info, warn};
@@ -77,21 +81,22 @@ impl Dx12RenderBridge {
                     });
                 }
                 Err(e) => {
-                    warn!("[RenderBridge] DirectX 12 Agility initialization check: {} — automatically falling back to Vulkan / wgpu bindless engine", e);
+                    warn!("[RenderBridge] DirectX 12 Agility initialization check: {} — building opt-gfx wiring path instead (present は ladder に委譲)", e);
                 }
             }
         }
 
         #[cfg(not(windows))]
         {
-            info!("[RenderBridge] Non-Windows OS detected — auto-selecting Vulkan / wgpu bindless engine");
+            info!("[RenderBridge] Non-Windows OS detected — DX12 is unavailable; building opt-gfx wiring path (present は render_bridge ラダー側)");
         }
 
-        // Automatic seamless fallback to Vulkan / wgpu Bindless backend (`rsift-opt-gfx`)
+        // opt-gfx wiring 経路 (FullGraphWiring) の構築。present は rsift-jvm の
+        // render_bridge ラダー (DX12 or GL passthrough) が担う (2026-07-21 注記)。
         info!("========================================================================");
-        info!(" ⚡ [RenderBridge] Active Hardware Backend: Vulkan / wgpu Bindless Pipeline");
-        info!("    Engine: rsift-opt-gfx v2.0 (100% Feature & Culling Parity Maintained)");
-        info!("    Features: SoA AVX2/SWAR Frustum | FastEntityCuller V2 | 12B Quantized");
+        info!(" ⚡ [RenderBridge] opt-gfx wiring path built (backend ledger: Vulkan/wgpu)");
+        info!("    Present: DX12 present or GL passthrough via rsift-jvm render_bridge");
+        info!("    CPU features: SoA AVX2/SWAR Frustum | FastEntityCuller V2 | 12B Quantized");
         info!("========================================================================");
         // 経路の構築健全性を実確認 (破棄するが、生成時に実ゲームディレクトリの
         // キャッシュ配置 (.rsift_cache) まで検証される)。game dir は
@@ -138,4 +143,41 @@ pub fn frame_counters() -> (u64, u64) {
 
 pub fn init_render_engine() -> Result<Dx12RenderBridge, String> {
     Dx12RenderBridge::initialize()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_labels_are_distinct_and_nonempty() {
+        let a = ActiveRenderBackend::DirectX12Explicit.as_str();
+        let b = ActiveRenderBackend::VulkanWgpuBindless.as_str();
+        assert_ne!(a, b);
+        assert!(a.contains("DirectX 12") && b.contains("wgpu") || b.contains("Vulkan"));
+    }
+
+    #[test]
+    fn phase_report_uses_ledger_value_for_wgpu_arm() {
+        let bridge = Dx12RenderBridge {
+            engine: None,
+            caps: None,
+            active_backend: ActiveRenderBackend::VulkanWgpuBindless,
+        };
+        assert_eq!(bridge.phase_report(), "backend=vulkan_wgpu_bindless_v2");
+        // DX12 選択中に engine が無い異常系では明示フォールバック文字列。
+        let anomalous = Dx12RenderBridge {
+            engine: None,
+            caps: None,
+            active_backend: ActiveRenderBackend::DirectX12Explicit,
+        };
+        assert_eq!(anomalous.phase_report(), "dx12=active_explicit");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn frame_counters_are_zero_off_windows() {
+        // cfg スタンドインの契約固定 (非 Windows で (0,0))。
+        assert_eq!(frame_counters(), (0, 0));
+    }
 }
