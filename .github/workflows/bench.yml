@@ -1,0 +1,134 @@
+# ================================================================
+# 【設置用テンプレート】このファイルの中身を GitHub Web UI で
+#   .github/workflows/bench.yml
+# としてコミットしてください (ブランチ: arena/019f79db-rsift)。
+# AI のトークンは workflows 権限を持たないため .github/workflows 配下を
+# push できません。設置後は ci/TRIGGER.md 更新だけで AI が CI を起動できます。
+# ================================================================
+
+# bench-ci — AI エージェント用のテスト & ベンチ実行ワークフロー
+#
+# トリガー:
+#   1) push: ci/TRIGGER.md (囮ファイル) が変更された push だけで起動。
+#      AI が CI を回したいときは ci/TRIGGER.md のカウンタを +1 して push するだけ。
+#      実コードの無関係な push では走らないので、プライベートリポジトリの
+#      Actions 無料枠 (2,000 分/月) を節約できる。
+#   2) workflow_dispatch: Actions タブからの手動実行も可。
+#
+# 実行内容 (ローカルの Rust ツールチェーンが使えない環境からの代替検証を兼ねる):
+#   - rsift-opt-gfx の lib テスト (cargo test --lib --locked)
+#   - pseudo_mc_bench 例を release ビルド → 2 回連続実行
+#   - 時間フィールドをマスクした「決定的ダイジェスト」同士を diff
+#     (誤順率・頂点数・bytes・ACMR・フォールバック実績などの
+#      カウント由来フィールドが bit 同一であることを検証)
+#   - wide_static_bench (350+ 行の広域静的ベンチ) を 2 回実行し
+#     structural_digest 行が一致することを検証 (最適化の出力 bit 同一性ゲート)
+#   - 生ログ run1/run2 + フィルタ済 + diff をアーティファクトとして保存
+#
+# 注記:
+#   - ワークスペースはリポジトリ直下の rsift/ サブディレクトリ。
+#   - fmt/clippy は既存ベースライン差分・警告が残っているため CI では検査しない
+#     (ローカルで「自分の編集 hunk のみ fmt-clean / 新規警告 0」規律で確認済)。
+#   - actions はタグ指定 (dtolnay/rust-toolchain@stable, Swatinem/rust-cache@v2)。
+#     より厳格にするならコミット SHA ピンに変更すること。
+name: bench-ci
+
+on:
+  push:
+    paths:
+      - 'ci/TRIGGER.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  RUST_BACKTRACE: 1
+
+jobs:
+  test-and-bench:
+    name: test + pseudo_mc_bench x2 (determinism check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rsift
+
+      - name: lib tests (rsift-opt-gfx)
+        working-directory: rsift
+        run: cargo test -p rsift-opt-gfx --lib --locked
+
+      - name: build pseudo_mc_bench (release)
+        working-directory: rsift
+        run: cargo build --release -p rsift-opt-gfx --example pseudo_mc_bench --locked
+
+      - name: run bench twice + determinism diff
+        working-directory: rsift
+        run: |
+          set -euo pipefail
+          OUT=../bench-out
+          mkdir -p "$OUT"
+          rustc -Vv | tee "$OUT/toolchain.txt"
+          BIN=target/release/examples/pseudo_mc_bench
+          "$BIN" > "$OUT/run1.txt" 2>&1
+          "$BIN" > "$OUT/run2.txt" 2>&1
+          # 決定的ダイジェストの作り方:
+          #  1) Duration {:?} リテラル (例 54.3ms / 2.4µs / 1.266s / 799ns) を <T> にマスク
+          #  2) 合成 FPS 行 ("{:.2} ms" のように空白つき) と speedup 行は時間由来の
+          #     裸の浮動小数点を含むため行ごと除外。
+          #  誤順率・頂点数・bytes・ACMR・hit率・フォールバック実績・可視セクション数
+          #  などのカウント由来フィールドは全て残る → bit 同一性の検証対象となる。
+          filter() {
+            grep -vE ' ms |speedup vs A' "$1" | sed -E 's/[0-9]+(\.[0-9]+)?(ns|µs|ms|s)\b/<T>/g'
+          }
+          filter "$OUT/run1.txt" > "$OUT/run1.filtered.txt"
+          filter "$OUT/run2.txt" > "$OUT/run2.filtered.txt"
+          if diff -u "$OUT/run1.filtered.txt" "$OUT/run2.filtered.txt" > "$OUT/diff12.txt"; then
+            echo "DETERMINISM OK: run1 == run2 (時間フィールドを除く全出力が一致)"
+          else
+            echo "DETERMINISM MISMATCH — diff12.txt:"
+            cat "$OUT/diff12.txt"
+            exit 1
+          fi
+          sha256sum "$OUT"/run1.txt "$OUT"/run2.txt | tee "$OUT/sha256.txt"
+
+      - name: wide_static_bench twice + structural digest match
+        working-directory: rsift
+        run: |
+          set -euo pipefail
+          OUT=../bench-out
+          cargo build --release -p rsift-opt-gfx --example wide_static_bench --locked
+          BIN=target/release/examples/wide_static_bench
+          "$BIN" > "$OUT/wide1.txt"
+          "$BIN" > "$OUT/wide2.txt"
+          grep structural_digest "$OUT/wide1.txt" | tee "$OUT/wide_digest1.txt"
+          grep structural_digest "$OUT/wide2.txt" | tee "$OUT/wide_digest2.txt"
+          if ! diff -u "$OUT/wide_digest1.txt" "$OUT/wide_digest2.txt"; then
+            echo "WIDE STRUCTURAL DIGEST MISMATCH (出力構造が実行間で変化)"
+            exit 1
+          fi
+          echo "WIDE DETERMINISM OK: structural_digest 一致"
+          grep -c ' INVESTIGATE' "$OUT/wide1.txt" | tee "$OUT/wide_flagged_count.txt"
+
+      - name: show bench log (run1)
+        if: always()
+        working-directory: rsift
+        run: cat ../bench-out/run1.txt || true
+
+      - name: upload bench logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-logs-run-${{ github.run_number }}
+          path: bench-out/
+          retention-days: 30
