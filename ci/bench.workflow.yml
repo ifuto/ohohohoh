@@ -21,6 +21,8 @@
 #   - 時間フィールドをマスクした「決定的ダイジェスト」同士を diff
 #     (誤順率・頂点数・bytes・ACMR・フォールバック実績などの
 #      カウント由来フィールドが bit 同一であることを検証)
+#   - wide_static_bench (233 行の広域静的ベンチ) を 2 回実行し
+#     structural_digest 行が一致することを検証 (最適化の出力 bit 同一性ゲート)
 #   - 生ログ run1/run2 + フィルタ済 + diff をアーティファクトとして保存
 #
 # 注記:
@@ -99,6 +101,24 @@ jobs:
             exit 1
           fi
           sha256sum "$OUT"/run1.txt "$OUT"/run2.txt | tee "$OUT/sha256.txt"
+
+      - name: wide_static_bench twice + structural digest match
+        working-directory: rsift
+        run: |
+          set -euo pipefail
+          OUT=../bench-out
+          cargo build --release -p rsift-opt-gfx --example wide_static_bench --locked
+          BIN=target/release/examples/wide_static_bench
+          "$BIN" > "$OUT/wide1.txt"
+          "$BIN" > "$OUT/wide2.txt"
+          grep structural_digest "$OUT/wide1.txt" | tee "$OUT/wide_digest1.txt"
+          grep structural_digest "$OUT/wide2.txt" | tee "$OUT/wide_digest2.txt"
+          if ! diff -u "$OUT/wide_digest1.txt" "$OUT/wide_digest2.txt"; then
+            echo "WIDE STRUCTURAL DIGEST MISMATCH (出力構造が実行間で変化)"
+            exit 1
+          fi
+          echo "WIDE DETERMINISM OK: structural_digest 一致"
+          grep -c ' INVESTIGATE' "$OUT/wide1.txt" | tee "$OUT/wide_flagged_count.txt"
 
       - name: show bench log (run1)
         if: always()

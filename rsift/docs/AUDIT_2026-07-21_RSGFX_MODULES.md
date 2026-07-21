@@ -234,3 +234,90 @@ example ベンチ経由で実動作が間接検証されているが、単体不
 - clippy: 編集箇所に新規警告 0 (agent_bridge `MAX_INJECT_TICKS` デッド const は
   上記スキップ基準で保持。`is_multiple_of` 等は新 clippy による旧コードへの
   ベースライン指摘)。
+
+---
+
+# 第3ラウンド (2026-07-21 後半): 広域静的ベンチ + 計測駆動改善 + コア経路テスト
+
+ユーザー指示: 「様々な分野 (数百種類前後) で静的ベンチマークを行い、あまりに
+よくない結果が出た部分を優良になるまで改善」「基本は DX12、不可能なら旧 DX、
+それより Vulkan が優れるなら Vulkan」「①(e2e slice) と ③(zero-test カバー)」。
+
+## A. 描画バックエンドラダー (コミット e76248b、ユーザー方針のコード化)
+- `rsift-render/src/backend.rs` 新設: `RenderBackendKind { Dx12, Dx11,
+  VulkanWgpu, GlPassthrough }`。present 実装済は Dx12 と GlPassthrough のみ
+  (実装事実をコードに固定)。`BackendProbe` 既定は dx12=Unknown /
+  dx11,vulkan=Unsupported (旧 DX/Vulkan present 本体は未実装 = 実態通り)。
+- `render_bridge::ensure_engine` に配線: ラダー選択 → DX12 init 成功で proxy
+  enable + realized(Dx12) 記録。失敗時は fail-loud (agent_log) して GL パススルー
+  へ降格 + realized(GlPassthrough) 記録。GL 確定後は DX12 create を再試行しない。
+- 重大バグを同時修正: `const REALIZED: AtomicU8` は使用箇所ごとにコピー化
+  され compare_exchange が全く効かなかった (警告 + テスト FAIL) → `static` 化。
+- 強制指定はシステムプロパティ語彙 `rsift.render.backend = dx12|dx11|vulkan|gl|auto`。
+
+## B. 広域静的ベンチ `wide_static_bench` (rsift-opt-gfx examples)
+- 目的: 分野横断の静的 CPU 計測で「弱い行」を決定的に洗う土台。
+  全入力が splitmix64 固定シード生成 (GPU/ネット/時刻不依存、2コア/3GB で動く)。
+- 行 = 分野 × パラメータセル。**147 → 233 行**へ拡大 (rle_decode 追加、
+  mesh/cull/dda/entity 全 8 パターン化、lbvh 2^14/2^20 追加、visibility_flood
+  新分野 等)。実行 ~3 秒、median 合計 ~0.68 秒 → CI に載せられる重さ。
+- **structural digest**: 時刻列を除いた `domain|case|aux` テーブルの
+  DefaultHasher 値を常時表示。現行 `90254e333370d418` (rows=233)。
+  消化中の最適化が出力集合・順序・構造値を変えないことを 2 回連続実行で確認する
+  運用 (今回の全 3 改善で digest 不変を実証済)。
+- 再現手順: `cargo run --release --locked --offline --example wide_static_bench`。
+
+## C. ベンチ方法論の自己修正 (フェイク計測の排除記録)
+1. 純算術ループ (packed4/morton/blocklut/meshlet) がコンパイラの代数的畳込みで
+   **0.0ns に偽装**されていた → `black_box` で実測化 (5.5ns/2.8ns/2.6ns/5.5ns)。
+2. quant12 は計測内の rng 生成コスト (~16ns/v) が支配 → 事前生成に修正
+   (系列同一 seed で sum_* の bit 同一性を保ったまま公平化)。
+3. leaf_fast_path: 計測クロージャ内で `gen_section` まで計っていたため noise の
+   生成コスト (2^3 多数決 hash) が apply 本体に帰属 → apply 実コストは一律
+   ~2.9µs と判明。さらに旧 8 パターンは全て非葉 id で変換経路が未実測だった
+   → forest_leaf パターン新設 (delta_idsum=39537 を初めて実測)。
+4. lbvh_cull の INVESTIGATE フラグは ops=1 正規化の罠 (n スケーリング誤検出)
+   → ops=n に修正。残フラグ 16 件は全て分類済: lz4/zstd の noise/caves/dense8
+   行と mesh_section caves 行, forest_leaf 行 = **入力構造起因の良性**
+   (圧縮率・面数・葉処理量がパターン依存なだけで欠陥ではない)。
+
+## D. 実測駆動の改善 (全て digest 不変 / fuzz で出力 bit 同一性を証明)
+| 改善 | 実測 (median) |
+|---|---|
+| メッシャー `greedy_axis_pull` 層マスク ホイスト (Y走査ループ内で全4096voxel再計算 ×32回/section → ループ外 1 回) | mesh_column8 flat **484→136µs (-72%)** / noise 1027→705µs / caves 1912→1687µs / dense8 534→226µs / column_scale noise h=16 2137→1465µs |
+| LBVH 二段カリング (CULL_RUN=32 の morton 連続 run 包含球で一括 reject/accept) | cull 2^18 **2758→712µs (-74%)** / 2^16 364→125µs。build は run_bounds 追加で **+12-15% 悪化 (3.44→3.91ms @2^16)** — 明記 (build:query の利用比率で採用) |
+| LBVH morton 順ソート葉 (境界 run の per-leaf が `centers[order[i]]` ランダムギャザーで 2^20 5.7ns/leaf 劣化 → sorted_centers/radii 連続読み) | cull 2^20 **5.97→0.86ms (-86%)** / 2^18 646→240µs。build 追加コスト **+8.6% @2^16 / +25% @2^20 (134→168ms)** — 明記 |
+- 等価性証明: `accelerated_cull_matches_naive_fuzz` (sizes {0,1,31,32,33,512,5000}
+  × 5 平面集合) で二段カリング=素朴総当たりを集合・順序ともに bit 等価と確認
+  (ソート葉適用後も同一テスト緑)。
+
+## E. 監査発見の実修正 (③テスト駆動)
+1. **visibility_graph**: `visible_bits` は書き込み経路ゼロで `is_visible` が
+   **恒 false のセマンティックスタブ**、旧 bit 写像 `(dx+dz*8)%64` も
+   (0,1)/(8,0) 衝突で破綻。→ flood_fill 到達集合を start チャンク単位で実
+   キャッシュ化 (cap 1024)、is_visible は実参照に。利用経路 (flood_fill →
+   reachable count) の公開挙動は不変。
+2. **mesh_cache**: キー不在の get が misses に計上されず (0,0) → 不在参照も
+   miss 計上に修正 (stats() 消費者は現状 0、語彙の対称化)。
+3. render_pipeline: テストが初めて文書化した実仕様 — camera は度で受け rad
+   保持、frame 定数の chunk_origin はブロック座標の `(chunk-1)*16`、
+   CPU mesh 未実行時は quad bytes None (DX12 「無ければ描かない」)。
+
+## F. ③ テストカバー達 (zero-test コア 5 モジュール → 全カバー)
+visibility_graph 6 / pull_mesh 5 / chunk_cull 8 / mesh_cache 8 (実ディスク往復)
+/ render_pipeline 4 (直列化+poison 耐性のグローバル状態テスト) = **+31 件、
+opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は非コア
+(描画後段・実験系) が中心で、重要度順に今後追加していく方針。
+
+## G. 残課題 (正直棚卸し)
+- INVESTIGATE 16 行は良性分類だが、mesh_section caves (47ns/voxel) のような
+  面碎け入力での絶対コストは今後の計量対象として残す (Sodium 同等クラスの
+  実測レンジ内という評価: 推測ではなく同一 sandbox の自己比較による)。
+- 旧 DX (Dx11) / Vulkan present 本体は未実装 (backend.rs に Unsupported 固定済)。
+  実機検証はユーザー PC 依存 — sandbox は GPU 無し。
+- bench CI (GitHub Actions) はユーザー復旧待ち: agent トークンは
+  `.github/workflows` 書き込みも `gh workflow run` も 403。素材
+  (`ci/bench.workflow.yml` + `ci/TRIGGER.md`) は branch に push 済み、
+  main へペーストすれば workflow_dispatch で回せる構成。
+- 行列は 233 行。「数百種類前後」の上限方向へは seed/規模掃引で継続拡大余地
+  あり (実行 ~3 秒なので倍増しても CI 適性内)。
