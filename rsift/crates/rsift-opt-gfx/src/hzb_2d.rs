@@ -252,7 +252,16 @@ impl Hzb2D {
         boxes: &[ChunkBoundingBox],
         camera: CameraState,
     ) -> Vec<usize> {
-        if !self.enabled || self.skip_frame {
+        if !self.enabled {
+            return (0..boxes.len()).collect();
+        }
+        if self.skip_frame {
+            // 消費型 1 フレームスキップ (CAMERA_TELEPORT_BLOCKS の意図通り)。
+            // begin_frame は本メソッド内でしか呼ばれないため、ここで解除しないと
+            // 一度のテレポートで skip_frame が真のまま固まり Hi-Z が**永久無効化**
+            // していた (render_pipeline.rs は begin_frame を外部呼出ししない)。
+            // 旧実装は return のみ — 2026-07-22 監査で摘出・修正。
+            self.skip_frame = false;
             return (0..boxes.len()).collect();
         }
 
@@ -333,5 +342,48 @@ mod tests {
             assert!(!hzb.temporal_cull((0, 0), true));
         }
         assert!(hzb.temporal_cull((0, 0), true));
+    }
+
+    /// 回帰 (2026-07-22): skip_frame が解除されず Hi-Z が永久無効化していた。
+    /// stats.1 (tested) の増分で「スキップ/回復」を観測する:
+    /// スキップフレームは早期 return で tested が進まない。
+    #[test]
+    fn teleport_skip_is_consumed_and_recovers() {
+        let mk = |min: [f32; 3], max: [f32; 3], i: u32| ChunkBoundingBox {
+            min_xyz: min,
+            is_visible: 1,
+            max_xyz: max,
+            chunk_index: i,
+            bindless_texture_id: 0,
+            _pad: [0; 3],
+        };
+        let boxes = vec![
+            mk([-8.0, 60.0, 8.0], [8.0, 76.0, 24.0], 0),
+            mk([100.0, 60.0, 100.0], [116.0, 76.0, 116.0], 1),
+        ];
+        let cam_a = CameraState {
+            x: 0.0, y: 64.0, z: 0.0, yaw: 0.0, pitch: 0.0,
+            fov_y: 1.0, aspect: 1.0,
+        };
+        let cam_b = CameraState { x: 100.0, ..cam_a }; // XZ 移動 100 > 2 (テレポート)
+
+        let mut h = Hzb2D::new(256, 256, true);
+        let n = boxes.len() as u64;
+        h.cull_boxes(&boxes, cam_a); // 通常フレーム
+        assert_eq!(h.stats().1, n);
+        h.cull_boxes(&boxes, cam_a);
+        assert_eq!(h.stats().1, 2 * n);
+
+        h.cull_boxes(&boxes, cam_b); // 着弾フレーム: begin が skip を武装、カリング自体は実行
+        assert_eq!(h.stats().1, 3 * n);
+        let skipped = h.cull_boxes(&boxes, cam_b); // skip 消費: 保守的に全可視
+        assert_eq!(skipped, (0..boxes.len()).collect::<Vec<_>>());
+        assert_eq!(h.stats().1, 3 * n, "skip フレームは tested を進めない");
+        h.cull_boxes(&boxes, cam_b); // 回復: カリング再開
+        assert_eq!(
+            h.stats().1,
+            4 * n,
+            "回帰: 旧実装は skip_frame が解除されず tested が永久に進まなかった"
+        );
     }
 }

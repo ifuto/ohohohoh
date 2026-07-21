@@ -70,3 +70,43 @@ impl RsiftModernBootSplash {
         self.is_active = false;
     }
 }
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+
+    #[test]
+    fn default_state_is_inactive_with_initial_stage() {
+        let s = RsiftModernBootSplash::new();
+        assert!(!s.is_active, "起動時は非アクティブ (Mojang 画面は差し替えない)");
+        assert_eq!(s.current_stage.step_name, "Initializing Rsift Native Engine...");
+        assert_eq!((s.current_stage.current, s.current_stage.total), (0, 100));
+        let d = RsiftModernBootSplash::default();
+        assert_eq!(d.current_stage.step_name, s.current_stage.step_name, "Default == new()");
+        assert!(!d.is_active);
+    }
+
+    #[test]
+    fn activate_update_finish_lifecycle() {
+        let mut s = RsiftModernBootSplash::new();
+        s.render_splash_frame(); // 非アクティブでも早期 return でパニックしない
+        s.activate_override();
+        assert!(s.is_active);
+        s.update_progress("Loading native libraries", 42, 100);
+        assert_eq!(s.current_stage.step_name, "Loading native libraries");
+        assert_eq!((s.current_stage.current, s.current_stage.total), (42, 100));
+        s.render_splash_frame(); // アクティブ時: ログ出力のみ (HWND 差し替えはしない、がクラッシュもしない)
+        s.finish_and_fade_out();
+        assert!(!s.is_active, "finish で非アクティブへ");
+        s.render_splash_frame(); // 非アクティブ復帰後も安全
+    }
+
+    #[test]
+    fn zero_total_progress_never_panics() {
+        let mut s = RsiftModernBootSplash::new();
+        s.activate_override();
+        s.update_progress("indeterminate", 5, 0);
+        assert_eq!((s.current_stage.current, s.current_stage.total), (5, 0), "値は検証せず透過保管");
+        s.render_splash_frame(); // total==0 の除算ガード経路
+    }
+}

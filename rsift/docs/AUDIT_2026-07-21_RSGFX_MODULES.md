@@ -441,3 +441,40 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   スナップショットに `mod_menu_detail_lines` フィールド追加 (serde 加算的)。
   rsift-jvm は bench-ci の -p rsift-opt-gfx 経路に含まれないため、本変更の
   同クレート (platform_bridge) コンパイル確認はローカル/インストーラ経路要。
+
+## H. zero-test 第6波: 簿記/環境構築系 8 モジュール消化 + 横断潜伏バグ 3 件修正 (2026-07-22)
+- **テスト追加 (opt-gfx 496 → 527, +31)**:
+  descriptor_heap_ring (逐次 offset 規則・境界 wrap 保守設計の固定・full wrap・
+  reset・**u32 境界回帰**・Dual リング隔離 — 6), enhanced_barriers (transition/UAV
+  フィールド厳密表・flush の挿入順+drain — 3), boot_splash (既定状態・
+  ライフサイクル・total=0 防衛 — 3), adaptive_shading (skip_stride 表・48/96 の
+  厳格大なり境界・モーション 8.0 包含閾値・checkerboard パリティ遷移・
+  **ジオメトリ非カリング誠実仕様** — 5), pso_library_cache (miss/hit 帳簿+上書き・
+  **12B レコード wire 厳密**・親 dir 生成・既存 blob 無視設計 — 4),
+  root_signature_optimized (graphics レイアウト厳密表・コスト重み表・
+  **D3D12 64 DWORD 予算不変式** — 3), cpu_occlusion (固定カメラ/adaptive+任意
+  カメラの**委譲 bit 一致** 2 経路 — 2), simd_kernels_avx2 (空/全填・
+  単 voxel 単 bit・独立走査順オラクル fuzz・z ガード — 4)。
+  別途 hzb_2d に回帰テスト +1。
+- **修正1 (hzb_2d) — Hi-Z 永久無効化**: テレポート検出で立つ skip_frame が
+  誰にも解除されず、以後 cull_boxes が常に早期 return (保守的全可視) となった。
+  本クレート唯一の外部呼出経路 `render_pipeline.rs:815
+  (cull_boxes_with_camera)` は begin_frame を呼ばないため、1 度の視点移動
+  (XZ 2 ブロック or 視線角 0.08 rad) で遮蔽カリングが静かに死ぬ実害があった。
+  早期 return を「消費型 1 フレームスキップ」に修正し、回帰テスト
+  `teleport_skip_is_consumed_and_recovers` で tested 帳簿の再開を固定。
+- **修正2 (descriptor_heap_ring) — u32 overflow**: alloc の `start + count` が
+  u32 境界を跨ぐ組合せで debug ビルドは panic・release は暗黙 wrap → 
+  `saturating_add` に置換 (非 overflow 入力では厳密同値、wrap 分岐の条件も
+  飽和後値で単調)。回帰テスト `no_overflow_when_head_near_u32_max`。
+- **修正3 (simd_kernels_avx2) — クロスアーキテクチャ出力乖離**: 非 x86_64
+  fallback が「スラブ全域 any() で 0xFFFF 全立ち」の別物実装で x 位置情報を
+  喪失していた。全アーキテクチャ単一実装に統一 (x86_64 経路はループ同形で
+  出力 bit 不変)。併せて無根拠な「100倍高速化」主張を撤去し、自動ベクトル化
+  委譲の実態を明記。
+- **文書訂正 (pso_library_cache)**: 「キャッシュがあればヒットとして扱う」は
+  虚偽 (実態は読み捨て・復元なし) → new() に「12B ワイヤ形式は全エントリ復元
+  に不足するためロードしない設計」と明記。dead な read 分岐を撤去。
+- (運用メモ) 本波着手時にサンドボックスの git ref がベースコミットへ巻き
+  戻っており、リモートブランチ (CI 緑の最新) を正として `--mixed` 復旧した上で
+  作業。リモートの CI 成功群は全てこの後の push でも損なわれない。
