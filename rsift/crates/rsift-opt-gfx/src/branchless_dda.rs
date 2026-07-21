@@ -78,7 +78,11 @@ pub fn trace_section(palette: &SectionPalette, ray: &Ray3, max_steps: u32) -> Op
         ((if step[1] > 0 { vy + 1 } else { vy }) as f32 - ray.origin[1]) * inv[1],
         ((if step[2] > 0 { vz + 1 } else { vz }) as f32 - ray.origin[2]) * inv[2],
     ];
-    let t_delta = [step[0] as f32 * inv[0], step[1] as f32 * inv[1], step[2] as f32 * inv[2]];
+    let t_delta = [
+        step[0] as f32 * inv[0],
+        step[1] as f32 * inv[1],
+        step[2] as f32 * inv[2],
+    ];
 
     for s in 0..max_steps {
         if vx >= 0
@@ -98,7 +102,13 @@ pub fn trace_section(palette: &SectionPalette, ray: &Ray3, max_steps: u32) -> Op
                     steps: s,
                 });
             }
-        } else if vx < 0 || vy < 0 || vz < 0 || vx >= SECTION_SIZE as i32 || vy >= SECTION_SIZE as i32 || vz >= SECTION_SIZE as i32 {
+        } else if vx < 0
+            || vy < 0
+            || vz < 0
+            || vx >= SECTION_SIZE as i32
+            || vy >= SECTION_SIZE as i32
+            || vz >= SECTION_SIZE as i32
+        {
             return None;
         }
 
@@ -162,5 +172,103 @@ mod tests {
         let p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
         let ray = Ray3::new([0.0, 0.5, 0.5], [1.0, 0.0, 0.0]);
         assert!(trace_section(&p, &ray, 32).is_none());
+    }
+}
+
+#[cfg(test)]
+mod spec_tests {
+    use super::*;
+
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^ (z >> 31)
+        }
+    }
+
+    /// z >= z0 が全層 solid (block 7) のスラブ。+z 方向に撃った ray の
+    /// 最初の接触 voxel は必ず z == z0 (DDA の tie-breaking 順序に左右されない
+    /// 幾何学的に強制される性質で、実装と独立に検証できる)。
+    #[test]
+    fn slab_entry_is_nearest_boundary_regardless_of_tie_order() {
+        let mut p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        for z in 9..SECTION_SIZE {
+            for y in 0..SECTION_SIZE {
+                for x in 0..SECTION_SIZE {
+                    p[idx(x, y, z)] = 7;
+                }
+            }
+        }
+        let mut rng = Rng(0xDDA5);
+        for _ in 0..32 {
+            let ox = (rng.next() % 130) as f32 / 10.0 + 1.0;
+            let oy = (rng.next() % 130) as f32 / 10.0 + 1.0;
+            // +z 優勢・小さな x/y ドリフト (6.4 voxel 進むまでに x,y は 16 未満に留まる)。
+            let sx = (rng.next() % 21) as f32 / 100.0 - 0.10;
+            let sy = (rng.next() % 21) as f32 / 100.0 - 0.10;
+            let dz = 1.0f32;
+            let l = (sx * sx + sy * sy + dz * dz).sqrt();
+            let ray = Ray3::new([ox, oy, 1.0], [sx / l, sy / l, dz / l]);
+            let hit = trace_section(&p, &ray, 128).expect("ray must reach slab");
+            assert_eq!(hit.block, 7);
+            assert_eq!(hit.z, 9, "entry face of uniform slab must be nearest layer");
+            assert!(hit.x < SECTION_SIZE && hit.y < SECTION_SIZE);
+        }
+    }
+
+    #[test]
+    fn origin_inside_solid_returns_steps_zero() {
+        let mut p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        p[idx(0, 0, 0)] = 9;
+        let ray = Ray3::new([0.5, 0.5, 0.5], [1.0, 0.0, 0.0]);
+        let hit = trace_section(&p, &ray, 8).unwrap();
+        assert_eq!(hit.steps, 0, "始点 voxel の固体判定は 0 step で返る");
+        assert_eq!((hit.x, hit.y, hit.z, hit.block), (0, 0, 0, 9));
+    }
+
+    /// 空セクションに単一ブロックのみ置き、その中心へ撃つ fuzz。
+    /// 非 air voxel が 1 つしかないため、命中座標の幾何学的正解が唯一 —
+    /// 誤った voxel 踏破順序や境界すり抜けを検出する tie 安全オラクル。
+    #[test]
+    fn single_block_enclosure_fuzz_hits_exact_voxel() {
+        let mut rng = Rng(0xB10C);
+        for case in 0..40u32 {
+            let bx = (rng.next() % 16) as usize;
+            let by = (rng.next() % 16) as usize;
+            let bz = (rng.next() % 16) as usize;
+            let mut p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+            p[idx(bx, by, bz)] = 13;
+            // 始点はセクション反対角寄り (ブロック中心を通る方向)。
+            let (ox, oy, oz) = if bx < 8 {
+                (0.37f32, by as f32 + 0.5, bz as f32 + 0.5)
+            } else {
+                (bx as f32 + 0.5, 0.37f32, bz as f32 + 0.5)
+            };
+            let (tx, ty, tz) = (bx as f32 + 0.5, by as f32 + 0.5, bz as f32 + 0.5);
+            let (dx, dy, dz) = (tx - ox, ty - oy, tz - oz);
+            let l = (dx * dx + dy * dy + dz * dz).sqrt().max(1e-6);
+            let ray = Ray3::new([ox, oy, oz], [dx / l, dy / l, dz / l]);
+            let hit = trace_section(&p, &ray, 128)
+                .unwrap_or_else(|| panic!("case {case}: ray to sole block must hit"));
+            assert_eq!(
+                (hit.x, hit.y, hit.z, hit.block),
+                (bx, by, bz, 13),
+                "case {case}: sole block must be the unique hit"
+            );
+        }
+    }
+
+    #[test]
+    fn max_steps_bounds_traversal() {
+        let mut p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        p[idx(15, 15, 15)] = 5;
+        // (0,0,0)→(15,15,15) は 45+ step 必要。3 step では届かない。
+        let ray = Ray3::new([0.5, 0.5, 0.5], [0.577, 0.577, 0.577]);
+        assert!(trace_section(&p, &ray, 3).is_none());
+        assert!(trace_section(&p, &ray, 64).is_some());
     }
 }

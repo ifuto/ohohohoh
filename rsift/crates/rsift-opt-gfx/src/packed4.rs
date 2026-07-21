@@ -147,3 +147,64 @@ mod tests {
         assert_eq!(PackedPullQuad::unpack_x(w), 63);
     }
 }
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+
+    /// 境界値スイープ: 各フィールドの語彙域端 (debug_assert の合法域) で
+    /// pack → unpack が完全に往復すること (GPU pull 経路の語彙規約の固定)。
+    #[test]
+    fn boundary_value_roundtrip_sweep() {
+        for &x in &[0u32, 1, 31, 63] {
+            for &y in &[0u32, 32, 63] {
+                for &z in &[0u32, 15, 63] {
+                    let q = PackedPullQuad::new(x, y, z, 4095, 3, 5, 64, 1);
+                    assert_eq!(PackedPullQuad::unpack_x(q.word0), x);
+                    assert_eq!(PackedPullQuad::unpack_y(q.word0), y);
+                    assert_eq!(PackedPullQuad::unpack_z(q.word0), z);
+                    assert_eq!(PackedPullQuad::unpack_tex(q.word0), 4095);
+                    assert_eq!(PackedPullQuad::unpack_light_ao(q.word0), 3);
+                    assert_eq!(PackedPullQuad::unpack_face(q.word1), 5);
+                    assert_eq!(PackedPullQuad::unpack_width(q.word1), 64);
+                    assert_eq!(PackedPullQuad::unpack_height(q.word1), 1);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn word0_fields_do_not_bleed_into_each_other() {
+        // tex を最大にしても x/y/z/ao を汚染しない (レイアウト 6+6+6+12+2=32bit 厳密性)。
+        let w0 = PackedPullQuad::pack_word0(63, 63, 63, 4095, 3);
+        assert_eq!(w0, u32::MAX, "全フィールド max で 32bit 全使用");
+        // tex=0 では上位 14bit が ao 2bit 以外全て 0。
+        let w1 = PackedPullQuad::pack_word0(0, 0, 0, 0, 0);
+        assert_eq!(w1, 0);
+    }
+
+    #[test]
+    fn word1_face_width_height_isolation() {
+        // face 6 通り × (w,h) で相互汚染がないこと (w,h は 1..64 の格納は -1 シフト)。
+        for face in 0..6u32 {
+            for (w, h) in [(1u32, 1u32), (64, 64), (33, 7)] {
+                let w1 = PackedPullQuad::pack_word1(face, w, h);
+                assert_eq!(PackedPullQuad::unpack_face(w1), face);
+                assert_eq!(PackedPullQuad::unpack_width(w1), w);
+                assert_eq!(PackedPullQuad::unpack_height(w1), h);
+            }
+        }
+    }
+
+    #[test]
+    fn memory_bytes_is_the_pod_ground_truth() {
+        // SSBO アップロード語彙: 8B/quad の wire サイズが型レイアウトと一致。
+        assert_eq!(PackedPullQuad::memory_bytes(), 8);
+        let q = PackedPullQuad::new(1, 2, 3, 4, 3, 2, 8, 8);
+        let bytes: &[u8] = bytemuck::bytes_of(&q);
+        assert_eq!(bytes.len(), 8);
+        // word0 が LE 先頭 (DX12 SSBO 側の vec2<u32> 読み規約に対応)。
+        assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), q.word0);
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), q.word1);
+    }
+}

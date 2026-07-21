@@ -901,7 +901,9 @@ impl FullGraphWiring {
             x: (inputs.camera_pos[0] / 16.0).floor() as i32,
             z: (inputs.camera_pos[2] / 16.0).floor() as i32,
         };
-        // 不透明 = その列の支配マテリアルが全不透明 (実 palette/LUT 判定)。
+        // 不透明 = その列の支配マテリアルが全不透明。
+        // 【注】BlockLut の値は modulo プレースホルダ (branchless_block.rs の
+        // 正直注記を参照) で、実ブロック属性の一次情報ではない。
         let opaque_of = |c: crate::visibility_graph::ChunkNode| {
             inputs
                 .chunk_keys
@@ -934,7 +936,9 @@ impl FullGraphWiring {
                 let _ = single.memory_footprint_bytes();
             }
             packed_sections.push(packed);
-            // 実発光ブロック走査 → Tiled Deferred ライト投入。
+            // 発光候補ブロック走査 → Tiled Deferred ライト投入。
+            // 【注】light レベルは BlockLut の modulo プレースホルダ値
+            // (実発光属性のテーブル未接続。branchless_block.rs の正直注記を参照)。
             let key = crate::morton_order::morton_encode_2d(0, 0);
             let _ = key;
             'scan: for y in 0..16usize {

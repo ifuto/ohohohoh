@@ -150,7 +150,10 @@ pub fn encode_row_mask_rle(rows: &[u16; SECTION_SIZE]) -> Vec<u8> {
     out
 }
 
-/// Build per-Y layer opaque row masks from RLE without full palette decode when possible.
+/// Build per-Y layer opaque row masks from RLE.
+/// 【現状の実装事実】「without full palette decode when possible」という旧 doc
+/// 記述に反し、実装はフル decode して palette 版へ委譲している (高速経路は
+/// まだ存在しない)。呼び出し側は decode コストを前提にすること。
 pub fn layer_masks_from_rle(rle: &RleSection) -> [u16; SECTION_SIZE] {
     let palette = rle.decode();
     layer_masks_from_palette(&palette)
@@ -230,5 +233,88 @@ mod tests {
         p[idx(0, 3, 0)] = 1;
         let rle = RleSection::encode(&p);
         assert!(rle.layer_occupancy() & (1 << 3) != 0);
+    }
+}
+
+#[cfg(test)]
+mod extra_tests {
+    use super::*;
+    use crate::binary_greedy_meshing::idx;
+
+    #[test]
+    fn from_bytes_rejects_truncation() {
+        let sec: SectionPalette = [0u16; VOLUME];
+        let rle = RleSection::encode(&sec);
+        let bytes = rle.to_bytes();
+        assert!(RleSection::from_bytes(&bytes).is_some());
+        assert!(RleSection::from_bytes(&[]).is_none(), "0B はヘッダすら無い");
+        assert!(RleSection::from_bytes(&bytes[..1]).is_none());
+        // ヘッダは len を誇張した料簡: 実バイト不足 → None。
+        let mut lying = bytes[..2].to_vec();
+        lying.extend_from_slice(&[0u8; 2]);
+        // run_count=1 を名乗りながら本体 4B しか無い (need=6)
+        let mut lying2 = Vec::new();
+        lying2.extend_from_slice(&1u16.to_le_bytes());
+        lying2.extend_from_slice(&[7u8, 7u8]);
+        assert!(RleSection::from_bytes(&lying2).is_none());
+    }
+
+    #[test]
+    fn is_solid_requires_uniform_single_run() {
+        let mut p: SectionPalette = [1u16; VOLUME];
+        let rle = RleSection::encode(&p);
+        assert!(rle.is_solid(1));
+        assert!(!rle.is_solid(2));
+        p[idx(0, 0, 0)] = 2; // 1 voxel だけ異質
+        let rle2 = RleSection::encode(&p);
+        assert!(!rle2.is_solid(1), "混在は solid ではない");
+        assert!(!rle2.is_empty());
+        // 全 air は is_solid(0) ではなく is_empty (air を「固体」扱いしない規約)。
+        let air = RleSection::encode(&[0u16; VOLUME]);
+        assert!(air.is_empty());
+        assert!(!air.is_solid(0));
+    }
+
+    #[test]
+    fn layer_masks_combined_is_or_over_z_rows() {
+        // combined[y] の bit x = 「その y 層のどこかの z 行に x 列の非airがある」。
+        let mut p: SectionPalette = [0u16; VOLUME];
+        p[idx(3, 0, 0)] = 5; // y=0, z=0, x=3
+        p[idx(9, 0, 7)] = 5; // y=0, z=7, x=9
+        p[idx(3, 4, 15)] = 5; // y=4, z=15, x=3
+        let masks = layer_masks_from_palette(&p);
+        assert_eq!(masks[0], (1 << 3) | (1 << 9));
+        assert_eq!(masks[4], 1 << 3);
+        for y in [1usize, 2, 3, 5, 15] {
+            assert_eq!(masks[y], 0, "empty layer y={y} must be zero mask");
+        }
+    }
+
+    #[test]
+    fn encode_row_mask_rle_emits_exact_wire_bytes() {
+        // 語彙: 全 0 行 → [0,1] / 全 F 行 → [0xFF,0xFF,16] / 部分行 → [lo,hi,1]。
+        let mut rows = [0u16; SECTION_SIZE];
+        let b0 = encode_row_mask_rle(&rows);
+        assert_eq!(b0.len(), 2 * SECTION_SIZE, "zero rows → 2B each");
+        assert_eq!(&b0[0..2], &[0u8, 1u8]);
+
+        rows[0] = 0xFFFF;
+        rows[1] = 0x00F3;
+        let b1 = encode_row_mask_rle(&rows);
+        assert_eq!(&b1[0..3], &[0xFFu8, 0xFF, 16], "0xFFFF row → mark + len16");
+        assert_eq!(&b1[3..6], &[0xF3u8, 0x00, 1], "partial row → LE 2B + len1");
+    }
+
+    #[test]
+    fn row_masks_of_solid_y_layer_are_all_ffff() {
+        // y=2 層だけ全面固体 → その層の行マスクは全て 0xFFFF。
+        let mut p: SectionPalette = [0u16; VOLUME];
+        for z in 0..SECTION_SIZE {
+            for x in 0..SECTION_SIZE {
+                p[idx(x, 2, z)] = 1;
+            }
+        }
+        let rle = RleSection::encode(&p);
+        assert_eq!(rle.layer_occupancy(), 1 << 2);
     }
 }
