@@ -16,7 +16,7 @@
 #   2) workflow_dispatch: Actions タブからの手動実行も可。
 #
 # 実行内容 (ローカルの Rust ツールチェーンが使えない環境からの代替検証を兼ねる):
-#   - rsift-opt-gfx の lib テスト (cargo test --lib --locked)
+#   - rsift-opt-gfx + rsift-render の lib テスト (cargo test --lib --locked)
 #   - pseudo_mc_bench 例を release ビルド → 2 回連続実行
 #   - 時間フィールドをマスクした「決定的ダイジェスト」同士を diff
 #     (誤順率・頂点数・bytes・ACMR・フォールバック実績などの
@@ -64,9 +64,9 @@ jobs:
         with:
           workspaces: rsift
 
-      - name: lib tests (rsift-opt-gfx)
+      - name: lib tests (rsift-opt-gfx + rsift-render)
         working-directory: rsift
-        run: cargo test -p rsift-opt-gfx --lib --locked
+        run: cargo test -p rsift-opt-gfx -p rsift-render --lib --locked
 
       - name: build pseudo_mc_bench (release)
         working-directory: rsift
