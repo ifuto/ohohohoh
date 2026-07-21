@@ -317,9 +317,12 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   実測レンジ内という評価: 推測ではなく同一 sandbox の自己比較による)。
 - 旧 DX (Dx11) / Vulkan present 本体は未実装 (backend.rs に Unsupported 固定済)。
   実機検証はユーザー PC 依存 — sandbox は GPU 無し。
-- bench CI (GitHub Actions) はユーザー復旧待ち: agent トークンは
-  `.github/workflows` 書き込みも `gh workflow run` も 403。素材
-  (`ci/bench.workflow.yml` + `ci/TRIGGER.md`) は branch に push 済み、
-  main へペーストすれば workflow_dispatch で回せる構成。
+- bench CI (GitHub Actions) は **稼働済** (2026-07-21 後半): ユーザーが
+  bench.yml を workflow に設置 → branch 側にも配置 (9aabca3) し
+  ci/TRIGGER.md push での起動を実証。**初回 run 29823931071 = success**
+  (lib テスト + pseudo determinism + wide structural_digest ゲート全通過、
+   約7分)。なお sandbox から artifact/ログの直接取得は Azure blob CDN が
+   EOF で落ちるため reading は GitHub UI 経由 (conclusion の API 取得は可)。
+  `gh workflow run` の dispatch API は引き続き 403 (TRIGGER.md 経路が正規)。
 - 行列は 357 行 (「数百種類前後」の要求水準を実測値で充足)。継続拡大余地は
   seed/規模掃引で残す (実行 ~26 秒)。
