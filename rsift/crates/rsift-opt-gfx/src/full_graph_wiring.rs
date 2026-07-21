@@ -401,14 +401,15 @@ impl FullGraphWiring {
                 .set_state(*k, crate::dashmap_registry::ChunkBuildState::Building);
         }
         let slab_base = self.gpu_arena.used_bytes();
-        let mut slab_slots = 0u32;
+        // slab.alloc は allocator 状態を実際に進める副作用 (スロット消費・満杯判定)
+        // 自体が目的。確保できたスロット数を数えるだけの書き込み専用カウンタ
+        // (slab_slots) は消費者不在のため削除 (監査警告 full_graph_wiring.rs:404/411)。
         for (i, k) in inputs.chunk_keys.iter().enumerate() {
             let mat = inputs.chunk_materials.get(i).copied().unwrap_or(0);
             let slot = self.slab.alloc(mat);
             if slot == usize::MAX {
                 break;
             }
-            slab_slots += 1;
             let _ = k;
         }
 

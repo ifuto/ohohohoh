@@ -21,8 +21,11 @@ fn bloom_prefilter(c: vec3<f32>, threshold: f32, knee: f32) -> vec3<f32> {
 
 fn bloom_blur(src: texture_2d<f32>, samp: sampler, uv: vec2<f32>,
               texel: vec2<f32>, radius: i32) -> vec3<f32> {
-  let w = array<f32, 5>(0.0625, 0.25, 0.375, 0.25, 0.0625);
-  let o = array<i32, 5>(-2, -1, 0, 1, 2);
+  // 注: let (= 値) 配列のループ変数による動的 index は WGSL 検証不可
+  // (naga IndexMustBeConstant — 2026-07-21 監査で検出)。値は不変なので
+  // 関数アドレス空間の var に置くだけで演算は同一。
+  var w = array<f32, 5>(0.0625, 0.25, 0.375, 0.25, 0.0625);
+  var o = array<i32, 5>(-2, -1, 0, 1, 2);
   var acc = vec3<f32>(0.0);
   for (var k: i32 = 0; k < 5; k = k + 1) {
     let u = uv + texel * vec2<f32>(f32(o[k]) * f32(radius), 0.0);

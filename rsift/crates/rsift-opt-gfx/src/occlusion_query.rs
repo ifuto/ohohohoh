@@ -627,9 +627,11 @@ impl GpuOcclusionPass {
     }
 
     /// Records the id pass + readback copy into `encoder`.
+    // 注: device はボックス動的変更時の bind group/scratch 再構築に備えた将来拡張用
+    // (現行は new() 時に bind group を固定生成するため未使用 — 監査警告 occlusion_query.rs:632)。
     pub fn record(
         &mut self,
-        device: &wgpu::Device,
+        _device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         view_proj: &Mat4,

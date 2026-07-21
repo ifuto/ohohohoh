@@ -19,9 +19,14 @@ pub const VERTEX_STRIDE_BYTES: usize = 12;
 
 /// 12バイト・極限量子化チャンク頂点フォーマット (`#[repr(C, align(4))]`)
 ///
-/// * `pos_xyz_half`: 3D 座標を半精度 (fp16) または 16bit 固定小数点 x 3 (6バイト) に量子化。
-/// * `octahedral_normal`: 法線を八面体マッピングで `u8 x 2` (2バイト) に超圧縮。
-/// * `uv_half`: テクスチャ UV を 16bit 半精度 float x 2 (4バイト) に圧縮。
+/// * `pos_xyz_half`: 3D 座標を **16bit 固定小数点 (LSB = 1/1024 ブロック)** x 3 (6バイト)
+///   に量子化 (フィールド名の `half` は歴史的命名で fp16 ではない)。
+///   エンコードは切り捨て (`as u16` = 飽和 + ゼロ方向丸め) で、共有頂点が同一値に
+///   落ちるためメッシュの水密性は保たれる。表現範囲は [0, 64) ブロック
+///   (セクション内座標 0..16 をカバー)。
+/// * `octahedral_normal`: 法線を八面体マッピング (Cigolle 2014 "A Survey of
+///   Efficient Representations for Independent Unit Vectors" 系) で `u8 x 2` (2バイト) に圧縮。
+/// * `uv_half`: テクスチャ UV を **UNORM16** x 2 (4バイト) (fp16 ではない) に圧縮。
 /// 色やライトマップ、ブロック ID (`mc_Entity`) はインスタンス・マテリアル SSBO から `gl_DrawID` / `gl_InstanceIndex` で即座にフェッチ！
 #[repr(C, align(4))]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -186,5 +191,102 @@ impl MultithreadedChunkBuilder {
 
         trace!("Successfully built {} ultra-quantized chunk meshes (Total Vertices: {})", meshes.len(), TOTAL_VERTICES_BUILT.load(Ordering::Relaxed));
         meshes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 八面体デコード (テスト内の独立参照実装: エンコードの逆変換)
+    fn oct_decode(b: [u8; 2]) -> (f32, f32, f32) {
+        let x = b[0] as f32 / 127.5 - 1.0;
+        let y = b[1] as f32 / 127.5 - 1.0;
+        let mut z = 1.0 - x.abs() - y.abs();
+        let (mut ox, mut oy) = (x, y);
+        if z < 0.0 {
+            ox = (1.0 - y.abs()) * if x >= 0.0 { 1.0 } else { -1.0 };
+            oy = (1.0 - x.abs()) * if y >= 0.0 { 1.0 } else { -1.0 };
+        }
+        let l = (ox * ox + oy * oy + z * z).sqrt();
+        if l > 0.0 {
+            z /= l;
+            (ox / l, oy / l, z)
+        } else {
+            (0.0, 0.0, 1.0)
+        }
+    }
+
+    #[test]
+    fn stride_is_pinned_12_bytes() {
+        assert_eq!(std::mem::size_of::<Quantized12ByteVertex>(), 12);
+        assert_eq!(std::mem::align_of::<Quantized12ByteVertex>(), 4);
+    }
+
+    #[test]
+    fn axis_normals_octahedral_roundtrip() {
+        // 軸法線 6 方向: encode → 独立デコードで誤差 ~0.02 rad 内
+        for (n, label) in [
+            ((1.0, 0.0, 0.0), "+X"),
+            ((-1.0, 0.0, 0.0), "-X"),
+            ((0.0, 1.0, 0.0), "+Y"),
+            ((0.0, -1.0, 0.0), "-Y"),
+            ((0.0, 0.0, 1.0), "+Z"),
+            ((0.0, 0.0, -1.0), "-Z"),
+        ] {
+            let v = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, n.0, n.1, n.2, 0.0, 0.0);
+            let (dx, dy, dz) = oct_decode(v.octahedral_normal);
+            let dot = dx * n.0 + dy * n.1 + dz * n.2;
+            assert!(
+                dot > 0.999,
+                "{label}: roundtrip dot={dot} (oct={:?})",
+                v.octahedral_normal
+            );
+        }
+    }
+
+    #[test]
+    fn negative_z_normal_folds_onto_wrap_region() {
+        // nz<0 は八面体下半球の折り返し領域へ (現行実測ピン: (0,0,-1) → (255,255))
+        let v = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0);
+        assert_eq!(v.octahedral_normal, [255, 255]);
+    }
+
+    #[test]
+    fn position_is_fixed_point_1024lsb_with_saturation() {
+        // ちょうど 1.5 → 1536 (1024*1.5)。負は 0 に飽和、64 ブロック超は 65535 に飽和。
+        let a = Quantized12ByteVertex::encode(1.5, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        assert_eq!(a.pos_xyz_half[0], 1536);
+        let b = Quantized12ByteVertex::encode(-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        assert_eq!(b.pos_xyz_half[0], 0);
+        let c = Quantized12ByteVertex::encode(100.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        assert_eq!(c.pos_xyz_half[0], u16::MAX);
+        // セクション境界 16.0 → 16384 (切り捨てでも丁度)
+        let d = Quantized12ByteVertex::encode(16.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        assert_eq!(d.pos_xyz_half[0], 16384);
+    }
+
+    #[test]
+    fn same_input_same_bits_for_watertightness() {
+        // 共有頂点 (2 つの面から同一 f32 で来る) は同一ビットに量子化される
+        // = メッシュ水密性の根拠。決定性ピン。
+        let a = Quantized12ByteVertex::encode(7.25, 3.5, 0.125, 0.0, 1.0, 0.0, 0.5, 0.25);
+        let b = Quantized12ByteVertex::encode(7.25, 3.5, 0.125, 0.0, 1.0, 0.0, 0.5, 0.25);
+        assert_eq!(a.pos_xyz_half, b.pos_xyz_half);
+        assert_eq!(a.octahedral_normal, b.octahedral_normal);
+        assert_eq!(a.uv_half, b.uv_half);
+    }
+
+    #[test]
+    fn uv_unorm16_endpoints_exact() {
+        let v = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0);
+        assert_eq!(v.uv_half, [0, 32767]);
+    }
+
+    #[test]
+    fn zero_length_normal_does_not_nan() {
+        // ゼロ法線ガード (max(l1, 1e-4)) で NaN にならず (127,127) に落ちる
+        let v = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(v.octahedral_normal, [127, 127]);
     }
 }

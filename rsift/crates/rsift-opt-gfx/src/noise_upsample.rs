@@ -201,7 +201,18 @@ fn build_coarse_grid(
 }
 
 /// Trilinear upsample from coarse grid to world voxel.
-pub fn trilinear_upsample(grid: &CoarseGrid, wx: i32, wy: i32, wz: i32, origin: (i32, i32, i32)) -> f32 {
+// 注: CoarseGrid は private 型かつ build_coarse_grid も private のため、本関数は
+// モジュール外からは呼べない。pub 露出は外部から呼出不可能な API ハザード
+// (private_interfaces 警告) だったため private に降格 (2026-07-21 監査)。
+// 外部参照は frame_worldgen 側が「補間形のみ同一」の精密ミラーとして自前実装する
+// 設計 (frame_worldgen.rs:145 のコメント参照)。
+fn trilinear_upsample(
+    grid: &CoarseGrid,
+    wx: i32,
+    wy: i32,
+    wz: i32,
+    origin: (i32, i32, i32),
+) -> f32 {
     let stride = grid.stride as f32;
     let lx = (wx - origin.0) as f32 / stride;
     let ly = (wy - origin.1) as f32 / stride;

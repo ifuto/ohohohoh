@@ -18,10 +18,15 @@ const COORD_MASK: u32 = 63u;
 const TEX_MASK: u32 = 4095u;
 
 // Two triangles: corners [0,1,2] [2,3,0]
-const TRI_CORNER: array<u32, 6> = array<u32, 6>(0u, 1u, 2u, 2u, 3u, 0u);
+// 注: FACE_UV と同様、vid 由来の動的 index を通すため const ではなく var<private>
+// (naga IndexMustBeConstant 回避、値は不変)。
+var<private> TRI_CORNER: array<u32, 6> = array<u32, 6>(0u, 1u, 2u, 2u, 3u, 0u);
 
 // Per-face unit UVs (0-bit stored — derived from corner % 4)
-const FACE_UV: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
+// 注: 元は const 配列だったが、corner (実行時値) による動的 index は WGSL 検証不可
+// (naga IndexMustBeConstant — 2026-07-21 監査で検出)。var<private> に置き換えて
+// モジュールスコープのプライベートメモリから読む形にする (内容は不変、同一値)。
+var<private> FACE_UV: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>(0.0, 0.0),
     vec2<f32>(1.0, 0.0),
     vec2<f32>(1.0, 1.0),

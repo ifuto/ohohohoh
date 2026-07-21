@@ -139,7 +139,10 @@ impl EntityCuller {
         self.last_rays = rays;
         self.last_far = far;
         self.last_reeval = evaluated as u32;
-        let mut stats_visible = 0u32;
+        // 注: 旧コードはここで `stats_visible` を数えていたが、統計は `stats()` が
+        // 返す `ids.len()` と常に一致する冗長な書き込み専用変数だったため削除
+        // (コンパイラ警告 entity_culling.rs:142/150 由来の監査指摘)。出力集合の
+        // セマンティクスは不変。
         for t in &self.tracked {
             let c = center_of(&t.target);
             if dist_sq(c, cam) > max_d_sq {
@@ -147,7 +150,6 @@ impl EntityCuller {
             }
             if t.visible {
                 out.insert(t.target.id);
-                stats_visible += 1;
             }
         }
         out

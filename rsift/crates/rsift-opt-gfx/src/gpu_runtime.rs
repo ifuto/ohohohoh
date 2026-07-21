@@ -356,3 +356,61 @@ fn dispatch_light_inner(
         Err(_) => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// naga による WGSL 検証 (パース + 全セマンティクス検証)。GPU 非依存の純 CPU
+    /// 検査で、シェーダー破壊を実行時ではなくテスト時に捕捉する恒久ガード。
+    fn naga_validate(src: &str) -> Result<(), String> {
+        let module = naga::front::wgsl::parse_str(src).map_err(|e| e.emit_to_string(src))?;
+        let mut validator = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        );
+        validator.validate(&module).map_err(|e| format!("{e:?}"))?;
+        Ok(())
+    }
+
+    /// shaders/ ディレクトリの全 .wgsl をスイープ。新しいシェーダーファイルは
+    /// 自動的に検査対象に乗る (CARGO_MANIFEST_DIR 経由の列挙)。
+    #[test]
+    fn naga_sweep_all_shader_files() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("shaders");
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .expect("shaders dir")
+            .map(|e| e.expect("entry").file_name().into_string().expect("utf8"))
+            .filter(|n| n.ends_with(".wgsl"))
+            .collect();
+        names.sort();
+        let mut failures: Vec<(String, String)> = Vec::new();
+        for name in &names {
+            let src = std::fs::read_to_string(dir.join(name)).expect("read wgsl");
+            if let Err(e) = naga_validate(&src) {
+                failures.push((name.clone(), e));
+            }
+        }
+        for (n, e) in &failures {
+            let head: String = e.chars().take(200).collect();
+            eprintln!("[naga-sweep] FAIL {n}: {head}");
+        }
+        eprintln!(
+            "[naga-sweep] {} files: {} pass / {} fail",
+            names.len(),
+            names.len() - failures.len(),
+            failures.len()
+        );
+        assert!(
+            failures.is_empty(),
+            "WGSL 検証失敗: {:?}",
+            failures.iter().map(|(n, _)| n).collect::<Vec<_>>()
+        );
+    }
+
+    /// 実 dispatch 経路に載る WGSL (all_wgsl_sources) は個別に検証失敗を報告。
+    #[test]
+    fn naga_all_runtime_dispatched_wgsl_validate() {
+        for (name, src) in super::all_wgsl_sources() {
+            naga_validate(src).unwrap_or_else(|e| panic!("runtime WGSL 検証失敗 [{name}]: {e}"));
+        }
+    }
+}

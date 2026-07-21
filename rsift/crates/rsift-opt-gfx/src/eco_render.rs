@@ -147,7 +147,9 @@ pub struct SodiumComparison {
 }
 
 impl SodiumComparison {
-    pub fn estimate(chunks_built: u64, vertices_built: u64, regions: u32) -> Self {
+    // 注: 頂点帯域比は頂点「バイト/頂点」(Sodium 20B vs Rsift 12B) の定数比で見る
+    // 設計のため vertices_built 総数は使わない (監査警告 eco_render.rs:150)。
+    pub fn estimate(chunks_built: u64, _vertices_built: u64, regions: u32) -> Self {
         let vertex_ratio = SODIUM_VERTEX_BYTES as f32 / RSIFT_VERTEX_BYTES as f32;
         // Sodium: ~1 draw per chunk section; Rsift: 1 draw per region (8×8 batch)
         let sodium_draws = chunks_built.max(1) as f32;

@@ -137,6 +137,7 @@ pub fn cas_run_cpu(src: &[[f32; 4]], width: u32, height: u32, sharpness: f32) ->
         let p = src[(cy * width + cx) as usize];
         [p[0], p[1], p[2]]
     };
+    let peak = crate::cas::cas_peak(sharpness);
     let mut out = Vec::with_capacity(src.len());
     for y in 0..h {
         for x in 0..w {
@@ -148,13 +149,15 @@ pub fn cas_run_cpu(src: &[[f32; 4]], width: u32, height: u32, sharpness: f32) ->
             let src_px = src[(y as u32 * width + x as u32) as usize];
             let mut rgb = [0f32; 3];
             for ch in 0..3 {
-                let mn = n[ch].min(s[ch]).min(e[ch]).min(ww[ch]);
-                let mx = n[ch].max(s[ch]).max(e[ch]).max(ww[ch]);
-                let contour = (1.0 - (mx - mn)).clamp(0.0, 1.0);
-                let peaking = 1.0 / (4.0 * (mx - mn) + 1.0);
-                let amp = (contour * peaking * sharpness).clamp(0.0, 1.0);
-                let avg = (mn + mx) * 0.5;
-                rgb[ch] = c[ch] * (1.0 - amp) + avg * amp;
+                // 公式 CAS (ffx_cas.h CasFilter noScaling, CAS_SLOW 高品質パス)。
+                // soft min/max は中心を含む cross 5 タップ。
+                let mn = n[ch].min(s[ch]).min(e[ch].min(ww[ch])).min(c[ch]);
+                let mx = n[ch].max(s[ch]).max(e[ch].max(ww[ch])).max(c[ch]);
+                let rcp_m = 1.0 / mx.max(crate::cas::MX_FLOOR);
+                let amp = (mn.min(1.0 - mx) * rcp_m).clamp(0.0, 1.0).sqrt();
+                let wg = amp * peak;
+                let rcp_w = 1.0 / (1.0 + 4.0 * wg);
+                rgb[ch] = ((c[ch] + (n[ch] + s[ch] + e[ch] + ww[ch]) * wg) * rcp_w).clamp(0.0, 1.0);
             }
             out.push([rgb[0], rgb[1], rgb[2], src_px[3]]);
         }

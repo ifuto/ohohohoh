@@ -12,9 +12,15 @@ fn sh_basis(dir: vec3<f32>) -> array<f32, 9> {
 
 fn evaluate_sh(coeffs: array<vec3<f32>, 9>, dir: vec3<f32>) -> vec3<f32> {
   let b = sh_basis(normalize(dir));
+  // 注: 値として渡された配列引数 / let 配列はループ変数で動的 index できない
+  // (naga IndexMustBeConstant — 2026-07-21 監査で検出)。関数アドレス空間へ
+  // 値複写してから index する。演算 (係数と基底の逐次積和) は CPU ミラー
+  // ibl_sh.rs::evaluate_sh と同一のまま。
+  var coeffs_v = coeffs;
+  var b_v = b;
   var c = vec3<f32>(0.0);
   for (var i = 0; i < 9; i = i + 1) {
-    c = c + coeffs[i] * b[i];
+    c = c + coeffs_v[i] * b_v[i];
   }
   return c;
 }
