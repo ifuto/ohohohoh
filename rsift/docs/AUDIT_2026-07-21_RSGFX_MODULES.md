@@ -371,8 +371,12 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
 ## E. 残課題 (棚卸し)
 - zero-test モジュール残 ~25 (非コア/描画後段中心)。重要度順に継続
   (今回 bitpacked/light_cache も消化: opt-gfx 404→435 → 437)。
-- legacy 12B greedy 経路 (greedy_axis/greedy_merge_2d) は pull 経路の
-  旧構造を残したまま = 同一の面マスク非効率を抱える。本番呼び出しは無し
-  (pull が本番) だが、同一証明パターンの転用が決定済み。
+- 【解決】legacy 12B greedy 経路も pull と同一証明パターンでカラム bit
+  導出へ移行完遂。`greedy_axis` は OpaqueCols を 1 度構築して 6 軸共有
+  (旧は軸×slice 毎に face_visible 全走査)、merge は証明つき u16 化
+  (`greedy_merge_2d_bits`)、Y 層 skip は yc OR 導出。旧経路
+  (face_visible/greedy_merge_2d) は cfg(test) オラクルとして保持し、
+  `bitcols_12b_match_face_visible_fuzz` (6 密度 × 6 軸 × skip on/off) +
+  破損境界 で頂点列・index 列の完全一致を照合 (437→439)。
 - caves liderar merge rewrite 完了後も lz4/zstd の構造起因フラグは残る
   (外部ライブラリ内部の話、本プロジェクト改変対象外)。

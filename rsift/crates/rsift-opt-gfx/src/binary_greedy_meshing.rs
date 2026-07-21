@@ -4,7 +4,7 @@
 use crate::chunk_mesh::{BuiltChunkMesh, Quantized12ByteVertex};
 use crate::packed4::{face_index as pull_face_index, PackedPullQuad};
 use crate::pull_mesh::PullBuiltMesh;
-use crate::section_rle::{layer_masks_from_palette, RleSection};
+use crate::section_rle::RleSection;
 use tracing::trace;
 
 pub const SECTION_SIZE: usize = 16;
@@ -17,6 +17,11 @@ pub fn idx(x: usize, y: usize, z: usize) -> usize {
     x + y * SECTION_SIZE + z * SECTION_SIZE * SECTION_SIZE
 }
 
+/// 2026-07-21: 面可視判定はカラム bit 導出 (`face_rows_for_slice`) へ移行済。
+/// `is_opaque` / `neighbor_opaque` / `face_visible` の参照チェーンは
+/// 等価性検証オラクルとしてテスト専用に保持 (OOB=非不透明の規約は
+/// bit 導出側と厳密一致することを fuzz で照合済)。
+#[cfg(test)]
 #[inline]
 fn is_opaque(palette: &SectionPalette, x: usize, y: usize, z: usize) -> bool {
     if x >= SECTION_SIZE || y >= SECTION_SIZE || z >= SECTION_SIZE {
@@ -43,6 +48,7 @@ impl Axis {
     ];
 }
 
+#[cfg(test)]
 #[inline]
 fn neighbor_opaque(
     palette: &SectionPalette,
@@ -63,6 +69,7 @@ fn neighbor_opaque(
     is_opaque(palette, nx, ny, nz)
 }
 
+#[cfg(test)]
 #[inline]
 fn face_visible(
     palette: &SectionPalette,
@@ -750,6 +757,9 @@ pub fn mesh_chunk_column_pull_world(
 }
 
 /// Greedy merge on `mask[row][col]` bitfields (16 cols per row).
+/// 2026-07-21: `greedy_merge_2d_bits` への移行済 (pull 版と同証明)。
+/// 等価性検証オラクルとしてテスト専用に保持。
+#[cfg(test)]
 fn greedy_merge_2d(
     mask: &mut [[u16; SECTION_SIZE]; SECTION_SIZE],
     vertices: &mut Vec<Quantized12ByteVertex>,
@@ -823,34 +833,91 @@ fn greedy_merge_2d(
     }
 }
 
+/// 12B 経路の bit 化 merge (`greedy_merge_2d_pull_bits` と同証明系:
+/// 等しい行ブロック内の矩形拡張チェックは構造的常真)。
+fn greedy_merge_2d_bits(
+    mask: &mut [u16; SECTION_SIZE],
+    vertices: &mut Vec<Quantized12ByteVertex>,
+    indices: &mut Vec<u32>,
+    axis: Axis,
+    positive: bool,
+    origin: impl Fn(usize, usize) -> (f32, f32, f32),
+    width_axis: impl Fn(usize) -> f32,
+    height_axis: impl Fn(usize) -> f32,
+) {
+    let mut row = 0usize;
+    while row < SECTION_SIZE {
+        let row_bits = mask[row];
+        if row_bits == 0 {
+            row += 1;
+            continue;
+        }
+        let mut row_span = 1usize;
+        while row + row_span < SECTION_SIZE && mask[row + row_span] == row_bits {
+            row_span += 1;
+        }
+        let mut bits = row_bits;
+        while bits != 0 {
+            let col0 = bits.trailing_zeros() as usize;
+            let span = (bits >> col0).trailing_ones() as usize;
+            let run_mask: u16 = (((1u32 << span) - 1) << col0) as u16;
+            for r in mask.iter_mut().skip(row).take(row_span) {
+                *r &= !run_mask;
+            }
+            bits &= !run_mask;
+            let (x, y, z) = origin(col0, row);
+            emit_quad(
+                vertices,
+                indices,
+                x,
+                y,
+                z,
+                width_axis(span),
+                height_axis(row_span),
+                axis,
+                positive,
+            );
+        }
+        row += row_span;
+    }
+}
+
 fn greedy_axis(
-    palette: &SectionPalette,
+    cols: &OpaqueCols,
     vertices: &mut Vec<Quantized12ByteVertex>,
     indices: &mut Vec<u32>,
     axis: Axis,
     positive: bool,
     skip_empty_layers: bool,
 ) {
+    // Y 層 skip は pull 版と同規約をカラムから導出 (旧実装は slice 内側で
+    // layer_masks_from_palette (4096 voxel 走査) を都度計算していた)。
+    let y_occ: u32 = if skip_empty_layers && matches!(axis, Axis::Y) {
+        let mut acc = 0u32;
+        for z in 0..SECTION_SIZE {
+            for x in 0..SECTION_SIZE {
+                acc |= cols.yc[z][x] as u32;
+            }
+        }
+        acc
+    } else {
+        0
+    };
     for slice in 0..SECTION_SIZE {
-        if skip_empty_layers && matches!(axis, Axis::Y) {
-            let layers = layer_masks_from_palette(palette);
-            if layers[slice] == 0 {
+        if y_occ != 0 {
+            if (y_occ >> slice) & 1 == 0 {
                 continue;
             }
         }
 
-        let mut mask = [[0u16; SECTION_SIZE]; SECTION_SIZE];
+        let mut mask = face_rows_for_slice(cols, axis, positive, slice);
+        if mask.iter().all(|&m| m == 0) {
+            continue;
+        }
         match axis {
             Axis::Y => {
-                for z in 0..SECTION_SIZE {
-                    for x in 0..SECTION_SIZE {
-                        if face_visible(palette, x, slice, z, axis, positive) {
-                            mask[z][x] |= 1u16 << x;
-                        }
-                    }
-                }
                 let s = slice as f32;
-                greedy_merge_2d(
+                greedy_merge_2d_bits(
                     &mut mask,
                     vertices,
                     indices,
@@ -862,15 +929,8 @@ fn greedy_axis(
                 );
             }
             Axis::X => {
-                for z in 0..SECTION_SIZE {
-                    for y in 0..SECTION_SIZE {
-                        if face_visible(palette, slice, y, z, axis, positive) {
-                            mask[z][y] |= 1u16 << y;
-                        }
-                    }
-                }
                 let s = slice as f32;
-                greedy_merge_2d(
+                greedy_merge_2d_bits(
                     &mut mask,
                     vertices,
                     indices,
@@ -882,15 +942,8 @@ fn greedy_axis(
                 );
             }
             Axis::Z => {
-                for y in 0..SECTION_SIZE {
-                    for x in 0..SECTION_SIZE {
-                        if face_visible(palette, x, y, slice, axis, positive) {
-                            mask[y][x] |= 1u16 << x;
-                        }
-                    }
-                }
                 let s = slice as f32;
-                greedy_merge_2d(
+                greedy_merge_2d_bits(
                     &mut mask,
                     vertices,
                     indices,
@@ -926,9 +979,12 @@ fn mesh_section_inner(
 ) -> BuiltChunkMesh {
     let mut vertices = Vec::with_capacity(512);
     let mut indices = Vec::with_capacity(768);
+    // pull 版と同じく不透明カラムを 1 度だけ構築し、6 軸で共有する
+    // (旧実装は greedy_axis 内で slice 毎に face_visible 全走査していた)。
+    let cols = opaque_cols(palette);
     for &(axis, positive) in &Axis::ALL {
         greedy_axis(
-            palette,
+            &cols,
             &mut vertices,
             &mut indices,
             axis,
@@ -1200,6 +1256,95 @@ mod bitcols_equivalence {
         quads
     }
 
+    /// 旧 12B 参照経路 (bit 化前の greedy_axis の再現)。
+    /// layer_masks はオリジナルが slice 内側で都度 4096 voxel 走査していたのを
+    /// ホイストしているが、結果には影響しない (同一関数の都度呼び出し)。
+    fn old_axis_12b(
+        palette: &SectionPalette,
+        axis: Axis,
+        positive: bool,
+        skip_empty_layers: bool,
+    ) -> (Vec<Quantized12ByteVertex>, Vec<u32>) {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let layer_masks = if skip_empty_layers && matches!(axis, Axis::Y) {
+            Some(layer_masks_from_palette(palette))
+        } else {
+            None
+        };
+        for slice in 0..SECTION_SIZE {
+            if let Some(layers) = &layer_masks {
+                if layers[slice] == 0 {
+                    continue;
+                }
+            }
+            let mut mask = [[0u16; SECTION_SIZE]; SECTION_SIZE];
+            match axis {
+                Axis::Y => {
+                    for z in 0..SECTION_SIZE {
+                        for x in 0..SECTION_SIZE {
+                            if face_visible(palette, x, slice, z, axis, positive) {
+                                mask[z][x] |= 1u16 << x;
+                            }
+                        }
+                    }
+                    let s = slice as f32;
+                    greedy_merge_2d(
+                        &mut mask,
+                        &mut vertices,
+                        &mut indices,
+                        axis,
+                        positive,
+                        move |x, z| (x as f32, s, z as f32),
+                        |w| w as f32,
+                        |h| h as f32,
+                    );
+                }
+                Axis::X => {
+                    for z in 0..SECTION_SIZE {
+                        for y in 0..SECTION_SIZE {
+                            if face_visible(palette, slice, y, z, axis, positive) {
+                                mask[z][y] |= 1u16 << y;
+                            }
+                        }
+                    }
+                    let s = slice as f32;
+                    greedy_merge_2d(
+                        &mut mask,
+                        &mut vertices,
+                        &mut indices,
+                        axis,
+                        positive,
+                        move |y, z| (s, y as f32, z as f32),
+                        |w| w as f32,
+                        |h| h as f32,
+                    );
+                }
+                Axis::Z => {
+                    for y in 0..SECTION_SIZE {
+                        for x in 0..SECTION_SIZE {
+                            if face_visible(palette, x, y, slice, axis, positive) {
+                                mask[y][x] |= 1u16 << x;
+                            }
+                        }
+                    }
+                    let s = slice as f32;
+                    greedy_merge_2d(
+                        &mut mask,
+                        &mut vertices,
+                        &mut indices,
+                        axis,
+                        positive,
+                        move |x, y| (x as f32, y as f32, s),
+                        |w| w as f32,
+                        |h| h as f32,
+                    );
+                }
+            }
+        }
+        (vertices, indices)
+    }
+
     struct Rng(u64);
     impl Rng {
         fn next(&mut self) -> u64 {
@@ -1289,6 +1434,96 @@ mod bitcols_equivalence {
                     assert_eq!(
                         old, new,
                         "edge case {i} axis={axis:?} pos={positive} skip={skip}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn verts_as_bytes(v: &[Quantized12ByteVertex]) -> &[u8] {
+        bytemuck::cast_slice(v)
+    }
+
+    /// 12B 経路も pull 版と同証明系でカラム bit 導出へ移行した。新 greedy_axis
+    /// (greedy_merge_2d_bits) は旧 face_visible+greedy_merge_2d 参照経路と
+    /// 頂点列・index 列 (個数・内容・順序) が全ケース完全同一でなければならない。
+    #[test]
+    fn bitcols_12b_match_face_visible_fuzz() {
+        for (seed, pct) in [
+            (0x1001u64, 30),
+            (0x1002, 50),
+            (0x1003, 62),
+            (0x1004, 85),
+            (0x1005, 3),
+            (0x1006, 100),
+        ] {
+            let palette = fuzz_section(seed, pct);
+            let cols = opaque_cols(&palette);
+            for &(axis, positive) in &Axis::ALL {
+                for skip in [false, true] {
+                    let (old_v, old_i) = old_axis_12b(&palette, axis, positive, skip);
+                    let mut new_v = Vec::new();
+                    let mut new_i = Vec::new();
+                    greedy_axis(&cols, &mut new_v, &mut new_i, axis, positive, skip);
+                    assert_eq!(
+                        verts_as_bytes(&old_v),
+                        verts_as_bytes(&new_v),
+                        "verts mismatch seed={seed:#x} pct={pct} axis={axis:?} pos={positive} skip={skip} (old={} new={})",
+                        old_v.len(),
+                        new_v.len()
+                    );
+                    assert_eq!(
+                        old_i,
+                        new_i,
+                        "indices mismatch seed={seed:#x} pct={pct} axis={axis:?} pos={positive} skip={skip}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// 破損境界: 全空 / 全面固体 / 単 voxel 角 / 全面 checker (12B 経路)。
+    #[test]
+    fn bitcols_12b_edge_sections_match() {
+        let cases: Vec<SectionPalette> = vec![
+            [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE],
+            [7u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE],
+            {
+                let mut p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+                p[idx(0, 0, 0)] = 9;
+                p[idx(15, 15, 15)] = 9;
+                p
+            },
+            {
+                let mut p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+                for z in 0..SECTION_SIZE {
+                    for y in 0..SECTION_SIZE {
+                        for x in 0..SECTION_SIZE {
+                            if (x + y + z) % 2 == 0 {
+                                p[idx(x, y, z)] = 4;
+                            }
+                        }
+                    }
+                }
+                p
+            },
+        ];
+        for (i, palette) in cases.iter().enumerate() {
+            let cols = opaque_cols(palette);
+            for &(axis, positive) in &Axis::ALL {
+                for skip in [false, true] {
+                    let (old_v, old_i) = old_axis_12b(palette, axis, positive, skip);
+                    let mut new_v = Vec::new();
+                    let mut new_i = Vec::new();
+                    greedy_axis(&cols, &mut new_v, &mut new_i, axis, positive, skip);
+                    assert_eq!(
+                        verts_as_bytes(&old_v),
+                        verts_as_bytes(&new_v),
+                        "12B edge case {i} axis={axis:?} pos={positive} skip={skip}"
+                    );
+                    assert_eq!(
+                        old_i, new_i,
+                        "12B edge case {i} axis={axis:?} pos={positive} skip={skip}"
                     );
                 }
             }
