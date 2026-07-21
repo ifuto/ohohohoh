@@ -151,6 +151,24 @@ fn gen_section(pattern: &str, seed: u64) -> SectionPalette {
                     }
                     "dense8" => (1 + h % 8) as u16,
                     "ids255" => (1 + h % 255) as u16,
+                    // leaf fast path 用: 実葉ブロック id (LEAF_TYPES 語彙 18/161/200) を
+                    // 使うパターン。既存 8 パターンは全て非葉 id のため変換デルタ 0 で、
+                    // 「葉が存在する場合」の経路を実測できていなかった (方法論修正)。
+                    "forest_leaf" => {
+                        // 密な葉ドーム (y<10): 内部葉が collapse 対象になる構造。
+                        if y < 10 && h % 100 < 85 {
+                            [18u16, 161, 200][(h % 3) as usize]
+                        } else {
+                            0
+                        }
+                    }
+                    "sparse_leaf" => {
+                        if h % 100 < 8 {
+                            [18u16, 161, 200][(h % 3) as usize]
+                        } else {
+                            0
+                        }
+                    }
                     other => panic!("unknown pattern {other}"),
                 };
             }
@@ -218,6 +236,23 @@ fn main() {
         }
     }
 
+    // ===================================================== A2. RLE decode (encode の対)
+    for pat in PATTERNS {
+        for (si, seed) in [0xA11u64, 0xA12, 0xA13].iter().enumerate() {
+            let sec = gen_section(pat, *seed);
+            let rle = RleSection::encode(&sec);
+            let (ns, back) = measure(|| rle.decode(), 5);
+            let sum: u64 = back.iter().map(|&v| v as u64).sum();
+            push(
+                "rle_decode",
+                format!("{pat} s{si}"),
+                ns,
+                1,
+                format!("sum={sum} runs={}", rle.runs.len()),
+            );
+        }
+    }
+
     // ===================================================== B. greedy mesh (pull)
     for pat in PATTERNS {
         for (si, seed) in [0xB22u64, 0xB23, 0xB24].iter().enumerate() {
@@ -234,7 +269,7 @@ fn main() {
     }
 
     // ======================================= C. column mesh (cull on/off, 高さ掃引)
-    for pat in ["flat", "noise", "caves", "dense8"] {
+    for pat in PATTERNS {
         for cull in [true, false] {
             let col = gen_column(pat, 8, 0xC33);
             let (ns, mesh) = measure(|| mesh_chunk_column_pull(&col, 0, 0, cull), 3);
@@ -247,20 +282,22 @@ fn main() {
             );
         }
     }
-    for h in [4usize, 16] {
-        let col = gen_column("noise", h, 0xC44);
-        let (ns, mesh) = measure(|| mesh_chunk_column_pull(&col, 0, 0, true), 3);
-        push(
-            "mesh_column_scale",
-            format!("noise h={h}"),
-            ns,
-            1,
-            format!("quads={}", mesh.quads.len()),
-        );
+    for pat in ["noise", "caves", "dense8"] {
+        for h in [4usize, 16] {
+            let col = gen_column(pat, h, 0xC44);
+            let (ns, mesh) = measure(|| mesh_chunk_column_pull(&col, 0, 0, true), 3);
+            push(
+                "mesh_column_scale",
+                format!("{pat} h={h}"),
+                ns,
+                1,
+                format!("quads={}", mesh.quads.len()),
+            );
+        }
     }
 
     // ============================================ D. 12B 頂点量子化 (スループット+決定出力)
-    for bits in [14u32, 18, 22] {
+    for bits in [12u32, 14, 18, 20, 22] {
         let n = 1usize << bits;
         // 公平性修正: 旧版は計測ループ内で rng 生成ごと計っていたため
         // rng コスト (~16ns/v) が encode 値を支配していた。入力は事前生成し
@@ -309,7 +346,7 @@ fn main() {
     }
 
     // ============================================================ E. packed4
-    for bits in [16u32, 22] {
+    for bits in [12u32, 16, 18, 22] {
         let n = 1usize << bits;
         let (ns, acc) = measure(
             || {
@@ -346,8 +383,8 @@ fn main() {
     }
 
     // ============================================================ F. morton
-    {
-        let n = 1usize << 22;
+    for bits in [12u32, 16, 22] {
+        let n = 1usize << bits;
         let (ns, acc) = measure(
             || {
                 let mut acc = 0u64;
@@ -361,7 +398,7 @@ fn main() {
         );
         push(
             "morton_split3_rt",
-            "n=2^22".into(),
+            format!("n=2^{bits}"),
             ns,
             n as u64,
             format!("acc={acc}"),
@@ -369,7 +406,7 @@ fn main() {
     }
 
     // ============================================ G. bitpacked section (set/get)
-    for pat in ["noise", "dense8", "ids255"] {
+    for pat in ["flat", "sparse", "noise", "checker", "dense8", "ids255"] {
         let sec = gen_section(pat, 0x677);
         let (ns, (foot, sum)) = measure(
             || {
@@ -430,7 +467,7 @@ fn main() {
     }
 
     // ============================================================ I. intern pool
-    for bits in [16u32, 20] {
+    for bits in [12u32, 16, 20, 22] {
         let n = 1usize << bits;
         let (ns, (uniq, hits)) = measure(
             || {
@@ -456,9 +493,9 @@ fn main() {
     }
 
     // ============================================================ J. BlockLut
-    {
+    for bits in [18u32, 20, 22] {
         let lut = BlockLut::new();
-        let n = 1u64 << 22;
+        let n = 1u64 << bits;
         let (ns, acc) = measure(
             || {
                 let mut acc = 0u64;
@@ -478,7 +515,7 @@ fn main() {
         );
         push(
             "blocklut_lookup",
-            "n=2^22".into(),
+            format!("n=2^{bits}"),
             ns,
             n,
             format!("acc={acc}"),
@@ -486,7 +523,7 @@ fn main() {
     }
 
     // ===================================================== K. meshlet cone build
-    for bits in [10u32, 16, 18] {
+    for bits in [10u32, 12, 14, 16, 18] {
         let n = 1usize << bits;
         let mut normals = Vec::with_capacity(n);
         let mut rng = Rng::new(0x100B);
@@ -511,7 +548,7 @@ fn main() {
     }
 
     // ============================================ L. LBVH build + frustum cull
-    for bits in [12u32, 16, 18] {
+    for bits in [12u32, 14, 16, 18, 20] {
         let n = 1usize << bits;
         let mut centers = Vec::with_capacity(n);
         let mut radii = Vec::with_capacity(n);
@@ -548,17 +585,19 @@ fn main() {
             Plane::new(0.0, 0.0, -1.0, 2048.0),
         ];
         let (ns_c, vis) = measure(|| tree.cull(&planes), 3);
+        // per-op は ops=n (リーフ数) で正規化。ops=1 だと家族中央値比の
+        // INVESTIGATE フラグが「n スケーリング」を誤検出する方法論上の罠だった。
         push(
             "lbvh_cull",
             format!("n=2^{bits}"),
             ns_c,
-            1,
+            n as u64,
             format!("visible={}", vis.len()),
         );
     }
 
     // ===================================== M. DDA (疑似ベンチ 546ms 行のコア経路)
-    for pat in ["flat", "noise", "caves", "dense8"] {
+    for pat in PATTERNS {
         for rays in [64u32, 256, 1024] {
             let sec = gen_section(pat, 0xDDA);
             let (ns, hits) = measure(
@@ -599,8 +638,8 @@ fn main() {
     }
 
     // ===================================================== N. entity culling
-    for bits in [11u32, 15] {
-        for density in [10u64, 40] {
+    for bits in [11u32, 13, 15] {
+        for density in [10u64, 40, 70] {
             let n = 1usize << bits;
             let mut targets = Vec::with_capacity(n);
             let mut rng = Rng::new(0xE11 ^ density);
@@ -637,7 +676,7 @@ fn main() {
     }
 
     // ===================================================== O. light cache
-    for ops in [20u32, 22] {
+    for ops in [16u32, 18, 20, 22] {
         let n = 1usize << ops;
         let (ns, sum) = measure(
             || {
@@ -674,11 +713,25 @@ fn main() {
     }
 
     // ===================================================== P. leaf fast path
-    for pat in ["sparse", "noise"] {
+    // 方法論修正: 旧版は計測クロージャ内で gen_section (pattern 依存の重い生成、
+    // 特に noise は 2^3 多数決ハッシュ ×4096) まで計っていたため apply 本体の
+    // コストが入力生成コストに埋没していた。セクションはループ外で1回生成し、
+    // measure 内は [u16;4096] の Copy (8KB memcpy) + apply + sum のみを計測する。
+    for pat in [
+        "flat",
+        "sparse",
+        "noise",
+        "checker",
+        "caves",
+        "dense8",
+        "forest_leaf",
+        "sparse_leaf",
+    ] {
+        let base = gen_section(pat, 0x1EAF);
+        let before: u64 = base.iter().map(|&v| v as u64).sum();
         let (ns, changed) = measure(
             || {
-                let mut sec = gen_section(pat, 0x1EAF);
-                let before: u64 = sec.iter().map(|&v| v as u64).sum();
+                let mut sec = base;
                 apply_leaf_fast_path(&mut sec, true);
                 let after: u64 = sec.iter().map(|&v| v as u64).sum();
                 before.wrapping_sub(after)
@@ -692,6 +745,53 @@ fn main() {
             1,
             format!("delta_idsum={changed}"),
         );
+    }
+
+    // ===================================== Q. visibility graph flood fill (実 API)
+    use rsift_opt_gfx::visibility_graph::{ChunkNode, VisibilityGraph};
+    for g in [8i32, 16, 32] {
+        for opaque_pct in [0u64, 20] {
+            let mut graph = VisibilityGraph::new();
+            for z in 0..g {
+                for x in 0..g {
+                    if x + 1 < g {
+                        graph.add_edge(ChunkNode { x, z }, ChunkNode { x: x + 1, z });
+                    }
+                    if z + 1 < g {
+                        graph.add_edge(ChunkNode { x, z }, ChunkNode { x, z: z + 1 });
+                    }
+                }
+            }
+            let seed = 0xF100 ^ (g as u64) << 8 ^ opaque_pct;
+            let is_opaque =
+                |c: ChunkNode| hash3(c.x as u32, 0, c.z as u32, seed) % 100 < opaque_pct;
+            let (ns, (reached, vis_hits)) = measure(
+                || {
+                    let reached = graph.flood_fill(ChunkNode { x: 0, z: 0 }, 6, is_opaque);
+                    // 直近 flood 結果の実キャッシュ参照 (is_visible の経路も一緒に測る)。
+                    let hits = (0..g)
+                        .map(|i| {
+                            if graph
+                                .is_visible(ChunkNode { x: 0, z: 0 }, ChunkNode { x: i, z: g / 2 })
+                            {
+                                1u64
+                            } else {
+                                0
+                            }
+                        })
+                        .sum::<u64>();
+                    (reached.len() as u64, hits)
+                },
+                5,
+            );
+            push(
+                "visibility_flood",
+                format!("grid={g}x{g} opaque={opaque_pct}%"),
+                ns,
+                1,
+                format!("reached={reached} vis_hits={vis_hits}"),
+            );
+        }
     }
 
     // ================================================================ 集計出力

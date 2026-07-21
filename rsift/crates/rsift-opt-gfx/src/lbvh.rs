@@ -142,6 +142,14 @@ pub struct Lbvh {
     /// これで run 単位の一括 reject / 一括 accept を行い、出力集合・順序は
     /// 旧実装と bit 同一のまま計算量を削減する。
     run_bounds: Vec<(Vec3, f32)>,
+    /// 2026-07-21 ベンチ駆動追加 (第2弾): morton 順に並べ替え済みのリーフ
+    /// center/radius。公開フィールド centers/radii は元配列のまま保持し
+    /// (後方互換)、cull の per-leaf 経路はこちらの連続領域を順に読む。
+    /// 旧実装は `centers[order[i]]` のランダムギャザーで、n=2^20 では
+    /// 境界リーフ走査がキャッシュミス支配だった (wide_static_bench:
+    /// cull 5.7ns/leaf、2^14-2^16 の 2.1ns から 2.7 倍劣化)。
+    sorted_centers: Vec<Vec3>,
+    sorted_radii: Vec<f32>,
 }
 
 /// 二段カリングの run サイズ (morton 連続リーフ数)。
@@ -186,12 +194,16 @@ impl Lbvh {
             let radius = Vec3::new(mx.x - mn.x, mx.y - mn.y, mx.z - mn.z).length() * 0.5;
             run_bounds.push((center, radius));
         }
+        let sorted_centers: Vec<Vec3> = order.iter().map(|&i| centers[i]).collect();
+        let sorted_radii: Vec<f32> = order.iter().map(|&i| radii_f[i]).collect();
         Lbvh {
             order,
             codes,
             centers: centers.to_vec(),
             radii: radii_f,
             run_bounds,
+            sorted_centers,
+            sorted_radii,
         }
     }
 
@@ -218,9 +230,13 @@ impl Lbvh {
                 out.extend_from_slice(run);
                 continue;
             }
-            for &i in run {
-                let c = self.centers[i];
-                let r = self.radii[i];
+            // 境界 run: 元インデックス経由ではなく morton 順連続領域を読む
+            // (ギャザーのキャッシュミスを排除)。出力は元インデックスのまま
+            // なので集合・順序ともに旧実装と bit 同一。
+            let base = run_i * CULL_RUN;
+            for (off, &i) in run.iter().enumerate() {
+                let c = self.sorted_centers[base + off];
+                let r = self.sorted_radii[base + off];
                 if !planes.iter().any(|&pl| Lbvh::sphere_outside(pl, c, r)) {
                     out.push(i);
                 }
