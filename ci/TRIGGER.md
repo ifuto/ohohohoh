@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 8
+- count: 9
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -26,3 +26,4 @@
 - 2026-07-21: zero-test 4モジュール消化 + Mods ボタン正直性修正 (456テスト)
 - 2026-07-21: zero-test 第2波4モジュール消化 (471テスト: tiling/lod/pool/dag)
 - 2026-07-21: zero-test 第3波4モジュール消化 (481テスト: mimalloc/pgo/rayon/zerocopy)
+- 2026-07-21: 第3波失敗調査 (zerocopy 空cast の align 固定 + 失敗再現確認)
