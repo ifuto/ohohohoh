@@ -281,12 +281,6 @@ impl RsiftRenderPipeline {
         }
     }
 
-    fn demo_mode_enabled() -> bool {
-        std::env::var("RSIFT_ENABLE_DEMO_RENDER")
-            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "on" | "ON"))
-            .unwrap_or(false)
-    }
-
     fn prepare_column(&self, cx: i32, cz: i32) -> (Vec<SectionPalette>, Vec<RleSection>, u64, i32) {
         if let Some((mut sections, section_y0)) = self.world.column_for_mesh(cx, cz) {
             for palette in &mut sections {

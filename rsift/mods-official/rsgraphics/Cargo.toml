@@ -3,7 +3,7 @@ name = "rsgraphics"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-description = "RsGraphics: Official Rsift Mod that migrates all Minecraft rendering to bindless wgpu, Sodium-surpassing meshing, and Iris Shaders"
+description = "RsGraphics: Official Rsift rendering mod (wgpu pipeline, 12-byte quantized vertices, Rayon meshing, GPU compute culling; shader-pack GLSL execution not implemented — built-in Eco WGSL fallback)"
 
 [dependencies]
 bytemuck.workspace = true

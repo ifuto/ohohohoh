@@ -128,11 +128,6 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t.clamp(0.0, 1.0)
 }
 
-pub fn ease_out_cubic(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    1.0 - (1.0 - t).powi(3)
-}
-
 pub fn ease_out_expo(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     if t >= 1.0 {
@@ -140,9 +135,4 @@ pub fn ease_out_expo(t: f32) -> f32 {
     } else {
         1.0 - 2f32.powf(-10.0 * t)
     }
-}
-
-// Back-compat alias
-pub fn glass_frame() -> egui::Frame {
-    glass_card()
 }

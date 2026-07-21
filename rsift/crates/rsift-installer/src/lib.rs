@@ -413,19 +413,6 @@ impl LauncherInstaller {
             .collect()
     }
 
-    fn is_launch_agent_flag(arg: &str) -> bool {
-        arg.starts_with("-agentpath:") || arg.starts_with("-javaagent:")
-    }
-
-    /// Strip legacy `-javaagent:` from profile javaArgs (causes exit 1 with agentpath on some JVMs).
-    fn strip_javaagent_from_args(java_args: &str) -> String {
-        java_args
-            .split_whitespace()
-            .filter(|a| !a.starts_with("-javaagent:"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
-
     fn unique_profile_name(existing: &[String], base: &str) -> String {
         for n in 1..=999 {
             let candidate = format!("{} ({})", base, n);

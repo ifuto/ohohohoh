@@ -29,7 +29,8 @@ pub struct GpuFsr1Pass {
     pub low_w: u32,
     pub low_h: u32,
     pub sharpness: f32,
-    inter: wgpu::Texture,
+    // 注: 旧 `inter: wgpu::Texture` は view が内部参照を保持するため保持不要かつ
+    // 一度も読まれないデッド状態だった (frame_pipeline hdr/depth と同根 — 2026-07-21 監査)。
     inter_view: wgpu::TextureView,
     final_tex: wgpu::Texture,
     final_view: wgpu::TextureView,
@@ -201,7 +202,6 @@ impl GpuFsr1Pass {
             low_w,
             low_h,
             sharpness,
-            inter,
             inter_view,
             final_tex,
             final_view,

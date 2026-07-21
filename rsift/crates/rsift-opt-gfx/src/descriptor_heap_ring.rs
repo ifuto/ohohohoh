@@ -17,7 +17,8 @@ pub struct DescriptorHeapRing {
     capacity: u32,
     descriptor_size: u32,
     head: Mutex<u32>,
-    tail: u32,
+    // 注: 旧 `tail: u32` は初期化後一度も読み書きされないデッドフィールドで、
+    // doc の「埋まったら tail を進める」は未実装の約束だった (2026-07-21 監査)。
     frame_fence: AtomicU64,
     allocations: AtomicU64,
 }
@@ -28,13 +29,14 @@ impl DescriptorHeapRing {
             capacity,
             descriptor_size,
             head: Mutex::new(0),
-            tail: 0,
             frame_fence: AtomicU64::new(0),
             allocations: AtomicU64::new(0),
         }
     }
 
-    /// O(1)でDescriptor確保。リングが埋まったら自動的にtailを進める（古いフレームはGPU完了済み想定）
+    /// O(1)でDescriptor確保。リング末端に達すると 0 へラップする。
+    /// 注意: フェンス完了確認は行わない設計 (呼び出し側でフレーム同期保証が前提) —
+    /// 「tail を進める退避」は存在しない (2026-07-21 監査で虚偽コメントを訂正)。
     pub fn alloc(&self, count: u32) -> Option<DescriptorHandle> {
         let mut head = self.head.lock();
         let start = *head;

@@ -1,21 +1,17 @@
 //! Java agent bridge — deferred mod load + safe JNI screen injection.
 
-#[path = "chunk_bridge.rs"]
-mod chunk_bridge;
-#[path = "glfw_hook.rs"]
-mod glfw_hook;
-#[path = "jvmti_events.rs"]
-mod jvmti_events;
-#[path = "mod_bridge.rs"]
-mod mod_bridge;
-#[path = "platform_bridge.rs"]
-mod platform_bridge;
-#[path = "render_bridge.rs"]
-mod render_bridge;
-#[path = "screen_buttons.rs"]
-mod screen_buttons;
-#[path = "screen_inject.rs"]
-mod screen_inject;
+// 2026-07-21 監査: 以前は `#[path = "..."]` で兄弟ファイル 8 本
+// (chunk_bridge / glfw_hook / jvmti_events / mod_bridge / platform_bridge /
+// render_bridge / screen_buttons / screen_inject) を**私有 mod として二重
+// ロード**していた。その結果、ファイル内の `#[no_mangle]` JNI エクスポートと
+// static 状態がクレート内に 2 インスタンス化され、
+//   * テストバイナリのリンクで `symbol Java_com_rsift_... is already defined`
+//   * 実行時は static 状態の分裂 (agent 経由と JNI 直接経由で別 static)
+// を引き起こしていた。各ファイルは `super::兄弟` 相互参照のみで木非依存に
+// 書かれているため本体は lib.rs の `pub mod` 1 本で成立する。
+// 本ファイルは以下の crate:: エイリアス経由で参照する (未使用の 3 本
+// — chunk_bridge / glfw_hook / render_bridge — のインポートは不要)。
+use crate::{jvmti_events, mod_bridge, platform_bridge, screen_buttons, screen_inject};
 
 use jni::objects::{JClass, JObject, JString, JValue};
 use jni::sys::{jarray, jbyteArray, jint, jstring};

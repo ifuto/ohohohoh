@@ -66,8 +66,9 @@ impl FrameReuseStats {
 
 #[derive(Debug, Clone)]
 struct ChunkFrameEntry {
-    fingerprint: u64,
-    sections: Vec<SectionPalette>,
+    // 注: 旧 `fingerprint` (変更検知ハッシュのつもり) と `sections` (パレット全列の
+    // 複製 = エントリ当たり数百KBの二重保持) は一度も読まれないデッド状態だった。
+    // 鮮度判定は実際には last_tick ベース (2026-07-21 監査でメモリ二重保持も解消)。
     rle: Vec<RleSection>,
     occupied: Vec<u32>,
     /// Full-detail mesh before LOD thinning (Near tier).
@@ -213,12 +214,6 @@ impl FrameReuseCache {
         })
     }
 
-    fn touch(&mut self, key: (i32, i32), _old_tick: u64) {
-        if let Some(e) = self.entries.get_mut(&key) {
-            e.last_tick = self.tick;
-        }
-    }
-
     pub fn record_miss(&mut self) {
         self.stats.misses += 1;
         self.cumulative_misses += 1;
@@ -238,11 +233,8 @@ impl FrameReuseCache {
         if !self.enabled {
             return;
         }
-        let fingerprint = Self::rle_fingerprint(rle);
         let memory_bytes = Self::entry_bytes(sections, rle, full_mesh.as_ref(), svo.as_ref());
         let entry = ChunkFrameEntry {
-            fingerprint,
-            sections: sections.to_vec(),
             rle: rle.to_vec(),
             occupied: occupied.to_vec(),
             full_mesh,

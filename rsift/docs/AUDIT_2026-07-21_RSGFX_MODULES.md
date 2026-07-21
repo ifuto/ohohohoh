@@ -114,3 +114,123 @@ example ベンチ経由で実動作が間接検証されているが、単体不
 3. 36 のテスト皆無モジュールの順次カバー (本レポート一覧を基準点とする)。
 4. bench-ci (GitHub Actions) 設置後は CI 上で本監査一式 (test + naga sweep +
    ベンチ determinism) を緑運用化。
+
+---
+
+# 第2ラウンド監査 (2026-07-21): スタブ / 見せかけ配線 / デッドコード / ドキュメント乖離
+
+**要求**: 「明示的スタブや仮実装、見せかけ配線、デッドコード、ドキュメント主張との
+乖離があるか徹底的に確認し、あった場合は修正」— 対象はワークスペース全 19 クレート。
+
+## 方法 (全て実行値)
+
+1. `todo!` / `unimplemented!` 全走査 → **ワークスペース 0 件**。
+2. フィールド/関数/定数ごとの**参照ゼロ証明** (`grep` 全クレート横断) + コンパイラ
+   dead_code 警告の完全帰属。文字列コード生成 (AOT トランスパイラ) 経由の参照も確認。
+3. 同一コマンドでの前後比較: `cargo check --workspace --locked --offline`、
+   実テスト実行、release ベンチ決定的ダイジェスト ×2、rustfmt HEAD-vs-current、clippy。
+4. 事前存在疑いの失敗は **スタッシュで HEAD に戻して再現確認** してから判断
+   (変更の無実を実証してから関連修正へ進む運用)。
+
+## 修正一覧 (21 ファイル + WGSL 1 ファイル削除)
+
+### A. デッドフィールド / 見せかけペイロード (rsift-opt-gfx, 11 ファイル)
+| ファイル | 除去したデッド状態 |
+|---|---|
+| async_chunk_io.rs | 未構築 `LruEntry`、未読 `root` フィールド、`IoEvent::Failed/Stored` の未読 cx/cz ペイロード (unit 化。消費者不在の現状注記も追加) |
+| stutter_guard.rs | 未読 `chunk_size` |
+| execute_indirect.rs | 未読 `gpu_buffer_size` |
+| job_system.rs | 書き込み/読み取り双方ゼロの `idle: AtomicUsize`、未呼出 `PrioQueue::is_empty` (sys/worker は RAII keep-alive として必要 → `#[allow(dead_code)]` + 理由明文化) |
+| descriptor_heap_ring.rs | doc が「tail を進める」と謳うが init 後に読み書きゼロだった `tail` (doc も訂正。使用中の frame_fence は保持) |
+| full_graph_wiring.rs | cache_dir 導出後に未読の `game_dir` |
+| frame_pipeline.rs | wgpu TextureView が保持側で冗長だった `hdr/depth` (VRAM 保持の重複も解消) |
+| frame_fsr1.rs | 同上の `inter` |
+| frame_reuse.rs | 一度も読まれない `fingerprint` + エントリ毎のパレット全複製 `sections` (数百KB/chunk のメモリ二重保持を解消。鮮度判定は従来通り last_tick ベース) + それのみに使われた `touch()` |
+| gpu_vertex_pull.rs | 初期化毎に実 WGSL コンパイルしながら一度も dispatch されない `task_pipeline` (`try_task_pipeline` + `SHADER_TASK_EMULATION` ごと除去。meshlet カリングは `frame_worldgen::GpuMeshletCull` が別途実 dispatch する現役設計は維持) |
+| render_pipeline.rs | 未呼出 `demo_mode_enabled` (環境変数 `RSIFT_ENABLE_DEMO_RENDER` は設定しても元々無効果だったため可観測挙動は不変) |
+
+### B. 見せかけ UI データ (1 ファイル)
+- gui_settings.rs: `SodiumVideoSettingsGui::new()` が **ディスクに存在しない
+  シェーダーパック名 3 件** (BSL/Complementary/Sildur's) をハードコード表示していた
+  → 空初期化 + 「実一覧は `IrisShaderEngine::discover_shaderpacks` の走査結果を
+  注入する」契約を明文化。
+
+### C. デッドコード除去 (他クレート, 7 ファイル) — 全て参照ゼロ証明つき
+- transpiler/collision.rs: `resolve_motion_with_step` の step 分岐の
+  `vel[1] = 0.0` (by-value 引数への即 return 直前の書き込み = 効果ゼロの dead write)
+  + 戻り値契約 (位置+接地のみ、速度は還元されない) を doc 明文化。**出力 bit 同一**。
+- launch/offline.rs: 未呼出 `find_java` / `which_java` (+ そのみで使う
+  `use std::process::Command`)。実 Java 解決は `java::ensure_java_home` が現役。
+- launch/version_json.rs: 未呼出 `library_from_legacy`。
+- installer/lib.rs: 未呼出 `is_launch_agent_flag` / `strip_javaagent_from_args`。
+- app/theme.rs: 参照ゼロ `ease_out_cubic` / `glass_frame` (glass_card への旧 alias)。
+- replay/compressor.rs: 一度も使われない訓練辞書シード定数 `PACKET_DICT_SEED`
+  + モジュール doc の虚偽 ("ZSTD compression with Minecraft packet dictionary")
+  を実態 (素の `zstd::bulk::compress`) に訂正。
+
+### D. 構造欠陥 (実害あり): rsift-jvm のモジュール二重ロード根絶 (1 ファイル)
+- agent_bridge.rs が `#[path = "..."]` で兄弟 8 ファイルを**私有 mod として
+  二重ロード**していた (lib.rs でも `pub mod`)。影響: ① `#[no_mangle]` JNI
+  エクスポートがクレート内に 2 インスタンス化され `cargo test -p rsift-launch /
+  -p rsift-jvm` が **`symbol Java_com_rsift_... is already defined` でリンク不能**、
+  ② agent 経由と JNI 直接経由が**別 static 状態を参照する split-brain**、
+  ③ clippy `duplicate_mod` 8 件 + 警告の 12 重複行。各ファイルは `super::兄弟` のみで
+  木非依存に書かれていたため、crate:: エイリアス化で単一インスタンスに統一。
+  → **リンク解消 (jvm/launch テストが史上初めて実行可能に)**
+
+### E. 既存テストが露呈した実バグ (2 件、HEAD でも再現確認済 = 本ラウンド非起因)
+1. **transpiler/pathfinding.rs の A\* バグ**: ヒープ優先度 f=g+h を g (dist) として
+   比較・累積していたため最初の展開以外が全て stale continue となりゴール未到達
+   (`test_hpa_pathfinding` 恒常 FAIL)。g と f を分離する正しい A\* に修正 → 緑。
+   (クラスタ理論コスト・出力経路の決定性は維持)
+2. **launch/offline.rs のテスト環境仮定**: `APPDATA.unwrap()` が Windows 以外で panic。
+   依存データ不在時の早期 return (versions 不在分岐と同じ sparse-data skip 契約)
+   に修正 → Linux 緑。
+
+### F. ドキュメント主張と実装の乖離 (2 ファイル)
+- docs/SODIUM_IRIS_SURPASSING_ENGINE.md → **全面改訂**。旧版の虚偽:
+  「Sodium と Nvidium の性能を上回る」(Nvidium は一度も比較未実施)、
+  「Iris/OptiFine と 100% シェーダー互換」(GLSL 実行互換は未配線で fail-loud
+  fallback)、「完全な MRT パイプライン構築」(Eco は identity composite のみ)、
+  「設定 GUI をゲーム内 UI に配備」(実態は launcher からの box-drawing ログ
+  preview)、§4 の「検証済み実行ログ」は**実在しないフィクション**
+  (Complementary zip を MRT ロードするコード経路は存在しない)。→ 全て検証可能な
+  事実表 + 現行コードが実際に発行するメッセージの引用に置換。
+  (AUDIT_STUB_WIRING.md 指摘 D をこれで解決)
+- mods-official/rsgraphics/Cargo.toml description: 「bindless wgpu,
+  Sodium-surpassing meshing, and Iris Shaders」→ 実装事実 (12B 量子化頂点 / Rayon
+  メッシング / GPU compute カリング / GLSL 実行互換未実装の明記) に置換。
+
+### G. 資産削除
+- shaders/terrain_task_emulation.wgsl: 上記 A の専用シェーダー (現行エントリポイント
+  `cs_task_emulation` は一度も dispatch されず)。naga スイープはディレクトリ動的
+  列挙のため影響なし (SHADER_MESH_SHADER = GpuMeshletCull 現用資産は保持)。
+
+## スキップと正当化 (判断記録)
+- **rsift-jvm の never-used 群** (render_bridge/glfw_hook/jvmti_events/agent_bridge
+  内の未配線 fn、`MAX_INJECT_TICKS` 等) と **rsift-api::adaptive_perf 3 件**
+  (cfg(not windows) スタンドイン、cfg 付き caller あり): Windows/JNI 契約面は
+  本 sandbox (Linux/GPU 無し) で検証不能かつ cdylib 外的契約が絡むため保持
+  (第1ラウンドの方針を継続)。
+- **AsyncChunkIo**: 消費者ゼロだが自己完結実装 + 単体テスト緑の外面 API として
+  残存。整合 (エンジン組込) は今後の課題としてソース注記済み (削除しない判断)。
+- **OccVertex 可視性警告・winit/egui deprecated 指摘・dx12 FFI 命名警告** 等は
+  事前存在の設計都合 (本ラウンドの対象外分類) として保持。
+
+## 検証結果 (全て実測・本ラウンド実施)
+- `cargo check --workspace --locked --offline`: **全 19 クレート エラー 0**。
+  警告 (crate 別, 前日測定 → 本ラウンド): opt-gfx **33→16**、jvm **40+12dup→22+0dup**、
+  transpiler 10→9、launch 5→2、replay 6→5、installer 1→0。
+  その他 (非編集, 変化なし): api 13、dx12 5、parser 3、rsreplay 2、launcher 2、app 3。
+- テスト: opt-gfx **372/372**、transpiler **13/13** (旧 HPA 恒常 FAIL→修正)、
+  jvm **1/1**・launch **1/1** (旧: 双方ともリンク不能で実行すら不可)、
+  replay 3/3、installer 0/0、app 0/0。
+- ベンチ bit 同一: `pseudo_mc_bench` 決定的ダイジェスト 2 回実行で
+  **sha256 `29a8544ef3…cf58` 完全一致**。doc 確定値 (S1 24543/314193, C mesh
+  303895 verts/3646740 B, A 861656/27572992, ACMR 1.669→0.929, hit 90.9%,
+  edit C 24511704 B, 水 116719 quads, palette 248110 B) も出力から spot 一致。
+- rustfmt: 編集 20 .rs ファイル全てで HEAD 比の差分 hunk 数が**増加 0**
+  (theme 末尾の余分空行 1 件のみ新規混入 → 即修正済)。
+- clippy: 編集箇所に新規警告 0 (agent_bridge `MAX_INJECT_TICKS` デッド const は
+  上記スキップ基準で保持。`is_multiple_of` 等は新 clippy による旧コードへの
+  ベースライン指摘)。

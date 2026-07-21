@@ -50,22 +50,16 @@ enum IoEvent {
         cz: i32,
         bytes: Vec<u8>,
     },
-    Failed {
-        cx: i32,
-        cz: i32,
-    },
-    Stored {
-        cx: i32,
-        cz: i32,
-    },
-}
-
-struct LruEntry {
-    key: (i32, i32),
+    // 注: Failed/Stored の cx/cz ペイロードは唯一の消費者 (poll_ready) が
+    // 読まないデッドデータだったため unit 化 (2026-07-21 監査)。
+    Failed,
+    Stored,
 }
 
 pub struct AsyncChunkIo {
-    root: PathBuf,
+    // 注: root フィールドは new() 内で create_dir_all 済み + ワーカーが root_cl
+    // クローンを保持するため、構造体にも残すと一度も読まれないデッド状態になる
+    // (2026-07-21 監査)。同じく未構築の `struct LruEntry` は削除済み。
     capacity: usize,
     cache: HashMap<(i32, i32), Vec<u8>>,
     lru: VecDeque<(i32, i32)>,
@@ -77,6 +71,9 @@ pub struct AsyncChunkIo {
     misses: u64,
 }
 
+/// 現在の配線状態: 本モジュールは自己完結の実装 (ワークスレッド + 優先度 heap +
+/// LRU + 実 disk I/O) だが、ワークスペース内に消費者は存在しない
+/// (2026-07-21 監査。エンジン統合は今後の課題)。単体テストは実動作を検証済み。
 impl AsyncChunkIo {
     pub fn new(root: impl Into<PathBuf>, capacity: usize) -> Self {
         let root = root.into();
@@ -89,7 +86,6 @@ impl AsyncChunkIo {
             .spawn(move || worker_loop(root_cl, cmd_rx, evt_tx))
             .expect("spawn chunk io");
         Self {
-            root,
             capacity: capacity.max(8),
             cache: HashMap::new(),
             lru: VecDeque::new(),
@@ -144,7 +140,7 @@ impl AsyncChunkIo {
                         out.push((cx, cz, raw));
                     }
                 }
-                IoEvent::Failed { .. } | IoEvent::Stored { .. } => {}
+                IoEvent::Failed | IoEvent::Stored => {}
             }
         }
         out
@@ -216,10 +212,7 @@ fn worker_loop(root: PathBuf, rx: Receiver<IoCmd>, tx: Sender<IoEvent>) {
                             });
                         }
                         Err(_) => {
-                            let _ = tx.send(IoEvent::Failed {
-                                cx: k.cx,
-                                cz: k.cz,
-                            });
+                            let _ = tx.send(IoEvent::Failed);
                         }
                     }
                     // Also process any cmds that arrived
@@ -230,7 +223,7 @@ fn worker_loop(root: PathBuf, rx: Receiver<IoCmd>, tx: Sender<IoEvent>) {
                             IoCmd::Store { cx, cz, bytes } => {
                                 let path = AsyncChunkIo::path(&root, cx, cz);
                                 let _ = fs::write(path, bytes);
-                                let _ = tx.send(IoEvent::Stored { cx, cz });
+                                let _ = tx.send(IoEvent::Stored);
                             }
                         }
                     }
@@ -239,7 +232,7 @@ fn worker_loop(root: PathBuf, rx: Receiver<IoCmd>, tx: Sender<IoEvent>) {
             IoCmd::Store { cx, cz, bytes } => {
                 let path = AsyncChunkIo::path(&root, cx, cz);
                 let _ = fs::write(path, bytes);
-                let _ = tx.send(IoEvent::Stored { cx, cz });
+                let _ = tx.send(IoEvent::Stored);
             }
         }
     }

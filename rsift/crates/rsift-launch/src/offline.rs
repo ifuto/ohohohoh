@@ -1,7 +1,6 @@
 //! Offline launch via `JNI_CreateJavaVM` + `Main.main`.
 
 use std::path::PathBuf;
-use std::process::Command;
 use tracing::info;
 
 use rsift_api::engine_caps::{EngineCaps, GpuCapabilityProbe};
@@ -212,36 +211,6 @@ pub fn offline_uuid(username: &str) -> String {
     )
 }
 
-/// Find `java` executable (JAVA_HOME or PATH).
-pub fn find_java() -> Option<PathBuf> {
-    if let Ok(home) = std::env::var("JAVA_HOME") {
-        let exe = PathBuf::from(home).join("bin").join(if cfg!(windows) {
-            "java.exe"
-        } else {
-            "java"
-        });
-        if exe.is_file() {
-            return Some(exe);
-        }
-    }
-    which_java()
-}
-
-fn which_java() -> Option<PathBuf> {
-    let cmd = if cfg!(windows) { "where" } else { "which" };
-    let out = Command::new(cmd).arg("java").output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let line = String::from_utf8_lossy(&out.stdout);
-    let first = line.lines().next()?.trim();
-    if first.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(first))
-    }
-}
-
 pub fn list_rsift_versions(minecraft_dir: &std::path::Path) -> Vec<String> {
     let versions = minecraft_dir.join("versions");
     let Ok(read) = std::fs::read_dir(&versions) else {
@@ -264,7 +233,12 @@ mod tests {
 
     #[test]
     fn game_args_exclude_quick_play() {
-        let mc = PathBuf::from(std::env::var("APPDATA").unwrap()).join(".minecraft");
+        // APPDATA (Windows 専用環境変数) が無い環境では依存データ不在のため
+        // 早期 return (versions 不在時の分岐と同じ sparse-data skip 契約)。
+        let Ok(appdata) = std::env::var("APPDATA") else {
+            return;
+        };
+        let mc = PathBuf::from(appdata).join(".minecraft");
         let versions = list_rsift_versions(&mc);
         let Some(id) = versions.last().cloned() else {
             return;

@@ -85,7 +85,8 @@ pub struct FrameWiringReport {
 /// 全サブシステムを保持・駆動する配線オーケストレーター。
 pub struct FullGraphWiring {
     tick: u64,
-    game_dir: std::path::PathBuf,
+    // 注: 旧 `game_dir: PathBuf` フィールドは cache_dir 導出後に一度も読まれない
+    // デッド状態だったため削除 (2026-07-21 監査)。`new(game_dir)` 引数は維持。
     init_time: std::time::Instant,
 
     // ---- block / section 基礎 ----
@@ -228,7 +229,6 @@ impl FullGraphWiring {
         }
         Self {
             tick: 0,
-            game_dir: game_dir.to_path_buf(),
             init_time: std::time::Instant::now(),
             block_lut: crate::branchless_block::BlockLut::new(),
             intern_pool: crate::intern_pool::InternPool::new(),

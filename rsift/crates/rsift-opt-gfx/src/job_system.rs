@@ -63,14 +63,17 @@ impl PrioQueue {
         }
         taken
     }
-    fn is_empty(&self) -> bool {
-        self.q.iter().all(|q| q.is_empty())
-    }
 }
 
 /// 実行中ジョブから見えるコンテキスト（並列 for などで子ジョブ投入用）。
 pub struct JobContext {
+    /// keep-alive: 本コンテキストが生存している間 JobSystemInner (ワーカー群)
+    /// の drop を遅らせる RAII アンカー。子ジョブ投入 API 予約でもある
+    /// (現行は read されないが drop セマンティクス上必要 — 2026-07-21 監査)。
+    #[allow(dead_code)]
     sys: Arc<JobSystemInner>,
+    /// ワーカー識別子 (子ジョブ投入時の投入先決定用の予約値)。
+    #[allow(dead_code)]
     worker: usize,
 }
 
@@ -82,7 +85,8 @@ struct Worker {
 pub struct JobSystemInner {
     workers: Vec<Arc<Worker>>,
     pending: AtomicUsize,
-    idle: AtomicUsize,
+    // 注: 旧 `idle: AtomicUsize` は書き込み・読み取り双方ゼロのデッドフィールド
+    // (待機は pending 側で実装) だったため削除 (2026-07-21 監査)。
     shutdown: Mutex<bool>,
 }
 
@@ -102,7 +106,6 @@ impl JobSystem {
                 wake: Condvar::new(),
             })).collect(),
             pending: AtomicUsize::new(0),
-            idle: AtomicUsize::new(0),
             shutdown: Mutex::new(false),
         });
         let mut threads = Vec::new();

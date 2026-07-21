@@ -1,8 +1,9 @@
 //! GPU vertex-pull pipeline — SSBO quads, draw without index buffer.
 //!
 //! Portable path: `@vertex` pull shader (`terrain_vertex_pull.wgsl`).
-//! Native path: task + mesh shader (`terrain_mesh_shader.wgsl`) when backend supports it.
-//! Fallback task emulation: compute → indirect draw args (`terrain_task_emulation.wgsl`).
+//! Meshlet カリング: `terrain_mesh_shader.wgsl` の compute エミュレーションを
+//! `frame_worldgen::GpuMeshletCull` が実 dispatch する (mesh shader 自体は
+//! WGSL 非対応のためソフトエミュレーションが正)。
 
 use crate::packed4::PackedPullQuad;
 use crate::pull_mesh::PullBuiltMesh;
@@ -12,7 +13,6 @@ use wgpu::util::DeviceExt;
 
 pub const SHADER_VERTEX_PULL: &str = include_str!("../shaders/terrain_vertex_pull.wgsl");
 pub const SHADER_MESH_SHADER: &str = include_str!("../shaders/terrain_mesh_shader.wgsl");
-pub const SHADER_TASK_EMULATION: &str = include_str!("../shaders/terrain_task_emulation.wgsl");
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -37,7 +37,6 @@ pub struct GpuVertexPullEngine {
     pull_pipeline: wgpu::RenderPipeline,
     uniform_buf: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
-    task_pipeline: Option<wgpu::ComputePipeline>,
     quads_uploaded: u64,
     draw_calls: u64,
 }
@@ -112,8 +111,12 @@ impl GpuVertexPullEngine {
             multiview: None,
         });
 
-        let task_pipeline = Self::try_task_pipeline(device);
-
+        // 注: 旧 task_pipeline (SHADER_TASK_EMULATION の ComputePipeline) は
+        // エンジン初期化のたび実 WGSL コンパイルしながら一度も dispatch されない
+        // デッドリソースだったため、フィールド・構築 fn (try_task_pipeline)・
+        // 専用シェーダー (terrain_task_emulation.wgsl) ごと除去 (2026-07-21 監査。
+        // meshlet カリングは frame_worldgen::GpuMeshletCull 側が別途実 dispatch
+        // する設計は維持)。
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Rsift Pull Uniforms"),
             contents: bytemuck::bytes_of(&FrameUniforms {
@@ -128,7 +131,6 @@ impl GpuVertexPullEngine {
             pull_pipeline,
             uniform_buf,
             bind_group_layout,
-            task_pipeline,
             quads_uploaded: 0,
             draw_calls: 0,
         }
@@ -142,60 +144,6 @@ impl GpuVertexPullEngine {
         // する (mesh shader 自体は WGSL 非対応のためソフトエミュレーションが正)。
         let _ = feats;
         PullRenderPath::VertexPull
-    }
-
-    fn try_task_pipeline(device: &wgpu::Device) -> Option<wgpu::ComputePipeline> {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Rsift task_emulation"),
-            source: wgpu::ShaderSource::Wgsl(SHADER_TASK_EMULATION.into()),
-        });
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Rsift Task BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Rsift Task PL"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
-        });
-        Some(device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Rsift Task Emulation"),
-            layout: Some(&pl),
-            module: &shader,
-            entry_point: "cs_task_emulation",
-            compilation_options: Default::default(),
-        }))
     }
 
     pub fn path(&self) -> PullRenderPath {

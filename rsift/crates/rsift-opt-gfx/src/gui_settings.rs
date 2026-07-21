@@ -253,11 +253,12 @@ impl SodiumVideoSettingsGui {
             current_tab: SodiumSettingsTab::Performance,
             palette: SodiumPalette::default(),
             settings: VideoSettings::default(),
-            available_shaderpacks: vec![
-                "BSL_v8.2.0.zip".into(),
-                "ComplementaryReimagined_v5.1.zip".into(),
-                "Sildurs_Vibrant_v1.50_Extreme.zip".into(),
-            ],
+            // 実在しないパック名を表示しないよう初期値は空 (2026-07-21 監査:
+            // 以前は BSL/Complementary 等のサンプル名がハードコードされ、
+            // ディスクに存在しないパックが「Available」表示され得た)。
+            // 実際の一覧は `IrisShaderEngine::discover_shaderpacks` の
+            // ディレクトリ走査結果を本フィールドへ注入して表示する。
+            available_shaderpacks: Vec::new(),
         }
     }
 

@@ -116,7 +116,7 @@ impl HierarchicalPathfinder {
         dist.insert(start_node, 0);
         heap.push(AStarState { cost: 0, node_id: start_node });
 
-        while let Some(AStarState { cost, node_id }) = heap.pop() {
+        while let Some(AStarState { cost: est_total, node_id }) = heap.pop() {
             if node_id == goal_node {
                 let mut path = vec![goal_pos];
                 let mut curr = goal_node;
@@ -131,22 +131,34 @@ impl HierarchicalPathfinder {
                 return Some(path);
             }
 
-            if cost > *dist.get(&node_id).unwrap_or(&u32::MAX) {
+            // 2026-07-21 監査: 旧実装はヒープ優先度 f = g + h をそのまま g
+            // (dist) として比較・累積していたため、最初の展開以外の全ノードが
+            // 「f > dist (g)」で stale 扱いされ continue し、ゴール未到達で
+            // None を返していた (test_hpa_pathfinding が恒常 FAIL)。以下は
+            // g (dist) と f (ヒープ優先度) を分離した正しい A* の形。
+            let h = |id: u32| -> u32 {
+                let (Some(gn), Some(nn)) =
+                    (self.graph.nodes.get(&goal_node), self.graph.nodes.get(&id))
+                else {
+                    return 0;
+                };
+                ((nn.pos[0] - gn.pos[0]).abs() + (nn.pos[2] - gn.pos[2]).abs()) as u32
+            };
+            let g = *dist.get(&node_id).unwrap_or(&u32::MAX);
+            if est_total > g + h(node_id) {
                 continue;
             }
 
             if let Some(neighbors) = self.graph.edges.get(&node_id) {
                 for &(next_id, edge_cost) in neighbors {
-                    let next_cost = cost + edge_cost;
-                    if next_cost < *dist.get(&next_id).unwrap_or(&u32::MAX) {
-                        dist.insert(next_id, next_cost);
+                    let next_g = g + edge_cost;
+                    if next_g < *dist.get(&next_id).unwrap_or(&u32::MAX) {
+                        dist.insert(next_id, next_g);
                         parent.insert(next_id, node_id);
-                        let h = if let Some(gn) = self.graph.nodes.get(&goal_node) {
-                            if let Some(nn) = self.graph.nodes.get(&next_id) {
-                                ((nn.pos[0] - gn.pos[0]).abs() + (nn.pos[2] - gn.pos[2]).abs()) as u32
-                            } else { 0 }
-                        } else { 0 };
-                        heap.push(AStarState { cost: next_cost + h, node_id: next_id });
+                        heap.push(AStarState {
+                            cost: next_g + h(next_id),
+                            node_id: next_id,
+                        });
                     }
                 }
             }

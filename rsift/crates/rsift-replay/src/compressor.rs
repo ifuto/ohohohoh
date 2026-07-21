@@ -1,16 +1,15 @@
-//! ZSTD compression with Minecraft packet dictionary
+//! ZSTD compression of the raw .rsr packet stream.
+//!
+//! 注: 旧来のモジュール説明は "with Minecraft packet dictionary" を謳い、
+//! 訓練済み辞書シード定数 (PACKET_DICT_SEED) も定義されていたが、実圧縮は
+//! `zstd::bulk::compress` 素呼び出しで辞書は一度も使われていなかった
+//! (ドキュメントと実装の乖離)。2026-07-21 監査で説明とデッド定数を除去。
+//! 辞書圧縮の導入は実測効果の検証付きで別途行う場合のみ再有効化すること。
 
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 use tracing::info;
-
-/// Pre-trained dictionary seed for Minecraft packet patterns
-const PACKET_DICT_SEED: &[u8] = b"RSIFT_RSR_MC_PACKET_DICT_v1\
-\x00\x01\x0E\x0F\x1A\x22\x2B\x2C\x33\x42\x43\
-entity_position spawn_entity chunk_data block_change\
-player_position look chat_message open_screen tab_list\
-keep_alive ping resource_pack first_person third_person f5";
 
 pub struct ZstdCompressor {
     level: i32,

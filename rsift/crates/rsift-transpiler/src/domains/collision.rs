@@ -141,6 +141,11 @@ impl SweptVoxelCollider {
     }
 
     /// Resolve level collision with step-height (`<= 0.6`) stair/slab climbing.
+    ///
+    /// 契約 (2026-07-21 監査で明文化): 戻り値は「解決後の位置 + 接地フラグ」のみ。
+    /// `vel` は by-value の一時値で、スライド計算の途中更新は戻り値に影響するが、
+    /// step 分岐で return した時点の速度は呼び出し側へ還元されない
+    /// (速度を維持したい呼び出し側は別途自前で減衰すること)。
     pub fn resolve_motion_with_step(
         entity_box: &Aabb6,
         mut vel: [f32; 3],
@@ -168,9 +173,10 @@ impl SweptVoxelCollider {
             if hit_normal[1] > 0.5 {
                 on_ground = true;
             } else if hit_normal[1].abs() < 0.1 && (obs.max[1] - entity_box.min[1]) <= step_height {
-                // Step climbing: lift position upward over the obstacle
+                // Step climbing: lift position upward over the obstacle.
+                // (旧コードの `vel[1] = 0.0;` は by-value 引数への即 return 直前の
+                // デッド書き込みで効果ゼロだったため除去 — 2026-07-21 監査)
                 pos[1] = obs.max[1] + 0.001;
-                vel[1] = 0.0;
                 return (pos, true);
             }
         }

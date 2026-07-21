@@ -38,7 +38,8 @@ pub struct IndirectCommandHeader {
 pub struct IndirectBatcher {
     commands: Vec<ChunkDrawCommand>,
     max_commands: u32,
-    gpu_buffer_size: usize,
+    // 注: 旧 `gpu_buffer_size` フィールドは max_commands×stride の導出値を
+    // 保持したまま一度も読まれないデッド状態だったため削除 (2026-07-21 監査)。
 }
 
 impl IndirectBatcher {
@@ -46,7 +47,6 @@ impl IndirectBatcher {
         Self {
             commands: Vec::with_capacity(max_commands as usize),
             max_commands,
-            gpu_buffer_size: max_commands as usize * std::mem::size_of::<ChunkDrawCommand>(),
         }
     }
 

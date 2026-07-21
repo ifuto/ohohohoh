@@ -115,9 +115,10 @@ pub(crate) fn mul_v4(m: &[[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {
 pub struct GpuFramePipeline {
     pub width: u32,
     pub height: u32,
-    hdr: wgpu::Texture,
+    // 注: 旧 `hdr`/`depth` の wgpu::Texture フィールドは、wgpu の TextureView が
+    // 内部でリソース参照を保持するため保持不要かつ一度も読まれないデッド状態
+    // だった (削除で VRAM 上の冗長リソース確保も解消 — 2026-07-21 監査)。
     hdr_view: wgpu::TextureView,
-    depth: wgpu::Texture,
     depth_view: wgpu::TextureView,
     ldr: wgpu::Texture,
     ldr_view: wgpu::TextureView,
@@ -337,9 +338,7 @@ impl GpuFramePipeline {
         Self {
             width,
             height,
-            hdr,
             hdr_view,
-            depth,
             depth_view,
             ldr,
             ldr_view,

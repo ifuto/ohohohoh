@@ -164,10 +164,6 @@ fn library_from_modern(minecraft_dir: &Path, lib: &Value) -> Result<Option<Libra
     }))
 }
 
-fn library_from_legacy(minecraft_dir: &Path, lib: &Value) -> Result<Option<LibraryEntry>, String> {
-    library_from_modern(minecraft_dir, lib)
-}
-
 fn rule_allows(lib: &Value) -> bool {
     let Some(rules) = lib.get("rules").and_then(|v| v.as_array()) else {
         return true;

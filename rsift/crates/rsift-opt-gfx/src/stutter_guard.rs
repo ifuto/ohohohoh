@@ -18,7 +18,8 @@ pub struct FrameArena {
     chunk: Cell<NonNull<u8>>,
     cap: Cell<usize>,
     used: Cell<usize>,
-    chunk_size: usize,
+    // 注: 旧 `chunk_size: usize` フィールドは `cap` Cell と冗長で一度も読まれない
+    // デッド状態だったため削除 (2026-07-21 監査)。
     allocations: Cell<u32>,
 }
 
@@ -31,7 +32,6 @@ impl FrameArena {
             chunk: Cell::new(NonNull::new(p).expect("alloc arena")),
             cap: Cell::new(chunk_size),
             used: Cell::new(0),
-            chunk_size,
             allocations: Cell::new(0),
         }
     }
