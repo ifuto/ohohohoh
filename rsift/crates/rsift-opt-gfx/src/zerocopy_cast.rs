@@ -27,3 +27,40 @@ pub fn zero_copy_vertex_upload(vertices: &[crate::chunk_mesh::Quantized12ByteVer
     static HEADER: GpuUploadHeader = GpuUploadHeader { magic: 0x52534946, version: 1, vertex_count: 0, index_count: 0 };
     ( &HEADER, cast_slice_to_bytes(vertices) )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chunk_mesh::Quantized12ByteVertex;
+
+    #[test]
+    fn cast_roundtrip_preserves_bytes() {
+        let verts: Vec<Quantized12ByteVertex> = (0..3)
+            .map(|i| Quantized12ByteVertex::encode(i as f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0))
+            .collect();
+        let bytes = cast_slice_to_bytes(&verts);
+        assert_eq!(bytes.len(), 3 * 12);
+        let back: &[Quantized12ByteVertex] = cast_bytes_to_slice(bytes).unwrap();
+        assert_eq!(back.len(), 3);
+        assert_eq!(cast_slice_to_bytes(back), bytes);
+    }
+
+    #[test]
+    fn cast_bytes_to_slice_rejects_ragged_buffer() {
+        let raw = [0u8; 13]; // 頂点 12B の倍数でない → None
+        assert!(cast_bytes_to_slice::<Quantized12ByteVertex>(&raw).is_none());
+        let empty: [u8; 0] = [];
+        let ok: &[Quantized12ByteVertex] = cast_bytes_to_slice(&empty).unwrap();
+        assert!(ok.is_empty()); // 0 % 12 == 0 → Some(空)
+    }
+
+    #[test]
+    fn upload_header_wire_format() {
+        let verts = [Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0)];
+        let (header, payload) = zero_copy_vertex_upload(&verts);
+        assert_eq!(header.magic, 0x5253_4946); // "RSIF" LE
+        assert_eq!(header.version, 1);
+        assert_eq!(payload.len(), 12);
+        assert_eq!(std::mem::size_of::<GpuUploadHeader>(), 16); // repr(C) 4x u32
+    }
+}

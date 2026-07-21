@@ -401,3 +401,8 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   依存順序・自己ループ浮上不可・空グラフ — 4件)。DAG は TaskId 単調発行で
   閉路を公開 API から構築不能 (DAG 性が構造保証) であることを white-box
   テストで裏書き。
+- **zero-test 消化 第3波 (opt-gfx 471→481)**: mimalloc_config (tier 行列・
+  env_string 厳密 — 2件), pgo_bolt (release/dev/default フィールド表・
+  rustflags 文字列 — 2件), rayon_job (map 順序保持・for_each 全要素1回・
+  p-core プール命名+サイズ — 3件), zerocopy_cast (cast roundtrip・
+  ragged 拒否・wire header magic/size — 3件)。

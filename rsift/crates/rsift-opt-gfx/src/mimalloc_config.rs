@@ -34,3 +34,29 @@ impl AllocConfig {
 pub fn recommended_allocator() -> &'static str {
     "mimalloc"
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rsift_api::PerformanceTier;
+
+    #[test]
+    fn tier_matrix_exact() {
+        let m = AllocConfig::for_tier(PerformanceTier::Minimal);
+        assert_eq!((m.arena_size_mb, m.large_object_threshold), (16, 256 * 1024));
+        assert!(m.use_mimalloc);
+        let l = AllocConfig::for_tier(PerformanceTier::Low);
+        assert_eq!((l.arena_size_mb, l.large_object_threshold), (32, 512 * 1024));
+        for t in [PerformanceTier::Medium, PerformanceTier::High] {
+            let c = AllocConfig::for_tier(t);
+            assert_eq!((c.arena_size_mb, c.large_object_threshold), (64, 1024 * 1024));
+        }
+    }
+
+    #[test]
+    fn env_string_format_and_recommendation() {
+        let c = AllocConfig::default();
+        assert_eq!(c.env_string(), "MIMALLOC_ARENA=64MB_LARGE=1048576");
+        assert_eq!(recommended_allocator(), "mimalloc");
+    }
+}
