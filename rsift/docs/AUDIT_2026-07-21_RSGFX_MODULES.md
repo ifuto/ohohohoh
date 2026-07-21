@@ -258,11 +258,13 @@ example ベンチ経由で実動作が間接検証されているが、単体不
 ## B. 広域静的ベンチ `wide_static_bench` (rsift-opt-gfx examples)
 - 目的: 分野横断の静的 CPU 計測で「弱い行」を決定的に洗う土台。
   全入力が splitmix64 固定シード生成 (GPU/ネット/時刻不依存、2コア/3GB で動く)。
-- 行 = 分野 × パラメータセル。**147 → 233 行**へ拡大 (rle_decode 追加、
+- 行 = 分野 × パラメータセル。**147 → 233 → 357 行**へ拡大 (rle_decode 追加、
   mesh/cull/dda/entity 全 8 パターン化、lbvh 2^14/2^20 追加、visibility_flood
-  新分野 等)。実行 ~3 秒、median 合計 ~0.68 秒 → CI に載せられる重さ。
+  新分野、encode/decode/mesh/圧縮 seed 3→5、entity 第2シード系、intern キー
+  空間バリアント、leaf 第2 seed、visibility 中央始点 等)。median 合計 ~0.97 秒、
+  実行 ~26 秒 (入力生成含む、2コア sandbox) → CI に載せられる重さ。
 - **structural digest**: 時刻列を除いた `domain|case|aux` テーブルの
-  DefaultHasher 値を常時表示。現行 `90254e333370d418` (rows=233)。
+  DefaultHasher 値を常時表示。現行 `004c1cf5fb17bfe8` (rows=357) (233 行時点では `90254e333370d418`)。
   消化中の最適化が出力集合・順序・構造値を変えないことを 2 回連続実行で確認する
   運用 (今回の全 3 改善で digest 不変を実証済)。
 - 再現手順: `cargo run --release --locked --offline --example wide_static_bench`。
@@ -277,7 +279,7 @@ example ベンチ経由で実動作が間接検証されているが、単体不
    ~2.9µs と判明。さらに旧 8 パターンは全て非葉 id で変換経路が未実測だった
    → forest_leaf パターン新設 (delta_idsum=39537 を初めて実測)。
 4. lbvh_cull の INVESTIGATE フラグは ops=1 正規化の罠 (n スケーリング誤検出)
-   → ops=n に修正。残フラグ 16 件は全て分類済: lz4/zstd の noise/caves/dense8
+   → ops=n に修正。残フラグ 27 件 (357 行版) は全て分類済: lz4/zstd の noise/caves/dense8
    行と mesh_section caves 行, forest_leaf 行 = **入力構造起因の良性**
    (圧縮率・面数・葉処理量がパターン依存なだけで欠陥ではない)。
 
@@ -319,5 +321,5 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   `.github/workflows` 書き込みも `gh workflow run` も 403。素材
   (`ci/bench.workflow.yml` + `ci/TRIGGER.md`) は branch に push 済み、
   main へペーストすれば workflow_dispatch で回せる構成。
-- 行列は 233 行。「数百種類前後」の上限方向へは seed/規模掃引で継続拡大余地
-  あり (実行 ~3 秒なので倍増しても CI 適性内)。
+- 行列は 357 行 (「数百種類前後」の要求水準を実測値で充足)。継続拡大余地は
+  seed/規模掃引で残す (実行 ~26 秒)。

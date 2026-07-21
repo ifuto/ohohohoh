@@ -223,7 +223,7 @@ fn main() {
 
     // ============================================================ A. RLE encode
     for pat in PATTERNS {
-        for (si, seed) in [0xA11u64, 0xA12, 0xA13].iter().enumerate() {
+        for (si, seed) in [0xA11u64, 0xA12, 0xA13, 0xA14, 0xA15].iter().enumerate() {
             let sec = gen_section(pat, *seed);
             let (ns, rle) = measure(|| RleSection::encode(&sec), 5);
             push(
@@ -238,7 +238,7 @@ fn main() {
 
     // ===================================================== A2. RLE decode (encode の対)
     for pat in PATTERNS {
-        for (si, seed) in [0xA11u64, 0xA12, 0xA13].iter().enumerate() {
+        for (si, seed) in [0xA11u64, 0xA12, 0xA13, 0xA14, 0xA15].iter().enumerate() {
             let sec = gen_section(pat, *seed);
             let rle = RleSection::encode(&sec);
             let (ns, back) = measure(|| rle.decode(), 5);
@@ -255,7 +255,7 @@ fn main() {
 
     // ===================================================== B. greedy mesh (pull)
     for pat in PATTERNS {
-        for (si, seed) in [0xB22u64, 0xB23, 0xB24].iter().enumerate() {
+        for (si, seed) in [0xB22u64, 0xB23, 0xB24, 0xB25, 0xB26].iter().enumerate() {
             let sec = gen_section(pat, *seed);
             let (ns, mesh) = measure(|| mesh_section_pull(&sec, 0, 0), 3);
             push(
@@ -407,36 +407,38 @@ fn main() {
 
     // ============================================ G. bitpacked section (set/get)
     for pat in ["flat", "sparse", "noise", "checker", "dense8", "ids255"] {
-        let sec = gen_section(pat, 0x677);
-        let (ns, (foot, sum)) = measure(
-            || {
-                let mut cs = CompactChunkSection::new_air();
-                let mut rng = Rng::new(0x677);
-                for _ in 0..SECTION_VOL {
-                    // 実生成済み配列をソースに set (bitpack 展開を課す)
-                    let i = rng.below(SECTION_VOL as u64) as usize;
-                    cs.set(i % 16, (i / 16) % 16, i / 256, sec[i]);
-                }
-                let mut sum = 0u64;
-                for i in 0..SECTION_VOL {
-                    sum += cs.get(i % 16, (i / 16) % 16, i / 256) as u64;
-                }
-                (cs.memory_footprint_bytes(), sum)
-            },
-            3,
-        );
-        push(
-            "bitpacked_setfill",
-            pat.into(),
-            ns,
-            SECTION_VOL as u64,
-            format!("footprint={foot}B sum={sum}"),
-        );
+        for (si, gseed) in [0x677u64, 0x678].iter().enumerate() {
+            let sec = gen_section(pat, *gseed);
+            let (ns, (foot, sum)) = measure(
+                || {
+                    let mut cs = CompactChunkSection::new_air();
+                    let mut rng = Rng::new(*gseed);
+                    for _ in 0..SECTION_VOL {
+                        // 実生成済み配列をソースに set (bitpack 展開を課す)
+                        let i = rng.below(SECTION_VOL as u64) as usize;
+                        cs.set(i % 16, (i / 16) % 16, i / 256, sec[i]);
+                    }
+                    let mut sum = 0u64;
+                    for i in 0..SECTION_VOL {
+                        sum += cs.get(i % 16, (i / 16) % 16, i / 256) as u64;
+                    }
+                    (cs.memory_footprint_bytes(), sum)
+                },
+                3,
+            );
+            push(
+                "bitpacked_setfill",
+                format!("{pat} s{si}"),
+                ns,
+                SECTION_VOL as u64,
+                format!("footprint={foot}B sum={sum}"),
+            );
+        }
     }
 
     // ===================================================== H. 圧縮 (lz4 / zstd)
     for pat in PATTERNS {
-        for (si, seed) in [0x888u64, 0x889, 0x88A].iter().enumerate() {
+        for (si, seed) in [0x888u64, 0x889, 0x88A, 0x88B, 0x88C].iter().enumerate() {
             let sec = gen_section(pat, *seed);
             let raw: &[u8] = bytemuck::cast_slice(&sec[..]);
             let (ns_lz, lz_out) = measure(|| lz4_flex::compress_prepend_size(raw), 5);
@@ -489,6 +491,29 @@ fn main() {
             ns,
             n as u64,
             format!("unique={uniq} hits_ignored={hits}"),
+        );
+    }
+    // キー空間バリアント (再利用率の感度): ksDiv 小さいほど衝突・再投入が増える。
+    for (bits, ks_div) in [(16u32, 4u64), (20, 4), (20, 64)] {
+        let n = 1usize << bits;
+        let (ns, uniq) = measure(
+            || {
+                let mut pool: InternPool<u64> = InternPool::new();
+                let mut rng = Rng::new(0x199);
+                for _ in 0..n {
+                    let key = rng.below(n as u64 / ks_div);
+                    pool.intern(key);
+                }
+                pool.unique_count() as u64
+            },
+            3,
+        );
+        push(
+            "intern_pool",
+            format!("n=2^{bits} ks=n/{ks_div}"),
+            ns,
+            n as u64,
+            format!("unique={uniq}"),
         );
     }
 
@@ -598,7 +623,7 @@ fn main() {
 
     // ===================================== M. DDA (疑似ベンチ 546ms 行のコア経路)
     for pat in PATTERNS {
-        for rays in [64u32, 256, 1024] {
+        for rays in [64u32, 256, 1024, 4096] {
             let sec = gen_section(pat, 0xDDA);
             let (ns, hits) = measure(
                 || {
@@ -674,42 +699,81 @@ fn main() {
             );
         }
     }
+    // 第2シード系 (ターゲット分布差に対する感度の確認)。
+    for bits in [11u32, 13, 15] {
+        for density in [10u64, 40, 70] {
+            let n = 1usize << bits;
+            let mut targets = Vec::with_capacity(n);
+            let mut rng = Rng::new(0xE11 ^ density ^ 0x5EED);
+            for i in 0..n {
+                let f = |r: &mut Rng| r.below(2560) as f32 / 10.0;
+                let (x, y, z) = (f(&mut rng), f(&mut rng), f(&mut rng));
+                targets.push(EntityTarget {
+                    id: i as u64,
+                    min: [x, y, z],
+                    max: [x + 1.0, y + 2.0, z + 1.0],
+                    is_block_entity: false,
+                });
+            }
+            let (ns, vis) = measure(
+                || {
+                    let mut culler = EntityCuller::new(64, 128.0);
+                    culler.replace_targets(targets.clone());
+                    let solids = move |x: i32, y: i32, z: i32| {
+                        hash3(x as u32, y as u32, z as u32, 0x501) % 100 < density
+                    };
+                    let (ids, _st) = culler.stats([8.0, 8.0, 8.0], &solids);
+                    ids.len()
+                },
+                3,
+            );
+            push(
+                "entity_cull",
+                format!("n=2^{bits} solid={density}% seedb"),
+                ns,
+                n as u64,
+                format!("visible={vis}"),
+            );
+        }
+    }
 
     // ===================================================== O. light cache
     for ops in [16u32, 18, 20, 22] {
-        let n = 1usize << ops;
-        let (ns, sum) = measure(
-            || {
-                let mut cache = LightPropagationCache::new();
-                let mut rng = Rng::new(0x1230);
-                for _ in 0..n {
-                    cache.set_emitter(
-                        rng.below(64) as i32,
-                        rng.below(320) as i32,
-                        rng.below(64) as i32,
-                        rng.below(16) as u8,
-                    );
-                }
-                let mut sum = 0u64;
-                for _ in 0..(n / 4) {
-                    let (b, s) = cache.get_light(
-                        rng.below(64) as i32,
-                        rng.below(320) as i32,
-                        rng.below(64) as i32,
-                    );
-                    sum += (b + s) as u64;
-                }
-                sum
-            },
-            3,
-        );
-        push(
-            "light_cache",
-            format!("set=2^{ops}"),
-            ns,
-            n as u64 + (n as u64 / 4),
-            format!("lightsum={sum}"),
-        );
+        for (si, lseed) in [0x1230u64, 0x1231].iter().enumerate() {
+            let n = 1usize << ops;
+            let (ns, sum) = measure(
+                || {
+                    let mut cache = LightPropagationCache::new();
+                    let mut rng = Rng::new(*lseed);
+                    for _ in 0..n {
+                        cache.set_emitter(
+                            rng.below(64) as i32,
+                            rng.below(320) as i32,
+                            rng.below(64) as i32,
+                            rng.below(16) as u8,
+                        );
+                    }
+                    let mut sum = 0u64;
+                    for _ in 0..(n / 4) {
+                        let (b, s) = cache.get_light(
+                            rng.below(64) as i32,
+                            rng.below(320) as i32,
+                            rng.below(64) as i32,
+                        );
+                        sum += (b + s) as u64;
+                    }
+                    sum
+                },
+                3,
+            );
+            push(
+                "light_cache",
+                format!("set=2^{ops} s{si}"),
+                ns,
+                n as u64 + (n as u64 / 4),
+                format!("lightsum={sum}"),
+            );
+        }
     }
 
     // ===================================================== P. leaf fast path
@@ -727,24 +791,26 @@ fn main() {
         "forest_leaf",
         "sparse_leaf",
     ] {
-        let base = gen_section(pat, 0x1EAF);
-        let before: u64 = base.iter().map(|&v| v as u64).sum();
-        let (ns, changed) = measure(
-            || {
-                let mut sec = base;
-                apply_leaf_fast_path(&mut sec, true);
-                let after: u64 = sec.iter().map(|&v| v as u64).sum();
-                before.wrapping_sub(after)
-            },
-            3,
-        );
-        push(
-            "leaf_fast_path",
-            pat.into(),
-            ns,
-            1,
-            format!("delta_idsum={changed}"),
-        );
+        for (si, pseed) in [0x1EAFu64, 0x1EB0].iter().enumerate() {
+            let base = gen_section(pat, *pseed);
+            let before: u64 = base.iter().map(|&v| v as u64).sum();
+            let (ns, changed) = measure(
+                || {
+                    let mut sec = base;
+                    apply_leaf_fast_path(&mut sec, true);
+                    let after: u64 = sec.iter().map(|&v| v as u64).sum();
+                    before.wrapping_sub(after)
+                },
+                3,
+            );
+            push(
+                "leaf_fast_path",
+                format!("{pat} s{si}"),
+                ns,
+                1,
+                format!("delta_idsum={changed}"),
+            );
+        }
     }
 
     // ===================================== Q. visibility graph flood fill (実 API)
@@ -790,6 +856,34 @@ fn main() {
                 ns,
                 1,
                 format!("reached={reached} vis_hits={vis_hits}"),
+            );
+        }
+    }
+    // 中央始点バリアント (コーナー始点との伝播コスト差を固定)。
+    for g in [8i32, 16, 32] {
+        for opaque_pct in [0u64, 20] {
+            let mut graph = VisibilityGraph::new();
+            for z in 0..g {
+                for x in 0..g {
+                    if x + 1 < g {
+                        graph.add_edge(ChunkNode { x, z }, ChunkNode { x: x + 1, z });
+                    }
+                    if z + 1 < g {
+                        graph.add_edge(ChunkNode { x, z }, ChunkNode { x, z: z + 1 });
+                    }
+                }
+            }
+            let seed = 0xF100 ^ (g as u64) << 8 ^ opaque_pct;
+            let is_opaque =
+                |c: ChunkNode| hash3(c.x as u32, 0, c.z as u32, seed) % 100 < opaque_pct;
+            let center = ChunkNode { x: g / 2, z: g / 2 };
+            let (ns, reached) = measure(|| graph.flood_fill(center, 6, is_opaque).len() as u64, 5);
+            push(
+                "visibility_flood",
+                format!("grid={g}x{g} center opaque={opaque_pct}%"),
+                ns,
+                1,
+                format!("reached={reached}"),
             );
         }
     }
