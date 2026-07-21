@@ -111,14 +111,13 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
 
     let menu = ctx.mod_menu().clone();
     let screen_reg = ctx.screen_registry();
-    // ボタン表示数はカタログの実登録数から導出 (旧: 3 固定値で、/mods/ に
-    // 追加された DLL 分が反映されない虚偽表示だった)。init 時点の
-    // スナップショット規約: この mod より後に初期化される mod は次回起動で反映。
-    let mod_count = menu.entries.read().map(|m| m.len() as u32).unwrap_or(0);
 
+    // Fabric Mod Menu 参考: ボタン文言は定数 "Mods"。個数ではなく、開いた先の
+    // 一覧→各 mod の詳細画面 (名前/ID/バージョン/作者/概要 + Config/Homepage)
+    // が本質 (行プロトコルは rsift-api の catalog_lines/detail_lines が構築)。
     screen_reg.add_button(
         "net.minecraft.client.gui.screens.TitleScreen",
-        &format!("Mods ({})", mod_count),
+        "Mods",
         8, 8, 120, 20,
         Some("Open Rsift mod catalog"),
         move |_| {

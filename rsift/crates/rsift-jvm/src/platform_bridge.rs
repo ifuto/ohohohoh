@@ -316,7 +316,7 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativeScreenOpe
     let k = jstr(&mut env, kind);
     rsift_api::platform::on_screen_opened(&k);
     if let Some(rt) = rsift_api::runtime::runtime() {
-        if k == "mod_menu" {
+        if k == "mod_menu" || k == "mod_menu_detail" {
             // keep open flag
             let _ = rt.mod_menu.is_open.write().map(|mut g| *g = true);
         }
@@ -337,7 +337,9 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativePrepareHo
         return;
     };
     let screen_key = "net.minecraft.client.gui.screens.PauseScreen";
-    // Clear previous host buttons by registering fresh ones with unique labels.
+    // ホスト画面は PauseScreen 単一キー運用のため、再構築の度に既存登録を
+    // 明示クリアする (旧実装は追記のみで、一覧↔詳細の往復で行が累積重複した)。
+    rt.screen_registry().clear_buttons_for(screen_key);
     let mut y = 40;
     rt.screen_registry().add_button(
         screen_key,
@@ -351,13 +353,23 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativePrepareHo
     );
     y += 24;
     for (idx, line) in lines_s.lines().take(12).enumerate() {
-        let label = if line.len() > 40 {
-            format!("{}…", &line[..40])
+        // Mod Menu 行群は行プロトコル (mod|..., info|..., act:*|...) で
+        // 届くため、表示文言を剥がして使う。それ以外 (cloth_config 等) は
+        // 素の行テキストをそのまま表示する従来挙動。
+        let display = if mod_menu != 0 {
+            rsift_api::mod_menu::row_label(line)
         } else {
             line.to_string()
         };
+        // 行頭 40 chars で省略。旧実装は &line[..40] のバイト切断で、
+        // マルチバイト文字の途中を割るとパニックする潜伏バグがあった。
+        let label: String = if display.chars().count() > 40 {
+            format!("{}…", display.chars().take(40).collect::<String>())
+        } else {
+            display
+        };
         let is_mod = mod_menu != 0;
-        let line_owned = line.to_string();
+        let callback_line = line.to_string();
         rt.screen_registry().add_button(
             screen_key,
             &label,
@@ -369,12 +381,22 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativePrepareHo
             move |_id| {
                 if is_mod {
                     if let Some(rt) = rsift_api::runtime::runtime() {
-                        let id = line_owned.split('|').next().unwrap_or("");
-                        rt.mod_menu.select_mod(id);
-                        if line_owned.contains("http") {
-                            rt.mod_menu.open_selected_homepage();
-                        } else {
-                            rt.mod_menu.open_selected_config();
+                        match rsift_api::mod_menu::parse_row(&callback_line) {
+                            rsift_api::mod_menu::ModRowAction::Select { id } => {
+                                rt.mod_menu.select_mod(&id);
+                                rsift_api::platform::request_open_screen("mod_menu_detail");
+                            }
+                            rsift_api::mod_menu::ModRowAction::OpenConfig => {
+                                rt.mod_menu.open_selected_config();
+                            }
+                            rsift_api::mod_menu::ModRowAction::OpenHomepage => {
+                                rt.mod_menu.open_selected_homepage();
+                            }
+                            rsift_api::mod_menu::ModRowAction::BackToList => {
+                                rsift_api::platform::request_open_screen("mod_menu");
+                            }
+                            rsift_api::mod_menu::ModRowAction::Info
+                            | rsift_api::mod_menu::ModRowAction::Unknown => {}
                         }
                     }
                 }
@@ -394,6 +416,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativePrepareHo
         |_| {
             if let Some(rt) = rsift_api::runtime::runtime() {
                 rt.mod_menu.close_screen();
+                // ホスト画面を閉じたら登録も撤去: 後で開くバニラ PauseScreen
+                // へホスト行が混入しないようにする (旧実装では残留した)。
+                rt.screen_registry()
+                    .clear_buttons_for("net.minecraft.client.gui.screens.PauseScreen");
             }
         },
     );

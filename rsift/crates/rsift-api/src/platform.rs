@@ -278,6 +278,7 @@ pub struct PlatformApplySnapshot {
     pub cloth_title: Option<String>,
     pub cloth_entries: Vec<String>,
     pub mod_menu_lines: Vec<String>,
+    pub mod_menu_detail_lines: Vec<String>,
 }
 
 static PENDING_SCREEN: OnceLock<Mutex<Option<String>>> = OnceLock::new();
@@ -645,22 +646,13 @@ pub fn collect_apply_snapshot(
         None => (None, Vec::new()),
     };
 
-    let mut mod_menu_lines = Vec::new();
-    if let Some(rt) = runtime() {
-        if let Ok(map) = rt.mod_menu.entries.read() {
-            for (id, entry) in map.iter() {
-                mod_menu_lines.push(format!(
-                    "{}|{}|{}|{}|{}|{}",
-                    id,
-                    entry.manifest.name,
-                    entry.manifest.version,
-                    entry.manifest.author,
-                    entry.manifest.description.replace('|', "/"),
-                    entry.homepage_url.clone().unwrap_or_default()
-                ));
-            }
-        }
-    }
+    // Mod Menu 一覧/詳細行: 表示文言・ソート・詳細構成は RsiftModMenuScreen
+    // 側のビルダーに集約 (Java は行プロトコルを知らずボタン化のみ)。
+    let (mod_menu_lines, mod_menu_detail_lines) = if let Some(rt) = runtime() {
+        (rt.mod_menu.catalog_lines(), rt.mod_menu.detail_lines())
+    } else {
+        (Vec::new(), Vec::new())
+    };
 
     // Also fold suite content if present and richer.
     let suite = mod_suite();
@@ -719,6 +711,7 @@ pub fn collect_apply_snapshot(
         cloth_title,
         cloth_entries,
         mod_menu_lines,
+        mod_menu_detail_lines,
     }
 }
 

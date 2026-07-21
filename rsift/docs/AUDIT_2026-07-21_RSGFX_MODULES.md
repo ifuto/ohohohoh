@@ -391,8 +391,8 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   open/close + noop 安全)。
 - **正直性修正 (rsgraphics)**: TitleScreen の `Mods (N)` ボタン表示数が
   `3u32` ハードコードで /mods/ 追加 DLL が反映されない虚偽表示だった。
-  `RsiftModMenuScreen.entries` の実登録数 (init 時点スナップショット) から
-  動的導出へ修正 (B 節の規律「UI/ログは事実のみ」に一致)。
+  一旦カタログ実登録数からの動的導出に修正した後、Fabric Mod Menu 参考の
+  設計見直しで個数表記そのものを撤廃し定数 `"Mods"` へ (下記 G 節参照)。
 - **zero-test 消化 第2波 (opt-gfx 456→471)**: software_tiling (タイル数
   ceil・(ty,tx) 昇順・front-to-back 距離ソート — 2件), lod_hybrid (閾値
   境界 <=・stride 間引き再 index・部分クアッド drop・SVO 真理値表 — 5件),
@@ -417,3 +417,27 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   texture_atlas_virtual (free pool LIFO 払い出し・常駐 idempotent・バッチ内
   重複 dedupe・容量枯渇拒否・evict→再ストリーム — 4件)。第4波 CI 初回は
   ガバナンス起因フレーク (再実行・無変更で全緑、ca80df9 で確証)。
+
+## G. Mod Menu の Fabric「Mod Menu」参考再設計 (2026-07-21 午後)
+表示が「個数」ではなく各 mod の名前・概要・詳細であるべきとの指摘に基づく
+再設計。行プロトコルを Rust 側に集約し、Java はボタン化のみを担う構成。
+- **一覧→詳細の2画面化**: 一覧行 `mod|<id>|<name> (<version>)` (name 昇順
+  +id タイブレークの安定ソート: 旧 HashMap 走査は実行毎に行順が揺れた) →
+  押下で選択→詳細画面 `mod_menu_detail` へ遷移。詳細は
+  `info|name/ID/Version/Author/概要` + 条件付き `act:config|Config` /
+  `act:home|Open Homepage` + `act:back|< Back to mod list`。戻るで一覧へ。
+- **API (rsift-api)**: `RsiftModMenuScreen::catalog_lines/detail_lines`、
+  `parse_row`/`row_label`/`ModRowAction` を追加し 6 テストで固定
+  (ソート/サニタイズ/詳細構成/オプション省略/未知行 no-op)。
+- **累積重複バグ修正**: ホスト画面 (PauseScreen 単一キー) への追記がクリア
+  されず一覧↔詳細の往復で行が重複 → `ScreenRegistry::clear_buttons_for` を
+  追加しホスト構築頭と Back 押下で撤去 (Back 後はバニラ PauseScreen への
+  ホスト行混入も防止)。旧コメント「unique labels で上書き」は虚偽だった。
+- **UTF-8 パニック潜伏修正**: ラベル 40 文字省略が `&line[..40]` バイト切断
+  で、日本語等のマルチバイト境界でパニック → chars() ベースに修正。
+- **rsgraphics**: ボタン文言は定数 "Mods" (個数表記は撤廃)。
+- 行プロトコル互換性: 旧 raw 行 (id|name|...) は parse_row で Unknown=no-op。
+  Java 側は `mod_menu_detail` kind を openPendingScreen に追加 (5 行)。
+  スナップショットに `mod_menu_detail_lines` フィールド追加 (serde 加算的)。
+  rsift-jvm は bench-ci の -p rsift-opt-gfx 経路に含まれないため、本変更の
+  同クレート (platform_bridge) コンパイル確認はローカル/インストーラ経路要。

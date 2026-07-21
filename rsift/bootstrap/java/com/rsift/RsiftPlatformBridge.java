@@ -682,6 +682,11 @@ public final class RsiftPlatformBridge {
             nativeScreenOpened("mod_menu");
             return;
         }
+        if ("mod_menu_detail".equals(kind)) {
+            openHostScreen("Mod Details", listOfStrings(root.get("mod_menu_detail_lines")), true);
+            nativeScreenOpened("mod_menu_detail");
+            return;
+        }
         if ("cloth_config".equals(kind)) {
             String title = str(root.get("cloth_title"));
             if (title.isEmpty()) title = "Config";

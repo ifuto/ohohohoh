@@ -95,6 +95,18 @@ impl ScreenRegistry {
         crate::platform::mark_dirty();
     }
 
+    /// 指定スクリーンの登録ボタンを全て撤去する。
+    /// ホスト画面 (nativePrepareHostButtons) の再構築で使う: 同じ PauseScreen
+    /// キーへ追記し続けると行が累積重複するため (旧コメントは「unique labels
+    /// で上書き」と謳いながら実装は追記のみだった = 文書と乖離)。
+    pub fn clear_buttons_for(&self, screen_class: &str) {
+        let removed = self.buttons.write().unwrap().remove(screen_class).is_some();
+        if removed {
+            info!("[ScreenRegistry] Cleared buttons for {}", screen_class);
+            crate::platform::mark_dirty();
+        }
+    }
+
     pub fn redirect_screen(&self, from_class: &str, to_handler: &str) {
         self.redirects
             .write()
@@ -622,5 +634,23 @@ mod tests {
         // Opening a different screen must NOT trigger the TitleScreen listener:
         reg.notify_screen_opened(ScreenKind::PauseScreen);
         assert_eq!(hits.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn clear_buttons_for_removes_exact_screen_only() {
+        let reg = ScreenRegistry::new();
+        reg.add_button("HostScreen", "row1", 0, 0, 10, 10, None, |_| {});
+        reg.add_button("HostScreen", "row2", 0, 22, 10, 10, None, |_| {});
+        reg.add_button("OtherScreen", "keep", 0, 0, 10, 10, None, |_| {});
+        assert_eq!(reg.buttons_for_screen("HostScreen").len(), 2);
+        reg.clear_buttons_for("HostScreen");
+        assert!(reg.buttons_for_screen("HostScreen").is_empty());
+        assert_eq!(reg.buttons_for_screen("OtherScreen").len(), 1);
+        // 空に対する clear は no-op (後の再 clear も安全)。
+        reg.clear_buttons_for("HostScreen");
+        assert!(reg.buttons_for_screen("HostScreen").is_empty());
+        // クリア後の再登録は 1 件だけが見える (累積しないことの不変条件)。
+        reg.add_button("HostScreen", "row3", 0, 0, 10, 10, None, |_| {});
+        assert_eq!(reg.buttons_for_screen("HostScreen").len(), 1);
     }
 }
