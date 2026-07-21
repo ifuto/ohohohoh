@@ -412,3 +412,8 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   カウンタ・pending 集合フィルタ — 2件)。第3波では zerocopy 空 cast テストが
   スタック配列の実行依存アライメントで CI に 1 度落ちた → repr(align(4)) 受け皿で
   決定的に修正 (72fa36e)。
+- **zero-test 消化 第5波 (opt-gfx 489→496)**: bundle_reuse (miss/hit 帳簿・
+  vertex_count は DrawIndexed のみ・コマンド逐語保存・LOD キー独立性 — 3件),
+  texture_atlas_virtual (free pool LIFO 払い出し・常駐 idempotent・バッチ内
+  重複 dedupe・容量枯渇拒否・evict→再ストリーム — 4件)。第4波 CI 初回は
+  ガバナンス起因フレーク (再実行・無変更で全緑、ca80df9 で確証)。

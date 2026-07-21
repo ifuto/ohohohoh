@@ -56,3 +56,70 @@ impl BundleCache {
 
     pub fn stats(&self) -> (u64, u64) { (self.hits, self.misses) }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(lod: u8) -> BundleKey {
+        BundleKey { chunk_x: 1, chunk_z: 2, lod }
+    }
+
+    #[test]
+    fn miss_creates_and_hit_reuses_with_stats() {
+        let mut c = BundleCache::new();
+        let k = key(0);
+        let b = c.get_or_create(k, || {
+            vec![
+                BundleCommand::SetPipeline { pso_id: 7 },
+                BundleCommand::DrawIndexed { index_count: 36, start: 0, base: 0 },
+                BundleCommand::DrawIndexed { index_count: 24, start: 36, base: 0 },
+            ]
+        });
+        assert_eq!(b.vertex_count, 60); // DrawIndexed のみ加算
+        assert_eq!(b.commands.len(), 3);
+        assert_eq!(b.reused, 1); // 生成時の get でも +1
+        assert_eq!(c.stats(), (0, 1));
+        let b2 = c.get_or_create(k, || panic!("hit では create は呼ばれない"));
+        assert_eq!(b2.reused, 2);
+        assert_eq!(c.stats(), (1, 1));
+        let _ = c.get_or_create(key(1), Vec::new); // 別キーは別 miss
+        assert_eq!(c.stats(), (1, 2));
+    }
+
+    #[test]
+    fn commands_stored_verbatim() {
+        let mut c = BundleCache::new();
+        let b = c.get_or_create(key(3), || {
+            vec![
+                BundleCommand::SetRootConstants { data: [1.5; 16] },
+                BundleCommand::DrawIndexed { index_count: 6, start: 4, base: -1 },
+            ]
+        });
+        match &b.commands[0] {
+            BundleCommand::SetRootConstants { data } => assert_eq!(data[0], 1.5),
+            other => panic!("unexpected {other:?}"),
+        }
+        match &b.commands[1] {
+            BundleCommand::DrawIndexed { index_count, start, base } => {
+                assert_eq!((*index_count, *start, *base), (6, 4, -1));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(b.vertex_count, 6); // RootConstants は頂点計上なし
+    }
+
+    #[test]
+    fn distinct_lod_keys_are_independent() {
+        let mut c = BundleCache::new();
+        let _ = c.get_or_create(key(0), || {
+            vec![BundleCommand::DrawIndexed { index_count: 3, start: 0, base: 0 }]
+        });
+        let _ = c.get_or_create(key(9), || {
+            vec![BundleCommand::DrawIndexed { index_count: 30, start: 0, base: 0 }]
+        });
+        assert_eq!(c.get_or_create(key(0), Vec::new).vertex_count, 3);
+        assert_eq!(c.get_or_create(key(9), Vec::new).vertex_count, 30);
+        assert_eq!(c.stats(), (2, 2));
+    }
+}
