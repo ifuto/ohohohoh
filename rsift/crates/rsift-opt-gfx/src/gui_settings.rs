@@ -398,7 +398,7 @@ pub fn open_global_settings() {
     }
 }
 
-#[cfg(all(test, any()))] // 診断D1: wave-7 切り分け (本番差分 vs 新旧テスト)
+#[cfg(test)]
 mod strict_tests {
     use super::*;
 
