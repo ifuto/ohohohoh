@@ -44,7 +44,14 @@ impl Axis {
 }
 
 #[inline]
-fn neighbor_opaque(palette: &SectionPalette, x: usize, y: usize, z: usize, axis: Axis, positive: bool) -> bool {
+fn neighbor_opaque(
+    palette: &SectionPalette,
+    x: usize,
+    y: usize,
+    z: usize,
+    axis: Axis,
+    positive: bool,
+) -> bool {
     let (nx, ny, nz) = match axis {
         Axis::X if positive => (x + 1, y, z),
         Axis::X => (x.wrapping_sub(1), y, z),
@@ -57,7 +64,14 @@ fn neighbor_opaque(palette: &SectionPalette, x: usize, y: usize, z: usize, axis:
 }
 
 #[inline]
-fn face_visible(palette: &SectionPalette, x: usize, y: usize, z: usize, axis: Axis, positive: bool) -> bool {
+fn face_visible(
+    palette: &SectionPalette,
+    x: usize,
+    y: usize,
+    z: usize,
+    axis: Axis,
+    positive: bool,
+) -> bool {
     if !is_opaque(palette, x, y, z) {
         return false;
     }
@@ -87,42 +101,210 @@ fn emit_quad(
     match (axis, positive) {
         (Axis::X, true) => {
             let fx = x + 1.0;
-            vertices.push(Quantized12ByteVertex::encode(fx, y, z, nx, ny, nz, 0.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(fx, y + h, z, nx, ny, nz, 0.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(fx, y + h, z + w, nx, ny, nz, 1.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(fx, y, z + w, nx, ny, nz, 1.0, 0.0));
+            vertices.push(Quantized12ByteVertex::encode(
+                fx, y, z, nx, ny, nz, 0.0, 0.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                fx,
+                y + h,
+                z,
+                nx,
+                ny,
+                nz,
+                0.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                fx,
+                y + h,
+                z + w,
+                nx,
+                ny,
+                nz,
+                1.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                fx,
+                y,
+                z + w,
+                nx,
+                ny,
+                nz,
+                1.0,
+                0.0,
+            ));
         }
         (Axis::X, false) => {
             vertices.push(Quantized12ByteVertex::encode(x, y, z, nx, ny, nz, 0.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(x, y, z + w, nx, ny, nz, 1.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(x, y + h, z + w, nx, ny, nz, 1.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(x, y + h, z, nx, ny, nz, 0.0, 1.0));
+            vertices.push(Quantized12ByteVertex::encode(
+                x,
+                y,
+                z + w,
+                nx,
+                ny,
+                nz,
+                1.0,
+                0.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x,
+                y + h,
+                z + w,
+                nx,
+                ny,
+                nz,
+                1.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x,
+                y + h,
+                z,
+                nx,
+                ny,
+                nz,
+                0.0,
+                1.0,
+            ));
         }
         (Axis::Y, true) => {
             let fy = y + 1.0;
-            vertices.push(Quantized12ByteVertex::encode(x, fy, z, nx, ny, nz, 0.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(x + w, fy, z, nx, ny, nz, 1.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(x + w, fy, z + h, nx, ny, nz, 1.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(x, fy, z + h, nx, ny, nz, 0.0, 1.0));
+            vertices.push(Quantized12ByteVertex::encode(
+                x, fy, z, nx, ny, nz, 0.0, 0.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x + w,
+                fy,
+                z,
+                nx,
+                ny,
+                nz,
+                1.0,
+                0.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x + w,
+                fy,
+                z + h,
+                nx,
+                ny,
+                nz,
+                1.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x,
+                fy,
+                z + h,
+                nx,
+                ny,
+                nz,
+                0.0,
+                1.0,
+            ));
         }
         (Axis::Y, false) => {
             vertices.push(Quantized12ByteVertex::encode(x, y, z, nx, ny, nz, 0.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(x, y, z + h, nx, ny, nz, 0.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(x + w, y, z + h, nx, ny, nz, 1.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(x + w, y, z, nx, ny, nz, 1.0, 0.0));
+            vertices.push(Quantized12ByteVertex::encode(
+                x,
+                y,
+                z + h,
+                nx,
+                ny,
+                nz,
+                0.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x + w,
+                y,
+                z + h,
+                nx,
+                ny,
+                nz,
+                1.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x + w,
+                y,
+                z,
+                nx,
+                ny,
+                nz,
+                1.0,
+                0.0,
+            ));
         }
         (Axis::Z, true) => {
             let fz = z + 1.0;
-            vertices.push(Quantized12ByteVertex::encode(x, y, fz, nx, ny, nz, 0.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(x + w, y, fz, nx, ny, nz, 1.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(x + w, y + h, fz, nx, ny, nz, 1.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(x, y + h, fz, nx, ny, nz, 0.0, 1.0));
+            vertices.push(Quantized12ByteVertex::encode(
+                x, y, fz, nx, ny, nz, 0.0, 0.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x + w,
+                y,
+                fz,
+                nx,
+                ny,
+                nz,
+                1.0,
+                0.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x + w,
+                y + h,
+                fz,
+                nx,
+                ny,
+                nz,
+                1.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x,
+                y + h,
+                fz,
+                nx,
+                ny,
+                nz,
+                0.0,
+                1.0,
+            ));
         }
         (Axis::Z, false) => {
             vertices.push(Quantized12ByteVertex::encode(x, y, z, nx, ny, nz, 0.0, 0.0));
-            vertices.push(Quantized12ByteVertex::encode(x, y + h, z, nx, ny, nz, 0.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(x + w, y + h, z, nx, ny, nz, 1.0, 1.0));
-            vertices.push(Quantized12ByteVertex::encode(x + w, y, z, nx, ny, nz, 1.0, 0.0));
+            vertices.push(Quantized12ByteVertex::encode(
+                x,
+                y + h,
+                z,
+                nx,
+                ny,
+                nz,
+                0.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x + w,
+                y + h,
+                z,
+                nx,
+                ny,
+                nz,
+                1.0,
+                1.0,
+            ));
+            vertices.push(Quantized12ByteVertex::encode(
+                x + w,
+                y,
+                z,
+                nx,
+                ny,
+                nz,
+                1.0,
+                0.0,
+            ));
         }
     }
     indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
@@ -150,7 +332,11 @@ fn emit_pull_quad(
     axis: Axis,
     positive: bool,
 ) {
-    let block = palette[idx(x.min(SECTION_SIZE - 1), y.min(SECTION_SIZE - 1), z.min(SECTION_SIZE - 1))];
+    let block = palette[idx(
+        x.min(SECTION_SIZE - 1),
+        y.min(SECTION_SIZE - 1),
+        z.min(SECTION_SIZE - 1),
+    )];
     if block == 0 {
         return;
     }
@@ -247,9 +433,19 @@ fn greedy_axis_pull(
     positive: bool,
     skip_empty_layers: bool,
 ) {
+    // 2026-07-21 ベンチ駆動修正: 旧実装は Y 軸の各 slice 反復 (`0..16`) の内側で
+    // `layer_masks_from_palette(palette)` (= 全 4096 voxel 走査) を毎回計算
+    // していた (Y 正負 2 パス × 16 slice = 1 セクション当たり 32 回の全走査)。
+    // mesh_column8 で cull=true が cull=false 比 +200〜350µs となっていた
+    // 原因 (wide_static_bench で実測)。マスク内容は反復で不変のためループ外へ
+    // ホイスト (出力は bit 同一、計算量のみ削減)。
+    let layer_masks = if skip_empty_layers && matches!(axis, Axis::Y) {
+        Some(layer_masks_from_palette(palette))
+    } else {
+        None
+    };
     for slice in 0..SECTION_SIZE {
-        if skip_empty_layers && matches!(axis, Axis::Y) {
-            let layers = layer_masks_from_palette(palette);
+        if let Some(layers) = &layer_masks {
             if layers[slice] == 0 {
                 continue;
             }
@@ -344,11 +540,7 @@ fn mesh_section_pull_inner(
 }
 
 /// Greedy mesh → SSBO quad list (8 B/quad, no index buffer).
-pub fn mesh_section_pull(
-    palette: &SectionPalette,
-    chunk_x: i32,
-    chunk_z: i32,
-) -> PullBuiltMesh {
+pub fn mesh_section_pull(palette: &SectionPalette, chunk_x: i32, chunk_z: i32) -> PullBuiltMesh {
     if RleSection::encode(palette).is_empty() {
         return PullBuiltMesh::empty(chunk_x, chunk_z);
     }
@@ -626,7 +818,11 @@ fn mesh_section_inner(
     }
 }
 
-pub fn merge_section_meshes(chunk_x: i32, chunk_z: i32, parts: &[BuiltChunkMesh]) -> BuiltChunkMesh {
+pub fn merge_section_meshes(
+    chunk_x: i32,
+    chunk_z: i32,
+    parts: &[BuiltChunkMesh],
+) -> BuiltChunkMesh {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     for part in parts {
