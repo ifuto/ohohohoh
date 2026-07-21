@@ -357,13 +357,22 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   実測: column8 noise 705→578µs ( hoist と合わせ計 -44%)、flat 136→112µs。
   digest `004c1cf5fb17bfe8` (357rows) が変更前後で一致。
 
-## D. 意図的スコープ外 (判断記録)
-- **caves merge 断片化コスト (47ns/voxel)**: u64 列マスク単一 sweep 化が
-  本筋だが、greedy の quad 出力順序まで含めた bit 同一性を安全に保証できる
-  書き直し工数が本ラウンドでは不足。次回優先候補として明示的に棚卸しへ。
+## D. caves merge 断片化コスト (47ns/voxel) — 【解決】
+- カラム bit 導出への全面書き直しで **mesh_section caves 195→37µs (−81%)**
+  (9ns/voxel、checker 級 emit 床に到達)。noise −76%、column8 noise cull
+  セッション累計 1027→185µs (−82%)。面可視は不透明カラム (xc/yc/zc の
+  u16×256 本、1 走査構築) の bit_s && !bit_{s±1} シフト導出、merge は
+  「等しい行ブロック内の矩形拡張チェックが構造的常真」の証明つき u16 化。
+  出力 bit 同一性は旧 face_visible 参照経路との fuzz 照合 (6 密度 × 6 軸 ×
+  skip on/off の quad 列完全一致) + 破損境界 + wide digest 不変で証明。
 - BlockLut の「正式テーブル化」: registry 一次情報が存在しないため、
   推測由来の表を作る方が不誠実。値を変えない pin の方針を採用。
 
 ## E. 残課題 (棚卸し)
-- zero-test モジュール残 ~25 (非コア/描画後段中心)。重要度順に継続。
-- caves merge 深最適化 = 次回の第一候補 (digest + fuzz で証明しながら)。
+- zero-test モジュール残 ~25 (非コア/描画後段中心)。重要度順に継続
+  (今回 bitpacked/light_cache も消化: opt-gfx 404→435 → 437)。
+- legacy 12B greedy 経路 (greedy_axis/greedy_merge_2d) は pull 経路の
+  旧構造を残したまま = 同一の面マスク非効率を抱える。本番呼び出しは無し
+  (pull が本番) だが、同一証明パターンの転用が決定済み。
+- caves liderar merge rewrite 完了後も lz4/zstd の構造起因フラグは残る
+  (外部ライブラリ内部の話、本プロジェクト改変対象外)。
