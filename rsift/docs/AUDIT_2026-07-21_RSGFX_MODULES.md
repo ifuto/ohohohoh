@@ -478,3 +478,33 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
 - (運用メモ) 本波着手時にサンドボックスの git ref がベースコミットへ巻き
   戻っており、リモートブランチ (CI 緑の最新) を正として `--mixed` 復旧した上で
   作業。リモートの CI 成功群は全てこの後の push でも損なわれない。
+
+## I. zero-test 第7波: eco_render/gpu_culling/gui_settings 消化 (+19: 527→546) + 起動クラッシュ級バグ 2 件等の修正 (2026-07-22)
+- **重大修正1 (gui_settings) — 「動画設定」ボタン即死パニック**: `slider_bar` が
+  char 位置 pos を**バイト範囲** `pos..=pos` として `str::replace_range` に渡して
+  おり、3-byte グリフ「─」の境界要件 (pos と pos+1 の同時 char 境界 = 不可能) で
+  **必ずパニック**。既定タブ Performance がオープン直後に row_slider を描画するため
+  GUI オープン = 確実にクラッシュ (rsgraphics「動画設定」ボタン → open_global_settings
+  / rsift-launcher lifecycle から到達可能)。char 配列置換に修正し、全タブ GUI スモーク
+  + slider 幾何 (端点・飽和・縮退長・width 0) を厳密固定。
+- **重大修正2 (gpu_culling) — default_frustum 全件カリング矛盾**: far 面 w が -512
+  (near z>=0.1 と論理両立不可)・側面 4 面の w も -256 で内法線が裏返り、本テーブルで
+  構成した frustum は**全チャンクを不可視**と判定する設計破綻 (現状どこからも
+  呼ばれていないため潜伏)。内法線ボックス (z∈[0.1,512], x/y∈[-256,256]) に訂正し、
+  可視性意味論 (inside/near/far/left/right/top/bottom 7 箱) を厳密固定。
+- **修正3 (eco_render)**: `ChunkSlicePool::new(0).acquire()` の剰余ゼロ除算パニック
+  防御 (空スライス返却)。VisGraph 旧コメント「6×6×6」は実装 (8×4×2/64bit bitset) と
+  不一致だったため訂正。
+- **検証基盤**: culling WGSL をモジュール const (`GPU_CULL_SHADER_WGSL`) へ切り出し、
+  naga パース + entry point 実在テストを追加 (frame_pipeline.rs と同パターン、
+  GPU 不要の真の構文検証)。
+- テスト内訳 (opt-gfx 527 → 546): gui_settings 7 (palette 厳密/tab 表/glyph/
+  slider 幾何/preset 上書き表 3 種/adaptive 不変式/GUI ライフサイクル全タブ),
+  gpu_culling 6 (POD レイアウト 48/20/128B + bytemuck 往復/frustum 表厳密/可視性
+  意味論/短縮 commands 安全性/adaptive≡直接 bit 一致/WGSL naga), eco_render 6
+  (mark 冪等 + MAX_BITS ガード/内蔵判定 (63・52・84 の厳密)/pool ローテーション
+  + 0 防御/region 集計/estimate 両端 + message 厳密/div_euclid region + 未占有
+  スキップ + 洗い替え)。
+- 残 zero-test: `full_graph_wiring` (2009 行の統合モジュール — 入力 scaffolding
+  設計が要るため次波) のみ。lib.rs は mod 宣言と再エクスポートのみで検証対象
+  ロジックを持たない。

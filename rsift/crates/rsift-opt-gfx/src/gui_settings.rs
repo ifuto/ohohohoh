@@ -225,11 +225,16 @@ fn slider_bar(value: u32, min: u32, max: u32, width: usize) -> String {
         (value.saturating_sub(min) as f32) / (max - min) as f32
     };
     let pos = ((width as f32 - 1.0) * t.clamp(0.0, 1.0)) as usize;
-    let mut s = "─".repeat(width);
+    // 回帰修正 (2026-07-22): 旧実装は `s.replace_range(pos..=pos, "◆")` で
+    // char 位置を**バイト範囲**として切断していた。「─」は 3 byte グリフのため
+    // pos/pos+1 の両境界同時成立は不可能で、スライダー描画は必ずパニック
+    // (「動画設定」ボタン押下 = 既定 Performance タブで確実にクラッシュ)。
+    // char 配列の要素置換に修正。
+    let mut bar: Vec<char> = std::iter::repeat('─').take(width).collect();
     if pos < width {
-        s.replace_range(pos..=pos, "◆");
+        bar[pos] = '◆';
     }
-    s
+    bar.into_iter().collect()
 }
 
 pub struct SodiumVideoSettingsGui {
@@ -390,5 +395,153 @@ pub fn global_gui() -> &'static Mutex<SodiumVideoSettingsGui> {
 pub fn open_global_settings() {
     if let Ok(mut g) = global_gui().lock() {
         g.open_screen();
+    }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+
+    #[test]
+    fn palette_default_bit_exact() {
+        let p = SodiumPalette::default();
+        assert_eq!(p.bg, [0.07, 0.07, 0.10, 0.96]);
+        assert_eq!(p.sidebar, [0.10, 0.10, 0.14, 0.98]);
+        assert_eq!(p.card, [0.14, 0.14, 0.19, 0.95]);
+        assert_eq!(p.accent, [0.26, 0.78, 0.55, 1.0]);
+        assert_eq!(p.text, [0.94, 0.95, 0.97, 1.0]);
+        assert_eq!(p.toggle_on, p.accent, "toggle_on は accent と同一色");
+        assert_eq!(p.toggle_off, [0.28, 0.28, 0.34, 1.0]);
+    }
+
+    #[test]
+    fn tab_table_order_labels_icons_exact() {
+        let expect = [
+            (SodiumSettingsTab::General, "⚙", "General"),
+            (SodiumSettingsTab::Quality, "◆", "Quality"),
+            (SodiumSettingsTab::Performance, "⚡", "Performance"),
+            (SodiumSettingsTab::Advanced, "⌗", "Advanced"),
+            (SodiumSettingsTab::Shaders, "✦", "Shaders"),
+        ];
+        assert_eq!(SodiumSettingsTab::ALL.len(), 5);
+        for (i, (tab, icon, label)) in expect.iter().enumerate() {
+            assert_eq!(SodiumSettingsTab::ALL[i], *tab, "ALL の順序は UI サイドバー順");
+            assert_eq!(tab.icon(), *icon);
+            assert_eq!(tab.label(), *label);
+        }
+    }
+
+    #[test]
+    fn toggle_glyph_exact_strings() {
+        assert_eq!(toggle_glyph(true), "●━━━━ ON ", "末尾スペース込みで固定");
+        assert_eq!(toggle_glyph(false), "○──── OFF");
+    }
+
+    #[test]
+    fn slider_bar_geometry_exact_and_degenerate_safe() {
+        // 回帰: 旧実装は 3-byte グリフのバイト切断 replace_range で必ずパニック。
+        assert_eq!(
+            slider_bar(5, 1, 7, 24),
+            format!("{}◆{}", "─".repeat(15), "─".repeat(8)),
+            "t=4/6 → pos=floor(23*0.666..)=15"
+        );
+        assert_eq!(slider_bar(1, 1, 7, 24), format!("◆{}", "─".repeat(23)), "min は左端");
+        assert_eq!(slider_bar(7, 1, 7, 24), format!("{}◆", "─".repeat(23)), "max は右端");
+        assert_eq!(slider_bar(0, 1, 7, 24), slider_bar(1, 1, 7, 24), "min 未満は飽和");
+        assert_eq!(slider_bar(100, 1, 7, 24), slider_bar(7, 1, 7, 24), "max 超過はクランプ");
+        assert_eq!(slider_bar(3, 5, 5, 24), slider_bar(1, 1, 7, 24), "max<=min は t=0");
+        assert_eq!(slider_bar(1, 1, 7, 0), "", "width 0 は空文字 (パニックしない)");
+    }
+
+    #[test]
+    fn eco_feather_flagship_override_tables() {
+        let eco = VideoSettings::eco_preset();
+        assert_eq!(eco.shader_profile, "Eco (weak PC)");
+        assert!(!eco.binary_greedy_meshing && !eco.vertex_pool && !eco.gpu_compute_culling
+            && !eco.hzb_occlusion && !eco.cpu_masked_occlusion && !eco.native_wgpu_pipeline
+            && !eco.mesh_disk_cache && !eco.leaf_fast_path,
+            "eco は GPU 依存機能を全て OFF (hw 非依存で上書き)");
+        assert!(eco.feather_tile_binning && eco.feather_merged_subpass && eco.feather_pseudo_vrs
+            && eco.feather_lod_3tier && eco.feather_compressed_textures,
+            "eco は Feather ソフト群を全て ON");
+        assert_eq!(eco.chunk_builder_threads, 1);
+        assert!(!eco.multithreaded_chunk_building && eco.eco_mode_locked);
+
+        let fe = VideoSettings::feather_preset();
+        assert_eq!(fe.shader_profile, "Feather (weak PC / iGPU)");
+        assert!(fe.feather_tile_binning && fe.feather_merged_subpass && fe.feather_pseudo_vrs
+            && fe.feather_lod_3tier && fe.feather_compressed_textures);
+        assert!(fe.binary_greedy_meshing && fe.mesh_disk_cache);
+        assert_eq!(fe.chunk_builder_threads, 2);
+        assert!(fe.multithreaded_chunk_building);
+        assert!(!fe.vertex_pool && !fe.gpu_compute_culling && !fe.hzb_occlusion
+            && !fe.cpu_masked_occlusion && !fe.native_wgpu_pipeline && !fe.leaf_fast_path,
+            "feather は eco ベース (GPU compute 系 OFF) のまま");
+
+        let fl = VideoSettings::flagship_2k_preset();
+        assert_eq!(fl.shader_profile, "Flagship 2K");
+        assert!(fl.binary_greedy_meshing && fl.vertex_pool && fl.gpu_compute_culling
+            && fl.hzb_occlusion && fl.cpu_masked_occlusion && fl.native_wgpu_pipeline
+            && fl.mesh_disk_cache && fl.leaf_fast_path,
+            "flagship は GPU 群を全て ON");
+        assert!(!fl.feather_tile_binning && !fl.feather_merged_subpass && !fl.feather_pseudo_vrs
+            && !fl.feather_lod_3tier && !fl.feather_compressed_textures,
+            "flagship は Feather OFF (eco と鏡像)");
+        assert_eq!(fl.chunk_builder_threads, 12);
+        assert!(fl.multithreaded_chunk_building && !fl.eco_mode_locked);
+    }
+
+    #[test]
+    fn adaptive_hardware_independent_constants_and_invariants() {
+        let s = VideoSettings::adaptive();
+        // ハードウェア非依存の定数既定値
+        assert_eq!(s.render_distance, 12);
+        assert_eq!(s.brightness, 1.0);
+        assert!(s.entity_culling);
+        assert!(s.animate_only_visible);
+        assert_eq!(s.biome_blend, 5);
+        // ハードウェア依存だが「関係」として要求される不変式
+        assert_eq!(
+            s.multithreaded_chunk_building,
+            s.chunk_builder_threads > 1,
+            "MT フラグはスレッド数 > 1 と常に一致"
+        );
+        let hw = rsift_api::AdaptivePerfEngine::hardware();
+        assert_eq!(
+            s.eco_mode_locked,
+            matches!(hw.tier, rsift_api::PerformanceTier::Minimal | rsift_api::PerformanceTier::Low),
+            "eco_mode_locked は tier Minimal/Low に一致"
+        );
+        assert!(
+            ["Eco", "Balanced", "Flagship 2K", "Performance"].contains(&s.shader_profile.as_str()),
+            "profile は既知4表のいずれか: {}", s.shader_profile
+        );
+    }
+
+    #[test]
+    fn gui_defaults_lifecycle_all_tabs_smoke() {
+        let mut g = SodiumVideoSettingsGui::new();
+        assert!(!g.is_open, "初期は閉");
+        assert_eq!(g.current_tab, SodiumSettingsTab::Performance, "既定タブ");
+        assert!(g.available_shaderpacks.is_empty(),
+            "実在しないシェーダーパック名を表示しない (2026-07-21 監査固定)");
+        g.render_gui_frame(); // 閉状態: 早期 return、パニックなし
+        g.open_screen();
+        assert!(g.is_open);
+        // 全タブ走査 (回帰: slider 含む General/Performance で旧実装はパニック)
+        for tab in SodiumSettingsTab::ALL {
+            g.switch_tab(tab);
+            assert_eq!(g.current_tab, tab);
+        }
+        g.select_shaderpack(Some("PackA.zip".into()));
+        assert_eq!(g.settings.selected_shaderpack.as_deref(), Some("PackA.zip"));
+        g.select_shaderpack(None);
+        assert!(g.settings.selected_shaderpack.is_none());
+        g.available_shaderpacks = vec!["PackA.zip".into(), "PackB.zip".into()];
+        g.switch_tab(SodiumSettingsTab::Shaders); // 空でも注入済みでも描画可能
+        g.apply_window_title_override();
+        g.render_instant_visual_indicators();
+        g.save_and_close();
+        assert!(!g.is_open);
     }
 }
