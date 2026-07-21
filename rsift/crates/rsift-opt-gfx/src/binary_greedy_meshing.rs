@@ -426,6 +426,15 @@ fn greedy_merge_2d_pull(
     }
 }
 
+/// 全 air 判定 (2026-07-21 ベンチ駆動): `RleSection::encode(palette).is_empty()`
+/// と意味的に厳密同値 (encode は全4096 voxelを走査して run を構築し、
+/// is_empty は全 run の block==0 を見る。両者とも「全 voxel==0」に同型写像する)
+/// だが、RLE の Vec 構築・run 展開コストを回避する。ホット経路 4 箇所で置換。
+#[inline]
+fn section_all_air(palette: &SectionPalette) -> bool {
+    palette.iter().all(|&v| v == 0)
+}
+
 fn greedy_axis_pull(
     palette: &SectionPalette,
     quads: &mut Vec<PackedPullQuad>,
@@ -541,7 +550,7 @@ fn mesh_section_pull_inner(
 
 /// Greedy mesh → SSBO quad list (8 B/quad, no index buffer).
 pub fn mesh_section_pull(palette: &SectionPalette, chunk_x: i32, chunk_z: i32) -> PullBuiltMesh {
-    if RleSection::encode(palette).is_empty() {
+    if section_all_air(palette) {
         return PullBuiltMesh::empty(chunk_x, chunk_z);
     }
     mesh_section_pull_inner(palette, chunk_x, chunk_z, true)
@@ -583,7 +592,7 @@ pub fn mesh_chunk_column_pull_world(
     let wx0 = chunk_x * SECTION_SIZE as i32;
     let wz0 = chunk_z * SECTION_SIZE as i32;
     for (si, palette) in sections.iter().enumerate() {
-        if RleSection::encode(palette).is_empty() {
+        if section_all_air(palette) {
             continue;
         }
         let part = mesh_section_pull_inner(palette, chunk_x, chunk_z, face_culling);
@@ -772,7 +781,7 @@ fn greedy_axis(
 }
 
 pub fn mesh_section(palette: &SectionPalette, chunk_x: i32, chunk_z: i32) -> BuiltChunkMesh {
-    if RleSection::encode(palette).is_empty() {
+    if section_all_air(palette) {
         return BuiltChunkMesh {
             chunk_x,
             chunk_z,
@@ -852,7 +861,7 @@ pub fn mesh_chunk_column(
 ) -> BuiltChunkMesh {
     let mut parts = Vec::new();
     for palette in sections {
-        if RleSection::encode(palette).is_empty() {
+        if section_all_air(palette) {
             continue;
         }
         parts.push(mesh_section_inner(palette, chunk_x, chunk_z, face_culling));
