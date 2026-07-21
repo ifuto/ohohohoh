@@ -92,3 +92,81 @@ impl VertexPool {
         self.slots.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mesh(cx: i32, cz: i32, quads: usize) -> BuiltChunkMesh {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        for _ in 0..quads {
+            let base = vertices.len() as u32;
+            for k in 0..4 {
+                vertices.push(Quantized12ByteVertex::encode(
+                    0.0, k as f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+                ));
+            }
+            indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+        }
+        BuiltChunkMesh {
+            chunk_x: cx,
+            chunk_z: cz,
+            is_empty: quads == 0,
+            vertices,
+            indices,
+        }
+    }
+
+    #[test]
+    fn capacity_derived_and_upload_advances_cursors() {
+        let mut pool = VertexPool::new(1024);
+        assert_eq!(pool.capacity_indices, 1536); // 1.5x
+        assert_eq!(pool.vertex_bytes, 12); // Quantized12ByteVertex は 12B
+        let s0 = pool.upload_mesh(&mesh(0, 0, 2)).unwrap(); // 8v/12i
+        assert_eq!((s0.vertex_offset, s0.vertex_count), (0, 8));
+        assert_eq!((s0.index_offset, s0.index_count), (0, 12));
+        assert_eq!(s0.generation, 0);
+        let s1 = pool.upload_mesh(&mesh(1, 0, 1)).unwrap(); // 4v/6i
+        assert_eq!((s1.vertex_offset, s1.index_offset), (8, 12));
+        assert_eq!(pool.active_chunks(), 2);
+        assert_eq!(pool.ring_uploads, 2);
+    }
+
+    #[test]
+    fn empty_mesh_evicts_and_returns_none() {
+        let mut pool = VertexPool::new(128);
+        assert!(pool.upload_mesh(&mesh(0, 0, 0)).is_none()); // 空は slot 化されない
+        assert_eq!(pool.active_chunks(), 0);
+        let _ = pool.upload_mesh(&mesh(1, 1, 1)).unwrap();
+        assert!(pool.upload_mesh(&mesh(1, 1, 0)).is_none());
+        assert_eq!(pool.active_chunks(), 0); // 空アップロードで slot 除去
+    }
+
+    #[test]
+    fn oversize_mesh_rejected_without_cursor_advance() {
+        let mut pool = VertexPool::new(4);
+        assert_eq!(pool.capacity_indices, 6);
+        let big = mesh(9, 9, 2); // 8 vert > 容量 4
+        assert!(pool.upload_mesh(&big).is_none());
+        assert_eq!(pool.vertex_cursor, 0);
+        assert_eq!(pool.index_cursor, 0);
+        assert!(pool.slots.is_empty());
+    }
+
+    #[test]
+    fn ring_reset_on_exhaustion_with_generation_advance() {
+        let mut pool = VertexPool::new(12); // indices cap 18
+        // 2 クアッド (8v/12i) + 1 クアッド (4v/6i) = 丁度満杯 (reset 無し: > 比較)。
+        let _ = pool.upload_mesh(&mesh(0, 0, 2)).unwrap();
+        let s = pool.upload_mesh(&mesh(1, 0, 1)).unwrap();
+        assert_eq!(s.vertex_offset, 8);
+        assert_eq!(pool.generation, 0);
+        // 次の 1 クアッド要求で 12+4 > 12 → ring reset: 世代 up, offset 0 から。
+        let s2 = pool.upload_mesh(&mesh(2, 0, 1)).unwrap();
+        assert_eq!(s2.vertex_offset, 0);
+        assert_eq!(s2.generation, 1);
+        assert_eq!(pool.active_chunks(), 1); // reset で旧 slot は全消去
+        assert_eq!(pool.ring_uploads, 3);
+    }
+}

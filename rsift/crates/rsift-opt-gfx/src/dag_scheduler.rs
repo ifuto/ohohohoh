@@ -67,3 +67,54 @@ impl DagScheduler {
         max
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chain_topological_order_is_exact() {
+        let mut s = DagScheduler::new();
+        let a = s.add_task("parse", &[], 1.0);
+        let b = s.add_task("light", &[a], 2.0);
+        let c = s.add_task("mesh", &[b], 3.0);
+        assert_eq!((a, b, c), (TaskId(0), TaskId(1), TaskId(2)));
+        assert_eq!(s.topological_order(), vec![a, b, c]); // 単一鎖は一意
+        assert_eq!(s.critical_path_ms(), 6.0);
+    }
+
+    #[test]
+    fn diamond_respects_dependencies_and_critical_path() {
+        let mut s = DagScheduler::new();
+        let a = s.add_task("a", &[], 2.0);
+        let b = s.add_task("b", &[a], 1.0); // 合計 3.0
+        let c = s.add_task("c", &[a], 4.0); // 合計 6.0 (critical)
+        let d = s.add_task("d", &[b, c], 1.0); // 6+1 = 7.0
+        let order = s.topological_order();
+        assert_eq!(order.len(), 4); // DAG なら全ノードが浮上
+        let pos = |t: TaskId| order.iter().position(|&x| x == t).unwrap();
+        assert!(pos(a) < pos(b) && pos(a) < pos(c));
+        assert!(pos(b) < pos(d) && pos(c) < pos(d));
+        assert_eq!(s.critical_path_ms(), 7.0);
+    }
+
+    #[test]
+    fn self_loop_task_is_unschedulable_but_others_run() {
+        // white-box: 公開 API では構築不能な閉路 (自己依存) を直接注入する
+        // (公開 API は id 単調発行のため閉路は作れない = DAG 性が構造保証)。
+        let mut s = DagScheduler::new();
+        let a = s.add_task("a", &[], 1.0);
+        let b = s.add_task("b", &[], 2.0);
+        s.tasks.get_mut(&a).unwrap().deps.push(a);
+        let order = s.topological_order();
+        assert_eq!(order, vec![b]); // a は indeg が 0 にならず永遠に浮上しない
+        assert_eq!(s.critical_path_ms(), 2.0); // スケジュール可能分のみで算出
+    }
+
+    #[test]
+    fn empty_graph() {
+        let s = DagScheduler::new();
+        assert!(s.topological_order().is_empty());
+        assert_eq!(s.critical_path_ms(), 0.0);
+    }
+}

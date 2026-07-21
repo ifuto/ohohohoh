@@ -75,3 +75,37 @@ impl SoftwareTileBinner {
         lists
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tile_size_floor_and_count_ceil() {
+        let b = SoftwareTileBinner::new(1920, 1080, 8);
+        assert_eq!(b.tile_size, 16); // 下限 16 にクランプ
+        assert_eq!(b.tile_count(), (120, 68));
+        let b = SoftwareTileBinner::new(1920, 1080, 32);
+        assert_eq!(b.tile_count(), (60, 34)); // ceil(1080/32)=34
+        let b = SoftwareTileBinner::new(0, 0, 32);
+        assert_eq!(b.tile_count(), (1, 1)); // 0 画面は 0 除算回避で下限 1
+    }
+
+    #[test]
+    fn bin_chunks_projects_sorts_tiles_and_front_to_back() {
+        let b = SoftwareTileBinner::new(640, 640, 32); // 20x20 タイル
+        // camera 原点: (0,0) は画面中央 px=320 → tile (10,10)。
+        // (4,0)/(5,0): px=384/400 → ともに tile (12,10)、距離 4<5。
+        // (0,5): tile (10,12)。
+        let chunks = [(5, 0), (4, 0), (0, 5), (0, 0)];
+        let lists = b.bin_chunks(&chunks, 0.0, 0.0);
+        let tiles: Vec<(u32, u32)> = lists.iter().map(|l| (l.tile.tx, l.tile.ty)).collect();
+        assert_eq!(tiles, vec![(10, 10), (12, 10), (10, 12)]); // (ty,tx) 昇順
+        let t = lists.iter().find(|l| l.tile.tx == 12).unwrap();
+        assert_eq!(t.chunk_indices, vec![1, 0]); // front-to-back (近い方が先)
+        // 単一チャンク経路: 中央は (10,10) 固定。
+        let single = b.bin_chunks(&[(0, 0)], 0.0, 0.0);
+        assert_eq!((single[0].tile.tx, single[0].tile.ty), (10, 10));
+        assert_eq!(single[0].chunk_indices, vec![0]);
+    }
+}

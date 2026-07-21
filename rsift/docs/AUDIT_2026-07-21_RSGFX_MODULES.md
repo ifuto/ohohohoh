@@ -393,3 +393,11 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   `3u32` ハードコードで /mods/ 追加 DLL が反映されない虚偽表示だった。
   `RsiftModMenuScreen.entries` の実登録数 (init 時点スナップショット) から
   動的導出へ修正 (B 節の規律「UI/ログは事実のみ」に一致)。
+- **zero-test 消化 第2波 (opt-gfx 456→471)**: software_tiling (タイル数
+  ceil・(ty,tx) 昇順・front-to-back 距離ソート — 2件), lod_hybrid (閾値
+  境界 <=・stride 間引き再 index・部分クアッド drop・SVO 真理値表 — 5件),
+  vertex_pool (帳簿 offset・空メッシュ evict・容量超過拒否・ring reset
+  境界 `>` 比較+世代進行 — 4件), dag_scheduler (単一鎖一意・ダイアモンド
+  依存順序・自己ループ浮上不可・空グラフ — 4件)。DAG は TaskId 単調発行で
+  閉路を公開 API から構築不能 (DAG 性が構造保証) であることを white-box
+  テストで裏書き。
