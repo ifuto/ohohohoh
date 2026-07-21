@@ -39,3 +39,42 @@ impl InstancedCollector {
         self.groups.get(&mesh_id).map(|g| bytemuck::cast_slice(&g.instances))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn instance_data_layout_is_32_bytes() {
+        assert_eq!(std::mem::size_of::<InstanceData>(), 32);
+    }
+
+    #[test]
+    fn collector_groups_and_counts() {
+        let mut c = InstancedCollector::new();
+        assert_eq!(c.total_instances(), 0);
+        assert!(c.as_bytes(7).is_none());
+        c.add(1, [0.0, 64.0, 0.0], 10, 3);
+        c.add(1, [4.0, 64.0, 0.0], 10, 2);
+        c.add(2, [8.0, 70.0, 8.0], 20, 1);
+        assert_eq!(c.total_instances(), 3);
+        assert_eq!(c.groups().count(), 2);
+        let g1 = c.groups().find(|g| g.mesh_id == 1).unwrap();
+        assert_eq!(g1.instances.len(), 2);
+        assert_eq!(g1.instances[1].world_pos[0], 4.0); // 追加順保持
+        assert_eq!(g1.instances[1].ao, 2);
+    }
+
+    #[test]
+    fn as_bytes_roundtrips_pod_instances() {
+        let mut c = InstancedCollector::new();
+        c.add(3, [1.0, 2.0, 3.0], 42, 5);
+        let bytes = c.as_bytes(3).unwrap();
+        assert_eq!(bytes.len(), 32);
+        let back: &[InstanceData] = bytemuck::cast_slice(bytes);
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].tex_index, 42);
+        assert_eq!(back[0].ao, 5);
+        assert_eq!(back[0].world_pos, [1.0, 2.0, 3.0]);
+    }
+}

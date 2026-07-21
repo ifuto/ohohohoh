@@ -406,3 +406,9 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   rustflags 文字列 — 2件), rayon_job (map 順序保持・for_each 全要素1回・
   p-core プール命名+サイズ — 3件), zerocopy_cast (cast roundtrip・
   ragged 拒否・wire header magic/size — 3件)。
+- **zero-test 消化 第4波 (opt-gfx 481→489)**: micro_lod (LOD 閾値・負距離
+  fallback・downsample 写像・AO 段階境界 — 3件), instanced_draw (32B レイアウト・
+  group 集計・Pod byte roundtrip — 3件), dashmap_registry (状態遷移+version
+  カウンタ・pending 集合フィルタ — 2件)。第3波では zerocopy 空 cast テストが
+  スタック配列の実行依存アライメントで CI に 1 度落ちた → repr(align(4)) 受け皿で
+  決定的に修正 (72fa36e)。

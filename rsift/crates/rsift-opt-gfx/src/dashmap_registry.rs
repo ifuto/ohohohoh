@@ -32,3 +32,35 @@ impl ChunkRegistry {
 
     pub fn version(&self) -> u64 { self.version.load(Ordering::Relaxed) }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_get_roundtrip_and_version_counter() {
+        let r = ChunkRegistry::new();
+        assert_eq!(r.version(), 0);
+        assert_eq!(r.get_state((1, 2)), None);
+        r.set_state((1, 2), ChunkBuildState::Pending);
+        assert_eq!(r.get_state((1, 2)), Some(ChunkBuildState::Pending));
+        assert_eq!(r.version(), 1);
+        r.set_state((1, 2), ChunkBuildState::Building); // 上書きでも version 前進
+        assert_eq!(r.get_state((1, 2)), Some(ChunkBuildState::Building));
+        assert_eq!(r.version(), 2);
+    }
+
+    #[test]
+    fn pending_chunks_filters_only_pending_as_set() {
+        let r = ChunkRegistry::new();
+        r.set_state((0, 0), ChunkBuildState::Pending);
+        r.set_state((1, 1), ChunkBuildState::Done);
+        r.set_state((2, 2), ChunkBuildState::Pending);
+        r.set_state((3, 3), ChunkBuildState::Failed);
+        let mut p = r.pending_chunks();
+        p.sort();
+        assert_eq!(p, vec![(0, 0), (2, 2)]);
+        r.set_state((0, 0), ChunkBuildState::Done);
+        assert_eq!(r.pending_chunks(), vec![(2, 2)]);
+    }
+}

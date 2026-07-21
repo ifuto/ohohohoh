@@ -48,3 +48,52 @@ pub fn bake_impostor_ao(palette: &SectionPalette) -> u32 {
     let solid = palette.iter().filter(|&&b| b!=0).count();
     if solid > 3000 { 3 } else if solid > 1000 { 2 } else { 1 }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lod_thresholds_and_negative_fallback() {
+        assert_eq!(lod_for_distance(0.0).downsample, 1);
+        assert_eq!(lod_for_distance(63.0).downsample, 1);
+        assert_eq!(lod_for_distance(64.0).downsample, 2); // 境界は >=
+        assert_eq!(lod_for_distance(128.0).downsample, 4);
+        assert_eq!(lod_for_distance(256.0).downsample, 8);
+        assert_eq!(lod_for_distance(1e6).downsample, 8);
+        assert_eq!(lod_for_distance(256.0).max_quads, 64);
+        // 負距離は levels を抜けて最寄り (level 0) フォールバック。
+        assert_eq!(lod_for_distance(-5.0).downsample, 1);
+    }
+
+    #[test]
+    fn downsample_palette_identity_and_mapping() {
+        let mut p = [0u16; 4096];
+        p[7] = 1; // 奇数座標 (7,0,0) は factor 2 のサンプル点外
+        p[64] = 2; // (0,4,0) → dst (0,2,0) = idx 32
+        p[546] = 3; // (2,2,2) → dst (1,1,1) = idx 273
+        let id = downsample_palette(&p, 1);
+        assert_eq!(&id[..], &p[..]); // factor<=1 はコピー
+        let d = downsample_palette(&p, 2);
+        assert_eq!(d[7], 0);
+        assert_eq!(d[32], 2);
+        assert_eq!(d[273], 3);
+    }
+
+    #[test]
+    fn bake_impostor_ao_thresholds() {
+        let count_ao = |solid: usize| {
+            let mut p = [0u16; 4096];
+            for v in p.iter_mut().take(solid) {
+                *v = 1;
+            }
+            bake_impostor_ao(&p)
+        };
+        assert_eq!(count_ao(0), 1);
+        assert_eq!(count_ao(1000), 1); // 境界: >1000 で 2
+        assert_eq!(count_ao(1001), 2);
+        assert_eq!(count_ao(3000), 2); // 境界: >3000 で 3
+        assert_eq!(count_ao(3001), 3);
+        assert_eq!(count_ao(4096), 3);
+    }
+}
