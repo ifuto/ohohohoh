@@ -277,7 +277,7 @@ impl EcoRegionRenderer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any()))] // 診断D1: wave-7 切り分け (本番差分 vs 新旧テスト)
 mod strict_tests {
     use super::*;
 

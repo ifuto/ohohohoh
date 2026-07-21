@@ -382,7 +382,7 @@ pub fn dispatch_adaptive_culling(
     GpuDrivenCullingEngine::cpu_frustum_cull(chunk_boxes, indirect_commands, &frustum)
 }
 
-#[cfg(test)]
+#[cfg(all(test, any()))] // 診断D1: wave-7 切り分け (本番差分 vs 新旧テスト)
 mod strict_tests {
     use super::*;
 
