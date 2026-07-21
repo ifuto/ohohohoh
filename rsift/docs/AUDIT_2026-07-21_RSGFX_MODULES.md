@@ -326,3 +326,44 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   `gh workflow run` の dispatch API は引き続き 403 (TRIGGER.md 経路が正規)。
 - 行列は 357 行 (「数百種類前後」の要求水準を実測値で充足)。継続拡大余地は
   seed/規模掃引で残す (実行 ~26 秒)。
+
+---
+
+# 第4ラウンド (2026-07-21 深夜): 完璧追求自主バッチ (テスト駆動の厳密化)
+
+ユーザー指示: 「完璧だと思うところまで、勝手に機能追加・改修・検索してよい」。
+
+## A. データ変換層の厳密テスト (+31 件: 404 → 435)
+- 方針: 「出力 bit 同一性」を機械保証する方向に投資。変換層は GPU/CPU bitwise
+  規律の根幹 (packed4 語彙 / DDA 踏破 / RLE wire / bitpack / 光伝播)。
+- branchless_block/packed4/branchless_dda/section_rle/leaf_fast_path/
+  bitpacked_section/light_cache に仕様固定オラクル (tie 順序非依存設計
+  — スラブ最接近層・単一ブロック囲い fuzz のような「幾何学的に唯一な正解」)。
+
+## B. 文書乖離の訂正 (挙動不変、誠実さの補強)
+1. **BlockLut**: テーブル値が i%3/i%5/i%16 の modulo プレースホルダであり
+   ブロック実属性の一次情報ではないことをヘッダ明記 (アクセス経路は実
+   ブランチレス)。full_graph_wiring の「実 palette/LUT 判定」「実発光
+   ブロック走査」は proxy 精度 2 箇所のコメントを事実表に置換。
+2. **section_rle**: `layer_masks_from_rle` の「without full palette decode
+   when possible」実装乖離を訂正 (現状はフル decode 委譲)。
+3. **rsift-render dx12_engine**: フォールバック経路がログで「100% parity の
+   wgpu 描画維持」を主張 → 実役割は「game dir 検出 + FullGraphWiring 構築
+   + backend 簿記」と明記。present は rsift-jvm render_bridge ラダーに委譲。
+
+## C. 実測駆動の追加最適化 (出力 bit 同一)
+- メッシャー空判定: `RleSection::encode().is_empty()` は「全 voxel==0」と
+  同型 → any() 走査へ厳密同値置換 (Vec 構築+run 展開の消去)。
+  実測: column8 noise 705→578µs ( hoist と合わせ計 -44%)、flat 136→112µs。
+  digest `004c1cf5fb17bfe8` (357rows) が変更前後で一致。
+
+## D. 意図的スコープ外 (判断記録)
+- **caves merge 断片化コスト (47ns/voxel)**: u64 列マスク単一 sweep 化が
+  本筋だが、greedy の quad 出力順序まで含めた bit 同一性を安全に保証できる
+  書き直し工数が本ラウンドでは不足。次回優先候補として明示的に棚卸しへ。
+- BlockLut の「正式テーブル化」: registry 一次情報が存在しないため、
+  推測由来の表を作る方が不誠実。値を変えない pin の方針を採用。
+
+## E. 残課題 (棚卸し)
+- zero-test モジュール残 ~25 (非コア/描画後段中心)。重要度順に継続。
+- caves merge 深最適化 = 次回の第一候補 (digest + fuzz で証明しながら)。
