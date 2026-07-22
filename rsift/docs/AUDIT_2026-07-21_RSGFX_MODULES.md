@@ -1937,3 +1937,48 @@ cam_right/cam_up が非単位なら quad 伸縮・せん断、非直交なら平
 ### 検証結果 (全て実測)
 - lib テスト **685/685** (+5)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AM. texture_atlas_virtual.rs 監査 (wave 37, 2026-07-22)
+
+`texture_atlas_virtual.rs` (sparse virtual texture atlas: タイル常駐管理)
+全行照合。実消費者は full_graph_wiring:1140-1159 (TileCoord 生成 →
+request_tiles、evict_lru(0) = 現状ノーオップ)。opt-gfx 685 → **691** (+6)。
+
+### AM-1 (中・文化違反) evict_lru は LRU ですらなく、選択が非決定 — 根治
+旧実装は「簡易LRU: 任意のタイルを開放」と称して
+`HashSet::iter().take()` していたが、HashSet 反復順は RandomState
+シード由来で**プロセスごとに非決定** — 退避タイル集合が実行間で揺れ、
+再ストリーミング要求と VRAM キャッシュヒット率まで揺らいでいた
+(bit 同一性・再現性の文化に正面違反)。LRU 追跡は本モジュールに
+存在しないため、(mip 降順, x, y 昇順) の**決定的ヒューリスティック**
+(低詳細 mip から優先退避) に根治し、名前と実態の乖離を doc で正直化
+(真の LRU は residency 需要時導入と明記)。消費者は現状 evict_lru(0)
+(ノーオップ) のため影響なし、先に契約を正した。
+
+### AM-2 (低・NaN 静寂化) capacity_pages=0 の 0 除算 — 契約拒否
+new(…, 0) で `residency_ratio()` が 0.0/0.0 = NaN を静寂返却。
+0 容量アトラスは無意味 → new で width/height/tile_size/capacity 全て
+1 以上を fail-loud 契約化。
+
+### AM-3 (低〜中・範囲外受理) request_tiles のタイル座標無検査 — fail-loud 化
+x*tile_size ≥ width の存在しないタイルも常駐化・ページ消費していた。
+u64 評価 (u32 乗算 overflow で範囲内への wrap 化けを防ぐ) で範囲 assert。
+現消費 (x=m%32<32, 32*128=4096=width 境界内) 不発。mip 段数は本
+モジュールの契約外 (呼び出し側管理) と併記。
+
+### 陰性確認
+free_pages LIFO 払い出し、常駐済み再要求の idempotent、同一バッチ重複
+dedupe、capacity 枯渇時の部分受理 (生存側のみ) — 既存 4 テストの期待と
+整合を厳密列で包含確認。
+
+### 追加テスト (+6, fail-loud)
+- evict_is_deterministic_low_mip_first (mip 1 優先退避、LIFO 再払い出し
+  page 0 ピン、超過退避は頭打ち)
+- evict_selection_is_input_order_independent (fwd/rev 2 経路で同一最終状態)
+- new_rejects_zero_capacity (should_panic)
+- request_rejects_out_of_range_{x,y} + huge_coord_without_overflow_wrap
+  (should_panic ×3)
+
+### 検証結果 (全て実測)
+- lib テスト **691/691** (+6)。rustfmt hunk 増分 0 (HEAD 由来 3 温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
