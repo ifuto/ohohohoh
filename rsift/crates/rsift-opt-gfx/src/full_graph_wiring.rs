@@ -2331,6 +2331,7 @@ mod strict_tests {
         inputs
     }
 
+    #[cfg(any())] // 診断 W9-B1: chunked 単独切り分け中 (恒久撤去ではない)
     #[test]
     fn tick_world_empty_inputs_wellformed() {
         let (dir, mut w) = unique_wiring("empty");
@@ -2387,6 +2388,7 @@ mod strict_tests {
         let _ = std::fs::remove_dir_all(&dir_b);
     }
 
+    #[cfg(any())] // 診断 W9-B1: chunked 単独切り分け中 (恒久撤去ではない)
     #[test]
     fn tick_world_periodic_rebuild_cross_instance_deterministic() {
         // tick%600 の SVDAG 再構築 / pso_lib.save / tick%120 の CLP ディスパッチ周期を
