@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 72
+- count: 73
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -90,3 +90,4 @@
 - 2026-07-22 (count 70): wave 36 — billboard_lod NaN 静寂蒸発 fail-loud + 基底契約化 (5 件) 完了。CI 緑確認
 - 2026-07-22 (count 71): wave 37 — texture_atlas_virtual 非決定 evict 根治 + 3 契約化 (6 件) 完了。CI 緑確認
 - 2026-07-22 (count 72): wave 38 — gl33_compat timer 混入根治 + VecDeque 化 + 2 契約化 (5 件) 完了。CI 緑確認
+- 2026-07-22 (count 73): wave 39 — simd_frustum.wgsl 実カーネル化 (スタブ closing 第 1 弾) (2 件) 完了。CI 緑確認
