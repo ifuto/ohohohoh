@@ -77,7 +77,11 @@ pub struct FrameWiringReport {
     /// FRB ボクセルビルボード GPU 入力への実変換数。
     pub frb_billboards: u32,
     /// 旧 vanilla render バイトコードフック (transpiler HEAD 挿入) の今フレーム実デルタ。
+    /// 【非決定】プロセス全域の共有カウンタ由来のため、テスト並行実行では他テストの
+    /// vanilla 呼出と混ざり得る。決定性検証の比較対象からは除外する (監査 K-4)。
     pub vanilla_hook_hits_delta: u32,
+    /// 【非決定】電源モード判定が壁時計 (`init_time.elapsed()`) を要求する仕様のため
+    /// フレーム間・実行間で揺らぐ。決定性検証の比較対象からは除外する (監査 K-4)。
     pub power_skip_extra: bool,
     pub subsystems_active: u32,
 }
@@ -708,16 +712,25 @@ impl FullGraphWiring {
                         dim: 0,
                         cx: k.0,
                         cz: k.1,
-                        time_ms: (inputs.delta_ms * 1000.0) as u64,
+                        // 【注】BobbyCache の time_ms 欄は eviction 順序付けにだけ
+                        // 使われるため、壁時計非依存の単調フレーム tick を擬似時刻と
+                        // して格納し決定性を維持する (監査 2026-07-22 K-2。旧コードは
+                        // delta_ms x 1000 という単位不整合かつ毎回近似一定の値を
+                        // time_ms 欄へ入れており順序情報を持たなかった)。
+                        time_ms: self.tick,
                         payload: vec![],
                     };
                     let _ = b.store(&chunk);
                 }
             }
+            // ペイロードは合成データだが、キー混合は i32 の符号拡張で上位 32bit が
+            // 汚染される XOR (`k.0 as u64` は負座標で 0xFFFF_FFFF_xxxx_xxxx) ではなく、
+            // 零拡張同士の単射的なビット配置にする (監査 2026-07-22 K-3)。
+            let key_mix = (k.0 as u32 as u64) | ((k.1 as u32 as u64) << 32);
             self.region_codec.put_chunk(
                 (k.0.rem_euclid(32)) as usize,
                 (k.1.rem_euclid(32)) as usize,
-                &(k.0 as u64 ^ ((k.1 as u64) << 32)).to_le_bytes(),
+                &key_mix.to_le_bytes(),
             );
         }
         let _region_stats = self.region_codec.stats();
@@ -848,18 +861,26 @@ impl FullGraphWiring {
                 let mut dag = crate::svdag::SparseVoxelDag::new();
                 let root = dag.build_from_volume(&volume);
                 let _ = root;
-                self.svdag = Some(dag);
                 // Transform-Aware SVDAG: 実ノード列を transform タグ付きで挿入。
-                if let Some(dag) = &self.svdag {
-                    for node in dag.nodes.iter().take(16) {
-                        let _ = self.t_svdag.insert_transform_aware(node.clone());
-                    }
+                for node in dag.nodes.iter().take(16) {
+                    let _ = self.t_svdag.insert_transform_aware(node.clone());
                 }
-                // Aokana: 実 DAG をシャローリージョンとして登録し実リージョンカリング。
-                if let Some(dag) = self.svdag.take() {
-                    self.aokana.insert_shallow_region(0, 0, 0, dag, 0);
-                    self.svdag = Some(crate::svdag::SparseVoxelDag::new());
-                }
+                // Aokana: 実セクション由来の DAG をシャローリージョンとして登録し
+                // 実リージョンカリングを駆動する。リージョン座標は aokana 規約
+                // (region_size_blocks=64、すなわち 4x4 チャンク区画) に合わせて、
+                // パレット供給チャンクの実座標から導出する。
+                // 【注】section_palettes はチャンク内 y 帯を保持しないため ry=0 区画
+                // への登録となる (監査 2026-07-22 K-1)。旧コードは供給元に関わらず
+                // 無条件 (0,0,0) 登録で、さらに self.svdag.take() で実構築物を aokana
+                // へ移し self.svdag には空 DAG を残していた — 本実装では svdag に
+                // 実 DAG を保持し aokana には clone を登録する。
+                let (rx, rz) = inputs
+                    .chunk_keys
+                    .first()
+                    .map(|&(cx, cz)| (cx.div_euclid(4), cz.div_euclid(4)))
+                    .unwrap_or((0, 0));
+                self.aokana.insert_shallow_region(rx, 0, rz, dag.clone(), 0);
+                self.svdag = Some(dag);
             }
         }
         let visible_regions = self
@@ -2222,5 +2243,169 @@ mod strict_tests {
         assert_eq!(PackedPullQuad::unpack_light_ao(quads[2].word0), 3);
         assert_eq!(PackedPullQuad::unpack_light_ao(quads[3].word0), 3);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // =====================================================================
+    // 第 9 波: tick_world 統合テスト (監査 2026-07-22 に基づく決定性仕様)
+    // =====================================================================
+
+    fn unique_wiring(tag: &str) -> (std::path::PathBuf, FullGraphWiring) {
+        let dir = std::env::temp_dir().join(format!(
+            "rsift_fgw_tick_{}_{}_{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        (dir.clone(), FullGraphWiring::new(&dir))
+    }
+
+    /// 監査 2026-07-22 K-4/K-5 の決定性比較集合: FrameWiringReport 全 17 pub
+    /// フィールドのうち非決定と doc 明記された 2 つ (vanilla_hook_hits_delta:
+    /// プロセス全域カウンタ由来、power_skip_extra: 壁時計由来) を除く 15 個を,
+    /// f32 は IEEE-754 ビット同一として全比較する。
+    fn assert_report_det_subset(a: &FrameWiringReport, b: &FrameWiringReport, ctx: &str) {
+        assert_eq!(a.next_build_budget, b.next_build_budget, "{ctx}: next_build_budget");
+        assert_eq!(a.overdraw_order, b.overdraw_order, "{ctx}: overdraw_order");
+        assert_eq!(a.draw_command_count, b.draw_command_count, "{ctx}: draw_command_count");
+        assert_eq!(a.lockfree_cache_hits, b.lockfree_cache_hits, "{ctx}: lockfree_cache_hits");
+        assert_eq!(a.lbvh_culled, b.lbvh_culled, "{ctx}: lbvh_culled");
+        assert_eq!(
+            a.aokana_visible_regions, b.aokana_visible_regions,
+            "{ctx}: aokana_visible_regions"
+        );
+        assert_eq!(a.visgraph_reachable, b.visgraph_reachable, "{ctx}: visgraph_reachable");
+        assert_eq!(a.nanite_meshlets, b.nanite_meshlets, "{ctx}: nanite_meshlets");
+        assert_eq!(
+            a.nanite_meshlets_culled, b.nanite_meshlets_culled,
+            "{ctx}: nanite_meshlets_culled"
+        );
+        assert_eq!(a.vram_used_bytes, b.vram_used_bytes, "{ctx}: vram_used_bytes");
+        assert_eq!(
+            a.post_exposure.to_bits(),
+            b.post_exposure.to_bits(),
+            "{ctx}: post_exposure (bit)"
+        );
+        assert_eq!(
+            a.ambient_light.to_bits(),
+            b.ambient_light.to_bits(),
+            "{ctx}: ambient_light (bit)"
+        );
+        assert_eq!(
+            a.clp_lit_fraction.to_bits(),
+            b.clp_lit_fraction.to_bits(),
+            "{ctx}: clp_lit_fraction (bit)"
+        );
+        assert_eq!(a.frb_billboards, b.frb_billboards, "{ctx}: frb_billboards");
+        assert_eq!(a.subsystems_active, b.subsystems_active, "{ctx}: subsystems_active");
+    }
+
+    const IDENTITY_VP: [[f32; 4]; 4] = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+
+    /// 1 チャンク (0,0) + 全 1 パレット + 24 クアッドの実入力。
+    /// 恒等フラスタムに対しチャンク AABB [0,16)³ と Aokana 区画 [0,64)³ は
+    /// 6 面全てで冠点テストを通過する (extract_frustum_planes_identity_table の表)。
+    fn chunked_inputs() -> FrameWiringInputs<'static> {
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.camera_pos = [8.0, 8.0, 8.0];
+        inputs.camera_speed = 0.5;
+        inputs.chunk_keys = vec![(0, 0)];
+        inputs.chunk_materials = vec![1];
+        inputs.chunk_aabbs = vec![([0.0, 0.0, 0.0], [16.0, 16.0, 16.0])];
+        inputs.chunk_dists = vec![8.0];
+        inputs.draw_index_counts = vec![36];
+        inputs.section_palettes = vec![[1u16; 4096]];
+        inputs.quad_positions = (0..24u32)
+            .map(|i| [i as f32 * 0.5, 1.0, (i % 6) as f32 * 0.5])
+            .collect();
+        inputs.quad_materials = (0..24u32).map(|i| i * 7 + 1).collect();
+        inputs.quad_bytes = 24 * 64;
+        inputs
+    }
+
+    #[test]
+    fn tick_world_empty_inputs_wellformed() {
+        let (dir, mut w) = unique_wiring("empty");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        for t in 1..=4u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            assert_eq!(r.aokana_visible_regions, 0, "tick {t}: パレットなし → リージョン未登録");
+            assert_eq!(r.visgraph_reachable, 0, "tick {t}: チャンクなし → BFS 到達なし");
+            assert_eq!(r.lbvh_culled, 0, "tick {t}: AABB なし → LBVH カリングなし");
+            assert_eq!(r.nanite_meshlets, 0, "tick {t}: クアッドなし → メッシュレットなし");
+            assert_eq!(r.nanite_meshlets_culled, 0, "tick {t}");
+            assert_eq!(r.frb_billboards, 0, "tick {t}: クアッドなし → ビルボード変換なし");
+            assert_eq!(
+                r.clp_lit_fraction.to_bits(),
+                0.0f32.to_bits(),
+                "tick {t}: CLP 未ディスパッチ → 既定 0.0"
+            );
+            assert_eq!(r.draw_command_count, 0, "tick {t}: コマンドなし → 0 (compact_and_filter 空走査)");
+            assert_eq!(r.lockfree_cache_hits, 0, "tick {t}: VRAM キャッシュ走査なし");
+            assert_eq!(r.vram_used_bytes, 0, "tick {t}: 実アロケーションなし");
+            assert_eq!(r.subsystems_active, 60, "tick {t}: 配線サブシステム総数は仕様値");
+            assert!(r.overdraw_order.is_empty(), "tick {t}");
+            assert!(
+                (0.05..=20.0).contains(&r.post_exposure),
+                "tick {t}: 露光は adapt() クランプ域内: {}",
+                r.post_exposure
+            );
+            assert!(r.ambient_light.is_finite(), "tick {t}: IBL アンビエントは有限");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tick_world_chunked_inputs_exact_and_cross_instance_deterministic() {
+        let (dir_a, mut a) = unique_wiring("chunk_a");
+        let (dir_b, mut b) = unique_wiring("chunk_b");
+        let (mut ia, mut ib) = (chunked_inputs(), chunked_inputs());
+        for t in 1..=8u64 {
+            ia.frame_index = t;
+            ib.frame_index = t;
+            let ra = a.tick_world(&ia);
+            let rb = b.tick_world(&ib);
+            assert_report_det_subset(&ra, &rb, &format!("tick {t}"));
+            // K-1 回帰: パレット供給チャンク (0,0) → リージョン (0,0,0) (64³ 区画)。
+            // 区画 AABB [0,64)³ は恒等フラスタム 6 面全合格 → 常時 1 区画可視。
+            assert_eq!(ra.aokana_visible_regions, 1, "tick {t}: K-1 実登録 1 区画が可視");
+            // 3 層フィルタ (SIMD frustum / LBVH / compact mask) 全通過の静的検証済み。
+            assert_eq!(ra.draw_command_count, 1, "tick {t}: 1 可視チャンク = 1 コマンド");
+            assert_eq!(ra.frb_billboards, 24, "tick {t}: 24 クアッドの実変換");
+        }
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    #[test]
+    fn tick_world_periodic_rebuild_cross_instance_deterministic() {
+        // tick%600 の SVDAG 再構築 / pso_lib.save / tick%120 の CLP ディスパッチ周期を
+        // 跨いでも報告の決定性集合が両インスタンスで一致すること。
+        let (dir_a, mut a) = unique_wiring("period_a");
+        let (dir_b, mut b) = unique_wiring("period_b");
+        let (mut ia, mut ib) = (chunked_inputs(), chunked_inputs());
+        const SAMPLE: [u64; 5] = [1, 120, 599, 600, 601];
+        for t in 1..=601u64 {
+            ia.frame_index = t;
+            ib.frame_index = t;
+            let ra = a.tick_world(&ia);
+            let rb = b.tick_world(&ib);
+            if SAMPLE.contains(&t) {
+                assert_report_det_subset(&ra, &rb, &format!("tick {t}"));
+                assert_eq!(ra.aokana_visible_regions, 1, "tick {t}: 再構築後も実座標登録を維持");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
     }
 }

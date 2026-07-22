@@ -545,3 +545,43 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
   base commit へ再リセットされており、non-fast-forward 拒否がリモート喪失を
   未然防止。fetch 済みオブジェクトから `reset --hard` で正規復旧。教訓:
   push 前に `git log` で親確認 (親が base しか無ければ巻き戻り発生)。
+
+## K. tick_world 全通読監査 (2026-07-22, 第 9 波)
+
+`FullGraphWiring::tick_world` 本体 (旧行 351-1773、約 1400 行) を全区間通読し、
+パニック経路・非決定性・虚偽配線の 3 観点で監査した。全添字アクセスは
+`get`/`unwrap_or`/明示境界チェック経由でパニック経路なし。除算・剰余も
+`.max(1)` ガードまたは非ゼロ定数分母に限定される。HashMap 反復は report に
+`len()` 経由でのみ流出し順序は観測不能 (`gb_handles` の LRU 追い出しのみ
+first-key 依存だが試験規模では容量到達しない)。
+
+発見と修正 (全て本コミットで実施):
+
+- **K-1 (虚偽配線) Aokana リージョン登録が無条件 (0,0,0) + svdag 空化**:
+  実セクションパレットから構築した実 DAG を `insert_shallow_region(0,0,0,..)`
+  で「どのチャンク由来でも原点区画」と虚偽登録し、さらに `self.svdag.take()`
+  で実構築物を aokana に移したあと self.svdag へ**空の新規 DAG** を残していた
+  (svdag フィールドは実データを永遠に保持しない)。aokana 規約
+  (`region_size_blocks=64` = 4x4 チャンク区画) に合わせ、供給チャンクの実座標
+  (`cx.div_euclid(4)`, `cz.div_euclid(4)`) で登録するよう修正。svdag には実 DAG
+  を保持し aokana には clone を登録する。`section_palettes` がチャンク内 y 帯を
+  保持しない制約は `ry=0` 登録としてコードコメントに正直明記。
+- **K-2 (単位不整合) bobby `CachedChunk.time_ms`**: `delta_ms * 1000.0` (µs 相当)
+  を time_ms 欄へ格納していた。time_ms は eviction 順序付けにのみ使われるため、
+  壁時計非依存で単調な**フレーム tick** を擬似時刻に変更 (決定性維持 + 順序情報
+  の実体化)。
+- **K-3 (符号拡張汚染) region_codec ペイロード混合**: `k.0 as u64` は負座標で
+  `0xFFFF_FFFF_xxxx_xxxx` に符号拡張され、`(k.1 as u64) << 32` との XOR で上位
+  32bit が破壊されていた。零拡張同士の単射的ビット配置
+  `(k.0 as u32 as u64) | ((k.1 as u32 as u64) << 32)` に修正。
+- **K-4 (非決定フィールドの明文化)**: `FrameWiringReport` の
+  `vanilla_hook_hits_delta` (プロセス全域カウンタ由来 → テスト並行実行で混濁
+  し得る), `power_skip_extra` (電源モード判定が壁時計を要求する仕様) の 2 つに
+  非決定である旨の doc を明記。残り 15 フィールドは決定性検証で比較可能。
+- **K-5 (wave 9: opt-gfx 555 → 558, +3) tick_world 統合テスト**:
+  (1) 空入力 4 tick の well-formedness (CLP 既定 0.0 ビット厳密、露光は
+  adapt クランプ域内、全カウンタ 0)。 (2) 1 チャンク/全 1 パレット入力での
+  **厳密値** (K-1 回帰: aokana_visible_regions==1 を冠点テストから静的導出、
+  3 層フィルタ全通過検証済み draw_command_count==1, frb_billboards==24) +
+  2 インスタンス交差 bit-決定性 (15 フィールド、f32 は to_bits)。 (3) 601 tick
+  で tick%600 SVDAG 再構築 / pso_lib.save / tick%120 CLP 周期跨ぎの交差決定性。
