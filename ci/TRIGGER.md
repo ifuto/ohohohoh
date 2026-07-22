@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 61
+- count: 62
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -79,3 +79,4 @@
 - 2026-07-22 (count 59): wave 24-25 — taa_ycocg / texture_atlas 監査 (契約化 + 厳密値ピン 12 件) の CI 緑確認
 - 2026-07-22 (count 60): wave 26 — triple_buffer 単一バッファ退化根治 + spatial_hash 契約化 (7 件) の CI 緑確認
 - 2026-07-22 (count 61): wave 27 — simd_kernels Gribb near 根治 + 厳密平面値ピン (5 件) の CI 緑確認
+- 2026-07-22 (count 62): wave 28 — mesh_compactor Gribb near 根治 (第3 extractor 統一) + WGSL wire format 厳密ピン (4 件) 完了。CI 緑確認
