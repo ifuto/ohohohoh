@@ -844,3 +844,57 @@ CPU≠GPU となり「完全一致」の doc 宣言が嘘になる。
 ### テスト数
 
 opt-gfx 573 → **575** (+2: 6平面制限 mirror / zero-stride 拒否)。
+
+---
+
+## Q. frame_postfx.rs 全通読監査 (wave 15, 2026-07-22)
+
+CAS / Checkerboard / Exposure / VRS の wgpu 実 dispatch 配線 + 共通
+readback ヘルパを全行監査 (read_f32_buffer/read_u32_buffer は wave 14 の
+GpuNoise/GpuLbvh/GpuMeshlet 等が依存する読み戻し根幹)。
+
+### Q-1 (重要・誠実性): GpuExposure の apply 経路が未完 — 宣言と実体の乖離
+
+`GpuExposure::new` は `cs_apply` のコンピュートパイプラインを生成して
+**即座に `let _ = apply_pipeline;` で破棄**しており、構造体は luma のみ保持・
+`run_apply` メソッドは存在しなかった。ヘッダ doc の「Exposure: luma 計算と
+露出適用を GPU」という宣言に対し **GPU 適用経路が実在しない嘘**だった
+(生成コストだけ毎回支払う dead 生成でもあった)。
+根治: `apply_pipeline` を構造体に保持し `run_apply` を実装
+(WGSL 確認済: binding 2 = luma_out / binding 3 = dst、cs_apply は
+exposure uniform を使用。apply 側はダミー luma バッファを binding 2 に
+bind。alpha 透過・成分 clamp は CPU ミラーと宣言どおり一致)。
+テスト `apply_run_cpu_exact_bits_and_clamp` は CPU ミラーの
+厳密ビット仕様 (0.5*2.0==1.0 厳密、4.0→clamp 1.0、負→0.0、alpha 透過)
+を to_bits 比較で固定 (GPU 実行テストは CI に GPU がないため契約側を固定)。
+
+### Q-5 (中): vrs tile=0 で 0 除算パニックが無契約
+
+`vrs_run_cpu` / `GpuVrs::run` の `div_ceil(tile)` は tile=0 でパニック。
+motion/var 長さは assert 済みなのに tile は未検査だった。両関数に明示
+assert を追加 (should_panic テストで固定)。wave 14 P-5 と同種の
+「契約未明記の裸パニック」。
+
+### Q-6 (中): cas/checker CPU ミラーの src 長さ未検査
+
+`cas_run_cpu` / `checker_run_cpu` は w*h より短い src で OOB パニック
+(長過剰は静かに余分を無視)。vrs と同じく明示 `assert_eq!` を冒頭に追加
+(should_panic テスト 2 件で固定)。
+
+### 陰性確認 — Q-2/Q-3/Q-4/Q-7
+
+- `read_u32_buffer` の f32 経由 to_bits: from_le_bytes→to_bits は Rust が
+  ビット完全 roundtrip を保証 (現行 u32 用途は 0/1 マスクで実害なし)。
+- CAS の 1e-7 近似照合テスト: cas.rs::cas_sample との演算順同一で実質
+  差分ゼロ (強化余地はあるが現状で契約は固定済)。
+- checker の alpha 平均: RGB と同じ規則で WGSL/CPU 一致、呼出契約は α=1。
+- luma Rec.709: 加算順固定で bitwise テスト済。
+
+### 接続状況の事実記録
+
+wave 14 と同様、本モジュールの CPU ミラー・GPU ラッパの消費者は
+モジュール内テストのみ (本番フレーム経路からは未呼出の検証ハーネス)。
+
+### テスト数
+
+opt-gfx 575 → **579** (+4: apply 厳密bit / vrs zero-tile / CAS・checker 長さ拒否)。

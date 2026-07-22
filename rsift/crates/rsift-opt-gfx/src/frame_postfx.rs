@@ -130,6 +130,14 @@ pub struct CasParams {
 /// CPU 精密ミラー: WGSL `cas_run` と演算順完全一致
 /// (= `cas.rs::cas_sample` の全画素版、ボーダーは端 clamp)。
 pub fn cas_run_cpu(src: &[[f32; 4]], width: u32, height: u32, sharpness: f32) -> Vec<[f32; 4]> {
+    assert_eq!(
+        src.len(),
+        (width as usize) * (height as usize),
+        "cas_run_cpu: src 長 ({}) は width*height ({}x{}) と一致必須",
+        src.len(),
+        width,
+        height
+    );
     let (w, h) = (width as i32, height as i32);
     let px = |x: i32, y: i32| -> [f32; 3] {
         let cx = x.clamp(0, w - 1) as u32;
@@ -265,6 +273,14 @@ impl GpuCas {
 /// CPU 精密ミラー: WGSL `cs_checkerboard` と演算順完全一致
 /// (描画済み `(x+y)&1==0` はコピー、それ以外は斜め 4 近傍の左結合平均 ×0.25)。
 pub fn checker_run_cpu(src: &[[f32; 4]], width: u32, height: u32) -> Vec<[f32; 4]> {
+    assert_eq!(
+        src.len(),
+        (width as usize) * (height as usize),
+        "checker_run_cpu: src 長 ({}) は width*height ({}x{}) と一致必須",
+        src.len(),
+        width,
+        height
+    );
     let (w, h) = (width as i32, height as i32);
     let px = |x: i32, y: i32| -> [f32; 4] {
         let cx = x.clamp(0, w - 1) as u32;
@@ -420,6 +436,7 @@ pub fn apply_run_cpu(src: &[[f32; 4]], exposure: f32) -> Vec<[f32; 4]> {
 
 pub struct GpuExposure {
     luma_pipeline: wgpu::ComputePipeline,
+    apply_pipeline: wgpu::ComputePipeline,
     bgl: wgpu::BindGroupLayout,
 }
 
@@ -504,8 +521,14 @@ impl GpuExposure {
             entry_point: "cs_apply",
             compilation_options: Default::default(),
         });
-        let _ = apply_pipeline; // run_luma / run_apply が個別に保持
-        Self { luma_pipeline, bgl }
+        // luma / apply の 2 パイプラインを保持 (cs_apply は exposure uniform を
+        // 使用 — 旧版は生成して即破棄しており、構造体が apply 経路を持たず
+        // 「露出適用を GPU」という宣言が実現されていなかった)。
+        Self {
+            luma_pipeline,
+            apply_pipeline,
+            bgl,
+        }
     }
 
     /// 実 dispatch (luma): src (count RGBA f32) → count luma f32。
@@ -592,6 +615,100 @@ impl GpuExposure {
         queue.submit([encoder.finish()]);
         read_f32_buffer(device, &staging, count as usize)
     }
+
+    /// 実 dispatch (apply): src (count RGBA f32) に露出スカラを掛けて
+    /// clamp(0..1) した RGBA を読み戻す (WGSL `cs_apply`、alpha 透過)。
+    /// CPU 計量 (exposure.rs: build_histogram → target_exposure → adapt) の
+    /// 最終出力を uniform 経由で供給する、決定性設計の GPU 側最終段。
+    pub fn run_apply(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        src: &[[f32; 4]],
+        exposure: f32,
+    ) -> Vec<[f32; 4]> {
+        let count = src.len() as u32;
+        let params = ExposureParams {
+            count,
+            exposure,
+            _pad0: 0,
+            _pad1: 0,
+        };
+        let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Rsift Exposure Apply Params"),
+            contents: bytemuck::bytes_of(&params),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let src_bytes: Vec<u8> = src
+            .iter()
+            .flat_map(|p| p.iter().flat_map(|v| v.to_le_bytes()))
+            .collect();
+        let src_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Rsift Exposure Apply Src"),
+            contents: &src_bytes,
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        // cs_apply は binding 2 (luma_out) を参照しないが、共有 BGL 上は
+        // 実バッファの割当が必要なためダミーを bind する。
+        let luma_dummy = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Rsift Exposure Luma (unused in apply)"),
+            size: count as u64 * 4,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let dst_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Rsift Exposure Apply Dst"),
+            size: count as u64 * 16,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Rsift Exposure Apply Staging"),
+            size: count as u64 * 16,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Rsift Exposure Apply BG"),
+            layout: &self.bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: src_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: luma_dummy.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: dst_buf.as_entire_binding(),
+                },
+            ],
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Rsift Exposure Apply Encoder"),
+        });
+        {
+            let mut cp = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Rsift Exposure Apply Pass"),
+                timestamp_writes: None,
+            });
+            cp.set_pipeline(&self.apply_pipeline);
+            cp.set_bind_group(0, &bg, &[]);
+            cp.dispatch_workgroups(count.div_ceil(64), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&dst_buf, 0, &staging, 0, count as u64 * 16);
+        queue.submit([encoder.finish()]);
+        read_f32_buffer(device, &staging, (count * 4) as usize)
+            .chunks_exact(4)
+            .map(|c| [c[0], c[1], c[2], c[3]])
+            .collect()
+    }
 }
 
 // ------------------------------------------------------------------
@@ -621,6 +738,10 @@ pub fn vrs_run_cpu(
     motion_weight: f32,
     variance_weight: f32,
 ) -> Vec<u32> {
+    assert!(
+        tile > 0,
+        "vrs tile は 1 以上必須 (0 ではタイル数の div_ceil が 0 除算パニック)"
+    );
     assert_eq!(motion.len(), (width * height) as usize);
     assert_eq!(var.len(), (width * height) as usize);
     let (w, h, t) = (width as usize, height as usize, tile as usize);
@@ -753,6 +874,10 @@ impl GpuVrs {
         tile: u32,
         weights: [f32; 2],
     ) -> Vec<u32> {
+        assert!(
+            tile > 0,
+            "vrs tile は 1 以上必須 (0 ではタイル数の div_ceil が 0 除算パニック)"
+        );
         let (motion, var, width, height) = (field.motion, field.var, field.width, field.height);
         let params = VrsParams {
             dims: [width, height],
@@ -954,5 +1079,44 @@ mod tests {
             vrs.variance_weight,
         );
         assert_eq!(got, expect, "vrs_run_cpu が Vrs::build_mask と不一致");
+    }
+
+    /// 露出適用の厳密ビット仕様: 成分毎に clamp(c*e, 0, 1)、alpha は透過。
+    /// 0.5*2 は f32 で厳密に 1.0、2.0*2=4.0 は clamp で厳密に 1.0、
+    /// 負の結果は 0.0 に張り付く (全て to_bits 比較)。
+    #[test]
+    fn apply_run_cpu_exact_bits_and_clamp() {
+        let src = vec![[0.5f32, 0.25, 2.0, 0.7]];
+        let out = apply_run_cpu(&src, 2.0);
+        assert_eq!(out[0][0].to_bits(), 1.0f32.to_bits(), "0.5*2.0 == 1.0 厳密");
+        assert_eq!(out[0][1].to_bits(), 0.5f32.to_bits(), "0.25*2.0 == 0.5 厳密");
+        assert_eq!(out[0][2].to_bits(), 1.0f32.to_bits(), "4.0 → clamp 1.0");
+        assert_eq!(out[0][3].to_bits(), 0.7f32.to_bits(), "alpha 透過");
+        let neg = apply_run_cpu(&src, -1.0);
+        assert_eq!(neg[0][0].to_bits(), 0.0f32.to_bits(), "-0.5 → clamp 0.0");
+        assert_eq!(neg[0][1].to_bits(), 0.0f32.to_bits(), "-0.25 → clamp 0.0");
+        assert_eq!(neg[0][3].to_bits(), 0.7f32.to_bits(), "alpha は exposure 非適用");
+    }
+
+    /// tile = 0 はタイル数の div_ceil が 0 除算パニックになる契約違反。
+    /// 明示メッセージ付き assert で拒否することを固定する。
+    #[test]
+    #[should_panic(expected = "tile は 1 以上必須")]
+    fn vrs_run_cpu_rejects_zero_tile() {
+        let _ = vrs_run_cpu(&[0.0; 64], &[0.0; 64], 8, 8, 0, 1.0, 1.0);
+    }
+
+    /// src 長が width*height と一致しない入力は OOB アクセス前に
+    /// 明示拒否されること (CAS / Checkerboard 両方)。
+    #[test]
+    #[should_panic(expected = "width*height")]
+    fn cas_run_cpu_rejects_length_mismatch() {
+        let _ = cas_run_cpu(&[[0.0; 4]; 3], 2, 2, 0.5);
+    }
+
+    #[test]
+    #[should_panic(expected = "width*height")]
+    fn checker_run_cpu_rejects_length_mismatch() {
+        let _ = checker_run_cpu(&[[0.0; 4]; 3], 2, 2);
     }
 }

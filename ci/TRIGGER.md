@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 54
+- count: 55
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -72,3 +72,4 @@
 - 2026-07-22: wave 12 — bobby_cache 全通読監査 (N-1 rebuild 時刻復元で LRU 決定性根治 / N-6 dim汚染skip / N-5 doc正直化 / N-2/N-4 防御) + テスト4本 (opt-gfx 571)
 - 2026-07-22: wave 13 — binary_greedy_meshing 全通読監査 (等価性再証明15件陰性 + AVX2/SWAR照合・span境界テスト + face_culling実意味doc化) (opt-gfx 573)
 - 2026-07-22: wave 14 — frame_worldgen 全通読監査 (P-5 stride=0明示拒否 / P-6 CPUミラー6平面制限でWGSL完全一致回復 / 未接続状況記録) (opt-gfx 575)
+- 2026-07-22: wave 15 — frame_postfx 全通読監査 (Q-1 GPU露出適用の未完配線を根治 run_apply 実装 / Q-5 vrs tile=0 / Q-6 CAS・checker長さ assert) (opt-gfx 579)
