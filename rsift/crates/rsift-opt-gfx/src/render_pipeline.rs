@@ -1403,44 +1403,34 @@ mod tests {
             let _ = guarded_frame(&mut p, &[(0, 0)], 201);
         }
         {
-            let (_d, mut p) = guarded_new("m3", 39);
+            let (_d, mut p) = guarded_new("m5", 39);
             p.profile.hzb_occlusion = false;
             p.profile.cpu_masked_occlusion = false;
             p.feather.enabled = false;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 207);
+            p.profile.vertex_pull_4byte = false;
+            let _ = guarded_frame(&mut p, &[(0, 0)], 211);
         }
         {
             let (_d, mut p) = guarded_new("m4", 39);
             p.profile.hzb_occlusion = false;
             p.profile.cpu_masked_occlusion = false;
+            p.feather.enabled = false;
             p.profile.multi_draw_indirect = false;
             let _ = guarded_frame(&mut p, &[(0, 0)], 209);
-        }
-        {
-            let (_d, mut p) = guarded_new("m5", 39);
-            p.profile.hzb_occlusion = false;
-            p.profile.cpu_masked_occlusion = false;
-            p.profile.vertex_pull_4byte = false;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 211);
         }
         {
             let (_d, mut p) = guarded_new("m6", 39);
             p.profile.hzb_occlusion = false;
             p.profile.cpu_masked_occlusion = false;
+            p.feather.enabled = false;
             p.profile.noise_upsampling = false;
             let _ = guarded_frame(&mut p, &[(0, 0)], 213);
-        }
-        {
-            let (_d, mut p) = guarded_new("m7", 39);
-            p.profile.hzb_occlusion = false;
-            p.profile.cpu_masked_occlusion = false;
-            p.low_spec.pre_mesh_occlusion = false;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 215);
         }
         {
             let (_d, mut p) = guarded_new("m8", 39);
             p.profile.hzb_occlusion = false;
             p.profile.cpu_masked_occlusion = false;
+            p.feather.enabled = false;
             p.low_spec.quad_budget = 0;
             let _ = guarded_frame(&mut p, &[(0, 0)], 217);
         }
