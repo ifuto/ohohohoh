@@ -1378,6 +1378,7 @@ mod tests {
         let _ = guarded_frame(&mut p, &[(0, 0), (1, 0)], 81);
     }
 
+    #[cfg(any())] // 診断 W11-B12: シングル完結への通信譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_multi_no_occ() {
         let (_d, mut p) = guarded_new("probe_noocc", 39);
@@ -1385,7 +1386,6 @@ mod tests {
         let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 83);
     }
 
-    #[cfg(any())] // 診断 W11-B11: occ ON/OFF 対決のみ解放 (恒久撤去ではない)
     #[test]
     fn probe_frame_single_far() {
         let (_d, mut p) = guarded_new("probe_far", 39);
@@ -1422,7 +1422,6 @@ mod tests {
 
     // 診断 W11-B8: パニックのコンテンツ依存性プローブ (恒久ではない。
     // パニック時は frame 呼出地点のコードで終了する)。
-    #[cfg(any())] // 診断 W11-B11: occ ON/OFF 対決のみ解放 (恒久撤去ではない)
     #[test]
     fn probe_frame_single_origin() {
         let (_d, mut p) = guarded_new("probe_o", 39);
@@ -1430,20 +1429,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(_d);
     }
 
-    #[cfg(any())] // 診断 W11-B11: occ ON/OFF 対決のみ解放 (恒久撤去ではない)
     #[test]
     fn probe_frame_single_neg() {
         let (_d, mut p) = guarded_new("probe_n", 39);
         let _ = guarded_frame(&mut p, &[(-1, 0)], 53);
     }
 
-    #[cfg(any())] // 診断 W11-B11: occ ON/OFF 対決のみ解放 (恒久撤去ではない)
     #[test]
     fn probe_frame_single_pos() {
         let (_d, mut p) = guarded_new("probe_p", 39);
         let _ = guarded_frame(&mut p, &[(1, 0)], 55);
     }
 
+    #[cfg(any())] // 診断 W11-B12: シングル完結への通信譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_multi_pos() {
         let (_d, mut p) = guarded_new("probe_m", 39);
