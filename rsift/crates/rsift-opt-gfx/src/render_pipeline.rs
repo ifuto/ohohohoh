@@ -1332,30 +1332,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // 診断 W11-F1: M-4 根治後も det 系が失敗するため、最小限の guard を再装着
-    // (パニック vs 不一致の判定用。恒久ではない)。
-    fn guarded_frame_now(
-        p: &mut RsiftRenderPipeline,
-        coords: &[(i32, i32)],
-        code: i32,
-    ) -> FrameStats {
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            p.frame(coords, 640, 360, 0.016)
-        })) {
-            Ok(s) => s,
-            Err(_) => std::process::exit(code),
-        }
-    }
-
-    macro_rules! fcode {
-        ($cond:expr, $code:expr) => {
-            if !$cond {
-                eprintln!("[W11-F1] mismatch code={}", $code);
-                std::process::exit($code);
-            }
-        };
-    }
-
     /// M-4 回帰検証を兼ねた frame() 実統計の厳密一致: コア系
     /// (同一機械上の新鮮 2 インスタンス、2 フレーム、期間起動 %120 系を除く)。
     #[test]
@@ -1364,23 +1340,25 @@ mod tests {
         let (dir_b, mut b) = unique_pipeline("det_core_b");
         let coords = [(0, 0), (1, 0), (-1, 0)];
         for _ in 0..2 {
-            let sa = guarded_frame_now(&mut a, &coords, 240);
-            let sb = guarded_frame_now(&mut b, &coords, 241);
-            fcode!(sa.chunks_built == sb.chunks_built, 61);
-            fcode!(sa.cache_hits == sb.cache_hits, 62);
-            fcode!(sa.visible_chunks == sb.visible_chunks, 63);
-            fcode!(sa.draw_calls == sb.draw_calls, 64);
-            fcode!(sa.cpu_culled == sb.cpu_culled, 65);
-            fcode!(sa.tiles_binned == sb.tiles_binned, 66);
-            fcode!(sa.shading_skipped == sb.shading_skipped, 71);
-            fcode!(sa.empty_culled == sb.empty_culled, 72);
-            fcode!(sa.visgraph_culled == sb.visgraph_culled, 73);
-            fcode!(sa.range_culled == sb.range_culled, 74);
-            fcode!(sa.rle_palette_bytes == sb.rle_palette_bytes, 75);
-            fcode!(sa.svo_nodes_built == sb.svo_nodes_built, 76);
-            fcode!(sa.wiring_subsystems == sb.wiring_subsystems, 77);
-            fcode!(sa.wiring_subsystems == 60, 78);
-            fcode!(a.last_camera_speed.to_bits() == 0.0f32.to_bits(), 79);
+            let sa = a.frame(&coords, 640, 360, 0.016);
+            let sb = b.frame(&coords, 640, 360, 0.016);
+            assert_eq!(sa.chunks_built, sb.chunks_built, "chunks_built");
+            assert_eq!(sa.cache_hits, sb.cache_hits, "cache_hits");
+            assert_eq!(sa.visible_chunks, sb.visible_chunks, "visible_chunks");
+            assert_eq!(sa.draw_calls, sb.draw_calls, "draw_calls");
+            assert_eq!(sa.cpu_culled, sb.cpu_culled, "cpu_culled");
+            assert_eq!(sa.tiles_binned, sb.tiles_binned, "tiles_binned");
+            assert_eq!(sa.shading_skipped, sb.shading_skipped, "shading_skipped");
+            assert_eq!(sa.empty_culled, sb.empty_culled, "empty_culled");
+            assert_eq!(sa.visgraph_culled, sb.visgraph_culled, "visgraph_culled");
+            assert_eq!(sa.range_culled, sb.range_culled, "range_culled");
+            assert_eq!(sa.rle_palette_bytes, sb.rle_palette_bytes, "rle_palette_bytes");
+            assert_eq!(sa.svo_nodes_built, sb.svo_nodes_built, "svo_nodes_built");
+            assert_eq!(sa.wiring_subsystems, sb.wiring_subsystems, "wiring_subsystems");
+            // 仕様値の固定: 60 サブシステム配線。
+            assert_eq!(sa.wiring_subsystems, 60, "wiring_subsystems spec");
+            // M-1: デモ静止カメラでは実速度は厳密 0.0 (旧実装 ~375 固定ではない)。
+            assert_eq!(a.last_camera_speed.to_bits(), 0.0f32.to_bits(), "M-1 static cam");
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
@@ -1394,19 +1372,25 @@ mod tests {
         let (dir_b, mut b) = unique_pipeline("det_pull_b");
         let coords = [(0, 0), (1, 0), (-1, 0)];
         for _ in 0..2 {
-            let sa = guarded_frame_now(&mut a, &coords, 242);
-            let sb = guarded_frame_now(&mut b, &coords, 243);
-            fcode!(sa.frame_reuse_hits == sb.frame_reuse_hits, 81);
-            fcode!(sa.frame_reuse_misses == sb.frame_reuse_misses, 82);
-            fcode!(sa.pull_quads_built == sb.pull_quads_built, 83);
-            fcode!(sa.pull_verts_drawn == sb.pull_verts_drawn, 84);
-            fcode!(sa.pull_ssbo_bytes == sb.pull_ssbo_bytes, 85);
-            fcode!(sa.pull_cache_hits == sb.pull_cache_hits, 86);
-            fcode!(sa.frustum_culled == sb.frustum_culled, 87);
-            fcode!(sa.soft_occluded == sb.soft_occluded, 88);
-            fcode!(sa.lod_boxes == sb.lod_boxes, 89);
-            fcode!(sa.interior_culled_voxels == sb.interior_culled_voxels, 90);
-            fcode!(sa.wiring_ao_refined_quads == sb.wiring_ao_refined_quads, 91);
+            let sa = a.frame(&coords, 640, 360, 0.016);
+            let sb = b.frame(&coords, 640, 360, 0.016);
+            assert_eq!(sa.frame_reuse_hits, sb.frame_reuse_hits, "frame_reuse_hits");
+            assert_eq!(sa.frame_reuse_misses, sb.frame_reuse_misses, "frame_reuse_misses");
+            assert_eq!(sa.pull_quads_built, sb.pull_quads_built, "pull_quads_built");
+            assert_eq!(sa.pull_verts_drawn, sb.pull_verts_drawn, "pull_verts_drawn");
+            assert_eq!(sa.pull_ssbo_bytes, sb.pull_ssbo_bytes, "pull_ssbo_bytes");
+            assert_eq!(sa.pull_cache_hits, sb.pull_cache_hits, "pull_cache_hits");
+            assert_eq!(sa.frustum_culled, sb.frustum_culled, "frustum_culled");
+            assert_eq!(sa.soft_occluded, sb.soft_occluded, "soft_occluded");
+            assert_eq!(sa.lod_boxes, sb.lod_boxes, "lod_boxes");
+            assert_eq!(
+                sa.interior_culled_voxels, sb.interior_culled_voxels,
+                "interior_culled_voxels"
+            );
+            assert_eq!(
+                sa.wiring_ao_refined_quads, sb.wiring_ao_refined_quads,
+                "wiring_ao_refined_quads"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
