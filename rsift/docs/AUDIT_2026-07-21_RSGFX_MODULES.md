@@ -898,3 +898,61 @@ wave 14 と同様、本モジュールの CPU ミラー・GPU ラッパの消費
 ### テスト数
 
 opt-gfx 575 → **579** (+4: apply 厳密bit / vrs zero-tile / CAS・checker 長さ拒否)。
+
+---
+
+## R. frame_ddgi.rs 全通読監査 (wave 16, 2026-07-22)
+
+DDGI probe volume の実 2 pass GPU dispatch (probe_rays + atlas_blend) +
+CPU 精密ミラー + 実サンプラを全行監査。既存の解析的真値テスト
+(埋込み厳密 moments / 空ボリューム sky / 実ツリー bitwise アンカー) は
+高品質であり、本 wave は「GPU バッファ設計と公開 API の無検証」という
+構造的ギャップに集中した。
+
+### R-8 (高): GPU rays_buf の 64 スロット固定設計が公開 API で未強制
+
+`rays_buf` は `probes_capacity * 64 * 4` バイト (プローブ毎 ray 64 本固定)
+で割当てられるのに、`set_inputs` は `ray_count > 64` を**一切検査しなかった**
+(4096 上限の dirs_buf チェックのみ)。ray_count=65+ の体積を渡すと dispatch は
+probes×ray_count 分を走り、**storage 配列の静かな OOB 書き込み**となる。
+CPU ミラー経路は影響を受けないため「GPU==CPU bitwise」検証があっても発見
+されにくい形状。
+
+### R-4 (中): march の 129 開始値上限が契約未記載
+
+`probe_march_cpu`/`probe_rays` は t=0.5 から 0.5 刻みで 129 開始値
+(`0..=128`)。t < max_dist の全格子点を完全走査できるのは
+**max_dist ≤ 65.0** のときのみ。超過時は打ち切りで遠方ヒットが欠落し
+「全 miss = 偽の sky irradiance」となるサイレント誤結果。
+
+### R-7 (中): oct_w=0 で sample_visibility が u32 アンダーフロー → OOB
+
+`oct_w=0` は texel_count=0 (空 atlas が定義できる形) となるが、
+`oct_texel_from_dir_wgsl` の clamp 分岐 `oct_w - 1` が u32 アンダーフローし
+巨大 index で mom/irr の OOB パニックに化ける経路があった。
+
+### R-3 (低〜中): sky>0 が CPU 直構築経路で未強制
+
+`sample_visibility` は `ir[c] / sky[c]` で正規化するが、sky>0 の検査は
+GPU `set_inputs` のみで、CPU で `DdgiAtlas` を直接構築する経路は NaN 伝播
+の余地があった。
+
+### 根治: `DdgiVolumeDef::validate()` への一元化
+
+上記 4 契約 (oct_w≥1, ray_count∈1..=64, 0<max_dist≤65.0, dims≥1+積 checked,
+sky>0) を**純粋関数 validate に集約**し、`set_inputs` (GPU) と
+`ddgi_update_cpu` (CPU ミラー) の両入口で強制。GPU なし環境でも全契約が
+テスト可能になり、既存の散在チェック (sky ループ) は validate に一本化
+(ドリフト源の二本立てを解消)。max_dist=65.0 ちょうどは受理境界として
+テスト固定。ヘッダ doc に契約を明文化。
+
+### 副次記録 — R-10: read_f32 読み戻しの 3 重複
+
+同一 map+Wait 読み戻しが frame_hiz::read_u32 / frame_postfx::read_f32_buffer /
+本モジュール read_f32 に 3 重複している (いずれもコメントで相互参照済)。
+共通化は横断変更となるため今回は記録のみ。
+
+### テスト数
+
+opt-gfx 579 → **582** (+3: validate 受理境界 / 契約違反 7 分野拒否 /
+ddgi_update_cpu 入口拒否 should_panic)。

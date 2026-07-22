@@ -17,6 +17,13 @@
 //!
 //! 決定性設計 (iGPU コア): trig/pow 不使用 (方向は CPU 供給・二乗×2)、
 //! sqrt/除算は IEEE 厳密丸め (naga WGSL 規格)、蓄積順固定。
+//!
+//! ## 体積定義の契約 (`DdgiVolumeDef::validate` で GPU/CPU 両入口が強制)
+//! - `oct_w ≥ 1` (texel 0 の atlas は定義不能、sample_visibility で OOB に化ける)
+//! - `ray_count ∈ 1..=64` (GPU rays_buf はプローブ毎 64 スロット固定設計)
+//! - `0 < max_dist ≤ 65.0` (probe_rays march は t=0.5 から 0.5 刻み 129 開始値、
+//!   t < max_dist の全格子点を完全走査できる限界)
+//! - `sky` 全成分 > 0 (可視率正規化の分母)、`dims` 各成分 ≥ 1 かつ積は usize 内
 
 use crate::frame_vct::sample_lod_words;
 
@@ -77,6 +84,56 @@ impl DdgiVolumeDef {
             self.origin[1] + (dy as f32 + 0.5) * self.cell[1],
             self.origin[2] + (dz as f32 + 0.5) * self.cell[2],
         ]
+    }
+
+    /// 体積定義の契約検証 (GPU `set_inputs` / CPU `ddgi_update_cpu` の両入口で
+    /// 強制する純粋関数 — GPU なしの環境でも全契約をテスト可能にするため
+    /// 検証ロジックはここに一元化する)。
+    ///
+    /// 契約 (全てモジュール固定セマンティクスから導出):
+    /// - `oct_w ≥ 1`: texel 0 の atlas は定義不能。`sample_visibility` では
+    ///   `oct_w - 1` の u32 アンダーフロー経由で mom/irr の OOB パニックに化ける。
+    /// - `ray_count ∈ 1..=64`: GPU `rays_buf` はプローブ毎 **64 スロット固定**
+    ///   設計のため、65 以上は storage 配列の静かな OOB 書き込みになる。
+    /// - `0 < max_dist ≤ 65.0`: march は t=0.5 から 0.5 刻み・129 開始値
+    ///   (`0..=128`)。t < max_dist の全格子点を完全走査できるのは
+    ///   max_dist ≤ 65.0 のときのみ (それ超過は打ち切り漏れ = 偽の sky)。
+    /// - `dims` 各成分 ≥ 1 かつ積が usize 内 (probe_count オーバーフロー拒否)。
+    /// - `sky` 全成分 > 0: `sample_visibility` の正規化分母
+    ///   (CPU 直構築経路でも NaN 伝播を防ぐ)。
+    pub fn validate(&self) -> Result<(), String> {
+        if self.oct_w == 0 {
+            return Err("oct_w は 1 以上必須 (texel 0 の atlas は定義不能)".to_string());
+        }
+        if self.ray_count == 0 || self.ray_count > 64 {
+            return Err(format!(
+                "ray_count は 1..=64 必須 (rays_buf はプローブ毎 64 スロット固定): {}",
+                self.ray_count
+            ));
+        }
+        if !(self.max_dist > 0.0 && self.max_dist <= 65.0) {
+            return Err(format!(
+                "max_dist は (0, 65.0] 必須 (march 129 開始値格子の完全走査条件): {}",
+                self.max_dist
+            ));
+        }
+        if self.dims.iter().any(|&d| d == 0) {
+            return Err("dims の各成分は 1 以上必須 (probe 0 の体積は無意味)".to_string());
+        }
+        if self
+            .dims
+            .iter()
+            .try_fold(1usize, |a, &d| a.checked_mul(d as usize))
+            .is_none()
+        {
+            return Err("dims の積が usize を超過 (probe_count オーバーフロー)".to_string());
+        }
+        for (i, c) in self.sky.iter().enumerate() {
+            if !(*c > 0.0) {
+                return Err(format!("sky[{i}] は > 0 必須 (正規化分母): {c}"));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -235,6 +292,10 @@ pub fn ddgi_update_cpu(
     vol: &DdgiVolumeDef,
     dirs: &[[f32; 3]],
 ) -> DdgiUpdateOutput {
+    // GPU set_inputs と同一契約を CPU 経路でも強制 (rays_buf 64 スロット設計と
+    // march 129 開始値・sky 正規化分母は CPU 側にも等しく効く制約)。
+    vol.validate()
+        .expect("DdgiVolumeDef::validate の契約違反");
     assert_eq!(
         dirs.len(),
         vol.ray_count as usize,
@@ -270,6 +331,10 @@ impl DdgiAtlas {
     /// 実サンプラ: トライリニア 8 プローブ × Chebyshev 浅埋め漏れ抑制 ×
     /// octahedral 最近傍 texel で、ワールド点の sky 可視率 v ∈ [0,1] を返す。
     /// (frame_proof cpu-ddgi/gpu-ddgi が実フレーム画素へ適用する実消費口)
+    ///
+    /// 前提: `vol` は `DdgiVolumeDef::validate` 適合であること
+    /// (`ddgi_update_cpu` 経由で構築した atlas は保証済み)。違反体積では
+    /// texel 索引が定義不能になる (oct_w=0 の u32 アンダーフロー等)。
     pub fn sample_visibility(&self, world: [f32; 3]) -> f32 {
         let vol = &self.vol;
         let tex = vol.texel_count();
@@ -535,6 +600,7 @@ impl GpuDdgi {
         vol: &DdgiVolumeDef,
         dirs: &[[f32; 3]],
     ) -> Result<(), String> {
+        vol.validate()?;
         if dirs.len() != vol.ray_count as usize {
             return Err("ray 方向数が ray_count と不一致".to_string());
         }
@@ -549,11 +615,6 @@ impl GpuDdgi {
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-        }
-        for (i, c) in vol.sky.iter().enumerate() {
-            if *c <= 0.0 {
-                return Err(format!("sky[{i}] は > 0 必須 (正規化分母): {c}"));
-            }
         }
         self.grow(device, vol);
         queue.write_buffer(&self.nodes_buf, 0, bytemuck::cast_slice(&scene.words));
@@ -975,5 +1036,70 @@ mod tests {
         for (x, y) in a.0.iter().zip(b.0.iter()) {
             assert_eq!(x.map(f32::to_bits), y.map(f32::to_bits));
         }
+    }
+
+    /// demo 体積は契約適合であること、および max_dist=65.0 ちょうどが
+    /// 境界として受理されること (march 129 開始値で t<65.0 の全格子点を
+    /// 走査できる上限)。
+    #[test]
+    fn demo_volume_passes_validation() {
+        demo_vol().validate().expect("demo volume は契約適合");
+        let mut v = demo_vol();
+        v.max_dist = 65.0;
+        v.validate().expect("max_dist=65.0 境界は受理");
+    }
+
+    /// 契約違反を全項目で拒否すること (エラーメッセージの識別子で分野を固定)。
+    /// 旧実装は ray_count>64 (GPU storage OOB)・oct_w=0 (sample OOB 化) を
+    /// 何も検査せず受け入れていた。
+    #[test]
+    fn validate_rejects_contract_violations() {
+        let mut v = demo_vol();
+        v.sky = [0.0, 0.7, 0.9];
+        assert!(v.validate().unwrap_err().contains("sky"));
+
+        let mut v = demo_vol();
+        v.ray_count = 65; // rays_buf(64/probe 固定) 超過 → GPU storage OOB
+        assert!(v.validate().unwrap_err().contains("ray_count"));
+
+        let mut v = demo_vol();
+        v.ray_count = 0;
+        assert!(v.validate().unwrap_err().contains("ray_count"));
+
+        let mut v = demo_vol();
+        v.oct_w = 0; // texel 0 → sample_visibility の索引が定義不能
+        assert!(v.validate().unwrap_err().contains("oct_w"));
+
+        let mut v = demo_vol();
+        v.max_dist = 65.5; // march 129 開始値の打ち切りで偽 sky が混入する領域
+        assert!(v.validate().unwrap_err().contains("max_dist"));
+
+        let mut v = demo_vol();
+        v.max_dist = 0.0;
+        assert!(v.validate().unwrap_err().contains("max_dist"));
+
+        let mut v = demo_vol();
+        v.dims = [0, 4, 4];
+        assert!(v.validate().unwrap_err().contains("dims"));
+    }
+
+    /// CPU ミラーも GPU set_inputs と同一契約で入口拒否されること
+    /// (rays_buf 設計制約は CPU 側の行列レイアウトにも効くため)。
+    #[test]
+    #[should_panic(expected = "DdgiVolumeDef::validate")]
+    fn ddgi_update_cpu_rejects_invalid_volume() {
+        let svo = SparseVoxelOctree::empty();
+        let scene = VctScene::from_svo(&svo);
+        let mut vol = demo_vol();
+        vol.ray_count = 100; // rays_buf(64/probe) 超過 → 拒否
+        let dirs = fibonacci_dirs(64);
+        let _ = ddgi_update_cpu(
+            &scene.words,
+            scene.bounds,
+            scene.root,
+            scene.cap,
+            &vol,
+            &dirs,
+        );
     }
 }
