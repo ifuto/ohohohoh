@@ -690,7 +690,9 @@ impl RsiftRenderPipeline {
                     }
                     continue;
                 }
-                self.frame_reuse.record_miss();
+                // ミス計上は try_reuse 内部の契約 (hits+misses==試行数) に
+                // 一本化。ここで record_miss を併呼すると二重計上になる
+                // (wave 18 で除去)。
             }
 
             // Far LOD box — skip full greedy when flora LOD says billboard/culled.
@@ -745,7 +747,6 @@ impl RsiftRenderPipeline {
                 self.frame_reuse.store(
                     cx,
                     cz,
-                    &sections,
                     &rle,
                     &occupied,
                     artifacts.full_mesh,

@@ -1044,3 +1044,70 @@ WGSL 内の未使用 `fn luma` と fsr1.rs の参照ゼロ `Vec3`/`luma` (worksp
   既存偏差として保存、増分 0)。clippy: 編集箇所に新規警告 0。
 - 残 frame_* 未通読: frame_reuse (426) / frame_vct (615) / frame_hiz (745) /
   frame_pipeline (700)。以降の wave で消化予定。
+
+---
+
+## T. frame_reuse.rs 全通読監査 (wave 18, 2026-07-22)
+
+`frame_reuse.rs` (426 行) を全行通読 + 唯一の実消費者 `render_pipeline.rs` の
+呼出構造を合わせて監査。統計系の実害 3 件と帳簿虚偽 1 件を修正。
+opt-gfx 594 → **599** (+5)。
+
+### T-1 (🔴 二重計上) render_pipeline の record_miss 併呼
+
+実消費者は `if try_reuse(...).is_none() { record_miss(); }` の構造で、
+`try_reuse` 内部のミス計上 (not-found / svo-mismatch) と**常に二重計上**に
+なっていた。さらに唯一 1 回しか数えられない経路が「無計上の内部ミス」
+(下記 T-2) という入れ子の不整合で、ユーザー向け `frame_reuse_misses`
+(HUD 統計) は真値の ~2 倍と静かなズレの混在だった。
+根治: 計上を `try_reuse` 内部契約 (**hits + misses == 試行回数**) に一本化し、
+呼出側の `record_miss()` を除去。`record_miss` API はバイパス経路専用として
+二重計上の罠を doc 明記 (API 面は保持)。
+
+### T-2 (🟠 サイレントミス) full_mesh.absent の無計上早期 return
+
+`let full = entry.full_mesh.as_ref()?;` は Mesh tier 要求に full_mesh が無い
+場合 (公開 API 経路、及び遠方で Svo 格納したチャンクへの接近 = LOD tier
+移行) に **misses/stale を一切計上せず** None で抜け、hit_rate を偽装した
+(wave 2 mesh_cache 修正と同種の非対称)。svo-mismatch 経路と同じく
+stale_invalidations + misses (+cumulative) に計上するよう統一。
+回帰固定: `mesh_tier_miss_without_full_mesh_is_counted` と不変式テスト
+`stats_contract_attempts_equal_hits_plus_misses` (800 試行の決定的掃引で
+hits+misses == attempts が常に成立 — T-1/T-2 どちらの型の再発も破る)。
+
+### T-3 (🟠 非決定性) enforce_capacity のタイブレーク不在
+
+容量超過時の追い出し `min_by_key(last_tick)` は、同フレーム一括格納で
+last_tick が頻繁にタイとなり、その場合の最小を **HashMap 反復順**
+(RandomState 由来 = プロセス毎異なる) に委ねていた = LRU 追い出し結果が
+再現しない (決定性文化違反)。`(last_tick, key)` の辞書順最小で完全決定化。
+`eviction_tiebreak_is_deterministic`: 528 同一 tick エントリで厳密生存集合
+(辞書順小 16 件追い出し) を固定し、2 独立キャッシュ (独立 hasher) の生存
+集合完全一致も検証。
+
+### T-4 (🟡 帳簿虚偽) memory_bytes の幻影計上と欠損
+
+`entry_bytes` は wave 2 で除去済みの `sections` 複製 (~8KB/section) を依然
+幽霊計上し、実際に保持する `occupied` 列 (u32) を未計上だった (二重に虚偽)。
+`store` から `sections` 引数ごと撤去 (コンパイル強制で正直化) し、実保持量
+のみの式に整合 (rle runs*4 + occupied*4 + verts*12 + idx*4 + svo)。
+参考: `Quantized12ByteVertex` は 12B 要素 Vec なので *12 係数は正しいことを
+型確認済 (×12 過剰計上の疑いは否定)。厳密式テスト + 上書き/invalidate 帳簿
+テストを追加。
+
+### T-5 (低) stale 境界の厳密固定
+`last_tick == stale_before` は生存、`<` は追い出しの off-by-one (ちょうど
+STALE_FRAMES=120 無更新で追い出し) を `stale_eviction_boundary_is_exact`
+で固定。
+
+### T-6 (デッドコード) rle_fingerprint 除去
+wave 2 で `fingerprint` フィールドが除去されて以降、参照ゼロ (workspace
+全走査証明) のハッシュ関数を削除。
+
+### 検証結果 (全て実測)
+- lib テスト **599/599** (+5)。wide digest `004c1cf5fb17bfe8` 不変。
+- rustfmt: frame_reuse は HEAD 比 hunk 純減 (2→1、残る 1 は HEAD 由来の
+  build_entry 署名)、render_pipeline は 3→3 で増分 0。
+- 統計語彙の変更注意: `frame_reuse_misses` (render_pipeline 経由) は
+  真値の約半分に「修正されて」減少する (帳簿の正規化であり、再メッシュ等の
+  動作そのものは不変)。

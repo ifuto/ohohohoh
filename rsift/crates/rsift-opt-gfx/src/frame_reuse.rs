@@ -3,8 +3,6 @@
 //! Telemetry (`FrameReuseStats`) lets us see whether reuse helps (high hit rate, low
 //! memory) or hurts (evictions, stale rebuilds, RAM bloat).
 
-use crate::binary_greedy_meshing::SECTION_SIZE;
-use crate::binary_greedy_meshing::SectionPalette;
 use crate::chunk_mesh::BuiltChunkMesh;
 use crate::lod_hybrid::{LodHybridSelector, LodTier};
 use crate::section_rle::RleSection;
@@ -120,34 +118,30 @@ impl FrameReuseCache {
         self.stats = FrameReuseStats::default();
     }
 
-    pub fn rle_fingerprint(rle: &[RleSection]) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        for sec in rle {
-            for run in &sec.runs {
-                run.block.hash(&mut h);
-                run.count.hash(&mut h);
-            }
-        }
-        h.finish()
-    }
-
+    /// エントリが**実際に保持する**バイト数。
+    /// (旧実装は wave 2 で除去済みの `sections` 複製 (~8KB/section) を幽霊計上し、
+    /// 実際に保持する `occupied` 列を未計上だった — 2026-07-22 wave 18 で実量に整合)
     fn entry_bytes(
-        sections: &[SectionPalette],
         rle: &[RleSection],
+        occupied: &[u32],
         mesh: Option<&BuiltChunkMesh>,
         svo: Option<&SparseVoxelOctree>,
     ) -> usize {
-        let sec_bytes = sections.len() * SECTION_SIZE * SECTION_SIZE * SECTION_SIZE * 2;
         let rle_bytes: usize = rle.iter().map(|s| s.runs.len() * 4).sum();
+        let occupied_bytes = occupied.len() * 4;
         let mesh_bytes = mesh
             .map(|m| m.vertices.len() * 12 + m.indices.len() * 4)
             .unwrap_or(0);
         let svo_bytes = svo.map(|s| s.memory_bytes()).unwrap_or(0);
-        sec_bytes + rle_bytes + mesh_bytes + svo_bytes
+        rle_bytes + occupied_bytes + mesh_bytes + svo_bytes
     }
 
     /// Try reuse without re-running prepare/mesh/SVO. Returns None on miss.
+    ///
+    /// **統計契約**: hits + misses == 試行回数 (全 None return 経路は必ず
+    /// misses (+cumulative_misses) を 1 回だけ計上する。呼出側で追加の
+    /// ミス計上をすると二重計上になる — 独自のバイパス経路に限り
+    /// `record_miss` を使うこと)。
     pub fn try_reuse(
         &mut self,
         cx: i32,
@@ -195,12 +189,23 @@ impl FrameReuseCache {
             });
         }
 
-        let full = entry.full_mesh.as_ref()?;
+        // Mesh 要求なのに full_mesh を持たない (例: 遠方で Svo 格納された
+        // チャンクに接近して Mesh tier へ移行した)。旧実装は `?` による
+        // **無計上のサイレントミス**で、hit_rate を偽装していた (wave 18)。
+        let full = match entry.full_mesh.as_ref() {
+            Some(f) => f.clone(),
+            None => {
+                self.stats.stale_invalidations += 1;
+                self.stats.misses += 1;
+                self.cumulative_misses += 1;
+                return None;
+            }
+        };
         let mesh = if tier == LodTier::Near {
-            full.clone()
+            full
         } else {
             self.stats.lod_re_simplify += 1;
-            lod.simplify_mesh(full.clone(), tier)
+            lod.simplify_mesh(full, tier)
         };
         entry.last_tick = self.tick;
         self.stats.hits += 1;
@@ -214,6 +219,10 @@ impl FrameReuseCache {
         })
     }
 
+    /// `try_reuse` を**バイパス**する独自ミス経路の帳簿用。
+    /// `try_reuse` は全ミス経路を内部計上済みなので、成功/失敗のいずれでも
+    /// 呼出側がこれを追加実行すると **二重計上** になる (wave 18 で
+    /// render_pipeline の冗長呼出を除去した経緯あり)。
     pub fn record_miss(&mut self) {
         self.stats.misses += 1;
         self.cumulative_misses += 1;
@@ -223,7 +232,6 @@ impl FrameReuseCache {
         &mut self,
         cx: i32,
         cz: i32,
-        sections: &[SectionPalette],
         rle: &[RleSection],
         occupied: &[u32],
         full_mesh: Option<BuiltChunkMesh>,
@@ -233,7 +241,7 @@ impl FrameReuseCache {
         if !self.enabled {
             return;
         }
-        let memory_bytes = Self::entry_bytes(sections, rle, full_mesh.as_ref(), svo.as_ref());
+        let memory_bytes = Self::entry_bytes(rle, occupied, full_mesh.as_ref(), svo.as_ref());
         let entry = ChunkFrameEntry {
             rle: rle.to_vec(),
             occupied: occupied.to_vec(),
@@ -274,10 +282,14 @@ impl FrameReuseCache {
 
     fn enforce_capacity(&mut self) {
         while self.entries.len() > self.max_entries {
+            // (last_tick, key) でタイブレーク: 同 tick (同フレーム一括格納で頻発)
+            // の最小を HashMap 反復順に委ねると**追い出し結果がプロセス毎に
+            // 非決定**になる (RandomState 由来)。キー座標辞書順の厳密最小で
+            // 完全決定的にする (wave 18)。
             let oldest = self
                 .entries
                 .iter()
-                .min_by_key(|(_, e)| e.last_tick)
+                .min_by_key(|(k, e)| (e.last_tick, **k))
                 .map(|(k, _)| *k);
             if let Some(k) = oldest {
                 self.entries.remove(&k);
@@ -321,8 +333,9 @@ impl FrameReuseCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::binary_greedy_meshing::{demo_column_palettes, mesh_chunk_column};
-    use crate::section_rle::occupied_section_indices;
+    use crate::binary_greedy_meshing::{demo_column_palettes, mesh_chunk_column, SectionPalette};
+    use crate::chunk_mesh::Quantized12ByteVertex;
+    use crate::section_rle::{occupied_section_indices, RleRun};
     use crate::svo::SparseVoxelOctree;
 
     fn build_entry(cx: i32, cz: i32) -> (Vec<SectionPalette>, Vec<RleSection>, BuiltChunkMesh, Vec<u32>) {
@@ -344,21 +357,11 @@ mod tests {
         let tier = lod.tier_for_distance(dist);
         if lod.use_svo_encoding(tier) {
             let svo = SparseVoxelOctree::from_column(&sections);
-            cache.store(
-                cx,
-                cz,
-                &sections,
-                &rle,
-                &occupied,
-                None,
-                Some(svo),
-                ReuseEncoding::Svo,
-            );
+            cache.store(cx, cz, &rle, &occupied, None, Some(svo), ReuseEncoding::Svo);
         } else {
             cache.store(
                 cx,
                 cz,
-                &sections,
                 &rle,
                 &occupied,
                 Some(mesh),
@@ -422,5 +425,204 @@ mod tests {
             "verdict={}",
             cache.stats.verdict()
         );
+    }
+
+    /// Mesh tier 要求で full_mesh を持たないエントリ (例: 遠方 Svo 格納からの
+    /// 接近) もミスとして 1 回だけ計上される (旧実装は無計上のサイレント
+    /// ミスで hit_rate を偽装していた — wave 18 回帰固定)。
+    #[test]
+    fn mesh_tier_miss_without_full_mesh_is_counted() {
+        let mut cache = FrameReuseCache::new(true);
+        let lod = LodHybridSelector::new(true, true, true);
+        let (_sections, rle, _mesh, occupied) = build_entry(0, 0);
+        cache.begin_frame(1);
+        // full_mesh: None + encoding: Mesh (Svo 格納チャンクへの接近と同型)
+        cache.store(0, 0, &rle, &occupied, None, None, ReuseEncoding::Mesh);
+        let before = (cache.stats.misses, cache.stats.stale_invalidations);
+        assert!(
+            cache.try_reuse(0, 0, 32.0, &lod).is_none(),
+            "no mesh => miss"
+        );
+        assert_eq!(
+            cache.stats.misses,
+            before.0 + 1,
+            "miss must be counted once"
+        );
+        assert_eq!(
+            cache.stats.stale_invalidations,
+            before.1 + 1,
+            "encoding mismatch family must count as stale"
+        );
+        assert_eq!(cache.cumulative_misses, 1);
+        assert_eq!(cache.stats.hits, 0);
+    }
+
+    /// hits + misses == try_reuse 試行数の統計契約を決定的掃引で不変式化。
+    /// (旧実装のサイレントミス or 呼出側二重計上はどちらもこれを破る)
+    #[test]
+    fn stats_contract_attempts_equal_hits_plus_misses() {
+        let mut cache = FrameReuseCache::new(true);
+        let lod = LodHybridSelector::new(true, true, true);
+        let mut attempts = 0u64;
+        let mut seed = 0xB5297A4D_u64;
+        let mut next = move || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            seed >> 33
+        };
+        cache.begin_frame(1);
+        for _ in 0..800 {
+            let k = (next() % 6) as i32;
+            if next() % 2 == 0 {
+                let (_s, rle, mesh, occupied) = build_entry(k, 0);
+                cache.store(k, 0, &rle, &occupied, Some(mesh), None, ReuseEncoding::Mesh);
+                if next() % 4 == 0 {
+                    // 全メッシュ無し格納を混ぜてサイレントミス経路も踏む
+                    cache.store(k + 10, 0, &rle, &occupied, None, None, ReuseEncoding::Mesh);
+                }
+            } else {
+                attempts += 1;
+                let _ = cache.try_reuse(k + if next() % 3 == 0 { 10 } else { 0 }, 0, 32.0, &lod);
+            }
+        }
+        let s = &cache.stats;
+        assert_eq!(
+            s.hits as u64 + s.misses as u64,
+            attempts,
+            "hits({}) + misses({}) must equal attempts({attempts})",
+            s.hits,
+            s.misses
+        );
+    }
+
+    /// 同一 tick に大量格納 (last_tick タイ頻発) した容量超過で、追い出しが
+    /// キー座標辞書順の厳密最小から決定的に行われる。
+    /// 旧実装は最小タイを HashMap 反復順 (RandomState 由来 = プロセス毎非再現)
+    /// に委ねていた。2 つの独立キャッシュ (独立 hasher) で完全一致も確認する。
+    #[test]
+    fn eviction_tiebreak_is_deterministic() {
+        fn fill() -> FrameReuseCache {
+            let mut cache = FrameReuseCache::new(true);
+            cache.begin_frame(1);
+            for cx in -3..21i32 {
+                for cz in -2..20i32 {
+                    // 24*22 = 528 エントリ (容量 512 を 16 超過)
+                    cache.store(cx, cz, &[], &[], None, None, ReuseEncoding::None);
+                }
+            }
+            cache
+        }
+        let a = fill();
+        let b = fill();
+        for cx in -3..21i32 {
+            for cz in -2..20i32 {
+                assert_eq!(
+                    a.entries.contains_key(&(cx, cz)),
+                    b.entries.contains_key(&(cx, cz)),
+                    "survivor sets must match across independent caches: ({cx},{cz})"
+                );
+            }
+        }
+        // 最後に 512 生き残るのは辞書順で大きい側 512 件: 先頭 16 件
+        // ((-3,-2)..=(-3,13)) が追い出され、(-3,14) 以降が残る。
+        for cz in -2..14i32 {
+            assert!(!a.entries.contains_key(&(-3, cz)), "evicted: (-3,{cz})");
+        }
+        assert!(a.entries.contains_key(&(-3, 14)));
+        assert!(a.entries.contains_key(&(20, 19)));
+        assert_eq!(a.entries.len(), 512);
+        assert_eq!(a.stats.evictions, 16);
+    }
+
+    /// 鮮度追い出しの境界が厳密 STALE_FRAMES である (last_tick == stale_before は
+    /// 生き残り、< は追い出しの off-by-one 固定)。
+    #[test]
+    fn stale_eviction_boundary_is_exact() {
+        let mut cache = FrameReuseCache::new(true);
+        cache.begin_frame(1);
+        cache.store(0, 0, &[], &[], None, None, ReuseEncoding::None);
+        // tick 121: stale_before = 1 → last_tick(1) < 1 は偽 → 生き残り
+        cache.begin_frame(121);
+        cache.end_frame();
+        assert!(
+            cache.entries.contains_key(&(0, 0)),
+            "frame 121 must survive"
+        );
+        assert_eq!(cache.stats.evictions, 0);
+        // tick 122: stale_before = 2 → 1 < 2 → 追い出し (ちょうど 120 フレーム無更新)
+        cache.begin_frame(122);
+        cache.end_frame();
+        assert!(!cache.entries.contains_key(&(0, 0)), "frame 122 must evict");
+        assert_eq!(cache.stats.evictions, 1);
+    }
+
+    /// memory_bytes が実保持量 (rle runs*4 + occupied*4 + verts*12 + indices*4
+    /// + svo) のみを数える (旧実装は保持しない sections ~8KB/節を幽霊計上し
+    /// occupied を無視していた — 厳密式で回帰固定)。
+    #[test]
+    fn entry_bytes_counts_only_real_storage() {
+        use bytemuck::Zeroable;
+        let rle = vec![
+            RleSection {
+                runs: vec![
+                    RleRun {
+                        block: 1,
+                        count: 4096
+                    };
+                    3
+                ],
+            },
+            RleSection {
+                runs: vec![RleRun { block: 2, count: 1 }; 5],
+            },
+        ];
+        let occupied = vec![0u32, 1];
+        let mesh = BuiltChunkMesh {
+            chunk_x: 0,
+            chunk_z: 0,
+            vertices: vec![Quantized12ByteVertex::zeroed(); 10],
+            indices: vec![0u32; 30],
+            is_empty: false,
+        };
+        let bytes = FrameReuseCache::entry_bytes(&rle, &occupied, Some(&mesh), None);
+        assert_eq!(bytes, (3 + 5) * 4 + 2 * 4 + 10 * 12 + 30 * 4);
+        // エントリ削除を伴う帳簿と store 上書きの整合:
+        let mut cache = FrameReuseCache::new(true);
+        cache.begin_frame(1);
+        cache.store(
+            0,
+            0,
+            &rle,
+            &occupied,
+            Some(mesh.clone()),
+            None,
+            ReuseEncoding::Mesh,
+        );
+        cache.refresh_memory_stat();
+        assert_eq!(cache.stats.memory_bytes, bytes as u64);
+        let small = BuiltChunkMesh {
+            vertices: vec![],
+            indices: vec![],
+            is_empty: true,
+            ..mesh
+        };
+        cache.store(
+            0,
+            0,
+            &rle,
+            &occupied,
+            Some(small),
+            None,
+            ReuseEncoding::Mesh,
+        );
+        assert_eq!(
+            cache.stats.memory_bytes,
+            ((3 + 5) * 4 + 2 * 4) as u64,
+            "overwrite must replace, not accumulate"
+        );
+        cache.invalidate(0, 0);
+        assert_eq!(cache.stats.memory_bytes, 0);
+        assert_eq!(cache.stats.stale_invalidations, 1);
     }
 }
