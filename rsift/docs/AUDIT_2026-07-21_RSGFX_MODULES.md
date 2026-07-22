@@ -2068,3 +2068,61 @@ W3C WGSL は設計上**評価戦略 (reassociation / FMA fusion) の裁量を
 ### 検証結果 (全て実測)
 - lib テスト **698/698** (+2)。rustfmt hunk 増分 0 (HEAD 由来 6 温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AP. texture_atlas_virtual.rs 真の LRU closing (wave 40, 2026-07-22)
+
+「スタブ・見送り無し」新指令に基づく closing 第 2 弾。wave 37 で
+「真の LRU は residency 需要時に導入」と棚卸しした項目を、
+需要を待たず数学的に正しい形で今根治する。
+
+### AP-1: evict_lru を真の LRU (アクセス論理時刻) に根治
+**旧実装の欠陥**: wave 37 の (mip 降順, x, y 昇順) 決定的ヒューリス
+ティックはプロセス非決定性こそ解消したが **LRU ではなく**、毎フレーム
+`request_tiles` で要求され続ける使用中タイルでも mip が高ければ優先
+退避する誤選択があり得た (使用中 VT ページの追い出し = 再ストリーム
+嵐の温床)。
+**定式化**: 状態 = 常駐集合 R と各タイルの最終アクセス論理時刻 c(t)。
+不変条件 `keys(last_access) == resident ∧ 全時刻一意`。
+`request_tiles` は解決済み全タイル (新規・既常駐) に単調採番し、
+`evict_lru` は時刻昇順 k 件を除去する。**時刻が一意なので tie-break
+規則は数学的に出現しない** — 完全決定性はハッシュシード非依存。
+**容量枯渇の扱い**: ページを得られなかったタイルは非常駐のままなので
+時刻も記録しない (不変条件維持のための必然的設計)。
+**mip ヒューリスティックの包含**: 使用中タイルは毎フレームの request が
+recency を更新するため、真の LRU は旧ヒューリスティックの意図
+(使用中を残す) を厳密に包含する。mip は退避判定から除去。
+**u64 wrap の到達不能性 (見送りではなく証明)**: 2^64 アクセスは
+10^9 アクセス/秒の持続でも約 585 年を要するため、カウンタ wrap 対策
+(リバース) は不要。証明された境界として doc 明記。
+**複雑性**: touch O(1) 償却 (HashMap insert)、退避 O(n log n)、
+n = 常駐数 ≤ capacity_pages (消費者配線は 2048) で実害ゼロ。
+intrusive O(1) リスト / lazy heap は複雑性増に対し利益なしと棄却。
+**セマンティクス変更の正直化**: 「退避選択が入力順独立」は旧実装の
+欠陥を覆い隠す性質であり、真の LRU では定義上成り立たない。
+wave 37-2 テストは「同一履歴リプレイでの完全決定性」ピンに置換し、
+recency 依存性そのものを別テストで厳密ピンした。
+
+### AP-2: 消費者影響分析 (full_graph_wiring.rs)
+消費者は毎フレーム `request_tiles` (:1153) を呼ぶため recency は実
+データで流れる。`evict_lru(0)` (:1157) は no-op で選択規則変更の
+影響なし。構築は `VirtualAtlas::new` 経由のみ (:263) で構造体
+フィールド追加 (`last_access`, `access_clock`) はコンパイル安全。
+wide bench digest 不変を以後の実測で担保。
+
+### テスト (±: -2 +5、計 701)
+- evict_is_true_lru_recency_order (時刻 1..4 の厳密採番、最古 2 件
+  退避、mip 0 であれ古ければ退避される包含証明、退避順 LIFO ページ
+  循環 pin: 再払い出し page 2、超過退避の頭打ち)
+- recent_touch_protects_from_eviction (LRU の定義性質: 再要求で
+  時刻 1→4 に更新されたタイルが退避を回避、時刻厳密値 4 pin)
+- eviction_is_deterministic_for_identical_history (リプレイ完全
+  決定性 + 厳密列 pin: free_pages [0,1,2,3,6,5]、生存 {clk 4,5})
+- evict_selection_is_recency_dependent (同一タイル集合・異なる
+  recency 履歴で生存集合が変わることを assert_ne + 両側厳密 pin。
+  wave 37-2 置換の正直なセマンティクス変更記録)
+- lru_invariant_keys_match_resident_across_ops (容量枯渇拒否タイルは
+  tick しない・時刻を持たない、退避→再要求後も keys==resident)
+
+### 検証結果 (全て実測)
+- lib テスト **701/701** (+3 正味)。rustfmt hunk 増分 0 (HEAD 由来 3 温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
