@@ -1858,3 +1858,46 @@ naive 版と**逐一致**することも実証 (順序非依存ではなく厳�
 ### 検証結果 (全て実測)
 - lib テスト **674/674** (+6)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AK. execute_indirect.rs 監査 (wave 35, 2026-07-22)
+
+`execute_indirect.rs` (MDI コマンド生成: IndirectBatcher / DrawCompactor /
+wire 構造体) 全行照合。crate 内消費は azdo 保持 + full_graph_wiring:594
+(compactor 実使用)。opt-gfx 674 → **680** (+6)。
+
+### AK-1 (中・静寂欠落) IndirectBatcher::push の上限静寂 drop — fail-loud 根治
+上限到達時の push が `return` で黙って捨てる設計で、超過チャンクは
+**誰にも知らされず永久欠落**していた (ポップインより重症)。MDI 1 パス
+上限超過は呼び出し側の容量設計ミス → fail-loud assert に根治。
+wire 契約 (`start_instance_location` = chunk_id 搬送) も併せて明文化
+(標準 instance 起点ではない本エンジン独自 semantics)。
+
+### AK-2 (中・容量逸脱) DrawCompactor の capacity 使い捨て — 契約保持+強制
+`new(capacity)` が `Vec::with_capacity` のみに使い捨てられ、
+`compact_and_filter` は生存数が capacity を超えても無制限に push し
+`header.draw_count` も超過していた。固定長 GPU コマンドバッファ前提の
+MDI パスで溢れ/欠落の温床 (wave 30 AF の棚卸し事項を閉じる)。
+`capacity` を pub フィールドで保持し、受理件数 > capacity を fail-loud 拒否。
+現経路 (azdo 8192 cap / full_graph_wiring chunk_keys ≤ 実シーン範囲) 不発。
+
+### AK-3 (doc) sort 二系統の使い分け明文化
+`merge_by_material` (安定: 決定性要求経路) vs
+`sort_by_material_and_locality` (unstable + L1/L2 ヒット率の chunk 局所性:
+同一キー順は非指定) — 選択基準を doc 明記。
+
+### 陰性確認
+wire サイズ (DrawIndexedIndirectArgs 20B / ChunkDrawCommand 36B /
+IndirectCommandHeader 16B、align 4、Pod 適格)、mask 欠損=可視扱いは
+azdo 入口の等長 assert で契約全体として保護 — 全て突合。
+
+### 追加テスト (+6, fail-loud)
+- wire_layout_exact_sizes (20/36/16B + align 4 ピン)
+- batcher_capacity_boundary_exact + batcher_overflow_panics
+- compactor_capacity_boundary_exact (上限ちょうど + mask 欠損受理) +
+  compactor_overflow_panics
+- merge_by_material_is_stable (同 material 入力順保持ピン)
+
+### 検証結果 (全て実測)
+- lib テスト **680/680** (+6)。rustfmt hunk 増分 0
+  (HEAD 由来 signature 1 hunk 温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
