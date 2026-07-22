@@ -112,6 +112,16 @@ pub fn expand_morton(code: u32) -> (u32, u32, u32) {
 }
 
 /// A frustum plane `a*x + b*y + c*z + d = 0`, inside is `>= 0`.
+///
+/// **契約 (2026-07-22 wave 41 明文化)**: 法線 `(a,b,c)` は**単位長必須**。
+/// 球カリング判定 (`dist < -r`) は「符号付き距離」を球半径 (ワールド単位)
+/// と直接比較するため、|n| ≠ 1 の平面を与えると判定スケールが |n| 倍に
+/// 歪む (|n| > 1 なら可視物を削るオーバーカリング = 描画欠け)。
+/// 実供給経路は両者とも正規化済み (full_graph_wiring::
+/// extract_frustum_planes / frame_worldgen::frustum_planes、
+/// simd_kernels::frustum_planes_from_view_proj も同様 — 2026-07-22
+/// 機械確認)。浮動小数の丸めで |n| は 1±ε に留まるが、これは球テストの
+/// 境界 fuzz 域の一部として許容する設計。
 #[derive(Clone, Copy, Debug)]
 pub struct Plane {
     pub a: f32,
@@ -158,13 +168,62 @@ const CULL_RUN: usize = 32;
 impl Lbvh {
     /// Build an LBVH from world-space sphere centers. Coordinates are
     /// normalized into a 10-bit grid spanning [min,max].
+    ///
+    /// **契約 (2026-07-22 wave 41 厳格化)**:
+    /// - `centers.len() == radii.len()` 必須 (旧実装は radii が短いと途中で
+    ///   indexing panic、長いと末尾を**静寂に無視**していた)。
+    /// - center / radius ベクトルの全成分は**有限**必須。旧実装は NaN
+    ///   center を `(NaN).clamp(...)*1024.0 as u32 == 0` の飽和キャストで
+    ///   静寂にグリッド隅へ配置し、NaN radius を `.max(0.0)` で 0 半径化
+    ///   していた (観測欠測の静寂混入、いずれも fail-loud 化)。
+    /// - `min`/`max` は有限かつ成分ごと `min <= max` 必須 (逆転グリッドの
+    ///   静寂受理 → span `.max(1.0)` で誤グリッド化する経路を塞ぐ)。
+    /// - `radii` は**半径ベクトル** (例: AABB 半 extent) であり、本関数は
+    ///   各成分からその長さ (半対角) を取って球半径とする。
+    ///
+    /// `span` の `.max(1.0)` は契約上あり得る退化軸 (min == max、全センター
+    /// が同一平面上) を 0 除算なく受理するための意図的処理。
     pub fn build(centers: &[Vec3], radii: &[Vec3], min: Vec3, max: Vec3) -> Lbvh {
+        assert_eq!(
+            centers.len(),
+            radii.len(),
+            "Lbvh::build 契約違反: centers/radii は等長必須 \
+             (centers={}, radii={})",
+            centers.len(),
+            radii.len()
+        );
+        assert!(
+            min.x.is_finite()
+                && min.y.is_finite()
+                && min.z.is_finite()
+                && max.x.is_finite()
+                && max.y.is_finite()
+                && max.z.is_finite()
+                && min.x <= max.x
+                && min.y <= max.y
+                && min.z <= max.z,
+            "Lbvh::build 契約違反: min/max は有限かつ成分ごと min <= max 必須 \
+             (min={min:?}, max={max:?})"
+        );
+        for (i, (&c, &rv)) in centers.iter().zip(radii.iter()).enumerate() {
+            assert!(
+                c.x.is_finite() && c.y.is_finite() && c.z.is_finite(),
+                "Lbvh::build 契約違反: centers[{i}] が非有限 ({c:?})"
+            );
+            assert!(
+                rv.x.is_finite() && rv.y.is_finite() && rv.z.is_finite(),
+                "Lbvh::build 契約違反: radii[{i}] が非有限 ({rv:?})"
+            );
+        }
         let span = Vec3::new(
             (max.x - min.x).max(1.0),
             (max.y - min.y).max(1.0),
             (max.z - min.z).max(1.0),
         );
         let to_code = |c: Vec3| -> u32 {
+            // 0.9999 上限の存在理由: 1.0 に達すると nx=1024 となり、
+            // part1by2 の 10-bit マスク (n & 0x3ff) で 0 に巻き戻って
+            // 反対隅とエイリアスする。1023 への飽和は正しい隅への丸め。
             let nx = (((c.x - min.x) / span.x).clamp(0.0, 0.9999) * 1024.0) as u32;
             let ny = (((c.y - min.y) / span.y).clamp(0.0, 0.9999) * 1024.0) as u32;
             let nz = (((c.z - min.z) / span.z).clamp(0.0, 0.9999) * 1024.0) as u32;
@@ -172,9 +231,10 @@ impl Lbvh {
         };
         let mut order: Vec<usize> = (0..centers.len()).collect();
         let mut codes: Vec<u32> = centers.iter().map(|&c| to_code(c)).collect();
+        // sort_by_key は安定ソート — code タイは元インデックス昇順を保持する
+        // (cull 出力順の完全決定性の一部。wave 41 でピン)。
         order.sort_by_key(|&i| codes[i]);
         codes = order.iter().map(|&i| to_code(centers[i])).collect();
-        let _ = radii;
         let radii_f: Vec<f32> = radii.iter().map(|v| v.length().max(0.0)).collect();
         let mut run_bounds = Vec::with_capacity(order.len().div_ceil(CULL_RUN));
         for run in order.chunks(CULL_RUN) {
@@ -191,7 +251,20 @@ impl Lbvh {
                 (mn.y + mx.y) * 0.5,
                 (mn.z + mx.z) * 0.5,
             );
-            let radius = Vec3::new(mx.x - mn.x, mx.y - mn.y, mx.z - mn.z).length() * 0.5;
+            let radius_raw = Vec3::new(mx.x - mn.x, mx.y - mn.y, mx.z - mn.z).length() * 0.5;
+            // 丸め収縮の根治 (2026-07-22 wave 41): 葉球を数学的に包含する
+            // 真の包含球半径 R_true に対し、半径演算列 (sub/mul/add/sqrt) の
+            // 相対誤差上界 ~2^-21 と中心座標の丸め (mn+mx ≤ 成分毎 ulp/2 で
+            // 3 成分合成 ≤ 2^-23·Σ(|mn_i|+|mx_i|)) を安全側に覆う。
+            // 収縮した run 球は run-reject の誤発火 (葉が残るべき境界 run を
+            // skip) を招き、naive との bit 同一性を原理的に破り得た。
+            // 膨張方向は reject/accept 双方を per-leaf 経路へ落とす保守側に
+            // しか効かないため、bit 同一性は機構的に維持される。
+            // (dist 評価自体の f32 誤差差の包含余裕は本スケールで ~6×。
+            // cull doc の残リスク注記参照)
+            let radius = radius_raw * (1.0 + f32::EPSILON * 8.0)
+                + (mn.x.abs() + mn.y.abs() + mn.z.abs() + mx.x.abs() + mx.y.abs() + mx.z.abs())
+                    * (f32::EPSILON * 2.0);
             run_bounds.push((center, radius));
         }
         let sorted_centers: Vec<Vec3> = order.iter().map(|&i| centers[i]).collect();
@@ -219,6 +292,16 @@ impl Lbvh {
     /// 2. 全平面の内側 → run 全体を per-leaf テストなしで採用
     /// 3. 境界 run のみ per-leaf テスト (旧実装と同一判定)
     /// により、旧総当たりと出力集合・順序が bit 同一のまま高速化する。
+    ///
+    /// **前提**: 各 `Plane` は単位法線 (Plane 契約参照)。
+    /// **残リスクの正直化 (2026-07-22 wave 41)**: run 包含球の半径は
+    /// build 時に派生誤差限界で膨張済み (build doc 参照) で、dist 評価
+    /// 自体の f32 丸め差 (葉レベル vs run レベル) を上回る ~6× の安全
+    /// 余裕を持つ。bit 同一性は fuzz オラクル (`accelerated_cull_matches_
+    /// naive_fuzz`, 接線 adversarial ケース含む) で機械担保するが、
+    /// dist 評価誤差の**厳密解析的上界証明までは未倒立** — 座標が
+    /// Minecraft 実スケール (~3e7) を著しく超える入力では本保証は
+    /// 契約外となる。
     pub fn cull(&self, planes: &[Plane]) -> Vec<usize> {
         let mut out = Vec::new();
         for (run_i, run) in self.order.chunks(CULL_RUN).enumerate() {
@@ -353,5 +436,119 @@ mod tests {
                 assert_eq!(fast, slow, "cull mismatch size={size} planes={planes:?}");
             }
         }
+    }
+
+    /// wave 41-1: 接線 adversarial スイープ — 平面を葉球の正接位置に
+    /// 0.5 刻みで走査し、run レベル判定の丸め収縮/境界扱いが per-leaf
+    /// naive とずれないことを機械検証する。全座標・係数は ≤ 128、
+    /// 分解能 0.5 の厳密表現可能域で構成するため、係数評価に f32 丸め
+    /// は一切入らず、ずれはレベル間判定ロジックにのみ帰着する。
+    #[test]
+    fn accelerated_cull_matches_naive_tangent_sweep() {
+        let size = 256usize;
+        let centers: Vec<Vec3> = (0..size)
+            .map(|i| Vec3::new((i % 16) as f32 * 4.0, ((i / 16) % 16) as f32 * 4.0, 0.0))
+            .collect();
+        let radii = vec![Vec3::new(1.0, 0.0, 0.0); size]; // 半径 1
+        let bvh = Lbvh::build(
+            &centers,
+            &radii,
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(60.0, 60.0, 4.0),
+        );
+        // x ∈ [-3, 67] を 0.5 刻み、内向き/外向きの両向き、x 軸・y 軸
+        let mut tested = 0u32;
+        for step in -6..=134 {
+            let k = step as f32 * 0.5;
+            for planes in [
+                vec![Plane::new(1.0, 0.0, 0.0, -k)],
+                vec![Plane::new(-1.0, 0.0, 0.0, k)],
+                vec![Plane::new(0.0, 1.0, 0.0, -k)],
+                vec![Plane::new(0.0, -1.0, 0.0, k)],
+                vec![Plane::new(1.0, 0.0, 0.0, -k), Plane::new(-1.0, 0.0, 0.0, 64.0)],
+            ] {
+                assert_eq!(
+                    bvh.cull(&planes),
+                    bvh.cull_naive(&planes),
+                    "tangent sweep mismatch k={k} planes={planes:?}"
+                );
+                tested += 1;
+            }
+        }
+        assert_eq!(tested, 141 * 5);
+    }
+
+    /// wave 41-2: code タイは安定ソートで元インデックス昇順を保持する
+    /// (出力順の完全決定性の機械ピン)。
+    #[test]
+    fn tied_codes_preserve_original_index_order() {
+        let centers: Vec<Vec3> = (0..64)
+            .map(|i| {
+                if i < 32 {
+                    Vec3::new(0.0, 0.0, 0.0)
+                } else {
+                    Vec3::new(4096.0, 0.0, 0.0)
+                }
+            })
+            .collect();
+        let radii = vec![Vec3::new(1.0, 0.0, 0.0); 64];
+        let bvh = Lbvh::build(
+            &centers,
+            &radii,
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(4096.0, 0.0, 0.0),
+        );
+        // order は [0..32 (同 code, 索引順), 32..64 (同 code, 索引順)]
+        let expected: Vec<usize> = (0..64).collect();
+        assert_eq!(bvh.order, expected);
+        assert_eq!(bvh.cull(&[]), expected, "全受入経路でも索引順");
+        // 片側だけ残す平面でも、残る run 内の順序は索引順。
+        let one = bvh.cull(&[Plane::new(1.0, 0.0, 0.0, -2048.0)]); // x >= 2048
+        assert_eq!(one, (32..64).collect::<Vec<usize>>());
+    }
+
+    /// wave 41-3: build 契約 — 不等長 / 非有限 / 逆転グリッドは fail-loud。
+    #[test]
+    #[should_panic(expected = "centers/radii は等長必須")]
+    fn build_rejects_length_mismatch() {
+        let centers = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0)];
+        let radii = vec![Vec3::new(1.0, 0.0, 0.0)];
+        let _ = Lbvh::build(&centers, &radii, Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "centers[1] が非有限")]
+    fn build_rejects_non_finite_center() {
+        let centers = vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(f32::NAN, 0.0, 0.0)];
+        let radii = vec![Vec3::new(1.0, 0.0, 0.0); 2];
+        let _ = Lbvh::build(&centers, &radii, Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "radii[0] が非有限")]
+    fn build_rejects_non_finite_radius() {
+        let centers = vec![Vec3::new(0.0, 0.0, 0.0)];
+        let radii = vec![Vec3::new(f32::INFINITY, 0.0, 0.0)];
+        let _ = Lbvh::build(&centers, &radii, Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "min <= max 必須")]
+    fn build_rejects_inverted_grid() {
+        let centers = vec![Vec3::new(0.0, 0.0, 0.0)];
+        let radii = vec![Vec3::new(1.0, 0.0, 0.0)];
+        let _ = Lbvh::build(&centers, &radii, Vec3::new(2.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 1.0));
+    }
+
+    /// wave 41-4: 退化グリッド (min == max、全センター同一) は契約内で
+    /// 受理される (span .max(1.0) 経路)。NaN/0 除算なく動作する。
+    #[test]
+    fn degenerate_grid_all_identical_accepted() {
+        let centers = vec![Vec3::new(7.0, 7.0, 7.0); 3];
+        let radii = vec![Vec3::new(1.0, 0.0, 0.0); 3];
+        let bvh = Lbvh::build(&centers, &radii, Vec3::new(7.0, 7.0, 7.0), Vec3::new(7.0, 7.0, 7.0));
+        assert!(bvh.codes.iter().all(|&c| c == 0), "退化グリッドは全 code 0");
+        assert_eq!(bvh.cull(&[]), vec![0, 1, 2]);
+        assert!(bvh.cull(&[Plane::new(1.0, 0.0, 0.0, -100.0)]).is_empty());
     }
 }

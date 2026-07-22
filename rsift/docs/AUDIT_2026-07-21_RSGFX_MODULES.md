@@ -2126,3 +2126,70 @@ wide bench digest 不変を以後の実測で担保。
 ### 検証結果 (全て実測)
 - lib テスト **701/701** (+3 正味)。rustfmt hunk 増分 0 (HEAD 由来 3 温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AQ. lbvh.rs 監査 (wave 41, 2026-07-23)
+
+full_graph_wiring:486-526 で毎フレーム実消費 (実チャンク中心/半径の
+LBVH 構築 + 実フラスタムカリング)。simd_frustum との相互検証経路の
+片割れ。LBVH_WGSL は frame_worldgen 側に CPU ミラー (lbvh_codes_cpu /
+lbvh_cull_cpu) 付きの実 dispatch 版で、スタブ類は本モジュールに無し。
+
+### AQ-1 (中): build 契約の fail-loud 化 ×3
+- centers/radii 不等長: 旧実装は radii 不足で **build 内 indexing
+  panic**、超過で**末尾を静寂に無視**。→ 等長 assert (全実長列挙)。
+- NaN center: `(NaN).clamp(0,0.9999)*1024.0 as u32` の飽和キャストで
+  **静寂にグリッド隅 code 0 へ配置** (観測欠測の静寂混入)。
+  NaN radius 成分は `.max(0.0)` で**静寂に 0 半径化**。→ 全成分
+  finite assert で根治 (観測欠測 drop/拒否哲学の統一、wave 32/36 同型)。
+- 逆転グリッド (max < min): span `.max(1.0)` が負 span を静寂に 1.0
+  矯正して誤グリッド化。→ min ≤ max 成分wise assert (有限性も)。
+- 副次: 死行 `let _ = radii;` 除去。
+- 消費者安全性の機械確認: full_graph_wiring は同一 chunk_aabbs から
+  centers/radii を同長構築し、min/max は centers の fold で有限 (かつ
+  `!chunk_aabbs.is_empty()` ガード下) — 実経路を契約は破壊しない。
+
+### AQ-2 (doc): 暗黙定数 2 件の存在理由を明文化
+- `0.9999` clamp: 1.0 到達で nx=1024 → part1by2 の 10-bit マスク
+  (`& 0x3ff`) で **0 に巻き戻り反対隅とエイリアス**するのを防ぐ
+   correctness-critical 定数。従来無文書。
+- `span.max(1.0)`: 契約上合法な退化軸 (min==max、全センター同一平面)
+  の 0 除算回避であり、逆転軸の救済ではないこと (AQ-1 で塞いだ後の
+  残存意味) を明文化。
+
+### AQ-3 (設計): 単位法線契約の明文化 + run 包含球の丸め収縮根治
+- **単位法線前提**: 球カリング `dist < -r` は符号付き距離をワールド
+  半径と直接比較するため |n| ≠ 1 でスケールが歪む (|n|>1 は可視物を
+  削るオーバーカリング)。全 3 供給経路 (full_graph_wiring::
+  extract_frustum_planes / frame_worldgen::frustum_planes /
+  simd_kernels::frustum_planes_from_view_proj) が正規化することを
+  機械確認 — 契約は実経路と整合し欠落文書を補填。
+- **run 半径の丸め収縮 (潜在 bit 同一性破れ)**: 葉球を含む AABB の
+  半対角を f32 演算列 (sub/mul/add/sqrt) で計算すると丸めで真の包含
+  半径を下回り得、run-reject が「葉を残すべき境界 run」を skip し
+  naive との bit 同一性を原理的に破り得た。根治: 派生誤差限界で膨張
+  `R̃ = R̂·(1+2^-20) + Σ_i(|mn_i|+|mx_i|)·2^-22`
+  (第 1 項: 演算列相対誤差上界 ~2^-21 を覆う。第 2 項: 中心丸め
+  mn+mx ≤ 成分毎 ulp/2 の 3 成分合成を覆う)。膨張は reject/accept を
+  per-leaf 経路へ落とす**保守方向にのみ**効くため bit 同一性を機構的
+  に維持する。
+- **残リスクの正直化**: dist 評価自体の f32 丸め差 (葉 vs run レベル)
+  の厳密解析的上界証明は未倒立 — 膨張第 2 項の包含余裕は Minecraft
+  実スケール (~3e7 座標) で ~6×。実スケールを著しく超える入力は
+  本保証の契約外として cull doc に明記。
+
+### テスト (+7)
+- accelerated_cull_matches_naive_tangent_sweep (正接平面を 0.5 刻み
+  x/y 両軸・両向き + slab で 705 ケース走査。全値は厳密表現可能域
+  ≤128/分解能 0.5 で構成し f32 丸めを完全排除 — ずれはレベル間判定
+  ロジックにのみ帰着。実行数 705 もピン)
+- tied_codes_preserve_original_index_order (安定ソートのタイ順 =
+  元インデックス順を order/全受入/片側残存の 3 経路でピン)
+- degenerate_grid_all_identical_accepted (min==max 退化グリッド受理、
+  全 code 0・cull 動作・全拒否の整合)
+- build_rejects_length_mismatch / non_finite_center / non_finite_radius /
+  inverted_grid (should_panic ×4)
+
+### 検証結果 (全て実測)
+- lib テスト **708/708** (+7)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (膨張後も出力集合が naive 等価であることの digest 級実証)。
