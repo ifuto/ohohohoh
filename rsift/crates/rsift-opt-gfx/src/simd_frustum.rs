@@ -512,19 +512,105 @@ mod tests {
         assert_eq!(portable, scalar);
     }
 
-    /// wave 29-6: 空入力・WGSL スタブの機械ピン。
+    /// wave 29-6: 空入力は空。(WGSL ピンは wave 39 側へ分離)
     #[test]
-    fn empty_and_wgsl_stub_contract() {
+    fn empty_inputs_still_empty() {
         let f = unit();
         assert!(f.cull(&[]).is_empty());
         let soa = SoaAabbs::from_aabbs(&[]);
         assert!(f.cull_soa_portable(&soa).is_empty());
-        // 現状 WGSL はコメントのみのスタブ = naga で空モジュール。
-        // 将来カーネル実装時はこのピンを実エントリポイント検証へ更新する。
-        let module = naga::front::wgsl::parse_str(SIMD_FRUSTUM_WGSL).expect("stub WGSL must parse");
-        assert!(
-            module.entry_points.is_empty(),
-            "simd_frustum.wgsl は現状スタブ"
-        );
+    }
+
+    /// wave 39-1: WGSL 実カーネルの entry/layout/binding 機械ピン。
+    #[test]
+    fn wgsl_kernel_entry_layout_and_bindings_pinned() {
+        let module = naga::front::wgsl::parse_str(SIMD_FRUSTUM_WGSL).expect("WGSL must parse");
+        let ep = module
+            .entry_points
+            .iter()
+            .find(|ep| ep.name == "cs_cull")
+            .expect("cs_cull entry missing");
+        assert_eq!(ep.stage, naga::ShaderStage::Compute);
+        assert_eq!(ep.workgroup_size, [64, 1, 1]);
+        // Params: count@0, planes@16, span = roundUp(16, 16+96) = 112
+        let (_, ty) = module
+            .types
+            .iter()
+            .find(|(_, t)| t.name.as_deref() == Some("Params"))
+            .expect("Params struct missing");
+        let naga::TypeInner::Struct { members, span } = &ty.inner else {
+            panic!("Params is not a struct");
+        };
+        assert_eq!(*span, 112);
+        let off = |name: &str| {
+            members
+                .iter()
+                .find(|m| m.name.as_deref() == Some(name))
+                .unwrap_or_else(|| panic!("Params.{name} missing"))
+                .offset
+        };
+        assert_eq!(off("count"), 0);
+        assert_eq!(off("planes"), 16);
+        // 8 変数が全て (group 0, binding 0..7) に一意に割り当て
+        let mut got: Vec<(u32, u32)> = module
+            .global_variables
+            .iter()
+            .filter_map(|(_, g)| g.binding.as_ref().map(|b| (b.group, b.binding)))
+            .collect();
+        got.sort_unstable();
+        let want: Vec<(u32, u32)> = (0..8).map(|b| (0, b)).collect();
+        assert_eq!(got, want);
+    }
+
+    /// wave 39-2: WGSL カーネル (cs_cull) の逐行対応ミラーが CPU 参照と
+    /// bit 一致することを構造化集合で固定 (同一式・同一評価規則の構成上の
+    /// 一致を機械検証。GPU 側の bit 非保証は wgsl の doc 注記参照)。
+    #[test]
+    fn wgsl_mirror_matches_portable_bitexact() {
+        /// cs_cull と同一制御フローの Rust ミラー (early exit 込み)。
+        fn wgsl_mirror_cull(f: &SimdFrustum, boxes: &[Aabb]) -> Vec<u32> {
+            boxes
+                .iter()
+                .map(|b| {
+                    for p in &f.planes {
+                        let px = if p.a >= 0.0 { b.max[0] } else { b.min[0] };
+                        let py = if p.b >= 0.0 { b.max[1] } else { b.min[1] };
+                        let pz = if p.c >= 0.0 { b.max[2] } else { b.min[2] };
+                        let dist = p.a * px + p.b * py + p.c * pz + p.d;
+                        if dist < 0.0 {
+                            return 0u32;
+                        }
+                    }
+                    1u32
+                })
+                .collect()
+        }
+        let f = SimdFrustum::new([
+            pl(1.0, 0.0, 0.0, 3.0),  // x >= -3
+            pl(-1.0, 0.0, 0.0, 3.0), // x <= 3
+            pl(0.0, 1.0, 0.0, 2.0),  // y >= -2
+            pl(0.0, -1.0, 1.0, 2.0), // -y + z + 2 >= 0 (斜め)
+            pl(1.0, 1.0, 0.0, 4.0),  // x + y >= -4 (斜め)
+            pl(0.0, 0.0, -1.0, 5.0), // z <= 5
+        ]);
+        let boxes: Vec<Aabb> = (0..17)
+            .map(|i| {
+                let x = (i % 5) as f32 - 3.5;
+                let y = (i % 3) as f32 * 0.25 - 2.0;
+                let z = (i % 4) as f32 * 0.5 - 1.0;
+                let hx = 0.25 * (1 + (i % 3)) as f32;
+                Aabb {
+                    min: [x, y, z],
+                    max: [x + hx, y + 0.5, z + 0.25],
+                }
+            })
+            .collect();
+        let soa = SoaAabbs::from_aabbs(&boxes);
+        let portable_u32: Vec<u32> = f
+            .cull_soa_portable(&soa)
+            .iter()
+            .map(|&v| v as u32)
+            .collect();
+        assert_eq!(wgsl_mirror_cull(&f, &boxes), portable_u32);
     }
 }

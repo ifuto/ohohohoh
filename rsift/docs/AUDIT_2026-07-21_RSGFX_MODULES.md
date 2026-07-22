@@ -2030,3 +2030,41 @@ UBO dirty 遷移、FrameUbo 96B、アルゴリズム部分の変更が無いこ�
 ### 検証結果 (全て実測)
 - lib テスト **696/696** (+5)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AO. simd_frustum.wgsl 実カーネル化 (wave 39, 2026-07-22)
+
+ユーザー新指令「スタブや見送り無し、全技術を数学的に正しく実装」に基づく
+繰越項目 closing 第 1 弾。wave 29 でピンした「コメントのみスタブ」を
+**実 compute カーネルに置換**。opt-gfx 696 → **698** (+2)。
+
+### AO-1: 実装 (1 box = 1 thread、CPU 参照との数学的等価)
+- `cs_cull` @workgroup_size(64)、Params (count + 6 平面)、SoA 6 配列
+  (storage read)、visibility u32 配列 (read_write) の 9 binding 構成。
+- 各レーンは CPU 参照 (`cull_soa_portable`) と**同一式を同一規則**で評価:
+  p-vertex 選択 (成分ごと `select(min, max, coef >= 0.0)`)、
+  dist = `pl.x*px + pl.y*py + pl.z*pz + pl.w` の左結合、
+  `dist < 0.0` で 0 を書き early exit (ok フラグ単調減少なので
+  full loop と結果一致 — 証明明記)、NaN 係数は min 側選択・NaN dist は
+  可視側で CPU scalar 規則と完全一致。
+
+### AO-2: bit 厳密性の限界を正直化 (一次情報調査 + in-repo 実証)
+WGSL 個々の f32 演算は IEEE-754 binary32 で左結合も文法固定だが、
+W3C WGSL は設計上**評価戦略 (reassociation / FMA fusion) の裁量を
+実装に認める**ため CPU 参照との bit 級一致は保証されない
+(§floating-point evaluation 系の方針。文言の厳密 pin は spec 本文
+139 chunk のため部分確認に留め High confidence として明記)。
+乖離機構自体は wave 29 で x86 実機実証 (FMA vs 左結合) 済みの同一種。
+境界割れは保守カリングの範囲で実害なしと論証 (AE-2 と同契約)。
+
+### テスト (+2, スタブピンを実ピンに置換)
+- wgsl_kernel_entry_layout_and_bindings_pinned
+  (cs_cull Compute/wg(64,1,1)、Params span 112 count@0 planes@16、
+  8 global が (0, 0..7) に一意 — 全て naga 実機検証)
+- wgsl_mirror_matches_portable_bitexact
+  (cs_cull 逐行対応ミラーが cull_soa_portable と 17 箱×6 平面で bit 一致)
+- wave 29 の「将来カーネル実装時はこのピンを実エントリ検証へ更新」との
+  明記に従い stub ピンを置換 (空入力テストは分離存続)
+
+### 検証結果 (全て実測)
+- lib テスト **698/698** (+2)。rustfmt hunk 増分 0 (HEAD 由来 6 温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
