@@ -1305,3 +1305,49 @@ GPU 固定機能規則と**最初から一致**しており、frame_reference �
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - SoftwareOccluder/project はクレート外利用なし (全 repo grep 確認) —
   digest 非依存を静的に確認済み。
+
+## Y. taa.rs / drs.rs 監査 (wave 23, 2026-07-22)
+
+frame 系外の残モジュール監査へ移行 (frame_* 7 件完遂後のゼロ/単一テスト
+モジュール棚卸しから Tier 6 TAA と Tier 4 DRS を選定)。opt-gfx 611 → **616** (+5)。
+
+### Y-1 (doc 偽) reproject_uv の符号
+doc「uv_hist = uv + velocity」に対し実装は `uv - velocity` — WGSL
+(`hist_uv = uv - vel`) と照合するとコードが正で **doc の記号が逆**
+だった。doc を訂正し (実装無変更)、WGSL ミラートークンをテストで機械固定。
+
+### Y-2 (契約差分の正直化) blend clamp の非対称
+Rust 側 resolve は blend を [0,1] clamp するが WGSL の `mix()` は clamp 無し。
+消費者ゼロ (LightweightTaa/TAA_WGSL は現行カタログ資産、実使用は taa_ycocg
+経路) のため配線影響はないが、将来のホストが params にそのまま流すと
+両側で逸脱する。WGSL ヘッダにホスト正規化契約を明記。
+
+### Y-3 (中・NaN 永久汚染) drs::push_frame_ms — 根治
+`frame_ms.clamp(1.0, 100.0)` は NaN を素通りし (NaN.clamp = NaN)、EMA は
+一度汚染されると比較が全て偽となり **scale が静かに永久凍結** する
+fail-silent だった。非有限 (NaN/±inf) は観測欠測として捨てる設計に根治
+— frame_pacing::record_frame (wave 17, S-3) と同一契約。同一クラスの
+防御として resolve の非有限 blend も a=0 (current 素通し) に正規化
+(画面への NaN 伝搬遮断)。
+
+### Y-4 (厳密値) EMA/ヒステリシス・resolve のビットピン
+全て f32 単一回丸め規則から exact rational (Python Fraction) で厳密導出
+(float64 近似エミュレーション禁止 = W-3 教訓の運用事例):
+- DRS: 60fps 目標に 25ms 連続観測で初回調整は **9 push 目** (ema>18.0 到達
+  push 2 + ヒステリシス 8)、30 push で 3 回調整、scale bits `0x3f599999`
+  (0.85)、fps_ema bits `0x42224b15`。
+- TAA: resolve(cur=[.5,.5,.5], clamp 後 hist=[.6,.4,.4], blend=0.1) =
+  bits [`0x3f028f5c`, `0x3efae147`, `0x3efae147`]; blend=1.0 はクランプ後
+  ヒストリと bit 一致。
+
+### 追加テスト (+5, fail-loud)
+- resolve_exact_bits_matching_wgsl_mix / non_finite_blend_normalizes_to_passthrough /
+  taa_wgsl_parses_and_mirror_tokens_present (naga + ミラー規則トークン)
+- push_frame_ms_rejects_non_finite (捨棄・汚染無し・以後回復) /
+  hysteresis_timeline_is_deterministic (上記厳密タイムライン)
+
+### 検証結果 (全て実測)
+- lib テスト **616/616** (+5)。rustfmt hunk 増分 0 (taa.rs の HEAD 由来
+  署名 1 hunk・CRLF 行末は規律上温存、新規分は正準形)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- 直前 push (wave 21+22) の bench-ci run 29908670601 は **success**。

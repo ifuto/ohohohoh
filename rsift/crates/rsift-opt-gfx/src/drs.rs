@@ -54,6 +54,13 @@ impl DynamicResolutionScaler {
     }
 
     pub fn push_frame_ms(&mut self, frame_ms: f32) {
+        // 観測契約 (wave 23 監査で追加): 非有限 ms (NaN/±inf) は観測欠測として
+        // 捨てる。NaN は f32::clamp を素通りし (NaN.clamp = NaN)、EMA を一度
+        // 汚染すると比較が全て偽になって scale が静かに永久凍結する旧動作の根治。
+        // frame_pacing::record_frame (wave 17, S-3) と同一の契約。
+        if !frame_ms.is_finite() {
+            return;
+        }
         let ms = frame_ms.clamp(1.0, 100.0);
         self.frame_ms_ema = self.frame_ms_ema * 0.9 + ms * 0.1;
         let target_ms = 1000.0 / self.target_fps;
@@ -105,5 +112,57 @@ mod tests {
         let (w, h) = d.internal_size(1920, 1080);
         assert!(w < 1920);
         assert!(h < 1080);
+    }
+
+    /// wave 23-4: 非有限 frame_ms は観測欠測として捨てられ EMA/scale を
+    /// 汚染しないこと (NaN は clamp 素通りで永久凍結する旧動作の回帰防止)。
+    #[test]
+    fn push_frame_ms_rejects_non_finite() {
+        let mut d = DynamicResolutionScaler::new(60.0);
+        for _ in 0..16 {
+            d.push_frame_ms(16.0);
+        }
+        let ema_before = d.fps_ema().to_bits();
+        let scale_before = d.scale().to_bits();
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            d.push_frame_ms(bad);
+        }
+        assert_eq!(
+            d.fps_ema().to_bits(),
+            ema_before,
+            "non-finite must be dropped"
+        );
+        assert_eq!(d.scale().to_bits(), scale_before, "scale must stay");
+        // 以後の正常観測で統計が壊れず動き続けること
+        for _ in 0..64 {
+            d.push_frame_ms(25.0);
+        }
+        assert!(d.scale() < 1.0, "still functional after bad samples");
+    }
+
+    /// wave 23-5: EMA + 帯域 + ヒステリシス (8/12) のタイムラインは完全決定的 —
+    /// f32 単一回丸め規則から exact rational で厳密導出 (float64 近似禁止、W-3
+    /// 教訓): 60fps 目標・25ms 連続観測で初回調整は 9 push 目、30 push で
+    /// 3 回調整 (scale 0.85)、fps_ema は厳密これ。
+    #[test]
+    fn hysteresis_timeline_is_deterministic() {
+        let mut d = DynamicResolutionScaler::new(60.0);
+        let mut first_adjust = None;
+        let mut n_adjust = 0u32;
+        let mut prev = 1.0f32;
+        for i in 1..=30u32 {
+            d.push_frame_ms(25.0);
+            if d.scale() < prev {
+                n_adjust += 1;
+                if first_adjust.is_none() {
+                    first_adjust = Some(i);
+                }
+                prev = d.scale();
+            }
+        }
+        assert_eq!(first_adjust, Some(9), "8-frames hysteresis after ema>18.0");
+        assert_eq!(n_adjust, 3, "adjustments in 30 pushes");
+        assert_eq!(d.scale().to_bits(), 0x3f599999, "scale 0.85 exact bits");
+        assert_eq!(d.fps_ema().to_bits(), 0x42224b15, "fps_ema exact bits");
     }
 }
