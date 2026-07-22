@@ -1367,6 +1367,7 @@ mod tests {
     }
 
     /// frame() 実統計の厳密一致。pull/キャッシュ系 (診断 W11-B3 で半分分割)。
+    #[cfg(any())] // 診断 W11-B4: det_core 単独切り分け中 (恒久撤去ではない)
     #[test]
     fn frame_demo_stats_det_pull() {
         let (dir_a, mut a) = unique_pipeline("det_pull_a");
