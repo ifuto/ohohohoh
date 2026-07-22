@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 20
+- count: 21
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -38,3 +38,4 @@
 - 2026-07-22: 第7波 診断C3 (WGSL @compute 手前プレフィックスで main 有無を切り分け)
 - 2026-07-22: 第7波 診断C4 (wgpu シェーダから空if除去 = naga 0.20 非受理容疑の根治 + naga テスト再有効化)
 - 2026-07-22: 最終 zero-test full_graph_wiring 消化 (555テスト: naga 空if犯人確定 + AO 輝度スケール逆転文書訂正)
+- 2026-07-22: wave 9 — tick_world 全通読監査 (K-1..K-3 修正 + K-4 明文化) + 統合テスト3本 (opt-gfx 555→558)
