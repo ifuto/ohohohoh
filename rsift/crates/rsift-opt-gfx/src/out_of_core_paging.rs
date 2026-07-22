@@ -217,15 +217,16 @@ mod tests {
         // read は使用として記録する: B を最新化 → lru [C,B]。
         assert_eq!(paging.read_chunk_page(2, 2, &mut buf).unwrap(), 100);
         assert_eq!(buf, b, "B は生存し内容厳密");
-        // D 投入: read 最新化が被害者を決定的に変える。最古は C (page1 所有者)。
+        // D 投入: read 最新化が被害者を決定的に変える。最古は C
+        // (write B→page1, C→page0(A 譲受) のため page1 = B が生存)。
         let hd = paging.write_chunk_page(4, 4, &d).unwrap();
-        assert_eq!(hd.page_idx, 1, "B の read 最新化により C が最古 → page1 を譲受");
+        assert_eq!(hd.page_idx, 0, "B の read 最新化により C が最古 → page0 を譲受");
         assert_eq!(paging.read_chunk_page(3, 3, &mut staging).unwrap(), 0);
         assert_eq!(paging.read_chunk_page(2, 2, &mut buf).unwrap(), 100);
-        assert_eq!(buf, b, "read 最新化により B は生存");
-        // D は C の page1 を占有しており、内容は厳密に D のもの。
+        assert_eq!(buf, b, "read 最新化により B は生存 (page1 据置き)");
+        // D は C の page0 を占有しており、内容は厳密に D のもの。
         assert_eq!(paging.read_chunk_page(4, 4, &mut buf).unwrap(), 100);
-        assert_eq!(buf, d, "page1 は D の内容 (C の残滓は上書き済み)");
+        assert_eq!(buf, d, "page0 は D の内容 (C の残滓は上書き済み)");
         let _ = std::fs::remove_file(temp);
     }
 
