@@ -1640,3 +1640,49 @@ gpu_runtime の naga 検証を空モジュールとして受理すること — 
 - lib テスト **650/650** (+6)。rustfmt hunk 増分 0
   (HEAD 由来 6 hunk 温存、新規分は正準形)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AF. azdo.rs 監査 (wave 30, 2026-07-22)
+
+`azdo.rs` (AZDO orchestrator: Persistent VBO pool + IndirectBatcher +
+DrawCompactor 統合、1 パス 1 MDI 発行モデル) 全行照合。
+実消費者は full_graph_wiring:594 (実 cmds/vis_mask → execute_azdo_pass)。
+opt-gfx 650 → **652** (+2)。
+
+### AF-1 (軽・メトリクス境界) overhead_saved の count==0 過小計上 — 根治
+`saved_calls = commands.len().saturating_sub(1)` は naive (全コマンド個別
+発行) ベースラインに対し、生存 0 件時に AZDO が MDI 自体を発行しない
+(= len 件全部を回避) ことを無視して常に len-1 で 1 件過小だった。
+`len - (count>0)` に根治し、ベースライン定義 (naive 全個別発行 vs AZDO
+min(count,1) 発行) と 1500 ns/draw が推定値であることを doc 明文化。
+既存パス (count>0 定常) の値は不変。
+
+### AF-2 (doc 過剰主張の訂正)
+旧 doc の「persistent ring への push」「MDI コマンドリストの準備」は
+**未配線**: 現パスが行うのは compaction のみで `vbo_pool` / `batcher` は
+保持されるだけ (将来 GPU パス用)。実装側を偽装するより doc を事実に
+合わせる選択 (CPU 参照実装の段階的配線方針として正当)。
+
+### AF-3 (契約 fail-loud) mask 等長の入口強制
+`DrawCompactor::compact_and_filter` は短い mask の欠損要素を
+**可視扱い** (`unwrap_or(true)`) する暗黙仕様で、呼び出し側の mask ずれを
+検出できなかった。`execute_azdo_pass` 入口で等長 assert (全実長つき)。
+実経路 full_graph_wiring:587-594 は `cmds.len()` と同長に構築されることを
+読み合わせ確認済み (違反不発)。
+
+### 陰性確認
+`AzdoOrchestrator::new` の MiB 単位契約 (過去の 1<<20 誤用 OOM 注記が
+既に正しく共存)、AtomicU64 Relaxed (メトリクス用途で十分)、
+`PersistentVboPool::new(64)` が 48 MiB staging を eager 確保する点
+(wiring::new 構築時 1 回、仕様内)、`DrawCompactor` の max_commands が
+capacity ヒントでハードキャップでない点 (Vec 成長; 踏み越え時の GPU 側
+制約は execute_indirect 監査 wave に送る) — 全て確認・記録。
+
+### 追加テスト (+2, fail-loud)
+- overhead_metric_matches_naive_baseline_exact
+  (空パス +0 / 2 生存×2 回で +1500×2 / 全不見で +3000 の厳密累積 6000 ns、
+  total_overhead_saved_ms == 0.006 ピン — 旧式では 4500 で確実に赤)
+- visibility_mask_length_mismatch_panics (should_panic 契約)
+
+### 検証結果 (全て実測)
+- lib テスト **652/652** (+2)。rustfmt hunk 増分 0 (HEAD 由来 1 hunk 温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
