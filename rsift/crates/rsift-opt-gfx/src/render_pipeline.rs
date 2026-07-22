@@ -1403,28 +1403,118 @@ mod tests {
             let _ = guarded_frame(&mut p, &[(0, 0)], 201);
         }
         {
-            let (_d, mut p) = guarded_new("m4", 39);
-            p.profile.hzb_occlusion = false;
-            p.profile.cpu_masked_occlusion = false;
-            p.feather.enabled = false;
-            p.profile.multi_draw_indirect = false;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 209);
-        }
-        {
-            let (_d, mut p) = guarded_new("m6", 39);
-            p.profile.hzb_occlusion = false;
-            p.profile.cpu_masked_occlusion = false;
-            p.feather.enabled = false;
-            p.profile.noise_upsampling = false;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 213);
-        }
-        {
-            let (_d, mut p) = guarded_new("m8", 39);
-            p.profile.hzb_occlusion = false;
-            p.profile.cpu_masked_occlusion = false;
-            p.feather.enabled = false;
-            p.low_spec.quad_budget = 0;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 217);
+            // 診断 W11-B20: 実デモ系データで tick_world を直接駆動 (恒久ではない)。
+            let dir = std::env::temp_dir().join(format!(
+                "rsift_w20_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let r0 = std::panic::catch_unwind(|| crate::full_graph_wiring::FullGraphWiring::new(&dir));
+            let mut w = match r0 {
+                Ok(w) => w,
+                Err(_) => std::process::exit(219),
+            };
+            // stage 1: 空 inputs ベースライン (wave 9 同等)
+            let r1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let inputs = crate::full_graph_wiring::FrameWiringInputs {
+                    delta_ms: 16.0,
+                    frame_us_measured: 16_000,
+                    frame_index: 1,
+                    screen_w: 640,
+                    screen_h: 360,
+                    camera_pos: [0.0, 32.0, 0.0],
+                    camera_dir: [0.0, 0.0, 1.0],
+                    view_proj: [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ],
+                    chunk_keys: Vec::new(),
+                    chunk_materials: Vec::new(),
+                    chunk_aabbs: Vec::new(),
+                    chunk_dists: Vec::new(),
+                    draw_index_counts: Vec::new(),
+                    section_palettes: Vec::new(),
+                    quad_positions: Vec::new(),
+                    quad_materials: Vec::new(),
+                    quad_bytes: 0,
+                    camera_speed: 0.0,
+                    svo: None,
+                };
+                w.tick_world(&inputs)
+            }));
+            if r1.is_err() {
+                std::process::exit(221);
+            }
+            // stage 2: デモ列 (noise アップサンプル profile 経路) の実構築
+            let r2 = std::panic::catch_unwind(|| {
+                let cfg = NoiseUpsampleConfig::for_chunk(0, 0);
+                let sections = column_palettes_upsampled(0, 0, &cfg);
+                let mut pull = mesh_chunk_column_pull_world(&sections, 0, 0, 0, 0, 0, 0, true);
+                (sections, core::mem::take(&mut pull.quads))
+            });
+            let (sections, quads) = match r2 {
+                Ok(v) => v,
+                Err(_) => std::process::exit(223),
+            };
+            // stage 3: 実デモデータを wiring inputs に組み立てて tick_world
+            let r3 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let quad_positions: Vec<[f32; 3]> = quads
+                    .iter()
+                    .take(256)
+                    .map(|q| {
+                        [
+                            crate::packed4::PackedPullQuad::unpack_x(q.word0) as f32,
+                            crate::packed4::PackedPullQuad::unpack_y(q.word0) as f32,
+                            crate::packed4::PackedPullQuad::unpack_z(q.word0) as f32,
+                        ]
+                    })
+                    .collect();
+                let quad_materials: Vec<u32> = quads
+                    .iter()
+                    .take(256)
+                    .map(|q| crate::packed4::PackedPullQuad::unpack_tex(q.word0))
+                    .collect();
+                let mut section_palettes = Vec::new();
+                if let Some(p0) = sections.first() {
+                    section_palettes.push(*p0);
+                }
+                let inputs = crate::full_graph_wiring::FrameWiringInputs {
+                    delta_ms: 16.0,
+                    frame_us_measured: 16_000,
+                    frame_index: 1,
+                    screen_w: 640,
+                    screen_h: 360,
+                    camera_pos: [0.0, 32.0, 0.0],
+                    camera_dir: [0.0, 0.0, 1.0],
+                    view_proj: [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ],
+                    chunk_keys: vec![(0, 0)],
+                    chunk_materials: vec![1],
+                    chunk_aabbs: vec![([0.0, 0.0, 0.0], [16.0, 64.0, 16.0])],
+                    chunk_dists: vec![0.0],
+                    draw_index_counts: vec![(quads.len() * 6) as u32],
+                    section_palettes,
+                    quad_positions,
+                    quad_materials,
+                    quad_bytes: quads.len() * 8,
+                    camera_speed: 0.0,
+                    svo: None,
+                };
+                w.tick_world(&inputs)
+            }));
+            if r3.is_err() {
+                std::process::exit(225);
+            }
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 
