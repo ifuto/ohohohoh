@@ -1906,7 +1906,10 @@ fn mean_sigma(v: &[crate::taa_ycocg::Vec3]) -> (crate::taa_ycocg::Vec3, crate::t
 }
 
 /// 実パレット近傍から ao_bake のコーナー AO を算出。
-/// face: 0=+X 1=-X 2=+Y 3=-Y 4=+Z 5=-Z / 戻り値 0..3 (3=最大遮蔽)。
+/// face: 0=+X 1=-X 2=+Y 3=-Y 4=+Z 5=-Z / 戻り値 0..3 — `ao_bake::corner_ao`
+/// の **vanilla 輝度スケール** (3 = 無遮蔽で最も明るい、0 = 最大遮蔽) を返す。
+/// 旧コメントの「3=最大遮蔽」は輝度と遮蔽を逆転させた虚偽だったため訂正
+/// (2026-07-22 監査。値自体は変更していない)。
 fn corner_ao_from_palette(
     sections: &[SectionPalette],
     x: i32,
@@ -2005,5 +2008,219 @@ trait NormalizeWrap {
 impl NormalizeWrap for crate::atmospheric::Vec3 {
     fn normalize_wrap(self) -> Self {
         self.normalize()
+    }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+
+    fn empty_inputs() -> FrameWiringInputs<'static> {
+        FrameWiringInputs {
+            delta_ms: 16.0,
+            frame_us_measured: 16_000,
+            frame_index: 0,
+            screen_w: 1920,
+            screen_h: 1080,
+            camera_pos: [0.0; 3],
+            camera_dir: [0.0, 0.0, 1.0],
+            view_proj: [[0.0; 4]; 4],
+            chunk_keys: Vec::new(),
+            chunk_materials: Vec::new(),
+            chunk_aabbs: Vec::new(),
+            chunk_dists: Vec::new(),
+            draw_index_counts: Vec::new(),
+            section_palettes: Vec::new(),
+            quad_positions: Vec::new(),
+            quad_materials: Vec::new(),
+            quad_bytes: 0,
+            camera_speed: 0.0,
+            svo: None,
+        }
+    }
+
+    #[test]
+    fn out_sign_table_and_fallback() {
+        // face: 0=+X 1=-X 2=+Y 3=-Y 4=+Z 5=-Z — 偶数=正方向
+        let got: Vec<i32> = (0..6).map(out_sign).collect();
+        assert_eq!(got, vec![1, -1, 1, -1, 1, -1]);
+        for f in [6u32, 7, 255, u32::MAX] {
+            assert_eq!(out_sign(f), -1, "未知 face は負方向扱い (フォールバック)");
+        }
+    }
+
+    #[test]
+    fn view_proj_to_m16_is_column_major_transpose() {
+        let mut m = [[0.0f32; 4]; 4];
+        for r in 0..4 {
+            for c in 0..4 {
+                m[r][c] = (r * 4 + c) as f32;
+            }
+        }
+        let out = view_proj_to_m16(&m);
+        assert_eq!(
+            out,
+            [0.0, 4.0, 8.0, 12.0, 1.0, 5.0, 9.0, 13.0, 2.0, 6.0, 10.0, 14.0, 3.0, 7.0, 11.0, 15.0],
+            "out[c*4+r] = m[r][c] の列優先並べ替え"
+        );
+    }
+
+    #[test]
+    fn extract_frustum_planes_identity_table() {
+        let id = [
+            [1.0, 0.0, 0.0, 0.0f32],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let p = extract_frustum_planes(&id);
+        assert_eq!(p[0], [1.0, 0.0, 0.0, 1.0], "left = row3+row0");
+        assert_eq!(p[1], [-1.0, 0.0, 0.0, 1.0], "right = row3-row0");
+        assert_eq!(p[2], [0.0, 1.0, 0.0, 1.0], "bottom = row3+row1");
+        assert_eq!(p[3], [0.0, -1.0, 0.0, 1.0], "top = row3-row1");
+        assert_eq!(p[4], [0.0, 0.0, 1.0, 0.0], "near = row2 (D3D 0..w 型)");
+        assert_eq!(p[5], [0.0, 0.0, -1.0, 1.0], "far = row3-row2");
+        // 再正規化チェック: 行を 5 倍しても単位法線化で同一テーブル
+        let mut scaled = id;
+        for r in scaled.iter_mut() {
+            for x in r.iter_mut() {
+                *x *= 5.0;
+            }
+        }
+        assert_eq!(extract_frustum_planes(&scaled), p);
+    }
+
+    #[test]
+    fn extract_frustum_planes_degenerate_no_nan() {
+        let zero = [[0.0f32; 4]; 4];
+        let p = extract_frustum_planes(&zero);
+        assert_eq!(p, [[0.0f32; 4]; 6], "len.max(1e-6) ガードで NaN を出さない");
+    }
+
+    #[test]
+    fn mean_sigma_empty_fallback_and_exact_pairs() {
+        let (mu, sig) = mean_sigma(&[]);
+        assert_eq!((mu.x, mu.y, mu.z), (0.5, 0.0, 0.0), "空入力の既定 mean (仕様固定)");
+        assert_eq!((sig.x, sig.y, sig.z), (0.1, 0.1, 0.1), "空入力の既定 sigma");
+        let one = [crate::taa_ycocg::Vec3::new(2.0, 4.0, 8.0)];
+        let (mu, sig) = mean_sigma(&one);
+        assert_eq!((mu.x, mu.y, mu.z), (2.0, 4.0, 8.0));
+        assert_eq!((sig.x, sig.y, sig.z), (0.0, 0.0, 0.0), "単一要素の sigma は 0");
+        let two = [
+            crate::taa_ycocg::Vec3::new(1.0, 2.0, 3.0),
+            crate::taa_ycocg::Vec3::new(3.0, 2.0, 1.0),
+        ];
+        let (mu, sig) = mean_sigma(&two);
+        assert_eq!((mu.x, mu.y, mu.z), (2.0, 2.0, 2.0));
+        assert_eq!((sig.x, sig.y, sig.z), (1.0, 0.0, 1.0), "population sigma (1/n 分散)");
+    }
+
+    #[test]
+    fn material_independent_hash_goldens() {
+        let mut i = empty_inputs();
+        assert_eq!(i.material_independent_hash(), 0x811C_9DC5, "空は FNV 種値そのまま");
+        i.chunk_materials = vec![0];
+        assert_eq!(i.material_independent_hash(), 0x050C_5D1F);
+        i.chunk_materials = vec![1];
+        assert_eq!(i.material_independent_hash(), 0x040C_5B8C);
+        i.chunk_materials = vec![1, 2, 3];
+        assert_eq!(i.material_independent_hash(), 0x56CF_37AB);
+        i.chunk_materials = vec![7, 0];
+        assert_eq!(i.material_independent_hash(), 0x9F6F_2892);
+        // 順序に依存すること (xor 畳み込みではない)
+        let mut j = empty_inputs();
+        j.chunk_materials = vec![1, 2];
+        let mut k = empty_inputs();
+        k.chunk_materials = vec![2, 1];
+        assert_ne!(j.material_independent_hash(), k.material_independent_hash());
+    }
+
+    #[test]
+    fn corner_ao_axes_brightness_and_occlusion() {
+        let lut = crate::branchless_block::BlockLut::new();
+        // id 1 は opaque (i%3!=0 プレースホルダ — branchless_block 監査注記参照)
+        let air = [0u16; 4096];
+        // --- ケース A: 近傍なし → 3 (無遮蔽で最も明るい) ---
+        assert_eq!(
+            corner_ao_from_palette(std::slice::from_ref(&air), 4, 4, 4, 2, &lut),
+            3, "全 air 近傍は 3 (=無遮蔽)"
+        );
+        // --- s1 のみ → 2 (1 段減光) / 両側 → 0 (完全遮蔽) ---
+        let mut sec_b = air;
+        sec_b[section_idx(3, 5, 4)] = 1; // face 2(+Y) @ (4,4,4): s1 = (3,5,4)
+        assert_eq!(corner_ao_from_palette(&[sec_b], 4, 4, 4, 2, &lut), 2);
+        let mut sec_c = sec_b;
+        sec_c[section_idx(5, 5, 4)] = 1; // s2
+        assert_eq!(corner_ao_from_palette(&[sec_c], 4, 4, 4, 2, &lut), 0,
+            "両側隣接は corner_ao が 0 (最大遮蔽) を返す規約");
+        // --- corner のみ → 2 ---
+        let mut sec_d = air;
+        sec_d[section_idx(5, 5, 5)] = 1; // face 2 の corner = (x+1, y+1, z+1)
+        assert_eq!(corner_ao_from_palette(&[sec_d], 4, 4, 4, 2, &lut), 2);
+        // --- face 0 (+X): s1 = (x+1, y-1, z) ---
+        let mut sec_e = air;
+        sec_e[section_idx(5, 3, 4)] = 1;
+        assert_eq!(corner_ao_from_palette(&[sec_e], 4, 4, 4, 0, &lut), 2);
+        // --- face 5 (-Z): s1 = (x-1, y, z-1) ---
+        let mut sec_f = air;
+        sec_f[section_idx(3, 4, 3)] = 1;
+        assert_eq!(corner_ao_from_palette(&[sec_f], 4, 4, 4, 5, &lut), 2);
+        // --- OOB は非不透明: face 3 (-Y) を y=0 で呼んでも ny=-1 → 3 ---
+        assert_eq!(corner_ao_from_palette(&[sec_c], 4, 0, 4, 3, &lut), 3);
+        // --- multisection: y=16 で 2 枚目セクションを参照 ---
+        // face 2 (+Y) @ (4,15,4): s1 = (3,16,4) → sections[1][idx(3,0,4)]
+        let mut sec_h = [air, air];
+        sec_h[1][section_idx(3, 0, 4)] = 1;
+        assert_eq!(corner_ao_from_palette(&sec_h, 4, 15, 4, 2, &lut), 2,
+            "y>=16 は sy=ny/16 のセクションを参照 (1 枚構成)");
+    }
+
+    #[test]
+    fn collect_all_wgsl_matches_sources_and_assoc_delegate() {
+        let expect: String = crate::gpu_runtime::all_wgsl_sources()
+            .into_iter()
+            .map(|(_, src)| format!("{src}\n"))
+            .collect();
+        let free = collect_all_wgsl();
+        assert_eq!(free, expect, "全ソースを順序通りに連結 (欠落/改竄を検出)");
+        assert_eq!(FullGraphWiring::collect_all_wgsl(), expect, "assoc は free への純粋委譲");
+        assert!(!expect.is_empty(), "gpu_runtime に少なくとも 1 ソースが登録");
+    }
+
+    #[test]
+    fn ao_refine_quads_rewrites_and_counts() {
+        // sections 空: early return で 0、クアッド不変
+        let dir = std::env::temp_dir().join(format!(
+            "rsift_fgw_ao_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let mut w = FullGraphWiring::new(&dir);
+        let mut quads = vec![PackedPullQuad::new(4, 4, 4, 7, 0, 2, 3, 2)];
+        let q0 = quads[0];
+        assert_eq!(w.ao_refine_quads(&mut quads, &[]), 0, "sections 空は no-op");
+        assert_eq!(quads[0], q0, "bits 不変");
+
+        // 1 セクション: face 2 (+Y) @ (4,4,4)、隣接 s1 のみ → corner_ao=2
+        let mut sec = [0u16; 4096];
+        sec[section_idx(3, 5, 4)] = 1; // s1
+        let sections = [sec];
+        let mut quads = vec![
+            PackedPullQuad::new(4, 4, 4, 7, 0, 2, 3, 2), // refined = max(2,0)=2 → 変更
+            PackedPullQuad::new(4, 4, 4, 7, 3, 2, 3, 2), // refined = max(2,3)=3 → 不変
+            PackedPullQuad::new(8, 8, 8, 9, 1, 2, 1, 1), // 近傍なし: max(3,1)=3 → 変更
+            PackedPullQuad::new(8, 8, 8, 9, 3, 2, 1, 1), // max(3,3)=3 → 不変
+        ];
+        let changed = w.ao_refine_quads(&mut quads, &sections);
+        assert_eq!(changed, 2, "変更クアッド数 = 実視覚効果の実測");
+        assert_eq!(PackedPullQuad::unpack_light_ao(quads[0].word0), 2);
+        assert_eq!(
+            PackedPullQuad::new(4, 4, 4, 7, 2, 2, 3, 2), quads[0],
+            "AO 以外の packed フィールド (tex/face/w/h) は厳密保存"
+        );
+        assert_eq!(PackedPullQuad::unpack_light_ao(quads[1].word0), 3, "max() 取れる側は不変");
+        assert_eq!(PackedPullQuad::unpack_light_ao(quads[2].word0), 3);
+        assert_eq!(PackedPullQuad::unpack_light_ao(quads[3].word0), 3);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

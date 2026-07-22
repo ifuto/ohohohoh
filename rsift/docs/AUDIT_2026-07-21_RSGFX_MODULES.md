@@ -508,3 +508,40 @@ opt-gfx lib 373 → 404/404 緑**。残り zero-test モジュール (~31) は�
 - 残 zero-test: `full_graph_wiring` (2009 行の統合モジュール — 入力 scaffolding
   設計が要るため次波) のみ。lib.rs は mod 宣言と再エクスポートのみで検証対象
   ロジックを持たない。
+
+## J. naga 0.20 拒否の二分探索確定 + 最終 zero-test モジュール消化 (2026-07-22)
+- **naga 0.20 WGSL 拒否の原因確定 (D0→D1→D2→C3→C4)**: 第7波初回 CI が
+  lib tests 失敗 (exit 101)。ログが sandbox から取得不能なため CI を 1bit
+  オラクル化した二分探索を実施:
+  D1 (wave-7 テスト全 cfg 切断) = 緑 → 本番差分と新旧527テストは無罪、
+  D2 (naga WGSL テストのみ ignore) = 緑 → `culling_wgsl_parses_with_main_‥`
+  単独が実行時失敗と確定 (コンパイルは両波とも通過 = ランタイム失敗)、
+  C3 (@compute 手前の宣言プレフィックスを単独パース) = 緑 → main 本体内問題、
+  C4 (main 内の**空の if ブロック撤去** + テスト再有効化) = 緑 →
+  真犯人は「コメントのみを含む空 if ブロック」だった。
+  naga 0.20 のパーサ実読 (gfx-rs/wgpu v0.20.0 タグ) でも trailing comma 受理・
+  空ブロック済の `block` ループを確認済なのに lower 側で拒否される実測値が得ら
+  れたため、「naga 0.20 は空 if を含むモジュールを parse_strで拒否する」を
+  本診断の結論として記録する (エラーメッセージ本体は sandbox 制約で未回収)。
+  本番 WGSL は空 if をデッドコードとして完全撤去し設計メモをコメント化。
+- **文書訂正 (full_graph_wiring)**: `corner_ao_from_palette` の「戻り値 0..3
+  (3=最大遮蔽)」は `ao_bake::corner_ao` が返す **vanilla 輝度スケール**
+  (3 = 無遮蔽で最も明るい / 0 = 最大遮蔽) の逆転虚偽だったため訂正。
+- **wave 8 (opt-gfx 546 → 555, +9) — 最終 zero-test モジュール
+  full_graph_wiring (2009 行) 消化**: 純粋関数層の厳密固定:
+  out_sign (6 face 表 + 未知 face フォールバック), view_proj_to_m16
+  (列優先転置の逐語表), extract_frustum_planes (単位行列の G-H 面表厳密 +
+  スケール不変性 + ゼロ行列 NaN ガード), mean_sigma (空フォールバック
+  (0.5,0,0)/(0.1×3) と population 分散の厳密値), material_independent_hash
+  (FNV 変形の golden 5 件 (python 事前計算済) + 順序依存性),
+  corner_ao_from_palette (3 軸 face の隣接写像表・輝度 3/2/0 ケース・OOB 規約・
+  マルチセクション y 階層参照 — 7 ケース 1 テスト),
+  collect_all_wgsl (gpu_runtime 全ソースの順序連結に厳密一致 + assoc 委譲),
+  ao_refine_quads (FullGraphWiring::new を一時 dir で実構築 = 配線オーケスト
+  レーターの生成が opt-gfx 自身のテスト系でも検証される初ケース。
+  s1 減光→2 への書き換え・max() での不変側・変更数実測・AO 以外の packed
+  フィールド厳密保存)。
+- **サンドボックス git ref 巻き戻り (2 度目)**: C3 push 前にローカル ref が
+  base commit へ再リセットされており、non-fast-forward 拒否がリモート喪失を
+  未然防止。fetch 済みオブジェクトから `reset --hard` で正規復旧。教訓:
+  push 前に `git log` で親確認 (親が base しか無ければ巻き戻り発生)。
