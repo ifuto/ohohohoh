@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 59
+- count: 60
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -77,3 +77,4 @@
 - 2026-07-22 (count 57): wave 21-22 — frame_pipeline (fs_pull Lambert 根治/SUN_DIR 正準化) + occlusion_query (near-plane clip 根治) 追加テスト計 7 件の CI 緑確認
 - 2026-07-22 (count 58): wave 23 — taa/drs 監査 (NaN 伝搬根治 + 厳密ビットピン 5 件) の CI 緑確認
 - 2026-07-22 (count 59): wave 24-25 — taa_ycocg / texture_atlas 監査 (契約化 + 厳密値ピン 12 件) の CI 緑確認
+- 2026-07-22 (count 60): wave 26 — triple_buffer 単一バッファ退化根治 + spatial_hash 契約化 (7 件) の CI 緑確認
