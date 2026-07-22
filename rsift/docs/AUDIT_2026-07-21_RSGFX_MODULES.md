@@ -2193,3 +2193,69 @@ lbvh_cull_cpu) 付きの実 dispatch 版で、スタブ類は本モジュール�
 - lib テスト **708/708** (+7)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
   (膨張後も出力集合が naive 等価であることの digest 級実証)。
+
+## AR. sparse_texture.rs (+ WGSL) 監査・実カーネル化 (wave 42, 2026-07-23)
+
+full_graph_wiring:264/:1143/:1155 で実消費 (1,024 物理スロットの侵入型
+O(1) LRU ページテーブル + mip 選択 + 要求)。texture 系 closing 3 連奏の
+第 3 弾 (wave 40 VirtualAtlas LRU / wave 41 lbvh に続く)。
+
+### AR-1: request_with_eviction 追加 (退避キー通知の欠落根治)
+旧 `request` は退避発生時に「どの key が消えたか」を返さず、戻りは
+確保スロットのみ。GPU ページテーブル配線は旧マッピング unmap → 新規
+map の順序が必須で、この情報なしに完全な配線は**不可能**だった
+(計算済みの old_key を捨てていた)。`request_with_eviction` を追加し
+`request` は第 1 要素の委譲ラッパ (公開 API 不変)。
+
+### AR-2: dense-slot 帰納不変条件の明文化 + 死フィールド削除
+空き時新規確保が `resident.len()` をスロットに選べる根拠は
+「使用中スロットは常に [0, len) に稠密」という非自明な帰納不変条件
+(充填は len を +1、満杯退避再使用は len 不変) で、従来無文書だった。
+doc 化 + debug_assert を充填経路に追加。`LruNode.in_use` は書き込み
+のみで読まれることのない死フィールドだったため削除 (private で API
+不変、ノード 16B → 12B)。
+
+### AR-3: mip_for_distance — NaN 静寂着地の根治 + 式意味論の正直化
+旧実装は f32::max の「片側 NaN なら他方を返す」性質で NaN distance を
+静寂に 1e-3 クランプ経路へ着地させ、mip 0 (最高品質 = 最大転送量) を
+黙って選択していた (観測欠測の静寂混入、wave 23/32/34/36 同型)。
+→ `!distance.is_nan()` / world_size, screen_h は正の有限値を契約
+assert 化。±∞ distance は受理し `+∞ → max_mip` / `−∞ → 0` に飽和する
+ことを仕様化 (±∞ 受理・NaN 拒否の哲学統一)。
+式の意味論も正直化: 見掛け高は本来 `screen_h·size/(2·d·tan(fov/2))`
+であり、本式は `2·tan(fov/2)=1` (fov ≈ 53.13°) を暗黙固定し、分子も
+テクスチャ texel 数ではなく screen_h の代理 — 厳密 texel:pixel 選択
+ではなく対数ヒューリスティックであることを doc 明記 (max_mip 側に
+のみ厳密な飽和保証)。
+
+### AR-4 (closing): sparse_texture.wgsl 実カーネル化
+旧版は phys を計算して**出力せず破棄**する reference (wave 39 同型の
+準スタブ)。根治: 出力 storage `outPages` (binding 2) 追加、U に
+pageCount 追加して契約外レーンの範囲ガード、退化規則を「直接照会 →
+**最細 resident 祖先 mip** (mip-1 → 0 の下降探索) → 全段未常駐なら
+INVALID」の教科書的フォールバックに拡張 (旧版は mip 0 のみ参照)。
+CPU ミラー `translate_with_fallback` を同一制御フローで導入し、
+上傳契約 `table.len() >= page_count * (max_mip+1)` を両側に契約化
+(usize 64-bit で乗算 overflow 不発を解析確認済: 最大値は 2^64−2^32)。
+gpu_runtime は名前索引の naga 検証のみで struct/binding 変更は安全。
+
+### テスト (+10)
+- lru_exact_slot_sequence_pinned (dense 充填 0,1,2 / 中間 touch の
+  MRU 昇格 / tail 退避 (10,0)→slot 0 / 次 tail (12,0)→slot 2 の厳密列)
+- request_with_eviction_reports_exact_key ((page, mip) 完全一致、
+  mip 違いは別エントリ)
+- translate_with_fallback_exact_table (直接/祖先退化/全段未常駐/
+  page・mip 範囲外の 7 ケース厳密)
+- translate_fallback_is_finest_resident_ancestor_oracle (固定 seed
+  疑似ランダム 40 マス × 独立実装 rev-find オラクルで全 (page, mip) 突合)
+- translate_rejects_short_table (should_panic)
+- mip_for_distance_exact_structure (log2 が冪 4.0/16.0/1.0 で厳密に
+  決まる構造点列 + ±∞/至近飽和の両端)
+- mip_rejects_nan_distance / zero_world_size / nan_screen_h
+  (should_panic ×3)
+- wgsl_entry_layout_and_bindings_pinned (main Compute wg(8,8,1)、
+  U span 8 maxMip@0 pageCount@4、binding (0,0..2) — naga 実機)
+
+### 検証結果 (全て実測)
+- lib テスト **718/718** (+10)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
