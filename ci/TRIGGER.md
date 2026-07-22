@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 79
+- count: 80
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -97,3 +97,4 @@
 - 2026-07-23 (count 77): wave 43 mip_streaming 監査の CI 緑確認
 - 2026-07-23 (count 78): wave 44 mesh_compactor ワイヤ closing の CI 緑確認
 - 2026-07-23 (count 79): wave 45 azdo MDI closing の CI 緑確認
+- 2026-07-23 (count 80): wave 46 bindless 監査の CI 緑確認
