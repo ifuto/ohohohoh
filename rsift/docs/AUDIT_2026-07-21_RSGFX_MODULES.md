@@ -1436,3 +1436,49 @@ remap_uv の線形 remap、TextureArrayBuilder::vram_bytes 概算は全て
 ### 検証結果 (全て実測)
 - lib テスト **628/628** (+7)。rustfmt hunk 増分 0 (CRLF 歴史行末は温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AB. triple_buffer.rs / spatial_hash.rs 監査 (wave 26, 2026-07-22)
+
+低レベルプリミティブ 2 件 (どちらも render_pipeline の実消費者あり)
+全行照合。opt-gfx 628 → **635** (+7)。
+
+### AB-1 (高・並行バグ) TripleBuffer の単一バッファ退化 — 根治
+書き込み先選択 `free_idx(w, r)` は 3 組の対称ペアのみ明示処理で残り全て
+`_ => 0` に倒していた。初期 (w=0,r=1) → 2 回目 write で (w=2,r=2)→0 選択、
+end で read=0 となり **(0,0) の定常状態に到達**。3 回目以降 free_idx(0,0)
+は read スロット自身の **0 を返し** (read≠write 不変条件が (1,1)(2,2)
+では偶然成立するが (0,0) で破れる)、**公開中スロットを CPU が上書きする
+単一バッファ退化**に永久定着。Mutex があるため torn バイト列にはなら
+ないが、produce/consume の非ブロック前提が崩れ、GPU は「完了前フレーム」
+を読み得た。実消費者 render_pipeline::upload_ring (:798 write / :1176 read)
+で確実に 3 フレーム目から発火する経路。
+
+根治: 書き込み先を「公開スロットの 1 つ先」`(read+1)%3` のローテーションに
+置換 — read 不一致が定義より自明な最小不変条件。不変条件 3 条を構造 doc に
+機械固定し、スロット列 [2,0,1,2,0,1,2] と begin 各時点の `idx != published`
+をピン (旧実装は [2,0,0,0,...] で確実に赤になる回帰検出器)。
+
+### AB-2 (中・fail-silent 経路閉塞) SpatialHash 非有限/逆転の契約化
+- insert/move_entity: NaN 座標は float→int cast 規則 (NaN→0、±inf→端飽和)
+  で**実世界位置と無関係な「謎セル」**に分類されていた。有限契約を assert。
+- query_aabb: 逆転 AABB (min>max) は range 空で**静かに 0 件**、NaN 境界も
+  謎セル探索化 — 有限かつ min<=max を契約 assert (半径クエリも半径 NaN を
+  f32::max が 0 に直して静寂だったのを契約化)。
+- 複雑度 Θ(∏包含セル) と半径 AABB 近似 (距離精査は呼び出し側) を doc 明記。
+
+### 陰性確認
+remove の retain + 空セル消去による帳簿整合、同セル move no-op、key の
+負側 floor 規則、query 出力の sort+dedup による HashMap 反復順非依存の
+完全決定性 — 全て読み合わせ一致 + churn 厳密値ピンで固定。
+
+### 追加テスト (+7, fail-loud)
+- write_slots_rotate_without_touching_published (列ピン + 各 begin で idx≠published)
+- generations_increase_strictly_per_completed_write (世代単調)
+- concurrent_producer_consumer_never_reads_torn_frame (scoped thread 撕裂 smoke)
+- churn_sequence_matches_hand_derived_results (5 段の手計算厳密列)
+- should_panic 3 件 (NaN 座標 / 逆転 AABB / NaN 半径)
+
+### 検証結果 (全て実測)
+- lib テスト **635/635** (+7)。rustfmt hunk 増分 0
+  (spatial_hash の HEAD 由来 1 hunk は編集範囲と一致したため正準形へ)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
