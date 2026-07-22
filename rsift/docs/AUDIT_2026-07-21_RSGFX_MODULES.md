@@ -2564,3 +2564,42 @@ ID 追加順連番、append-only 安定性、resolve 往復、bytes_saved の
 ### 検証結果 (全て実測)
 - lib テスト **758/758** (+3)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AZ. texture_budget.rs 監査 (wave 50, 2026-07-23)
+
+render_pipeline.rs:43/:104/:173 で実消費 (プラットフォーム別圧縮形式
+選択・帯域モデル・mipmap bias 保持)。
+
+### AZ-1 (中): mipmap_bias 非有限の静寂許容を fail-loud 化
+`from_profile` は bias を Feather 経路でそのまま格納する — NaN が
+混入するとサンプラ LOD bias の NaN 化として下流に漏洩し、挙動が
+不定になる (wave 32/36 の NaN=汚染哲学に照らし入口拒否が責務)。
+非 Feather 経路では bias を破棄するが、**入力契約は統一して検証**
+(経路依存の検証抜けは将来のリファクタで穴になる)。
+→ `assert!(mipmap_bias.is_finite())` を全経路共通の入口に設置。
+
+### AZ-3 (中・事実誤り訂正): Astc4x4 の bandwidth_factor 0.2 → 0.25
+ASTC は**全 block サイズで 128 bit 固定** (KHR_texture_compression_
+astc_hdr §C.2.3)。4×4 = 16 texel より **8.00 bpp** であり、
+RGBA8 (32 bpp) 比は 8/32 = **0.25** が厳密。
+旧値 0.2 = 6.4 bpp は ASTC **5×4** (128/20) の値で、型名・label
+「4×4」と矛盾していた (帯域見積りが 20% 過小 = 帯域削減効果を
+過大評価する方向の誤り)。BC7 側 0.25 (=128bit/16texel=8bpp) は
+正しいことを併せて確認。導出を doc に明記し今後の任意値混入を防ぐ。
+(一次情報: Khronos 拡張仕様の footprint/bit-rate 表: 4×4=8.00,
+5×4=6.40 bit rate。)
+
+### テスト (+4)
+- bandwidth_factor_matches_exact_bpp: factor × 32 = {32, 8, 8} bpp
+  を厳密等値でピン (0.25/1.0 は 2 の冪で f32 乗算は厳密)。
+- from_profile_rejects_nan_bias / rejects_inf_bias /
+  rejects_nan_bias_even_when_discarded (should_panic ×3)。
+- 既存 bandwidth_factor_and_labels_exact の Astc4x4 期待値を
+  0.2 → 0.25 に訂正 (訂正由来コメント付き)。
+
+### 検証結果 (全て実測)
+- lib テスト **762/762** (+4)。rustfmt hunk 増分 0
+  (HEAD 1 → 1、同一 hunk = HEAD 由来の既存逸脱のみ)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- cargo check --all-targets エラー 0
+  (warnings は rsift-api 側 HEAD 由来の unused import のみ)。

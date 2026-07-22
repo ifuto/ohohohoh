@@ -16,7 +16,15 @@ pub struct TextureBudget {
 }
 
 impl TextureBudget {
+    /// **契約 (2026-07-23 wave 50 厳格化)**: `mipmap_bias` は有限値必須
+    /// (NaN/±inf を格納するとサンプラ LOD bias に NaN が流れ下流の挙動が
+    /// 不定になる。非 feather 経路では bias 自体を破棄するが、入力契約は
+    /// 統一して検証する)。
     pub fn from_profile(feather_enabled: bool, compressed: bool, mipmap_bias: f32) -> Self {
+        assert!(
+            mipmap_bias.is_finite(),
+            "TextureBudget::from_profile 契約違反: mipmap_bias が非有限 ({mipmap_bias})"
+        );
         if !feather_enabled {
             return Self {
                 compression: AtlasCompression::Uncompressed,
@@ -43,11 +51,18 @@ impl TextureBudget {
         }
     }
 
+    /// RGBA8 (= 32 bpp) との帯域比。導出 (bpp は全形式で厳密):
+    /// RGBA8 = 32 bpp、BC7 = 128 bit / 16 texel = 8 bpp → 8/32 = **0.25**、
+    /// ASTC 4×4 = 128 bit / 16 texel = 8 bpp → **0.25** (ASTC は全 block
+    /// サイズで 128 bit 固定、4×4 = 16 texel)。
+    /// **2026-07-23 wave 50 訂正**: Astc4x4 は旧実装で 0.2 だったが、
+    /// 6.4 bpp は ASTC **5×4** (128/20 bit/texel) の値でラベル「4×4」と
+    /// 矛盾していた。帯域モデルは bpp に厳密一致させる。
     pub fn bandwidth_factor(&self) -> f32 {
         match self.compression {
             AtlasCompression::Uncompressed => 1.0,
             AtlasCompression::Bc7 => 0.25,
-            AtlasCompression::Astc4x4 => 0.2,
+            AtlasCompression::Astc4x4 => 0.25,
         }
     }
 
@@ -101,7 +116,40 @@ mod tests {
         assert_eq!(t.bandwidth_factor(), 0.25);
         assert_eq!(t.label(), "BC7 compressed atlas");
         t.compression = AtlasCompression::Astc4x4;
-        assert_eq!(t.bandwidth_factor(), 0.2);
+        // wave 50 訂正: ASTC 4×4 は 128bit/16texel = 8bpp → BC7 と同じ 0.25
+        // (旧 0.2 は 6.4bpp = ASTC 5×4 の値でラベルと矛盾していた)
+        assert_eq!(t.bandwidth_factor(), 0.25);
         assert_eq!(t.label(), "ASTC 4×4 atlas");
+    }
+
+    /// wave 50-1: 帯域モデルは bpp に厳密一致 (factor × 32bpp = 形式 bpp)。
+    #[test]
+    fn bandwidth_factor_matches_exact_bpp() {
+        let mut t = TextureBudget::from_profile(false, false, 0.0);
+        assert_eq!(t.bandwidth_factor() * 32.0, 32.0, "RGBA8 = 32 bpp");
+        t.compression = AtlasCompression::Bc7;
+        assert_eq!(t.bandwidth_factor() * 32.0, 8.0, "BC7 = 8 bpp");
+        t.compression = AtlasCompression::Astc4x4;
+        assert_eq!(t.bandwidth_factor() * 32.0, 8.0, "ASTC 4×4 = 8 bpp");
+    }
+
+    /// wave 50-2: mipmap_bias 非有限は fail-loud (NaN LOD bias の下流不定を遮断)。
+    #[test]
+    #[should_panic(expected = "mipmap_bias が非有限")]
+    fn from_profile_rejects_nan_bias() {
+        let _ = TextureBudget::from_profile(true, true, f32::NAN);
+    }
+
+    #[test]
+    #[should_panic(expected = "mipmap_bias が非有限")]
+    fn from_profile_rejects_inf_bias() {
+        let _ = TextureBudget::from_profile(true, false, f32::INFINITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "mipmap_bias が非有限")]
+    fn from_profile_rejects_nan_bias_even_when_discarded() {
+        // 非 feather でも契約は統一 (bias は破棄されるが入力は検証する)
+        let _ = TextureBudget::from_profile(false, false, f32::NAN);
     }
 }
