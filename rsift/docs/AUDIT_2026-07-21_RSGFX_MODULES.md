@@ -2366,3 +2366,43 @@ fail-loud で契約化。camera.w / policy.w の予約 0 も明示。
 ### 検証結果 (全て実測)
 - lib テスト **734/734** (+5)。rustfmt hunk 増分 0 (HEAD 由来 4 温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AU. azdo.rs MDI コマンドリスト準備 closing (wave 45, 2026-07-23)
+
+見送り棚卸し closing 第 4 弾。wave 30 で正直化した「persistent ring
+push / MDI コマンドリスト準備は未配線」のうち、**本パスの責務内で
+CPU 側に決定的に配線可能な部分**を閉じる。
+
+### AU-1: batcher 実配線 (MDI 準備)
+`execute_azdo_pass` は compaction しか行わず、`IndirectBatcher` は保持
+されるだけだった。生存コマンドを `batcher` に積み直し、
+`batcher.as_bytes()` で **GPU 間接バッファへそのまま上傳可能な
+決定的バイト列 (ChunkDrawCommand 36B × N)** を提供する経路に根治。
+- 順序は compactor と一致 (安定) — 生存集合の二写しを機械ピン。
+- push の容量 assert は構造上不発 (生存数 ≤ compactor 容量 =
+  max_commands = batcher 容量、wave 35 の fail-loud が保証)。
+- wire 契約差分の明文化: batcher::push は `instance_count = 1` に正規化
+  (`start_instance_location = chunk_id` 搬送設計のため多インスタンスは
+  存在しない)。消費者 (full_graph_wiring:573-577) も instance_count=1
+  で構築しており整合。
+
+### AU-2: vbo_pool 未配線は責務分離として明文化 (スタブではない)
+persistent ring への頂点 push は `BuiltChunkMesh` を必要とし、
+draw コマンドのみを入力とする本パスのシグネチャには存在しない。
+「draw 圧縮パス (本パス)」と「メッシュ常駐パス
+(`upload_mesh`/`release`/`rebuild_mdi`、独自テストで稼働中)」の
+分離は意図的責務境界であることを doc に明記し、追跡可能な形で閉じた。
+
+### テスト (+3)
+- pass_wires_survivors_into_batcher_byte_exact (生存 2 件の順序保持、
+  start_instance_location = chunk_id 上書き、base_vertex 負値、
+  material 引き継ぎの厳密確認)
+- pass_batcher_is_cleared_between_calls (連続呼出 clear、残滓なし、
+  全除去で空整合)
+- batcher_mirrors_compactor_surviving_set (32 件偶数マスクで生存集合・
+  順序・全引き継ぎフィールド一致 + 生存 chunk_id 列 100,102,…,130 ピン)
+
+### 検証結果 (全て実測)
+- lib テスト **737/737** (+3)。rustfmt hunk 増分 0 (HEAD 由来 1 温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (消費者は戻り値 count のみ使用、batcher 後読みなしを機械確認済)。
