@@ -627,3 +627,27 @@ first-key 依存だが試験規模では容量到達しない)。
 - **L-6 (wave 10: opt-gfx 558 → 563, +5)**: paging 4 本 (全域ビット往復、
   0 ページ拒否、LRU 剥奪+read 最新化の被害者決定、超過ペイロード打止め) +
   region 2 本 (OOB 非パニック拒否、Stored 厳密 1.0)。
+
+## M. render_pipeline 全通読監査 (2026-07-22, 第 11 波)
+
+`render_pipeline.rs` (1265 行) を全行通読。パニック経路は確認されず
+(`adaptive_mesh_interval` は 1..=8 保証で剰余安全、`camera_section_y() - 1` は
+div_euclid 後の縮小域で溢れなし、`mesh.vertices[0]` は空イテレータ短絡で
+未到達)。発見と修正:
+
+- **M-1 (実効上の虚偽) motion adaptive shading の「カメラ速度」**:
+  `speed = 6.0 / delta_time` は実変位と無関係の一定式で、60fps (=16.6ms) では
+  常時 ~375。`set_camera_speed(min(40.0))` で毎フレーム 40 = 最高速固定となり、
+  距離/モーション適応シェーディングが静止時も常に最低品質へ倒れていた。
+  前フレームとの実変位 / delta_time (blocks/sec) 計測に根治
+  (`prev_camera_xyz` 追加)。静止時は厳密 0.0。
+- **M-2 (非対称の記録) leaf_fast_path 適用条件**: live 路は
+  `low_spec.leaf_fast_path` のみを見て常時 true 適用 (`profile.leaf_fast_path`
+  無視)、demo/ノイズ路は両フラグの OR を有効条件とする。現時点では挙動
+  据え置きでコメント記録のみ。
+- **M-3 (wave 11: opt-gfx 563 → 565, +2)**:
+  `camera_speed_measured_from_real_displacement` (feather 強制有効 + live
+  ingest で実変位厳密値: 16 b / 16ms = 1000 b/s ビット厳密、静止 0.0 固定)、
+  `frame_demo_stats_cross_instance_deterministic` (3 チャンク 2 フレーム ×
+  新鮮 2 インスタンスで期間起動 %120 系を除く全カウンタ厳密一致 +
+  wiring_subsystems==60 + 静止カメラ速度 0.0)。

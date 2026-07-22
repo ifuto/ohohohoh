@@ -137,6 +137,8 @@ pub struct RsiftRenderPipeline {
     pub wiring_priority: std::collections::HashMap<(i32, i32), usize>,
     /// PowerPolicy が「余分な仕事をスキップせよ」と判定した実状態 (次フレームへ適用)。
     pub wiring_power_skip_extra: bool,
+    /// 前フレームの実カメラ位置 (motion adaptive shading の実速度計測用 — M-1)。
+    prev_camera_xyz: Option<[f32; 3]>,
     last_build: Option<ChunkBuildArtifacts>,
     tick: u64,
 }
@@ -276,6 +278,7 @@ impl RsiftRenderPipeline {
             dynamic_build_budget: None,
             wiring_priority: std::collections::HashMap::new(),
             wiring_power_skip_extra: false,
+            prev_camera_xyz: None,
             last_build: None,
             tick: 0,
         }
@@ -294,6 +297,9 @@ impl RsiftRenderPipeline {
                 if self.low_spec.solid_interior_cull {
                     apply_solid_interior_cull(palette);
                 }
+                // 【注】live 路は `low_spec.leaf_fast_path` のみを見て常時 true 適用
+                // (`profile.leaf_fast_path` は見ない)。フォールバック (demo/ノイズ) 路は
+                // 両フラグの OR を有効条件にする — 非対称の記録のみ (監査 2026-07-22 M-2)。
                 if self.low_spec.leaf_fast_path {
                     apply_leaf_fast_path(palette, true);
                 }
@@ -538,10 +544,21 @@ impl RsiftRenderPipeline {
         }
 
         if self.feather.enabled && self.feather.motion_adaptive_shading {
-            let speed = if delta_time > 0.0 {
-                6.0 / delta_time
-            } else {
-                0.0
+            // 実カメラ速度: 前フレームとの実変位 / delta_time (blocks/sec)。
+            // 旧実装は「6.0 / delta_time」という実変位と無関係の一定式で、
+            // 60fps では常時 ~375 → min(40) クランプにより motion adaptive
+            // shading が**恒に最高速判定**され品質低下が常態化していた
+            // (監査 2026-07-22 M-1)。
+            let cur = [self.camera.x, self.camera.y, self.camera.z];
+            let prev = self.prev_camera_xyz.replace(cur);
+            let speed = match (prev, delta_time > 0.0) {
+                (Some(p), true) => {
+                    let dx = cur[0] - p[0];
+                    let dy = cur[1] - p[1];
+                    let dz = cur[2] - p[2];
+                    (dx * dx + dy * dy + dz * dz).sqrt() / delta_time
+                }
+                _ => 0.0,
             };
             self.last_camera_speed = speed;
             if let Some(s) = self.shading.as_mut() {
@@ -1261,5 +1278,100 @@ mod tests {
         // 新鮮状態 (frame()/CPU mesh 未実行) では publish も quad bytes も無く None。
         // DX12 present 側の「無ければ描かない」前提を固定する。
         assert!(last_gpu_quad_bytes().is_none());
+    }
+
+    // =================================================================
+    // 第 11 波: frame 実パイプライン (監査 2026-07-22 M 節)
+    // =================================================================
+
+    /// ローカルインスタンス (グローバル PIPELINE を触らず並列安全)。
+    fn unique_pipeline(tag: &str) -> (std::path::PathBuf, RsiftRenderPipeline) {
+        let dir = std::env::temp_dir().join(format!(
+            "rsift_pipe_{}_{}_{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let p = RsiftRenderPipeline::new(&dir);
+        (dir, p)
+    }
+
+    /// M-1 回帰: カメラ速度は実変位計測 (旧実装は 6.0/delta の虚偽一定式で
+    /// motion adaptive shading が恒に最高速判定となっていた)。
+    #[test]
+    fn camera_speed_measured_from_real_displacement() {
+        let (dir, mut p) = unique_pipeline("speed");
+        // hw 検出由来の不確定性を排除して該当分岐を強制有効化。
+        p.feather.enabled = true;
+        p.feather.motion_adaptive_shading = true;
+        p.shading = Some(AdaptiveShadingController::new(true, true, false));
+        // live データで world カメラを支配して実変位を作る。
+        p.world.ingest(0, 0, 0, &[1u16; 4096], 1);
+        p.world.set_camera(0.0, 70.0, 0.0, 0.0, 0.0);
+        let _ = p.frame(&[(0, 0)], 640, 360, 0.016);
+        assert_eq!(
+            p.last_camera_speed.to_bits(),
+            0.0f32.to_bits(),
+            "初フレームは前回位置なし → 厳密 0.0"
+        );
+        // 16 blocks 移動 → 16 / 0.016 = 1000 blocks/s。
+        p.world.set_camera(16.0, 70.0, 0.0, 0.0, 0.0);
+        let _ = p.frame(&[(0, 0)], 640, 360, 0.016);
+        let expect = 16.0f32 / 0.016f32;
+        assert_eq!(
+            p.last_camera_speed.to_bits(),
+            expect.to_bits(),
+            "実変位 / delta_time の厳密ビット値"
+        );
+        // 同一位置の次フレームは厳密 0.0 (静止 = 旧実装の ~375 ではない)。
+        let _ = p.frame(&[(0, 0)], 640, 360, 0.016);
+        assert_eq!(p.last_camera_speed.to_bits(), 0.0f32.to_bits());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// frame() 2 フレームの実統計が、同一機械上の新鮮 2 インスタンスで
+    /// 厳密一致すること (期間起動 %120 系を除く全カウンタ)。
+    #[test]
+    fn frame_demo_stats_cross_instance_deterministic() {
+        let (dir_a, mut a) = unique_pipeline("det_a");
+        let (dir_b, mut b) = unique_pipeline("det_b");
+        let coords = [(0, 0), (1, 0), (-1, 0)];
+        for _ in 0..2 {
+            let sa = a.frame(&coords, 640, 360, 0.016);
+            let sb = b.frame(&coords, 640, 360, 0.016);
+            assert_eq!(sa.chunks_built, sb.chunks_built);
+            assert_eq!(sa.cache_hits, sb.cache_hits);
+            assert_eq!(sa.visible_chunks, sb.visible_chunks);
+            assert_eq!(sa.draw_calls, sb.draw_calls);
+            assert_eq!(sa.cpu_culled, sb.cpu_culled);
+            assert_eq!(sa.tiles_binned, sb.tiles_binned);
+            assert_eq!(sa.shading_skipped, sb.shading_skipped);
+            assert_eq!(sa.empty_culled, sb.empty_culled);
+            assert_eq!(sa.visgraph_culled, sb.visgraph_culled);
+            assert_eq!(sa.range_culled, sb.range_culled);
+            assert_eq!(sa.rle_palette_bytes, sb.rle_palette_bytes);
+            assert_eq!(sa.svo_nodes_built, sb.svo_nodes_built);
+            assert_eq!(sa.frame_reuse_hits, sb.frame_reuse_hits);
+            assert_eq!(sa.frame_reuse_misses, sb.frame_reuse_misses);
+            assert_eq!(sa.pull_quads_built, sb.pull_quads_built);
+            assert_eq!(sa.pull_verts_drawn, sb.pull_verts_drawn);
+            assert_eq!(sa.pull_ssbo_bytes, sb.pull_ssbo_bytes);
+            assert_eq!(sa.pull_cache_hits, sb.pull_cache_hits);
+            assert_eq!(sa.frustum_culled, sb.frustum_culled);
+            assert_eq!(sa.soft_occluded, sb.soft_occluded);
+            assert_eq!(sa.lod_boxes, sb.lod_boxes);
+            assert_eq!(sa.interior_culled_voxels, sb.interior_culled_voxels);
+            assert_eq!(sa.wiring_subsystems, sb.wiring_subsystems);
+            assert_eq!(sa.wiring_ao_refined_quads, sb.wiring_ao_refined_quads);
+            // 仕様値の固定: 60 サブシステム配線。
+            assert_eq!(sa.wiring_subsystems, 60);
+            // M-1: デモ静止カメラでは実速度は厳密 0.0 (旧実装 ~375 固定ではない)。
+            assert_eq!(a.last_camera_speed.to_bits(), 0.0f32.to_bits());
+        }
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
     }
 }
