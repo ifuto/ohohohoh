@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 74
+- count: 75
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -92,3 +92,4 @@
 - 2026-07-22 (count 72): wave 38 — gl33_compat timer 混入根治 + VecDeque 化 + 2 契約化 (5 件) 完了。CI 緑確認
 - 2026-07-22 (count 73): wave 39 — simd_frustum.wgsl 実カーネル化 (スタブ closing 第 1 弾) (2 件) 完了。CI 緑確認
 - 2026-07-22 (count 74): wave 40 真の LRU closing の CI 緑確認
+- 2026-07-23 (count 75): wave 41 lbvh 監査の CI 緑確認
