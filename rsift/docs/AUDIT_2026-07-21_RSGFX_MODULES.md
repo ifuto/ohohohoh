@@ -2259,3 +2259,69 @@ gpu_runtime は名前索引の naga 検証のみで struct/binding 変更は安�
 ### 検証結果 (全て実測)
 - lib テスト **718/718** (+10)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AS. mip_streaming.rs 監査 (wave 43, 2026-07-23)
+
+TextureStreamer (full_graph_wiring:265 512MiB 予算で実消費、毎フレーム
+set_size/request)。wave 42 に続く常駐管理系 closing の仕上げ。
+
+### AS-1 (高): 単一テクスチャ超過の静寂予算破壊を fail-loud 化
+旧 eviction ループは `while used + sz > limit && !lru.is_empty()` —
+sz > limit (有効上限) の単一テクスチャに対し全常駐を退避し尽くした
+挙げ句、lru 空で脱出して超過テクスチャを**そのまま挿入**し、
+予算契約を無通知で破った (テスト未カバーの潜在経路)。
+→ `assert!(sz <= limit)` を eviction 前に配置。これによりループは
+「最悪でも全退避で必ず収まる」ことが代数的に保証され、`!lru.is_empty()`
+の脱出ガード自体が不要になった (終了性が構造から証明される)。
+
+### AS-2 (高): hysteresis 無検証 pub フィールドの静寂キャスト破壊
+NaN を設定すると `1.0 - NaN = NaN` → `(budget·NaN) as u64` の飽和
+キャストで limit が 0 化、>1.0 でも 0 化 (全要求で全退避+挿入の
+スラッシング)、<0 では limit > budget で**予算超過を静寂許容**。
+→ pub フィールドは維持 (外部消費者なし・非破壊優先) し、request 入口で
+「[0,1) の有限値」を毎回 fail-loud 検証。budget の f64 変換丸め
+(2^53 超) は実用 non-issue として doc 明記。
+
+### AS-3 (中): set_size の常駐中サイズ不更新による帳簿ドリフト
+旧 `set_size` は sizes テーブルのみ書き換え、常駐中 id の resident 側
+サイズは旧値のまま → used() 帳簿が静寂にズレて実効予算が破られた。
+→ 常駐中なら bytes を書き換え used_bytes を差分更新。予算強制点は
+request 時のみであること (超過時の退避は次回 request まで遅延) を
+契約として明文化。
+
+### AS-4 (中): 未登録 id の request 静寂 no-op を fail-loud 化
+旧実装は `if let Some` の else 節なしで**静寂に何もしない** —
+テクスチャが永久に非表示のまま無信号。プログラマエラーとして panic 化。
+
+### AS-5 (中): 真の O(1) 侵入型 LRU 化 (毎要求 O(n) の根治)
+旧実装は `used()` が全区間総和、touch が `lru.retain` で**毎要求 O(n)**。
+侵入型双方向リスト (head=MRU/tail=LRU) + スロットフリーリスト +
+used_bytes 差分追跡で全経路 O(1) 化。退避順序は旧 VecDeque 版
+(front=LRU 側から退避 / MRU 側へ push) と**完全同一**であることを
+追跡導出で固定 (lru_victim_order_exact_sequence で機械ピン)。
+nodes はピーク常駐数を超えて伸びない (slots_are_reused_not_grown)。
+
+### AS-6: mip_streaming.wgsl は「シェーダ不要」の正当マーカー (誠実化)
+コメントのみのファイルはスタブではなく**構造的正当性を持つ設計判断**:
+(1) 常駐決定はリソース生成・破棄・上傳というホスト API 操作で、
+GPU シェーダはリソース割当を行えない、(2) 退避→上傳→テーブル更新は
+シェーダ実行前に確定が必要で、GPU 側決定は 1 フレーム遅れの自己参照
+ループを構成する。マーカー形状 (空モジュール・entry/binding ゼロ) を
+naga parse テストで機械ピンし、無断のシェーダ混入を検知可能にした。
+
+### テスト (+11)
+- lru_victim_order_exact_sequence (touch 後の犠牲列 0→2 を厳密ピン)
+- budget_boundary_equality_inserts_without_eviction (used+sz==limit は
+  退避しない厳密等価、+1B で 1 件のみ退避 → 501B)
+- resize_while_resident_keeps_accounting_consistent (拡大/縮小の即時
+  帳簿反映、新サイズでの連鎖退避 1010→480)
+- slots_are_reused_not_grown (100 回出入れで nodes ≤ 4)
+- touch_is_accounting_neutral (head 自身 touch の no-op 経路 + tail
+  touch の MRU 昇格が帳簿中立)
+- request_rejects_unknown_id / oversized_texture / nan_hysteresis /
+  hysteresis_one / negative_hysteresis (should_panic ×5)
+- wgsl_is_intentionally_shader_free_marker (naga 空モジュールピン)
+
+### 検証結果 (全て実測)
+- lib テスト **729/729** (+11)。rustfmt hunk 増分 0 (HEAD 由来 1 温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
