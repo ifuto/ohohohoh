@@ -1901,3 +1901,39 @@ azdo 入口の等長 assert で契約全体として保護 — 全て突合。
 - lib テスト **680/680** (+6)。rustfmt hunk 増分 0
   (HEAD 由来 signature 1 hunk 温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AL. billboard_lod.rs 監査 (wave 36, 2026-07-22)
+
+`billboard_lod.rs` (遠距離草花木の LOD: FullMesh→CrossedPlanes→Billboard→
+Culled) 全行照合。実消費者は low_spec_stack / render_pipeline。
+opt-gfx 680 → **685** (+5)。
+
+### AL-1 (中・静寂蒸発) NaN dist/帯 NaN の全 Culled 着地 — fail-loud 根治
+`select` は `<` 連鎖で、NaN dist は全不成立 → else の **Culled に静寂着地
+(植物が描画の場から蒸発)** する。entity_tick_lod wave 34 (RenderOnly 飢餓)
+よりさらに重症。`assert!(!dist.is_nan())` で fail-loud 化 (±∞ dist は
+Culled として意味が通るため受理 — wave 32 の哲学統一: NaN は観測欠損、
+±∞ は比較/clamp が責任を持つ)。また pub フィールドの非単調改変
+(full>crossed 等)・帯 NaN でも同じ静寂化が起きるため、単調+有限の帯契約
+assert を併設。`for_tier_scale(NaN)` は clamp 素通り → 全帯 NaN になる
+経路も入口で拒否 (±∞ scale は clamp 1.5 受理)。
+
+### AL-2 (契約明文化) make_billboard の単位直交基底前提
+cam_right/cam_up が非単位なら quad 伸縮・せん断、非直交なら平行四辺形化。
+正規化はホットパス優先で行わない (呼び出し側責務) — doc 契約化。
+頂点順・uv 写像は厳密ピンで固定。
+
+### 陰性確認
+帯境界等号=次帯、tier clamp 両端 (0.5/1.5)、corners/uvs 配列の写像
+(斜め基底でも同式)、既存 lod_bands 包含 — 全て一致。
+
+### 追加テスト (+5, fail-loud)
+- band_boundaries_exact_with_tier_clamps (境界 8 点 + clamp 両端の
+  帯値 24/48/96・72/144/288 ピン + inf dist/scale 受理)
+- billboard_exact_corners_and_uvs (身份基底 4 corner + 4 uv 厳密列 + 斜め基底)
+- select_rejects_nan_dist / select_rejects_non_monotonic_bands /
+  for_tier_scale_rejects_nan (should_panic ×3)
+
+### 検証結果 (全て実測)
+- lib テスト **685/685** (+5)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
