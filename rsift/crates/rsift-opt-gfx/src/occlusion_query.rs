@@ -18,6 +18,20 @@
 //!
 //! Boxes that report `covered == 0` two frames in a row get culled; hysteresis
 //! (`visible_frames_required`) prevents flicker on rapid transits.
+//!
+//! 深度規則の契約 (wave 22 監査で機械ピン):
+//! * 両バックエンドとも z_ndc の**スクリーン線形**補間 — GPU 固定機能の
+//!   深度補間規則と同一 (透视補正ではない。varyings と深度バッファの規則差に注意)。
+//! * near plane: SW パスはクリップ空間で `z_clip >= 0` に Sutherland–Hodgman
+//!   クリッピングしてから除算する (HW クリッパと同規則)。カメラに密着した
+//!   ボックスの面を落とさない。x/y の [-1,1] 越えは pixel clamp + バリ centric
+//!   テスト、far (z_ndc<=1) はフラグメント毎の z 範囲テストで HW クリッパと
+//!   同値に扱う (スクリーン線形 z のため半空間積と一致)。
+//! * タイブレーク: SW は `z < stored - 1e-5` の保守的バイアス — 同深度・
+//!   ニアリータイは**先に提出されたボックスが勝つ**。GPU パスの
+//!   `CompareFunction::Less` (同値は後描画が負ける) より僅かに厳しいが、
+//!   差が出るのは 1e-5 帯に限られ、ヒステリシスと組み合わせて可視性の
+//!   フリッカーを防ぐ方向にのみ働く。
 
 // ---------------------------------------------------------------------------
 // Shared math / bookkeeping
@@ -285,6 +299,35 @@ impl TapIndex for QuerySlot {
 // Software backend (no GPU): grid rasterizer with per-cell depth
 // ---------------------------------------------------------------------------
 
+/// Sutherland–Hodgman clip of a clip-space polygon against the wgpu near plane
+/// (`z_clip >= 0` half-space)。交点の 4 成分全てを斉次線形補間する
+/// (x,y,z,w 同時に t で割り出すことで NDC での正しいクリップ端を得る)。
+/// 入力 3 角形から最大 4 角形 (凸、頂点順保持) を返す。
+fn clip_polygon_near(poly: &[[f32; 4]]) -> Vec<[f32; 4]> {
+    let mut out = Vec::with_capacity(4);
+    let n = poly.len();
+    for i in 0..n {
+        let cur = poly[i];
+        let prev = poly[(i + n - 1) % n];
+        let cur_in = cur[2] >= 0.0;
+        let prev_in = prev[2] >= 0.0;
+        if cur_in != prev_in {
+            // t = z_prev / (z_prev - z_cur)。符号相違が保証されているので
+            // 分母 ≠ 0。両者とも ≥(≤)0 で境界一致の場合は crossing にならない。
+            let t = prev[2] / (prev[2] - cur[2]);
+            let mut inter = [0.0f32; 4];
+            for k in 0..4 {
+                inter[k] = prev[k] + t * (cur[k] - prev[k]);
+            }
+            out.push(inter);
+        }
+        if cur_in {
+            out.push(cur);
+        }
+    }
+    out
+}
+
 /// CPU reference occluder: depth-rasterizes occluding *and* queried boxes on a
 /// coarse grid; a query box is visible where it wins the depth test.
 pub struct SoftwareOccluder {
@@ -324,69 +367,98 @@ impl SoftwareOccluder {
             [0, 2, 6, 4], // left
             [1, 5, 7, 3], // right
         ];
-        let mut proj = [[0.0f32; 3]; 8];
-        let mut behind = [false; 8];
-        for i in 0..8 {
-            match project(view_proj, c[i]) {
-                Some((x, y, z)) => proj[i] = [x, y, z],
-                None => behind[i] = true,
-            }
+        // clip 空間 (x,y,z,w) コーナー。透视除算は near-clip 後に行う
+        // (旧版は w<=1e-6 のコーナーを持つ面を全スキップしており、カメラに
+        // 密着した壁 — Minecraft でプレイヤーが壁際に立つ通常状況 — が
+        // covered=0 となり 2 フレーム後に誤カリングされていた = pop-in bug。
+        // 2026-07-22 wave 22 監査で homogeneous near-plane clip に根治)。
+        let mut clip = [[0.0f32; 4]; 8];
+        for (i, p) in c.iter().enumerate() {
+            clip[i] = [
+                view_proj[0] * p[0] + view_proj[4] * p[1] + view_proj[8] * p[2] + view_proj[12],
+                view_proj[1] * p[0] + view_proj[5] * p[1] + view_proj[9] * p[2] + view_proj[13],
+                view_proj[2] * p[0] + view_proj[6] * p[1] + view_proj[10] * p[2] + view_proj[14],
+                view_proj[3] * p[0] + view_proj[7] * p[1] + view_proj[11] * p[2] + view_proj[15],
+            ];
         }
-        let w = self.width as f32;
-        let h = self.height as f32;
         for q in QUADS {
-            // Skip faces touching the near plane (cheap conservative cull).
-            if q.iter().any(|&i| behind[i]) {
-                continue;
-            }
             let tris = [[q[0], q[1], q[2]], [q[0], q[2], q[3]]];
             for t in tris {
-                let a = proj[t[0]];
-                let b = proj[t[1]];
-                let cc = proj[t[2]];
-                // to pixel space
-                let px = [
-                    (a[0] * 0.5 + 0.5) * w,
-                    (b[0] * 0.5 + 0.5) * w,
-                    (cc[0] * 0.5 + 0.5) * w,
-                ];
-                let py = [
-                    (0.5 - a[1] * 0.5) * h,
-                    (0.5 - b[1] * 0.5) * h,
-                    (0.5 - cc[1] * 0.5) * h,
-                ];
-                let minx = px.iter().cloned().fold(f32::INFINITY, f32::min).max(0.0) as usize;
-                let maxx = (px.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + 1.0)
-                    .min(w)
-                    .max(0.0) as usize;
-                let miny = py.iter().cloned().fold(f32::INFINITY, f32::min).max(0.0) as usize;
-                let maxy = (py.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + 1.0)
-                    .min(h)
-                    .max(0.0) as usize;
-                let area = (px[1] - px[0]) * (py[2] - py[0]) - (px[2] - px[0]) * (py[1] - py[0]);
-                if area.abs() < 1e-9 {
+                // z_clip >= 0 (wgpu の near plane 半空間) で Sutherland–Hodgman。
+                // 規範的視射影では z_clip>=0 ⟺ 視空間深度 >= near なので
+                // 生存頂点の w は必ず > 0 (カメラ背後点は必ず z_clip<0 で落ちる)。
+                let poly = clip_polygon_near(&[clip[t[0]], clip[t[1]], clip[t[2]]]);
+                if poly.len() < 3 {
                     continue;
                 }
-                for gy in miny..maxy.min(self.height) {
-                    for gx in minx..maxx.min(self.width) {
-                        let x = gx as f32 + 0.5;
-                        let y = gy as f32 + 0.5;
-                        let w0 = ((px[1] - x) * (py[2] - y) - (px[2] - x) * (py[1] - y)) / area;
-                        let w1 = ((px[2] - x) * (py[0] - y) - (px[0] - x) * (py[2] - y)) / area;
-                        let w2 = 1.0 - w0 - w1;
-                        if w0 < -0.01 || w1 < -0.01 || w2 < -0.01 {
-                            continue;
+                for ti in 1..poly.len() - 1 {
+                    let tri = [poly[0], poly[ti], poly[ti + 1]];
+                    let mut ndc = [[0.0f32; 3]; 3];
+                    let mut ok = true;
+                    for (k, v) in tri.iter().enumerate() {
+                        if v[3] <= 1e-6 {
+                            ok = false; // 規範視射影では到達不能 (防御的ガード)
+                            break;
                         }
-                        let z = w0 * a[2] + w1 * b[2] + w2 * cc[2];
-                        if !(0.0..=1.0).contains(&z) {
-                            continue;
-                        }
-                        let idx = gy * self.width + gx;
-                        if z < self.depth[idx] - 1e-5 {
-                            self.depth[idx] = z;
-                            self.ids[idx] = id;
-                        }
+                        ndc[k] = [v[0] / v[3], v[1] / v[3], v[2] / v[3]];
                     }
+                    if ok {
+                        self.rasterize_tri_ndc(&ndc, id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Rasterize one NDC triangle (z_ndc ∈ [0,1], screen-linear depth =
+    /// GPU 固定機能と同一の補間規則) into the depth+id grid.
+    fn rasterize_tri_ndc(&mut self, tri: &[[f32; 3]; 3], id: u32) {
+        let a = tri[0];
+        let b = tri[1];
+        let cc = tri[2];
+        let w = self.width as f32;
+        let h = self.height as f32;
+        // to pixel space
+        let px = [
+            (a[0] * 0.5 + 0.5) * w,
+            (b[0] * 0.5 + 0.5) * w,
+            (cc[0] * 0.5 + 0.5) * w,
+        ];
+        let py = [
+            (0.5 - a[1] * 0.5) * h,
+            (0.5 - b[1] * 0.5) * h,
+            (0.5 - cc[1] * 0.5) * h,
+        ];
+        let minx = px.iter().cloned().fold(f32::INFINITY, f32::min).max(0.0) as usize;
+        let maxx = (px.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + 1.0)
+            .min(w)
+            .max(0.0) as usize;
+        let miny = py.iter().cloned().fold(f32::INFINITY, f32::min).max(0.0) as usize;
+        let maxy = (py.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + 1.0)
+            .min(h)
+            .max(0.0) as usize;
+        let area = (px[1] - px[0]) * (py[2] - py[0]) - (px[2] - px[0]) * (py[1] - py[0]);
+        if area.abs() < 1e-9 {
+            return;
+        }
+        for gy in miny..maxy.min(self.height) {
+            for gx in minx..maxx.min(self.width) {
+                let x = gx as f32 + 0.5;
+                let y = gy as f32 + 0.5;
+                let w0 = ((px[1] - x) * (py[2] - y) - (px[2] - x) * (py[1] - y)) / area;
+                let w1 = ((px[2] - x) * (py[0] - y) - (px[0] - x) * (py[2] - y)) / area;
+                let w2 = 1.0 - w0 - w1;
+                if w0 < -0.01 || w1 < -0.01 || w2 < -0.01 {
+                    continue;
+                }
+                let z = w0 * a[2] + w1 * b[2] + w2 * cc[2];
+                if !(0.0..=1.0).contains(&z) {
+                    continue;
+                }
+                let idx = gy * self.width + gx;
+                if z < self.depth[idx] - 1e-5 {
+                    self.depth[idx] = z;
+                    self.ids[idx] = id;
                 }
             }
         }
@@ -853,5 +925,112 @@ mod tests {
         assert!((0.0..1.0).contains(&z));
         // Behind the camera → None.
         assert!(project(&vp, [0.0, 0.0, 20.0]).is_none());
+    }
+
+    /// wave 22-1: カメラを飲み込み、かつ near plane と背面を跨ぐ長い回廊箱
+    /// (Minecraft でプレイヤーが長い構造物の中に立つ通常状況) が covered=0 で
+    /// 誤カリングされないこと。camera (0,0,10), near=0.1, far=100:
+    /// - 背面 z=10.05 はカメラ背後 0.05 (z_clip<0) → 側面 6 面全てが
+    ///   「近すぎ or 背後」のコーナーを持ち、旧版の頂点単位スキップでは
+    ///   全12三角形が落とされ covered=0 になっていた (pop-in bug)。
+    /// - 側壁は視深度 7.8〜30 の区間で (|x_ndc|=8·(f/aspect)/d ≤ 1 条件より)
+    ///   確実に画面内に投影されるため、正しくは covered>0。
+    /// - 前面 z=-95 は視深度 105 > far で z 範囲外 (寄与ゼロ) に置き、
+    ///   「front 面が代わりに覆うだけ」の不純な通過を防いである。
+    #[test]
+    fn software_near_plane_straddling_wall_stays_visible() {
+        let mut occ = SoftwareOccluder::new(160, 90, OcclusionPolicy::default());
+        let vp = cam();
+        let corridor = QueryBox {
+            min: [-8.0, -8.0, -95.0],
+            max: [8.0, 8.0, 10.05],
+        };
+        let c1 = occ.run_frame(&vp, &[corridor]);
+        let c2 = occ.run_frame(&vp, &[corridor]);
+        assert!(
+            c1[0] > 0,
+            "corridor engulfing camera must cover cells: {c1:?}"
+        );
+        assert!(c2[0] > 0);
+        assert!(
+            occ.should_draw(0),
+            "box engulfing the camera must not pop out"
+        );
+    }
+
+    /// wave 22-2: カメラ完全背後のボックスは homogeneous clip 後も 0 セル
+    /// (near-plane clip がカメラ背後除去と同値であることの機械ピン)。
+    #[test]
+    fn software_fully_behind_camera_covers_nothing() {
+        let mut occ = SoftwareOccluder::new(160, 90, OcclusionPolicy::default());
+        let vp = cam();
+        let back = QueryBox {
+            min: [-1.0, -1.0, 15.0],
+            max: [1.0, 1.0, 17.0],
+        };
+        let c = occ.run_frame(&vp, &[back]);
+        assert_eq!(c[0], 0, "behind-camera box must cover no cells: {c:?}");
+    }
+
+    /// wave 22-3: 同深度タイは 1e-5 バイアスにより**先に提出されたボックス**
+    /// が勝つ (ヘッダ契約の機械ピン。GPU Less との差分はこの帯のみ)。
+    #[test]
+    fn identical_depth_tie_favors_first_submission() {
+        let mut occ = SoftwareOccluder::new(160, 90, OcclusionPolicy::default());
+        let vp = cam();
+        let bx = QueryBox {
+            min: [-1.0, -1.0, 0.0],
+            max: [1.0, 1.0, 2.0],
+        };
+        let c = occ.run_frame(&vp, &[bx, bx]);
+        assert!(
+            c[0] > 0 && c[1] == 0,
+            "tie must favor the earlier-submitted box: {c:?}"
+        );
+    }
+
+    /// wave 22-4: clip_polygon_near 自体の幾何契約 — 全内は素通し (3 頂点)、
+    /// 全外は 0、1 頂点のみ外は 3 頂点 (くさび)、1 頂点のみ内は 3 頂点 + 端が
+    /// 平面上 (z=0±ε)。頂点数と z 符号だけを厳密検査 (座標値は補間誤差を含む)。
+    #[test]
+    fn clip_polygon_near_cardinality() {
+        let inside = [
+            [0.0, 0.0, 0.5, 1.0],
+            [1.0, 0.0, 0.5, 1.0],
+            [0.0, 1.0, 0.5, 1.0],
+        ];
+        assert_eq!(clip_polygon_near(&inside).len(), 3);
+        let outside = [
+            [0.0, 0.0, -0.5, 1.0],
+            [1.0, 0.0, -0.5, 1.0],
+            [0.0, 1.0, -0.5, 1.0],
+        ];
+        assert_eq!(clip_polygon_near(&outside).len(), 0);
+        // 2 頂点内・1 頂点外 → 内側領域は 4 角形 (元の内-内辺 + 2 交点)
+        let one_out = [
+            [0.0, 0.0, 0.5, 1.0],
+            [1.0, 0.0, 0.5, 1.0],
+            [0.0, 1.0, -0.5, 1.0],
+        ];
+        let poly = clip_polygon_near(&one_out);
+        assert_eq!(poly.len(), 4, "2-in clip must be a quad: {poly:?}");
+        for v in &poly {
+            assert!(v[2] >= -1e-6, "clipped verts must be z>=0: {poly:?}");
+        }
+        // 1 頂点内・2 頂点外 → 内側領域は 3 角形のくさび
+        let two_out = [
+            [0.0, 0.0, 0.5, 1.0],
+            [1.0, 0.0, -0.5, 1.0],
+            [0.0, 1.0, -0.5, 1.0],
+        ];
+        let poly = clip_polygon_near(&two_out);
+        assert_eq!(
+            poly.len(),
+            3,
+            "1-in clip must be a wedge triangle: {poly:?}"
+        );
+        for v in &poly {
+            assert!(v[2] >= -1e-6, "clipped verts must be z>=0: {poly:?}");
+        }
     }
 }

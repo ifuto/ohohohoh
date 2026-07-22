@@ -1253,3 +1253,55 @@ f32 丸め境界の真上に位置し 0x3eff1d9f/0x3eff1da0 で分裂した)。
   palette 248110)。
 - **frame_* モジュール全 7 件 (pacing/fsr1/reference/reuse/vct/hiz/pipeline) の
   通読監査が完遂。**
+
+## X. occlusion_query.rs 監査 (wave 22, 2026-07-22)
+
+`occlusion_query.rs` (~1030 行: SW 参照ラスタ + wgpu R32Uint ID パス + QueryCore
+ポリシーの 2 バックエンド遮蔽クエリ) を全行照合監査。opt-gfx 607 → **611** (+4)。
+
+### X-1 (中高・描画抜けバグ) near-plane ストラドル面の全スキップ — 根治
+SW パス旧実装は `project()` が w ≤ 1e-6 を**コーナー単位**の behind として扱い、
+behind コーナーを 1 つでも含む面 (quad) を**全面スキップ**していた。コメントは
+「cheap conservative cull」だったが方向が逆: **クエリ箱**の場合 covered=0 →
+QueryCore の occlude_after (2 フレーム) で**可視物体が誤カリング**される。
+プレイヤーが長い構造物の中に立つ状況 (カメラを飲み込み near plane/背面を
+跨ぐプロキシ箱 = Minecraft では日常) で壁がポップアウトする。GPU パスは HW
+クリッパが正しく処理するため SW/GPU parity も破れていた。
+
+根治: クリップ空間 (x,y,z,w) で `z_clip >= 0` (wgpu near plane 半空間) への
+Sutherland–Hodgman ポリゴンクリップ (交点は 4 成分同時斉次補間) を実装し、
+生存頂点のみ NDC 除算 → 従来のスクリーン線形深度ラスタへ。規範的視射影では
+z_clip>=0 ⟺ 視深度 >= near であり生存頂点の w>0 が保証されること (カメラ背後は
+必ず z_clip<0 で除去) を確認した上で w<=0 は防御ガードとして記録。
+x/y 越えは pixel clamp + バリ centric 判定、far はフラグメント毎 z∈[0,1] テスト
+(スクリーン線形 z の半空間積として HW クリッパと同値) — 全て両側一致を証明。
+
+### X-2 (低・doc 偽予備軍) 深度タイブレークの ε バイアスを契約として正直化
+SW の `z < stored - 1e-5` は GPU `CompareFunction::Less` より僅かに厳しい
+(同深度・ニアリータイは先提出が勝つ)。従来無文書だったが、ヒステリシスと
+組み合わせフリッカー防止方向にのみ効く仕様としてヘッダに契約明記し、
+機械ピン (`identical_depth_tie_favors_first_submission`) で固定した。
+
+### 陰性確認 (既に正当)
+深度補間規則 (`z = Σ wᵢ·z_ndcᵢ`、スクリーン線形) は wave 17 S-2 で正した
+GPU 固定機能規則と**最初から一致**しており、frame_reference と同型の
+透視補正 depth バグは存在しなかった (第 2 インスタンス探索の結論: 陰性)。
+`project()`/`perspective_wgpu`/`look_at`/`mat4_mul` の行列数学・OCC_WGSL
+配線 (params 64B ↔ mat4x4)・readback row padding (256B)・QueryCore
+ヒステリシスも全行照合で乖離なし。
+
+### 追加テスト (+4, fail-loud)
+- `software_near_plane_straddling_wall_stays_visible` (カメラ飲み込み回廊箱
+  z∈[-95,10.05] — 側壁視深度 7.8〜30 が画面内に来る幾何で前面は far 外に
+  排除し「側面が落ちたら確実に 0 になる」判定力を幾何学的に確保)
+- `software_fully_behind_camera_covers_nothing` (homogeneous clip が
+  カメラ背後除去と同値であること)
+- `identical_depth_tie_favors_first_submission` (X-2 契約の機械ピン)
+- `clip_polygon_near_cardinality` (全内 3 / 全外 0 / 2-in 4 角形 / 1-in くさび +
+  交点 z>=0)
+
+### 検証結果 (全て実測)
+- lib テスト **611/611** (+4)。rustfmt hunk 増分 0 (HEAD 由来 3 hunk は規律上温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- SoftwareOccluder/project はクレート外利用なし (全 repo grep 確認) —
+  digest 非依存を静的に確認済み。
