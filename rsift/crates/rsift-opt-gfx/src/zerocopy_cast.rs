@@ -17,7 +17,18 @@ pub fn cast_slice_to_bytes<T: Pod>(slice: &[T]) -> &[u8] {
 }
 
 pub fn cast_bytes_to_slice<T: Pod>(bytes: &[u8]) -> Option<&[T]> {
-    if bytes.len() % std::mem::size_of::<T>() != 0 { return None; }
+    if bytes.len() % std::mem::size_of::<T>() != 0 {
+        return None;
+    }
+    // アライメント検査: bytemuck::cast_slice は入力先頭番地が T の align を
+    // 満たさない場合に**パニック**する (TargetAlignmentGreaterAndInputNotAligned)。
+    // 特に空の `Vec<u8>` は dangling ポインタ (align 1) を返すため、
+    // 「長さ 0 は常に合法」と信じた呼出側で致命的パニックとなる
+    // (監査 2026-07-22 M-4: render_pipeline::frame() の quad_budget 経路で
+    //  CI 診断 B1-B22 により実観測された latent panic)。Option 拒否に統一する。
+    if (bytes.as_ptr() as usize) % std::mem::align_of::<T>() != 0 {
+        return None;
+    }
     Some(bytemuck::cast_slice(bytes))
 }
 
@@ -68,5 +79,21 @@ mod tests {
         assert_eq!(header.version, 1);
         assert_eq!(payload.len(), 12);
         assert_eq!(std::mem::size_of::<GpuUploadHeader>(), 16); // repr(C) 4x u32
+    }
+
+    #[test]
+    fn cast_bytes_to_slice_empty_vec_is_none_not_panic() {
+        // M-4 実回帰: 空の Vec<u8> (dangling ptr, align 1) を渡すと旧実装は
+        // bytemuck::cast_slice のアライメント検査でパニックした。
+        // render_pipeline::frame() の quad_budget 経路は pull バイト 0 の
+        // フレームでこれに到達し得る (デモ/空地形の通常実行でも)。
+        let empty: Vec<u8> = Vec::new();
+        assert!(cast_bytes_to_slice::<Quantized12ByteVertex>(&empty).is_none());
+        assert!(cast_bytes_to_slice::<crate::packed4::PackedPullQuad>(&empty).is_none());
+        // ラギッドは引き続き None、実バッファは従来どおり Some。
+        let ragged = vec![0u8; 10];
+        assert!(cast_bytes_to_slice::<crate::packed4::PackedPullQuad>(&ragged).is_none());
+        let real = vec![0u8; 24];
+        assert!(cast_bytes_to_slice::<Quantized12ByteVertex>(&real).is_some());
     }
 }

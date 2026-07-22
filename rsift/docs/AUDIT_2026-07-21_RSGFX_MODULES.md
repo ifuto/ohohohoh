@@ -651,3 +651,29 @@ div_euclid 後の縮小域で溢れなし、`mesh.vertices[0]` は空イテレ�
   `frame_demo_stats_cross_instance_deterministic` (3 チャンク 2 フレーム ×
   新鮮 2 インスタンスで期間起動 %120 系を除く全カウンタ厳密一致 +
   wiring_subsystems==60 + 静止カメラ速度 0.0)。
+
+### M-4 (zero-day 確定: 空バイト列の bytemuck アライメントパニック)
+
+第 11 波の統合テスト過程で、`render_pipeline::frame()` がデモ (非 live)
+経路で**必ずパニック**することを実観測。CI ログがダウンロード不能なため、
+catch_unwind + process::exit の終了コード化で byte チャネルを構成し、
+B1〜B22 の段階的切り分け (座標系 → サブシステム系 → 交互対照) を経て確定:
+
+`zerocopy_cast::cast_bytes_to_slice` が `bytemuck::cast_slice` を裸で呼び、
+長さ検査のみで**アライメント検査がなかった**。空の `Vec<u8>` は dangling
+ポインタ (align 1) を返すため、`quads.len()*8` は 0 で長さ検査を通るのに
+`PackedPullQuad` (align 4) 側のアライメント検査でパニック
+(TargetAlignmentGreaterAndInputNotAligned)。`frame()` の
+`low_spec.quad_budget > 0` 経路 (既定プロファイルで有効) が pull バイト 0 の
+フレームでこれに到達する — つまり**通常のデモ実行のみで再現する latent
+panic** で、frame() を立ち上げるどの既存テスト/ベンチもこれを通っていなかった
+ことが、本 wave の matrix 分離により構造的に証明された。
+
+- 修正: `cast_bytes_to_slice` に align 検査を追加 (不整合は `None` 拒否、
+  呼出側は従前どおり `unwrap_or_default` で空扱い)。併せて `frame()` 側も
+  `!self.gpu_quad_bytes.is_empty()` を前置して防御を二層化。
+- テスト追加: `cast_bytes_to_slice_empty_vec_is_none_not_panic`
+  (zerocopy_cast, +1) ほか、M-3 の 2 本がそのまま M-4 の回帰検証
+  (実 frame のデモ 3 チャンクもパニックせず決定性を保つ) となる。
+  opt-gfx 563 → 567 (+4: speed 1 + det_core 1 + det_pull 1 + align 1)。
+- 診断装置 (プローブ/終了コード macro) は確定後に全撤去済み。

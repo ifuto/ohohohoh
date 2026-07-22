@@ -781,7 +781,7 @@ impl RsiftRenderPipeline {
             }
         }
 
-        if self.low_spec.quad_budget > 0 {
+        if self.low_spec.quad_budget > 0 && !self.gpu_quad_bytes.is_empty() {
             let mut quads: Vec<crate::packed4::PackedPullQuad> =
                 crate::zerocopy_cast::cast_bytes_to_slice::<crate::packed4::PackedPullQuad>(
                     &self.gpu_quad_bytes,
@@ -1332,389 +1332,40 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// frame() 2 フレームの実統計が、同一機械上の新鮮 2 インスタンスで
-    /// 厳密一致すること (期間起動 %120 系を除く全カウンタ)。
-    /// frame() 2 フレームの実統計が、同一機械上の新鮮 2 インスタンスで
-    /// 厳密一致すること。コア系 (診断 W11-B3 で半分分割)。
-    // 診断 W11-B6: CI ログ取得不能のため、フィールド不一致時にフィールド番号を
-    // 終了コード化して 1bit チャネルから byte チャネルへ拡張する (恒久ではない。
-    // 最終形では通常の assert_eq! へ戻す)。
-    macro_rules! field_code {
-        ($cond:expr, $code:expr) => {
-            if !$cond {
-                eprintln!("[W11-B6] mismatch code={}", $code);
-                std::process::exit($code);
-            }
-        };
-    }
-
-    // 診断 W11-B7: exit 101 (自前コード 61..79 未到達) に対し、frame()/new() の
-    // パニックを catch_unwind で独立コード化する (恒久ではない)。
-    fn guarded_new(tag: &str, code: i32) -> (std::path::PathBuf, RsiftRenderPipeline) {
-        match std::panic::catch_unwind(|| unique_pipeline(tag)) {
-            Ok(v) => v,
-            Err(_) => std::process::exit(code),
-        }
-    }
-
-    fn guarded_frame(
-        p: &mut RsiftRenderPipeline,
-        coords: &[(i32, i32)],
-        code: i32,
-    ) -> FrameStats {
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            p.frame(coords, 640, 360, 0.016)
-        })) {
-            Ok(s) => s,
-            Err(_) => std::process::exit(code),
-        }
-    }
-
-    // 診断 W11-B10: マルチチャンク条件要素の切り分け (恒久ではない)。
-    #[cfg(any())] // 診断 W11-B11: occ ON/OFF 対決のみ解放 (恒久撤去ではない)
+    /// M-4 回帰検証を兼ねた frame() 実統計の厳密一致: コア系
+    /// (同一機械上の新鮮 2 インスタンス、2 フレーム、期間起動 %120 系を除く)。
     #[test]
-    fn probe_frame_two_pos() {
-        let (_d, mut p) = guarded_new("probe_2p", 39);
-        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0)], 81);
-    }
-
-    #[cfg(any())] // 診断 W11-B12: シングル完結への通信譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_multi_no_occ() {
-        let (_d, mut p) = guarded_new("probe_noocc", 39);
-        p.low_spec.pre_mesh_occlusion = false;
-        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 83);
-    }
-
-    // 診断 W11-B14: 条件付きサブシステムの選択切断 (恒久ではない)。
-    // 診断 W11-B15: 同一 matrix を逐次直列化 (恒久ではない)。
-    #[test]
-    fn probe_matrix_sequential() {
-        {
-            let (_d, mut p) = guarded_new("m1", 39);
-            p.feather.enabled = false;
-            p.profile.hzb_occlusion = false;
-            p.profile.cpu_masked_occlusion = false;
-            p.profile.multi_draw_indirect = false;
-            p.profile.vertex_pull_4byte = false;
-            p.profile.noise_upsampling = false;
-            p.low_spec.pre_mesh_occlusion = false;
-            p.low_spec.quad_budget = 0;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 201);
-        }
-        // 診断 W11-B22: 交互対照実験 (budget off/on/off/on — フレーク vs
-        // 設定因果の分別。恒久ではない)。
-        let strip = |p: &mut RsiftRenderPipeline| {
-            p.feather.enabled = false;
-            p.profile.hzb_occlusion = false;
-            p.profile.cpu_masked_occlusion = false;
-            p.profile.multi_draw_indirect = false;
-            p.profile.vertex_pull_4byte = false;
-            p.profile.noise_upsampling = false;
-            p.low_spec.pre_mesh_occlusion = false;
-            p.low_spec.quad_budget = 0;
-        };
-        {
-            let (_d, mut p) = guarded_new("c1", 39);
-            strip(&mut p);
-            let _ = guarded_frame(&mut p, &[(0, 0)], 231);
-        }
-        {
-            let (_d, mut p) = guarded_new("c2", 39);
-            strip(&mut p);
-            p.low_spec.quad_budget = 4096;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 233);
-        }
-        {
-            let (_d, mut p) = guarded_new("c3", 39);
-            strip(&mut p);
-            let _ = guarded_frame(&mut p, &[(0, 0)], 235);
-        }
-        {
-            let (_d, mut p) = guarded_new("c4", 39);
-            strip(&mut p);
-            p.low_spec.quad_budget = 4096;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 237);
-        }
-        {
-            let (_d, mut p) = guarded_new("a5", 39);
-            strip(&mut p);
-            p.profile.vertex_pull_4byte = true; // pull 単独復帰 (cache=プロファイル依存)
-            let _ = guarded_frame(&mut p, &[(0, 0)], 229);
-        }
-        {
-            // 診断 W11-B20: 実デモ系データで tick_world を直接駆動 (恒久ではない)。
-            let dir = std::env::temp_dir().join(format!(
-                "rsift_w20_{}_{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            ));
-            let r0 = std::panic::catch_unwind(|| crate::full_graph_wiring::FullGraphWiring::new(&dir));
-            let mut w = match r0 {
-                Ok(w) => w,
-                Err(_) => std::process::exit(219),
-            };
-            // stage 1: 空 inputs ベースライン (wave 9 同等)
-            let r1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let inputs = crate::full_graph_wiring::FrameWiringInputs {
-                    delta_ms: 16.0,
-                    frame_us_measured: 16_000,
-                    frame_index: 1,
-                    screen_w: 640,
-                    screen_h: 360,
-                    camera_pos: [0.0, 32.0, 0.0],
-                    camera_dir: [0.0, 0.0, 1.0],
-                    view_proj: [
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, 1.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                        [0.0, 0.0, 0.0, 1.0],
-                    ],
-                    chunk_keys: Vec::new(),
-                    chunk_materials: Vec::new(),
-                    chunk_aabbs: Vec::new(),
-                    chunk_dists: Vec::new(),
-                    draw_index_counts: Vec::new(),
-                    section_palettes: Vec::new(),
-                    quad_positions: Vec::new(),
-                    quad_materials: Vec::new(),
-                    quad_bytes: 0,
-                    camera_speed: 0.0,
-                    svo: None,
-                };
-                w.tick_world(&inputs)
-            }));
-            if r1.is_err() {
-                std::process::exit(221);
-            }
-            // stage 2: デモ列 (noise アップサンプル profile 経路) の実構築
-            let r2 = std::panic::catch_unwind(|| {
-                let cfg = NoiseUpsampleConfig::for_chunk(0, 0);
-                let sections = column_palettes_upsampled(0, 0, &cfg);
-                let mut pull = mesh_chunk_column_pull_world(&sections, 0, 0, 0, 0, 0, 0, true);
-                (sections, core::mem::take(&mut pull.quads))
-            });
-            let (sections, quads) = match r2 {
-                Ok(v) => v,
-                Err(_) => std::process::exit(223),
-            };
-            // stage 3: 実デモデータを wiring inputs に組み立てて tick_world
-            let r3 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let quad_positions: Vec<[f32; 3]> = quads
-                    .iter()
-                    .take(256)
-                    .map(|q| {
-                        [
-                            crate::packed4::PackedPullQuad::unpack_x(q.word0) as f32,
-                            crate::packed4::PackedPullQuad::unpack_y(q.word0) as f32,
-                            crate::packed4::PackedPullQuad::unpack_z(q.word0) as f32,
-                        ]
-                    })
-                    .collect();
-                let quad_materials: Vec<u32> = quads
-                    .iter()
-                    .take(256)
-                    .map(|q| crate::packed4::PackedPullQuad::unpack_tex(q.word0))
-                    .collect();
-                let mut section_palettes = Vec::new();
-                if let Some(p0) = sections.first() {
-                    section_palettes.push(*p0);
-                }
-                let inputs = crate::full_graph_wiring::FrameWiringInputs {
-                    delta_ms: 16.0,
-                    frame_us_measured: 16_000,
-                    frame_index: 1,
-                    screen_w: 640,
-                    screen_h: 360,
-                    camera_pos: [0.0, 32.0, 0.0],
-                    camera_dir: [0.0, 0.0, 1.0],
-                    view_proj: [
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, 1.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                        [0.0, 0.0, 0.0, 1.0],
-                    ],
-                    chunk_keys: vec![(0, 0)],
-                    chunk_materials: vec![1],
-                    chunk_aabbs: vec![([0.0, 0.0, 0.0], [16.0, 64.0, 16.0])],
-                    chunk_dists: vec![0.0],
-                    draw_index_counts: vec![(quads.len() * 6) as u32],
-                    section_palettes,
-                    quad_positions,
-                    quad_materials,
-                    quad_bytes: quads.len() * 8,
-                    camera_speed: 0.0,
-                    svo: None,
-                };
-                w.tick_world(&inputs)
-            }));
-            if r3.is_err() {
-                std::process::exit(225);
-            }
-            let _ = std::fs::remove_dir_all(&dir);
-        }
-    }
-
-    #[cfg(any())] // 診断 W11-B15: 逐次 matrix への譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_full_strip() {
-        let (_d, mut p) = guarded_new("probe_strip", 39);
-        p.feather.enabled = false;
-        p.profile.hzb_occlusion = false;
-        p.profile.cpu_masked_occlusion = false;
-        p.profile.multi_draw_indirect = false;
-        p.profile.vertex_pull_4byte = false;
-        p.profile.noise_upsampling = false;
-        p.low_spec.pre_mesh_occlusion = false;
-        p.low_spec.quad_budget = 0;
-        let _ = guarded_frame(&mut p, &[(0, 0)], 101);
-    }
-
-    #[cfg(any())] // 診断 W11-B15: 逐次 matrix への譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_no_hzb() {
-        let (_d, mut p) = guarded_new("probe_nohzb", 39);
-        p.profile.hzb_occlusion = false;
-        p.profile.cpu_masked_occlusion = false;
-        let _ = guarded_frame(&mut p, &[(0, 0)], 103);
-    }
-
-    #[cfg(any())] // 診断 W11-B15: 逐次 matrix への譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_no_feather() {
-        let (_d, mut p) = guarded_new("probe_nofeather", 39);
-        p.feather.enabled = false;
-        let _ = guarded_frame(&mut p, &[(0, 0)], 105);
-    }
-
-    #[cfg(any())] // 診断 W11-B15: 逐次 matrix への譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_no_mdi_pull() {
-        let (_d, mut p) = guarded_new("probe_nomdi", 39);
-        p.profile.multi_draw_indirect = false;
-        p.profile.vertex_pull_4byte = false;
-        let _ = guarded_frame(&mut p, &[(0, 0)], 107);
-    }
-
-    // 診断 W11-B13: 単一テスト内で逐次実行 (並列レース排除) し、
-    // frame() を構成ステージごとに catch_unwind で被覆 (恒久ではない)。
-    #[cfg(any())] // 診断 W11-B14: 選択切断プローブへの譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_stage_by_stage_sequential() {
-        let (_d, mut p) = guarded_new("probe_stage", 39);
-        // stage 1: デモ列生成
-        let r1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| p.prepare_column(2, 0)));
-        let (sections, rle, _saved, _sy0) = match r1 {
-            Ok(v) => v,
-            Err(_) => std::process::exit(91),
-        };
-        // stage 2: 単チャンク build
-        let r2 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            p.build_chunk(2, 0, 0, 32.0, Some(&sections), Some(&rle))
-        }));
-        if r2.is_err() {
-            std::process::exit(93);
-        }
-        // stage 3: (0,0) 単独のデモフレーム
-        let _ = guarded_frame(&mut p, &[(0, 0)], 95);
-        // stage 4: 2 チャンク最小マルチ
-        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0)], 97);
-    }
-
-    #[cfg(any())] // 診断 W11-B13: 逐次ステージプローブへの譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_single_far() {
-        let (_d, mut p) = guarded_new("probe_far", 39);
-        let _ = guarded_frame(&mut p, &[(2, 0)], 85);
-    }
-
-    #[cfg(any())] // 診断 W11-B11: occ ON/OFF 対決のみ解放 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_multi_no_frustum() {
-        let (_d, mut p) = guarded_new("probe_nofr", 39);
-        p.low_spec.frustum_cull = false;
-        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 87);
-    }
-
-    #[cfg(any())] // 診断 W11-B9: probes への通信譲渡 (恒久撤去ではない)
-    #[test]
-    fn frame_demo_stats_det_core_x() {
-        let (dir_a, mut a) = guarded_new("det_corex_a", 39);
-        let (dir_b, mut b) = guarded_new("det_corex_b", 40);
+    fn frame_demo_stats_det_core() {
+        let (dir_a, mut a) = unique_pipeline("det_core_a");
+        let (dir_b, mut b) = unique_pipeline("det_core_b");
         let coords = [(0, 0), (1, 0), (-1, 0)];
         for _ in 0..2 {
-            let sa = guarded_frame(&mut a, &coords, 41);
-            let sb = guarded_frame(&mut b, &coords, 42);
-            field_code!(sa.chunks_built == sb.chunks_built, 61);
-            field_code!(sa.cache_hits == sb.cache_hits, 62);
-            field_code!(sa.visible_chunks == sb.visible_chunks, 63);
-            field_code!(sa.draw_calls == sb.draw_calls, 64);
-            field_code!(sa.cpu_culled == sb.cpu_culled, 65);
-            field_code!(sa.tiles_binned == sb.tiles_binned, 66);
+            let sa = a.frame(&coords, 640, 360, 0.016);
+            let sb = b.frame(&coords, 640, 360, 0.016);
+            assert_eq!(sa.chunks_built, sb.chunks_built, "chunks_built");
+            assert_eq!(sa.cache_hits, sb.cache_hits, "cache_hits");
+            assert_eq!(sa.visible_chunks, sb.visible_chunks, "visible_chunks");
+            assert_eq!(sa.draw_calls, sb.draw_calls, "draw_calls");
+            assert_eq!(sa.cpu_culled, sb.cpu_culled, "cpu_culled");
+            assert_eq!(sa.tiles_binned, sb.tiles_binned, "tiles_binned");
+            assert_eq!(sa.shading_skipped, sb.shading_skipped, "shading_skipped");
+            assert_eq!(sa.empty_culled, sb.empty_culled, "empty_culled");
+            assert_eq!(sa.visgraph_culled, sb.visgraph_culled, "visgraph_culled");
+            assert_eq!(sa.range_culled, sb.range_culled, "range_culled");
+            assert_eq!(sa.rle_palette_bytes, sb.rle_palette_bytes, "rle_palette_bytes");
+            assert_eq!(sa.svo_nodes_built, sb.svo_nodes_built, "svo_nodes_built");
+            assert_eq!(sa.wiring_subsystems, sb.wiring_subsystems, "wiring_subsystems");
+            // 仕様値の固定: 60 サブシステム配線。
+            assert_eq!(sa.wiring_subsystems, 60, "wiring_subsystems spec");
+            // M-1: デモ静止カメラでは実速度は厳密 0.0 (旧実装 ~375 固定ではない)。
+            assert_eq!(a.last_camera_speed.to_bits(), 0.0f32.to_bits(), "M-1 static cam");
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
     }
 
-    // 診断 W11-B8: パニックのコンテンツ依存性プローブ (恒久ではない。
-    // パニック時は frame 呼出地点のコードで終了する)。
-    #[cfg(any())] // 診断 W11-B13: 逐次ステージプローブへの譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_single_origin() {
-        let (_d, mut p) = guarded_new("probe_o", 39);
-        let _ = guarded_frame(&mut p, &[(0, 0)], 51);
-        let _ = std::fs::remove_dir_all(_d);
-    }
-
-    #[cfg(any())] // 診断 W11-B13: 逐次ステージプローブへの譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_single_neg() {
-        let (_d, mut p) = guarded_new("probe_n", 39);
-        let _ = guarded_frame(&mut p, &[(-1, 0)], 53);
-    }
-
-    #[cfg(any())] // 診断 W11-B13: 逐次ステージプローブへの譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_single_pos() {
-        let (_d, mut p) = guarded_new("probe_p", 39);
-        let _ = guarded_frame(&mut p, &[(1, 0)], 55);
-    }
-
-    #[cfg(any())] // 診断 W11-B12: シングル完結への通信譲渡 (恒久撤去ではない)
-    #[test]
-    fn probe_frame_multi_pos() {
-        let (_d, mut p) = guarded_new("probe_m", 39);
-        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 57);
-    }
-
-    #[cfg(any())] // 診断 W11-B9: probes への通信譲渡 (恒久撤去ではない)
-    #[test]
-    fn frame_demo_stats_det_core_y() {
-        let (dir_a, mut a) = guarded_new("det_corey_a", 39);
-        let (dir_b, mut b) = guarded_new("det_corey_b", 40);
-        let coords = [(0, 0), (1, 0), (-1, 0)];
-        for _ in 0..2 {
-            let sa = guarded_frame(&mut a, &coords, 41);
-            let sb = guarded_frame(&mut b, &coords, 42);
-            field_code!(sa.shading_skipped == sb.shading_skipped, 71);
-            field_code!(sa.empty_culled == sb.empty_culled, 72);
-            field_code!(sa.visgraph_culled == sb.visgraph_culled, 73);
-            field_code!(sa.range_culled == sb.range_culled, 74);
-            field_code!(sa.rle_palette_bytes == sb.rle_palette_bytes, 75);
-            field_code!(sa.svo_nodes_built == sb.svo_nodes_built, 76);
-            field_code!(sa.wiring_subsystems == sb.wiring_subsystems, 77);
-            field_code!(sa.wiring_subsystems == 60, 78);
-            field_code!(a.last_camera_speed.to_bits() == 0.0f32.to_bits(), 79);
-        }
-        let _ = std::fs::remove_dir_all(&dir_a);
-        let _ = std::fs::remove_dir_all(&dir_b);
-    }
-
-    /// frame() 実統計の厳密一致。pull/キャッシュ系 (診断 W11-B3 で半分分割)。
-    #[cfg(any())] // 診断 W11-B4: det_core 単独切り分け中 (恒久撤去ではない)
+    /// frame() 実統計の厳密一致: pull/キャッシュ系 (det_core と分割)。
+    /// M-4 修正後はデモ (0,0),(1,0),(-1,0) が pull バイト空でもパニックしない。
     #[test]
     fn frame_demo_stats_det_pull() {
         let (dir_a, mut a) = unique_pipeline("det_pull_a");
@@ -1723,17 +1374,23 @@ mod tests {
         for _ in 0..2 {
             let sa = a.frame(&coords, 640, 360, 0.016);
             let sb = b.frame(&coords, 640, 360, 0.016);
-            assert_eq!(sa.frame_reuse_hits, sb.frame_reuse_hits);
-            assert_eq!(sa.frame_reuse_misses, sb.frame_reuse_misses);
-            assert_eq!(sa.pull_quads_built, sb.pull_quads_built);
-            assert_eq!(sa.pull_verts_drawn, sb.pull_verts_drawn);
-            assert_eq!(sa.pull_ssbo_bytes, sb.pull_ssbo_bytes);
-            assert_eq!(sa.pull_cache_hits, sb.pull_cache_hits);
-            assert_eq!(sa.frustum_culled, sb.frustum_culled);
-            assert_eq!(sa.soft_occluded, sb.soft_occluded);
-            assert_eq!(sa.lod_boxes, sb.lod_boxes);
-            assert_eq!(sa.interior_culled_voxels, sb.interior_culled_voxels);
-            assert_eq!(sa.wiring_ao_refined_quads, sb.wiring_ao_refined_quads);
+            assert_eq!(sa.frame_reuse_hits, sb.frame_reuse_hits, "frame_reuse_hits");
+            assert_eq!(sa.frame_reuse_misses, sb.frame_reuse_misses, "frame_reuse_misses");
+            assert_eq!(sa.pull_quads_built, sb.pull_quads_built, "pull_quads_built");
+            assert_eq!(sa.pull_verts_drawn, sb.pull_verts_drawn, "pull_verts_drawn");
+            assert_eq!(sa.pull_ssbo_bytes, sb.pull_ssbo_bytes, "pull_ssbo_bytes");
+            assert_eq!(sa.pull_cache_hits, sb.pull_cache_hits, "pull_cache_hits");
+            assert_eq!(sa.frustum_culled, sb.frustum_culled, "frustum_culled");
+            assert_eq!(sa.soft_occluded, sb.soft_occluded, "soft_occluded");
+            assert_eq!(sa.lod_boxes, sb.lod_boxes, "lod_boxes");
+            assert_eq!(
+                sa.interior_culled_voxels, sb.interior_culled_voxels,
+                "interior_culled_voxels"
+            );
+            assert_eq!(
+                sa.wiring_ao_refined_quads, sb.wiring_ao_refined_quads,
+                "wiring_ao_refined_quads"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
