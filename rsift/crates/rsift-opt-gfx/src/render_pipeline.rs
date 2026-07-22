@@ -1336,6 +1336,18 @@ mod tests {
     /// 厳密一致すること (期間起動 %120 系を除く全カウンタ)。
     /// frame() 2 フレームの実統計が、同一機械上の新鮮 2 インスタンスで
     /// 厳密一致すること。コア系 (診断 W11-B3 で半分分割)。
+    // 診断 W11-B6: CI ログ取得不能のため、フィールド不一致時にフィールド番号を
+    // 終了コード化して 1bit チャネルから byte チャネルへ拡張する (恒久ではない。
+    // 最終形では通常の assert_eq! へ戻す)。
+    macro_rules! field_code {
+        ($cond:expr, $code:expr) => {
+            if !$cond {
+                eprintln!("[W11-B6] mismatch code={}", $code);
+                std::process::exit($code);
+            }
+        };
+    }
+
     #[test]
     fn frame_demo_stats_det_core_x() {
         let (dir_a, mut a) = unique_pipeline("det_corex_a");
@@ -1344,12 +1356,12 @@ mod tests {
         for _ in 0..2 {
             let sa = a.frame(&coords, 640, 360, 0.016);
             let sb = b.frame(&coords, 640, 360, 0.016);
-            assert_eq!(sa.chunks_built, sb.chunks_built);
-            assert_eq!(sa.cache_hits, sb.cache_hits);
-            assert_eq!(sa.visible_chunks, sb.visible_chunks);
-            assert_eq!(sa.draw_calls, sb.draw_calls);
-            assert_eq!(sa.cpu_culled, sb.cpu_culled);
-            assert_eq!(sa.tiles_binned, sb.tiles_binned);
+            field_code!(sa.chunks_built == sb.chunks_built, 61);
+            field_code!(sa.cache_hits == sb.cache_hits, 62);
+            field_code!(sa.visible_chunks == sb.visible_chunks, 63);
+            field_code!(sa.draw_calls == sb.draw_calls, 64);
+            field_code!(sa.cpu_culled == sb.cpu_culled, 65);
+            field_code!(sa.tiles_binned == sb.tiles_binned, 66);
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
@@ -1363,17 +1375,15 @@ mod tests {
         for _ in 0..2 {
             let sa = a.frame(&coords, 640, 360, 0.016);
             let sb = b.frame(&coords, 640, 360, 0.016);
-            assert_eq!(sa.shading_skipped, sb.shading_skipped);
-            assert_eq!(sa.empty_culled, sb.empty_culled);
-            assert_eq!(sa.visgraph_culled, sb.visgraph_culled);
-            assert_eq!(sa.range_culled, sb.range_culled);
-            assert_eq!(sa.rle_palette_bytes, sb.rle_palette_bytes);
-            assert_eq!(sa.svo_nodes_built, sb.svo_nodes_built);
-            assert_eq!(sa.wiring_subsystems, sb.wiring_subsystems);
-            // 仕様値の固定: 60 サブシステム配線。
-            assert_eq!(sa.wiring_subsystems, 60);
-            // M-1: デモ静止カメラでは実速度は厳密 0.0 (旧実装 ~375 固定ではない)。
-            assert_eq!(a.last_camera_speed.to_bits(), 0.0f32.to_bits());
+            field_code!(sa.shading_skipped == sb.shading_skipped, 71);
+            field_code!(sa.empty_culled == sb.empty_culled, 72);
+            field_code!(sa.visgraph_culled == sb.visgraph_culled, 73);
+            field_code!(sa.range_culled == sb.range_culled, 74);
+            field_code!(sa.rle_palette_bytes == sb.rle_palette_bytes, 75);
+            field_code!(sa.svo_nodes_built == sb.svo_nodes_built, 76);
+            field_code!(sa.wiring_subsystems == sb.wiring_subsystems, 77);
+            field_code!(sa.wiring_subsystems == 60, 78);
+            field_code!(a.last_camera_speed.to_bits() == 0.0f32.to_bits(), 79);
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
