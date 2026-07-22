@@ -46,6 +46,12 @@ pub struct FrustumPlanes(pub [[f32; 4]; 6]);
 
 impl FrustumPlanes {
     /// view-projection 行列 (column-major 16) から Gribb-Hartmann 抽出。
+    ///
+    /// 法線は内向き (dist = ax+by+cz+d >= 0 が視体積内側)。
+    /// near は `r2` 単体: wgpu z_ndc ∈ [0,1] では視体積は clip.z >= 0 ⟺ row2·p >= 0。
+    /// 旧実装の add(r3, r2) は z >= -w の GL 式体積で「誤カリングしないが
+    /// near 背面を残す」保守側の逸脱だった (2026-07-22 wave 28 で根治。
+    /// frame_worldgen::frustum_planes の r2 規則・simd_kernels AC-1 と統一)。
     pub fn from_view_proj(m: &[f32; 16]) -> Self {
         let row = |i: usize| [m[i], m[i + 4], m[i + 8], m[i + 12]];
         let r0 = row(0);
@@ -59,7 +65,7 @@ impl FrustumPlanes {
             sub(r3, r0),
             add(r3, r1),
             sub(r3, r1),
-            add(r3, r2),
+            r2, // near (wgpu z in [0,1]: z >= 0)
             sub(r3, r2),
         ];
         for pl in &mut p {
@@ -186,7 +192,21 @@ impl HierarchicalCuller {
 }
 
 /// wgpu 側で動かす compute カーネル（prefix-sum compaction + indirect 書き出し）。
-/// workgroup 256, 入力 candidate 構造は `DrawCandidate` と同一レイアウト。
+/// workgroup 256。
+///
+/// ## 正直な契約注記 (2026-07-22 wave 28 監査)
+/// 1. **wire format**: 入力 `Candidate` は Rust の `DrawCandidate` とは
+///    **別レイアウト** (span 48B — vec3 各 align 16 のため 12..16 に 4B 穴、
+///    残り u32 群は 28 から密詰み。frustum_seen フィールド追加、
+///    pass_key は u16→u32)。`DrawCandidate` は repr(Rust) かつ Pod 非実装
+///    (bytemuck 不可) のため、将来の配線では明示的なワイヤ変換が必須。
+///    `wgsl_layout_matches_pinned_offsets` が GPU 側の固定レイアウトを機械ピン。
+/// 2. **出力順は非決定的**: GPU 側は atomicAdd の完了順に cmds を詰めるため
+///    CPU 参照実装 (first_vertex で安定ソート) との逐一致合は成立しない。
+///    厳密性が必要なら opaque 専用とする (半透明ソートは別経路)。
+/// 3. `sign(pl.xyz) * e` と CPU の正頂点選択は、成分ゼロの平面で見掛けが
+///    異なる (sign(0)=0 vs CPU は +e) が、ゼロ成分項は寄与しないため
+///    **数学的に常に一致** (解析証明済み)。
 pub const COMPACT_WGSL: &str = r#"
 struct Candidate {
     center: vec3<f32>,
@@ -334,5 +354,167 @@ mod tests {
         assert!(COMPACT_WGSL.contains("@compute"));
         assert!(COMPACT_WGSL.contains("cs_compact"));
         assert!(COMPACT_WGSL.contains("atomicAdd"));
+    }
+
+    /// wave 28-1: 単位 VP (column-major 16) からの 6 平面が整数係数と厳密一致。
+    /// near が [0,0,1,0] (= z >= 0) であることが wgpu 規則の機械ピン —
+    /// 旧 GL 式 [0,0,1,1] では確実に赤 (identity_frustum() の手書き定数とも一致)。
+    #[test]
+    fn identity_extractor_planes_exact_bits() {
+        let m = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let f = FrustumPlanes::from_view_proj(&m);
+        let want: [[f32; 4]; 6] = [
+            [1.0, 0.0, 0.0, 1.0],
+            [-1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [0.0, -1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0], // near: z >= 0 (wgpu)
+            [0.0, 0.0, -1.0, 1.0],
+        ];
+        for i in 0..6 {
+            for c in 0..4 {
+                assert_eq!(f.0[i][c].to_bits(), want[i][c].to_bits(), "plane {i}[{c}]");
+            }
+        }
+    }
+
+    /// wave 28-2: near 背面の箱は除かれる (wgpu z>=0 規則)。旧 GL 式では
+    /// この箱は「保守側に残る」ためテストが確実に赤くなる回帰検出器。
+    #[test]
+    fn near_back_culled_with_wgpu_plane_rule() {
+        let m = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let f = FrustumPlanes::from_view_proj(&m);
+        // z ∈ [-1.6, -0.6] — 全体が near (z=0) 背面
+        let behind = aabb_in_frustum(&f, [0.0, 0.0, -1.1], [0.5, 0.5, 0.5], 0.0);
+        assert!(!behind, "behind-near box must be culled under wgpu rule");
+        // ちょうど跨ぐ箱 (z ∈ [-0.6, 0.4]) は残る (保守規則の証明)
+        let straddle = aabb_in_frustum(&f, [0.0, 0.0, -0.1], [0.5, 0.5, 0.5], 0.0);
+        assert!(straddle, "straddler across near stays visible");
+    }
+
+    /// wave 28-3: compact_draws の生存・除外・出力値・ソート安定性を厳密ピン。
+    #[test]
+    fn compact_draws_exact_survivors_and_stable_order() {
+        let f = identity_frustum();
+        let base = cand(0.0, 0.0, 0.5, 36);
+        let cands = vec![
+            // 0: 生存, vc=36, fv=7
+            DrawCandidate {
+                first_vertex: 7,
+                ..base
+            },
+            // 1: 生存, vc=12, fv=3 (ソートで先頭に来る)
+            DrawCandidate {
+                vertex_count: 12,
+                first_vertex: 3,
+                ..base
+            },
+            // 2: 錐台完全外 (x=5)
+            cand(5.0, 0.0, 0.5, 36),
+            // 3: 空 (vc=0)
+            DrawCandidate {
+                vertex_count: 0,
+                ..base
+            },
+            // 4: 前フレーム遮蔽
+            DrawCandidate {
+                visible_prev: false,
+                ..base
+            },
+            // 5: 距離外 (dx=600 > 512)
+            cand(600.0, 0.0, 0.5, 36),
+            // 6: 生存, vc=9, fv=3 — 1 と同一キー (安定性検証用)
+            DrawCandidate {
+                vertex_count: 9,
+                first_vertex: 3,
+                ..base
+            },
+        ];
+        let mut out = Vec::new();
+        let n = compact_draws(
+            &cands,
+            &f,
+            [0.0, 0.0, 0.0],
+            &CompactPolicy::default(),
+            &mut out,
+        );
+        assert_eq!(n, 3, "3 survivors");
+        let cmd = |vertex_count, first_vertex| IndirectDrawCmd {
+            vertex_count,
+            instance_count: 1,
+            first_vertex,
+            first_instance: 0,
+        };
+        assert_eq!(
+            out,
+            vec![cmd(12, 3), cmd(9, 3), cmd(36, 7)],
+            "first_vertex 昇順、同キーは入力順 (stable)"
+        );
+    }
+
+    /// wave 28-4: WGSL のワイヤレイアウトを naga で実機固定
+    /// (Candidate 52B / Cmd 16B / Params 128B + 各メンバ offset)。
+    #[test]
+    fn wgsl_layout_matches_pinned_offsets() {
+        let module = naga::front::wgsl::parse_str(COMPACT_WGSL).expect("COMPACT_WGSL must parse");
+        assert!(
+            module.entry_points.iter().any(|f| f.name == "cs_compact"),
+            "cs_compact entry missing"
+        );
+        let cases: &[(&str, u32, &[(&str, u32)])] = &[
+            (
+                // WGSL レイアウト規則で厳密導出: vec3 align=16 → center 0..12,
+                // half_ext roundUp(16,12)=16..28, 以降 u32 は align 4 密詰み
+                // (28,32,36,40,44)。span = roundUp(16,48) = 48。
+                "Candidate",
+                48,
+                &[
+                    ("center", 0),
+                    ("half_ext", 16),
+                    ("vertex_count", 28),
+                    ("first_vertex", 32),
+                    ("visible_prev", 36),
+                    ("pass_key", 40),
+                    ("frustum_seen", 44),
+                ],
+            ),
+            (
+                "Cmd",
+                16,
+                &[
+                    ("vertex_count", 0),
+                    ("instance_count", 4),
+                    ("first_vertex", 8),
+                    ("first_instance", 12),
+                ],
+            ),
+            (
+                "Params",
+                128,
+                &[("planes", 0), ("camera", 96), ("policy", 112)],
+            ),
+        ];
+        for (name, want_span, want_members) in cases {
+            let (_, ty) = module
+                .types
+                .iter()
+                .find(|(_, t)| t.name.as_deref() == Some(*name))
+                .unwrap_or_else(|| panic!("struct {name} not found"));
+            let naga::TypeInner::Struct { members, span } = &ty.inner else {
+                panic!("{name} is not a struct");
+            };
+            assert_eq!(*span, *want_span, "{name} span");
+            for (mname, want_off) in *want_members {
+                let m = members
+                    .iter()
+                    .find(|m| m.name.as_deref() == Some(*mname))
+                    .unwrap_or_else(|| panic!("{name}.{mname} not found"));
+                assert_eq!(m.offset, *want_off, "{name}.{mname} offset");
+            }
+        }
     }
 }

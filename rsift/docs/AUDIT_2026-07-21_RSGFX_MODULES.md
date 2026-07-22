@@ -1528,3 +1528,60 @@ batch ビット集合 i/64, i%64 レイアウト、並列版の per-index 独立
 - lib テスト **640/640** (+5)。rustfmt hunk 増分 0 (:67 aabb_outside_plane
   の HEAD 由来 1 hunk は規律上温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AD. mesh_compactor.rs 監査 (wave 28, 2026-07-22)
+
+`mesh_compactor.rs` (Frostbite 方式 compute ドロー圧縮: CPU 参照実装 +
+wgpu 結線用 WGSL カーネル) 全行照合。実消費者は full_graph_wiring:537-567
+(実 DrawCandidate → compact_draws → IndirectDrawCmd 生成)。
+opt-gfx 640 → **644** (+4)。
+
+### AD-1 (中・規約逸脱) FrustumPlanes::from_view_proj の near GL 式体積 — 根治
+本モジュールは column-major 16・M·p 規約の**第 3 の Gribb extractor** で、
+wave 27 AC-1 (simd_kernels) と同型の逸脱が残存していた: near を
+`add(r3, r2)` (z >= -w の GL 式) としていた。wgpu z_ndc ∈ [0,1] の視体積は
+clip.z >= 0 ⟺ `r2` 単体。旧式は誤カリングしない保守側だが、near 背面の
+箱を可視扱いで残すため full_graph_wiring 経由で無駄な draw が残存していた。
+`r2` に根治し、これで 3 extractor 全てが wgpu z∈[0,1] 規則に統一
+(frame_worldgen::frustum_planes の r2 元来正 / simd_kernels AC-1 /
+mesh_compactor AD-1)。far = sub(r3, r2) は旧来正しい。
+
+### AD-2 (正直化 3 点 — COMPACT_WGSL 契約注記の確定)
+1. **wire format**: WGSL Candidate は Rust DrawCandidate とは別レイアウト。
+   当初 doc に「vec3 整列 52B」と記したが、**テスト初回実行で赤**となり
+   naga 実測 48B と不一致を検出 — WGSL レイアウト規則で厳密再導出:
+   vec3 align=16 により center 0..12 / half_ext roundUp(16,12)=16..28、
+   以降の u32 群は align 4 密詰み (28,32,36,40,44)、
+   span = roundUp(16,48) = **48B**。直感値 (52B) は誤りであり、
+   「実測で潰す」文化が機能した事案として記録。
+   (DrawCandidate は repr(Rust) 非 Pod で bytemuck 不可 → 将来の GPU 配線は
+   明示ワイヤ変換必須、の契約も明文化。)
+2. **出力順非決定**: GPU は atomicAdd 完了順に cmds を詰めるため CPU 参照
+   (first_vertex 安定ソート) との逐一致合は成立しない。厳密性が必要な
+   opaque 専用経路である旨を契約化 (半透明ソートは別経路)。
+3. **sign(pl.xyz)*e vs CPU 正頂点選択**: 成分ゼロ平面で見掛け差
+   (sign(0)=0 vs CPU は +e) があるが、ゼロ成分項は内積に寄与しないため
+   **数学的に常に一致** — 解析証明を契約注記に明記。
+
+### 陰性確認
+正頂点テストの符号境界 (`d < -margin` 系)、max_d2 距離フィルタの二乗比較
+(sqrt 不要の正常)、sort_by_key による first_vertex 安定ソート
+(同キー入力順保持 — Rust 安定ソート保証)、IndirectDrawCmd の Pod/repr(C)
+(wgpu DrawIndirect 同形) — 全て読み合わせ一致。
+
+### 追加テスト (+4, fail-loud)
+- identity_extractor_planes_exact_bits (単位 VP 6 面整数ピン、
+  near=[0,0,1,0] — 旧 GL 式 [0,0,1,1] では確実に赤)
+- near_back_culled_with_wgpu_plane_rule (z∈[-1.6,-0.6] 箱カリング —
+  旧 GL 式では残存=赤、跨ぎ [-0.6,0.4] は残存の両側検証)
+- compact_draws_exact_survivors_and_stable_order (7 候補シナリオ:
+  生存 3 件の厳密 IndirectDrawCmd 列 + first_vertex 同キーの安定性 +
+  除外 4 件 (錐台外/vc=0/遮蔽/距離外) の網羅)
+- wgsl_layout_matches_pinned_offsets (naga parse + cs_compact entry 存在 +
+  Candidate span 48/オフセット 7 個、Cmd span 16、Params span 128
+  (planes@0, camera@96, policy@112) の機械ピン)
+
+### 検証結果 (全て実測)
+- lib テスト **644/644** (+4)。rustfmt hunk 増分 0
+  (HEAD 由来 4 hunk は規律上温存、新規テストは正準形で投入)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
