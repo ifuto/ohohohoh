@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 48
+- count: 49
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -66,3 +66,4 @@
 - 2026-07-22: wave 11 診断B20 (実デモ列データで tick_world 直接駆動プローブ)
 - 2026-07-22: wave 11 診断B21 (全strip基底に1系統ずつ復帰: MDI/noise/occ/budget/pull)
 - 2026-07-22: wave 11 診断B22 (交互対照 off/on/off/on: フレーク vs 設定因果)
+- 2026-07-22: wave 11 完結 (M-4 zero-day 根治: bytemuck 空align パニック + 診断装置撤去 + 最終 567テスト)
