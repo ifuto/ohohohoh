@@ -46,7 +46,11 @@ pub struct ConeWgsl {
 }
 
 impl ConeWgsl {
-    /// 方向を正規化して構築 (ゼロベクトルはそのまま = 命中しない正常入力)。
+    /// 方向を正規化して構築。
+    /// ゼロベクトルは**そのまま**残る (除算 NaN を避ける防御)。この場合
+    /// コーンは退化して「原点 o 自身のセルを max_dist まで繰り返しサンプルする」
+    /// 定義になる — 体積内部ではヒットし得る (旧 doc の「命中しない」は
+    /// 原点が体積外の場合に限られるため訂正。走査規則は WGSL/ミラーとも同一)。
     pub fn new_normalized(o: [f32; 3], d: [f32; 3], aperture: f32, max_dist: f32) -> Self {
         let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
         let d = if l > 1e-8 {
@@ -352,6 +356,8 @@ impl GpuVct {
 
     /// 実コーン列を dispatch して readback する (実実行、結果は実バッファ由来)。
     /// `set_scene` 済みであること。戻り値はコーン列と同順の [r,g,b,alpha]。
+    /// 空コーン列は GPU 演算を行わず空を返す (0 サイズ dispatch/copy/map の
+    /// ドライバ厳格性エッジを回避。結果は dispatch 経路と決定的に同値)。
     pub fn update(
         &mut self,
         device: &wgpu::Device,
@@ -361,6 +367,9 @@ impl GpuVct {
         let mut params = self
             .scene
             .ok_or_else(|| "GpuVct: set_scene 未呼び出し".to_string())?;
+        if cones.is_empty() {
+            return Ok(Vec::new());
+        }
         if cones.len() > self.cones_capacity {
             self.cones_capacity = cones.len().next_power_of_two();
             self.cones_buf = Self::grow(
@@ -483,6 +492,104 @@ mod tests {
         assert_eq!(std::mem::size_of::<VctParams>(), 32);
         assert_eq!(std::mem::size_of::<ConeWgsl>(), 32);
         assert_eq!(STRIDE, 10);
+    }
+
+    /// naga が計算する WGSL `VctParams` (uniform) / `ConeWgsl` (storage) の
+    /// メンバ offset が Rust repr(C) と逐語一致すること。
+    /// (size 一致だけでは member 順の入替や pad 位置の違いを検出できない —
+    ///  vec3<f32> の align 16 規則で uniform/storage 両空間とも同じ並び
+    ///  になることを offset まで固定する。GPU 無しでドリフト検出可能)
+    #[test]
+    fn vct_struct_offsets_match_wgsl_exact() {
+        use std::mem::offset_of;
+        // Rust 側 repr(C) offset
+        assert_eq!(offset_of!(VctParams, bounds), 0);
+        assert_eq!(offset_of!(VctParams, root), 12);
+        assert_eq!(offset_of!(VctParams, cap), 16);
+        assert_eq!(offset_of!(VctParams, node_count), 20);
+        assert_eq!(offset_of!(VctParams, cone_count), 24);
+        assert_eq!(offset_of!(VctParams, _pad), 28);
+        assert_eq!(offset_of!(ConeWgsl, o), 0);
+        assert_eq!(offset_of!(ConeWgsl, aperture), 12);
+        assert_eq!(offset_of!(ConeWgsl, d), 16);
+        assert_eq!(offset_of!(ConeWgsl, max_dist), 28);
+
+        // WGSL 側 (naga 計算 offset)
+        let module = naga::front::wgsl::parse_str(VCT_WGSL)
+            .unwrap_or_else(|e| panic!("vct WGSL invalid: {e}"));
+        let find = |name: &str| {
+            module
+                .types
+                .iter()
+                .find_map(|(_, t)| {
+                    if t.name.as_deref() == Some(name) {
+                        let naga::TypeInner::Struct { members, span } = &t.inner else {
+                            panic!("{name} must be struct");
+                        };
+                        let m: Vec<(String, u32)> = members
+                            .iter()
+                            .map(|m| (m.name.clone().unwrap_or_default(), m.offset))
+                            .collect();
+                        Some((m, *span))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| panic!("struct {name} must exist"))
+        };
+        let (params, pspan) = find("VctParams");
+        assert_eq!(pspan, 32);
+        assert_eq!(
+            params,
+            vec![
+                ("bounds".to_string(), 0),
+                ("root".to_string(), 12),
+                ("cap".to_string(), 16),
+                ("node_count".to_string(), 20),
+                ("cone_count".to_string(), 24),
+                ("_pad".to_string(), 28),
+            ]
+        );
+        let (cone, cspan) = find("ConeWgsl");
+        assert_eq!(cspan, 32);
+        assert_eq!(
+            cone,
+            vec![
+                ("o".to_string(), 0),
+                ("aperture".to_string(), 12),
+                ("d".to_string(), 16),
+                ("max_dist".to_string(), 28),
+            ]
+        );
+    }
+
+    /// ゼロ方向コーンの定義: 包含セルを max_dist まで繰り返しサンプルする
+    /// (doc 明記の退化意味論)。体積内では飽和ヒット、体積外ではミス。
+    #[test]
+    fn zero_direction_cone_samples_containing_cell() {
+        // 全面占有カラム: 内部の退化コーンは alpha 飽和 (containing cell ヒット)
+        let solid = [[1u16; 4096]; 4];
+        let svo = SparseVoxelOctree::from_column(&solid);
+        let scene = VctScene::from_svo(&svo);
+        let inside = ConeWgsl::new_normalized([8.0, 32.0, 8.0], [0.0, 0.0, 0.0], 0.577, 24.0);
+        let r = trace_cone_words(&scene.words, scene.bounds, scene.root, scene.cap, &inside);
+        assert!(r[3] >= 0.99, "zero-dir inside solid must saturate: {r:?}");
+        // 体積外の原点では何にも当たらない
+        let outside = ConeWgsl::new_normalized([100.0, 32.0, 8.0], [0.0, 0.0, 0.0], 0.577, 24.0);
+        let r = trace_cone_words(&scene.words, scene.bounds, scene.root, scene.cap, &outside);
+        assert_eq!(r[3], 0.0, "zero-dir outside must miss: {r:?}");
+        // 正規化が非ゼロ単位長を維持すること (bit 安定)
+        let n = ConeWgsl::new_normalized([0.0; 3], [3.0, 0.0, 4.0], 0.5, 10.0);
+        let len = (n.d[0] * n.d[0] + n.d[1] * n.d[1] + n.d[2] * n.d[2]).sqrt();
+        assert!((len - 1.0).abs() < 1e-6, "normalized dir length: {len}");
+    }
+
+    /// CPU 参照の空コーン列は空結果 (`GpuVct::update` の空早期 return と同値)。
+    #[test]
+    fn empty_cone_list_is_empty_result() {
+        let (_svo, scene) = demo_scene();
+        let out = scene.trace_cpu(&[]);
+        assert!(out.is_empty());
     }
 
     /// lod の**真の契約** (bucket 意味論): 2^lod ≤ diameter < 2^(lod+1)。

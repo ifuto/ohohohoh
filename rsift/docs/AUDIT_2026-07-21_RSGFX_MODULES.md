@@ -1111,3 +1111,44 @@ wave 2 で `fingerprint` フィールドが除去されて以降、参照ゼロ 
 - 統計語彙の変更注意: `frame_reuse_misses` (render_pipeline 経由) は
   真値の約半分に「修正されて」減少する (帳簿の正規化であり、再メッシュ等の
   動作そのものは不変)。
+
+---
+
+## U. frame_vct.rs 全通読監査 (wave 19, 2026-07-22)
+
+`frame_vct.rs` (616 行: GPU VCT dispatch + WGSL 精密ミラー) と両側資産
+(`voxel_cone_tracing.wgsl` 全文、`svo.rs::to_gpu_words` 符号化) を照合監査。
+opt-gfx 599 → **602** (+3)。
+
+### 陰性確認 (ミラー忠実性 — 最重要項目)
+WGSL `svo_sample_lod` / `main` と Rust `sample_lod_words` / `trace_cone_words` を
+全行突合: 境界否定形 (NaN→None 一致)・budget 式・ガード off-by-one
+(`base+9 >= len`)・solid 集計・下降 select 規則 (NaN→0)・33 回ループ構造
+(WGSL for 0..=32 ↔ Rust depth>32 安全弁)・コーンループ演算順
+(dist 0.5 開始/diameter max(aperture*2d,1)/weight 蓄積/0.75 刻み) —
+**全て一致、乖離なし**。mirror テスト `words_mirror_matches_object_tree_bitexact`
+(128 コーン bitwise) と合わせて GPU==CPU 主張は健全と確認。
+
+### U-1 (低・誠実性) new_normalized のゼロ方向 doc 訂正
+「ゼロベクトルはそのまま = 命中しない正常入力」は、原点が SVO 体積**内**
+にある場合に偽 (退化コーンは包含セルを max_dist まで繰り返しサンプルする
+定義で、体積内では飽和ヒットする)。走査規則は不変のまま doc を訂正し、
+`zero_direction_cone_samples_containing_cell` (内部飽和/外部ミス/正規化
+bit 安定) で意味論を固定。
+
+### U-2 (低・防御) 空コーン列の純 Rust 早期 return
+`GpuVct::update` は空入力でも 0 サイズ dispatch/copy/map を発行しており、
+厳格ドライバでの検証エッジがあり得た。set_scene 検査後に空列を早期 return
+(dispatch 経路と決定的に同値)。`GpuFsr1` 等、他 GPU ラッパでも同パターンを
+今後点検する基準とする。
+
+### U-3 (検証基盤) naga offset レベル突合へ格上げ
+旧テストは size 一致 (32B) のみでメンバ順入替や pad 位置を検出できなかった。
+`vct_struct_offsets_match_wgsl_exact`: Rust repr(C) offset (offset_of! 8+4 件) と
+naga 計算 offset (uniform `VctParams` / storage `ConeWgsl` の名前+offset 表)
+を逐語固定。vec3<f32> align 16 規則で両空間とも同一レイアウトになることを
+GPU 無しで恒久検出可能に (wave 17 S-6 パターンの 2 例目適用)。
+
+### 検証結果 (全て実測)
+- lib テスト **602/602** (+3)。rustfmt hunk 増分 0。
+- 残 frame_* 未通読: frame_hiz (745) / frame_pipeline (700) の 2 モジュール。
