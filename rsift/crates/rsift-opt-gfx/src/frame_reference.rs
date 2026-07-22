@@ -12,8 +12,12 @@
 use crate::packed4::PackedPullQuad;
 use crate::pull_mesh::PullBuiltMesh;
 
-/// WGSL `SUN_DIR` と同一 (normalize(0.6, 1.0, 0.3))。
-const SUN_DIR: [f32; 3] = [0.4985076, 0.8308459, 0.2492538];
+/// WGSL `SUN_DIR` と同一値 (normalize(0.6, 1.0, 0.3) を f32 演算で評価した値)。
+/// 旧値 [0.4985076, 0.8308459, 0.2492538] は |v|≈1.00047 の非単位ベクトルで
+/// doc の「normalize(0.6,1,0.3)」と約 2.4e-4 (各成分) ずれており、かつ WGSL 側に
+/// SUN_DIR が存在していなかった (2026-07-22 wave 21 監査で厳密再導出値に両側同時訂正)。
+/// `sun_dir_is_f32_normalized_direction` テストが再導出一致を機械保証する。
+const SUN_DIR: [f32; 3] = [0.49827290, 0.83045477, 0.24913645];
 /// WGSL `FACE_UV` と同一順序。
 const FACE_UV: [[f32; 2]; 4] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
 /// WGSL `TRI_CORNER` と同一順序。
@@ -794,5 +798,94 @@ mod tests {
             "coverage must be partial (sky visible)"
         );
         assert!(fr.avg_lum > 0.01, "shaded pixels must be non-black");
+    }
+
+    /// wave 21-1: SUN_DIR は normalize(0.6, 1.0, 0.3) の f32 演算評価と bit 一致し、
+    /// 単位長であること。旧値 [0.4985076, 0.8308459, 0.2492538] は |v|≈1.00047 の
+    /// 非単位ベクトルであり doc と乖離していた。
+    #[test]
+    fn sun_dir_is_f32_normalized_direction() {
+        let s = 0.6f32 * 0.6 + 1.0 * 1.0 + 0.3f32 * 0.3;
+        let n = s.sqrt();
+        let want = [0.6f32 / n, 1.0 / n, 0.3 / n];
+        for i in 0..3 {
+            assert_eq!(
+                SUN_DIR[i].to_bits(),
+                want[i].to_bits(),
+                "SUN_DIR[{i}] must be bit-equal to f32 normalize(0.6, 1, 0.3)"
+            );
+        }
+        let len2 = SUN_DIR[0] * SUN_DIR[0] + SUN_DIR[1] * SUN_DIR[1] + SUN_DIR[2] * SUN_DIR[2];
+        assert!(
+            (len2 - 1.0).abs() <= 2.0 * f32::EPSILON,
+            "SUN_DIR must be unit length: |v|^2={len2}"
+        );
+    }
+
+    /// wave 21-2: WGSL fs_pull が SUN_DIR リテラル同一表記で Lambert を実装している
+    /// こと (GPU/CPU 相互検証の成立条件)。除去・退行した場合に fail-loud。
+    #[test]
+    fn wgsl_fs_pull_implements_mirror_lambert() {
+        const WGSL: &str = include_str!("../shaders/terrain_vertex_pull.wgsl");
+        for lit in ["0.49827290", "0.83045477", "0.24913645"] {
+            assert!(
+                WGSL.contains(lit),
+                "WGSL SUN_DIR literal {lit} must mirror frame_reference.rs"
+            );
+        }
+        let body = WGSL
+            .split("fn fs_pull")
+            .nth(1)
+            .expect("terrain_vertex_pull.wgsl must define fs_pull");
+        for tok in ["dot(", "max(", "SUN_DIR", "in.normal", "0.35", "0.65"] {
+            assert!(
+                body.contains(tok),
+                "fs_pull must compute Lambert shading ({tok} missing)"
+            );
+        }
+    }
+
+    /// wave 21-3: Lambert が面方位を実際に識別し、AO/band 係数との合成出力が
+    /// WGSL/Rust 同一演算順の f32 厳密導出値と bit 一致すること。
+    /// 期待値はモジュール固定演算順 (band * ao * li, ((band*0.6)*ao)*li, ...) から
+    /// f32 エミュレーションで厳密導出 (直感値禁止: K-6 教訓)。
+    #[test]
+    fn shade_exact_bits_matching_wgsl_eval_order() {
+        // shade(tex=4, light_ao=3, face): band=4/7, ao=1.0
+        let want: [[u32; 3]; 6] = [
+            [0x3ec52843, 0x3e6c96b8, 0x3dec96b8], // face0 +X (ndl = SUN_DIR.x)
+            [0x3e4ccccd, 0x3df5c291, 0x3d75c291], // face1 -X 陰 (li=0.35)
+            [0x3f022a15, 0x3e9c3280, 0x3e1c3280], // face2 +Y 天面 (最明)
+            [0x3e4ccccd, 0x3df5c291, 0x3d75c291], // face3 -Y 陰
+            [0x3e95c755, 0x3e33bc00, 0x3db3bc00], // face4 +Z (ndl = SUN_DIR.z)
+            [0x3e4ccccd, 0x3df5c291, 0x3d75c291], // face5 -Z 陰
+        ];
+        for f in 0..6u32 {
+            let got = shade(4, 3, f);
+            for c in 0..3 {
+                assert_eq!(
+                    got[c].to_bits(),
+                    want[f as usize][c],
+                    "shade(4,3,{f})[{c}] bit mismatch"
+                );
+            }
+        }
+        // 面方位の明度順序: 天面 > +X > +Z > 陰面 (3 陰面は bit 同一)
+        assert!(shade(4, 3, 2)[0] > shade(4, 3, 0)[0]);
+        assert!(shade(4, 3, 0)[0] > shade(4, 3, 4)[0]);
+        assert!(shade(4, 3, 4)[0] > shade(4, 3, 1)[0]);
+        for f in [1u32, 3, 5] {
+            assert_eq!(
+                shade(4, 3, f)[0].to_bits(),
+                want[1][0],
+                "shadowed faces identical"
+            );
+        }
+        // band=0 (tex%7==0) は全 face で厳密 +0.0 (AO/Lambert は band の乗数)
+        for f in 0..6u32 {
+            for c in 0..3 {
+                assert_eq!(shade(7, 0, f)[c].to_bits(), 0, "band zero must be black");
+            }
+        }
     }
 }

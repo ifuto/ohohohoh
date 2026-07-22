@@ -1185,3 +1185,71 @@ CPU ミラー hiz_*_reference) を照合監査。opt-gfx 602 → **604** (+2)。
 ### 検証結果 (全て実測)
 - lib テスト **604/604** (+2)。rustfmt hunk 増分 0。
 - 残 frame_* 未通読: frame_pipeline (700 行) のみ (wave 21 で消化)。
+
+## W. frame_pipeline.rs 全通読監査 (wave 21, 2026-07-22)
+
+`frame_pipeline.rs` (700 行: wgpu raster → ACES → readback の実フレーム配線) と
+両側資産 (`terrain_vertex_pull.wgsl` 150 行 / `aces_tonemap.wgsl` 46 行、
+CPU ミラー `frame_reference.rs` の shade 経路) を全行照合監査。
+opt-gfx 604 → **607** (+3)。
+
+### W-1 (重大・GPU/CPU 乖離) fs_pull の Lambert 欠落 — 根治
+WGSL `fs_pull` は `shade = 0.55 + lao*0.15` (AO のみ) を出力し、vs_pull が
+特殊フォーマットで生成した `normal` varying を**一度も参照していなかった**
+(dead varying = 脱落の形跡)。一方 CPU ミラー `shade()` は最初から Lambert
+(`dot(n, SUN_DIR)` → `0.35 + 0.65·ndl`) を保有しており、frame_reference
+ヘッダの「WGSL と Lambert 同一」という記述は偽だった。帰結として GPU 地形は
+全 face 同一輝度 (法線方向シェーディング無し = 視覚的に破綻) で、かつ
+frame_pipeline の存在意義である GPU==CPU 相互検証が成立していなかった。
+
+根治: WGSL に `const SUN_DIR: vec3<f32>` を新設し、
+`ndl = max(dot(in.normal, SUN_DIR), 0.0)` → `li = 0.35 + 0.65*ndl` →
+`band * ao * li` (左結合 = Rust ミラーと同一演算順) を実装。
+軸平行法線では dot が評価順・fma 不変の厳密同一値となることを根拠として確認
+(×±1.0 は厳密、+0.0 加算は厳密、残項 1 個の和は厳密)。
+
+### W-2 (中・doc 偽＋非単位光ベクトル) SUN_DIR の厳密再導出
+Rust 側旧値 `[0.4985076, 0.8308459, 0.2492538]` は大ノルム 1.00047 の
+**非単位ベクトル**で、doc の「normalize(0.6, 1.0, 0.3)」と各成分 ~2.4e-4
+ずれていた (全 repo grep で同一リテラルは 1 箇所のみ = 手書き丸め事故の典型)。
+根治: f32 演算規則 (`0.6*0.6 + 1.0*1.0 + 0.3*0.3` → sqrt → 各成分除算、
+全て IEEE 単一回丸め) で厳密再導出した正準値
+`[0x3eff1da0, 0x3f5498af, 0x3e7f1da0]` = `[0.49827290, 0.83045477, 0.24913645]`
+に**両側同時**置換。再導出後の |v|² が bit 厳密 1.0 であることを確認済み。
+
+### W-3 (教訓) double エミュレーションの罠 — 厳密 pin 導出は exact rational で
+浮動小数点厳密値の導出に float64 近似エミュレーションを使うと、f32 の真の
+単一回丸めと 1 ulp 乖離する境界ケースが存在する (実際 `0.6f32/n` の商は
+f32 丸め境界の真上に位置し 0x3eff1d9f/0x3eff1da0 で分裂した)。
+本 wave では Python `Fraction` exact rational 演算で各 f32 演算を手続き的に
+正しく丸めて正準値を導出し、Rust 実機が同式を再導出して bit 一致を assert
+する形で機械保証した。今後の厳密 pin 導出は exact rational 方式を必須とする
+(K-6 教訓の補強事例として記録)。
+
+### 陰性確認 (変更不要と判断)
+- `build_view_proj`: wgpu z∈[0,1] RH persp / RH view の全成分を手計算照合 —
+  一致。`mul_v4`/`mul44` は列優先 WGSL 規約と一致。
+- `aces_tonemap.wgsl` ↔ mirror `aces_srgb`: Narkowicz 係数・
+  `pow(max(x,0), 1/2.2)`・全画面三角形・exposure uniform 4B ↔ buf size 4 —
+  一致。
+- draw_mask クリア順序 (draw_calls==0 判定) と全カリング時 clear-only パス — 正常。
+- per-chunk `create_buffer_init` チャーン・map+`Maintain::Wait` ポーリング —
+  証明用途設計として文書化済み・クレート横断一貫パターンのため変更せず。
+- 0 次元フレームは wgpu 深部で panic する既知契約のまま (frame_fsr1/frame_hiz
+  式の validate 追加は優先度低・将来検討事項として記録)。
+
+### 追加テスト (+3, fail-loud)
+- `sun_dir_is_f32_normalized_direction` (f32 再導出との bit 一致 + 単位長)
+- `wgsl_fs_pull_implements_mirror_lambert` (WGSL 側 SUN_DIR リテラル表記一致 +
+  fs_pull 本体に dot/max/0.35/0.65/in.normal が存在すること — 退行した時点で fail)
+- `shade_exact_bits_matching_wgsl_eval_order` (6 face × 3ch の厳密ビットピン +
+  明度順序 top > +X > +Z > 陰面、陰 3 面は bit 同一、band=0 は厳密 +0.0)
+
+### 検証結果 (全て実測)
+- lib テスト **607/607** (+3)。rustfmt hunk 増分 0。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- pseudo_mc_bench 決定値スポット全不変 (S1 24543/314193、C 303895 vert/3646740 B、
+  861656/27572992、ACMR 1.669→0.929、hit率 90.9%、24511704 B、水 116719、
+  palette 248110)。
+- **frame_* モジュール全 7 件 (pacing/fsr1/reference/reuse/vct/hiz/pipeline) の
+  通読監査が完遂。**

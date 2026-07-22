@@ -17,6 +17,11 @@ struct FrameUniforms {
 const COORD_MASK: u32 = 63u;
 const TEX_MASK: u32 = 4095u;
 
+// frame_reference.rs::SUN_DIR と同一値 (normalize(0.6, 1.0, 0.3) の f32 演算評価)。
+// Lambert 太陽光ベクトル。値を変える場合は CPU 参照実装と必ず両側同時に変えること
+// (Rust 側テスト wgsl_fs_pull_implements_mirror_lambert が表記一致を検査する)。
+const SUN_DIR: vec3<f32> = vec3<f32>(0.49827290, 0.83045477, 0.24913645);
+
 // Two triangles: corners [0,1,2] [2,3,0]
 // 注: FACE_UV と同様、vid 由来の動的 index を通すため const ではなく var<private>
 // (naga IndexMustBeConstant 回避、値は不変)。
@@ -133,7 +138,13 @@ fn vs_pull(@builtin(vertex_index) vid: u32) -> VsOut {
 
 @fragment
 fn fs_pull(in: VsOut) -> @location(0) vec4<f32> {
-    let shade = 0.55 + f32(in.light_ao) * 0.15;
+    let ao = 0.55 + f32(in.light_ao) * 0.15;
     let band = f32(in.tex_id % 7u) / 7.0;
-    return vec4<f32>(band * shade, band * 0.6 * shade, band * 0.3 * shade, 1.0);
+    // Lambert: frame_reference.rs::shade と同一演算順 (dot → max → 0.35+0.65·ndl)。
+    // 旧版は vs_pull が normal varying を出力しながら fragment で一度も参照せず、
+    // 法線方向シェーディングが GPU 側に欠落していた (全 face 同一輝度 = 視覚的に破綻)。
+    // 2026-07-22 wave 21 監査で両側同時に根治 (CPU 参照は最初から Lambert 保有)。
+    let ndl = max(dot(in.normal, SUN_DIR), 0.0);
+    let li = 0.35 + 0.65 * ndl;
+    return vec4<f32>(band * ao * li, band * 0.6 * ao * li, band * 0.3 * ao * li, 1.0);
 }
