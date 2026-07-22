@@ -31,6 +31,9 @@ pub struct DrawCandidate {
 }
 
 /// 圧縮後の indirect draw コマンド（wgpu DrawIndirect と同形）。
+///
+/// COMPACT_WGSL の `Cmd` (4 つの u32、span 16B) とバイト同一であり、
+/// そのまま GPU バッファへアップロード可能 (wave 44 で機械ピン)。
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct IndirectDrawCmd {
@@ -38,6 +41,99 @@ pub struct IndirectDrawCmd {
     pub instance_count: u32,
     pub first_vertex: u32,
     pub first_instance: u32,
+}
+
+/// COMPACT_WGSL の `Candidate` と**バイト同一**のワイヤ表現
+/// (2026-07-23 wave 44: 「将来の配線では明示的なワイヤ変換が必須」の closing)。
+///
+/// レイアウト決定根拠 (WGSL 構造体配置規則からの厳密導出、naga 実測と
+/// 突合済み — `wgsl_layout_matches_pinned_offsets`):
+/// - `center: vec3<f32>` @0 (size 12, align 16) → 12..16 は 4B の穴
+/// - `half_ext: vec3<f32>` @16 (size 12) → 次のスカラは末尾 28 から密詰み
+///   (WGSL は vec3 の trailing gap を後続スカラで再利用する。**Rust 側に
+///   `_pad1` を追加すると 32 開始になり GPU 配置と永久的にズレる**)
+/// - u32 群 @28,32,36,40,44、span = roundUp(16, 48) = 48
+///
+/// `frustum_seen` は現行 WGSL カーネル・CPU 参照の双方で読まれない
+/// 予約フィールドであり、変換は常に 0 を書く (cross-frame フィードバック用)。
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CandidateWire {
+    pub center: [f32; 3],
+    pub _pad0: u32,
+    pub half_ext: [f32; 3],
+    pub vertex_count: u32,
+    pub first_vertex: u32,
+    pub visible_prev: u32,
+    pub pass_key: u32,
+    pub frustum_seen: u32,
+}
+
+impl DrawCandidate {
+    /// WGSL 入力レイアウトへの**全フィールド明示**変換
+    /// (bool → 0/1、u16 → u32 ゼロ拡張、予約フィールド 0、パディング 0)。
+    pub fn to_wire(&self) -> CandidateWire {
+        CandidateWire {
+            center: self.center,
+            _pad0: 0,
+            half_ext: self.half_extents,
+            vertex_count: self.vertex_count,
+            first_vertex: self.first_vertex,
+            visible_prev: u32::from(self.visible_prev),
+            pass_key: u32::from(self.pass_key),
+            frustum_seen: 0,
+        }
+    }
+}
+
+/// 候補列の一括ワイヤ変換 (GPU アップロード用の決定的バイト列)。
+pub fn candidates_to_wire(candidates: &[DrawCandidate]) -> Vec<CandidateWire> {
+    candidates.iter().map(DrawCandidate::to_wire).collect()
+}
+
+/// COMPACT_WGSL の `Params` (span 128B) と**バイト同一**のワイヤ表現。
+///
+/// **契約**: `policy.z` は candidate_count を **f32 として運ぶ**ため、
+/// count ≤ 2^24 (16,777,216) 必須 — 超過は f32 が整数を表現できず
+/// 誤カウント化する (構築時に fail-loud、wave 44)。
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ParamsWire {
+    /// 6 平面 (a,b,c,d)、dist >= 0 で内側 (正規化済み前提、FrustumPlanes 参照)
+    pub planes: [[f32; 4]; 6],
+    /// camera.xyz + w 予約 0
+    pub camera: [f32; 4],
+    /// x=max_d, y=margin, z=candidate_count (f32 化), w=予約 0
+    pub policy: [f32; 4],
+}
+
+impl ParamsWire {
+    /// 最大許容 candidate_count (policy.z の f32 輸送で整数厳密性が
+    /// 保てる上限 2^24)。
+    pub const MAX_COUNT: u32 = 1 << 24;
+
+    pub fn new(
+        frustum: &FrustumPlanes,
+        camera: [f32; 3],
+        policy: &CompactPolicy,
+        candidate_count: u32,
+    ) -> Self {
+        assert!(
+            candidate_count <= Self::MAX_COUNT,
+            "ParamsWire::new 契約違反: candidate_count {candidate_count} > 2^24 \
+             (policy.z の f32 輸送で整数厳密性が破れる)"
+        );
+        Self {
+            planes: frustum.0,
+            camera: [camera[0], camera[1], camera[2], 0.0],
+            policy: [
+                policy.max_distance,
+                policy.frustum_margin,
+                candidate_count as f32,
+                0.0,
+            ],
+        }
+    }
 }
 
 /// 視錐台（6平面, 各 (a,b,c,d): ax+by+cz+d >= 0 で内側）。
@@ -199,8 +295,11 @@ impl HierarchicalCuller {
 ///    **別レイアウト** (span 48B — vec3 各 align 16 のため 12..16 に 4B 穴、
 ///    残り u32 群は 28 から密詰み。frustum_seen フィールド追加、
 ///    pass_key は u16→u32)。`DrawCandidate` は repr(Rust) かつ Pod 非実装
-///    (bytemuck 不可) のため、将来の配線では明示的なワイヤ変換が必須。
-///    `wgsl_layout_matches_pinned_offsets` が GPU 側の固定レイアウトを機械ピン。
+///    (bytemuck 不可) のため、配線はワイヤ構造体経由で行う:
+///    `DrawCandidate::to_wire` / `candidates_to_wire` / `ParamsWire::new`
+///    (2026-07-23 wave 44 で closing 済、`offset_of!` とバイト厳密ピンで
+///    naga 実測と閉じた契約)。`wgsl_layout_matches_pinned_offsets` が
+///    GPU 側の固定レイアウトを機械ピン。
 /// 2. **出力順は非決定的**: GPU 側は atomicAdd の完了順に cmds を詰めるため
 ///    CPU 参照実装 (first_vertex で安定ソート) との逐一致合は成立しない。
 ///    厳密性が必要なら opaque 専用とする (半透明ソートは別経路)。
@@ -291,6 +390,127 @@ mod tests {
             visible_prev: true,
             pass_key: 0,
         }
+    }
+
+    /// wave 44-1: ワイヤ構造体の Rust 側レイアウトを offset_of! でピンし、
+    /// naga 実測ピン (wgsl_layout_matches_pinned_offsets 側) と閉じた契約にする。
+    /// 両側が独立にピンされているため、どちらかがドリフトすれば即検出される。
+    #[test]
+    fn wire_layout_offsets_match_naga_pins() {
+        use std::mem::{offset_of, size_of};
+        // Candidate (naga: 0,16,28,32,36,40,44 / span 48)
+        assert_eq!(offset_of!(CandidateWire, center), 0);
+        assert_eq!(offset_of!(CandidateWire, half_ext), 16);
+        assert_eq!(offset_of!(CandidateWire, vertex_count), 28);
+        assert_eq!(offset_of!(CandidateWire, first_vertex), 32);
+        assert_eq!(offset_of!(CandidateWire, visible_prev), 36);
+        assert_eq!(offset_of!(CandidateWire, pass_key), 40);
+        assert_eq!(offset_of!(CandidateWire, frustum_seen), 44);
+        assert_eq!(size_of::<CandidateWire>(), 48);
+        // Cmd (naga: 16B)
+        assert_eq!(size_of::<IndirectDrawCmd>(), 16);
+        assert_eq!(offset_of!(IndirectDrawCmd, first_instance), 12);
+        // Params (naga: planes@0 camera@96 policy@112 / span 128)
+        assert_eq!(offset_of!(ParamsWire, planes), 0);
+        assert_eq!(offset_of!(ParamsWire, camera), 96);
+        assert_eq!(offset_of!(ParamsWire, policy), 112);
+        assert_eq!(size_of::<ParamsWire>(), 128);
+        // Pod 保証 (derive 自体がパディング不在をコンパイル時証明)
+        let _: &[u8] = bytemuck::bytes_of(&ParamsWire::new(
+            &identity_frustum(),
+            [1.0, 2.0, 3.0],
+            &CompactPolicy::default(),
+            7,
+        ));
+    }
+
+    /// wave 44-2: to_wire のバイト厳密性 (視認性の高いパターンで全フィールド
+    /// の位置・エンディアン・ゼロ穴を機械固定)。
+    #[test]
+    fn to_wire_is_byte_exact() {
+        let c = DrawCandidate {
+            center: [1.0, 2.0, 3.0],
+            half_extents: [4.0, 5.0, 6.0],
+            vertex_count: 0xAABB_CCDD,
+            first_vertex: 0x1122_3344,
+            visible_prev: true,
+            pass_key: 0x5566,
+        };
+        let w = c.to_wire();
+        let b: &[u8] = bytemuck::bytes_of(&w);
+        assert_eq!(b.len(), 48);
+        assert_eq!(&b[0..4], 1.0f32.to_le_bytes());
+        assert_eq!(&b[4..8], 2.0f32.to_le_bytes());
+        assert_eq!(&b[8..12], 3.0f32.to_le_bytes());
+        assert_eq!(&b[12..16], [0, 0, 0, 0], "vec3 穴はゼロ");
+        assert_eq!(&b[16..20], 4.0f32.to_le_bytes());
+        assert_eq!(&b[20..24], 5.0f32.to_le_bytes());
+        assert_eq!(&b[24..28], 6.0f32.to_le_bytes());
+        assert_eq!(&b[28..32], 0xAABB_CCDDu32.to_le_bytes());
+        assert_eq!(&b[32..36], 0x1122_3344u32.to_le_bytes());
+        assert_eq!(&b[36..40], 1u32.to_le_bytes(), "bool true → 1");
+        assert_eq!(&b[40..44], 0x5566u32.to_le_bytes(), "u16 ゼロ拡張");
+        assert_eq!(&b[44..48], 0u32.to_le_bytes(), "frustum_seen 予約 0");
+        // false → 0
+        let mut c0 = c;
+        c0.visible_prev = false;
+        let w0 = c0.to_wire();
+        assert_eq!(&bytemuck::bytes_of(&w0)[36..40], 0u32.to_le_bytes());
+    }
+
+    /// wave 44-3: Params 変換のバイト厳密性 (policy.z の f32 化を含む)。
+    #[test]
+    fn params_wire_is_byte_exact() {
+        let f = identity_frustum();
+        let p = ParamsWire::new(&f, [7.0, 8.0, 9.0], &CompactPolicy::default(), 11);
+        let b: &[u8] = bytemuck::bytes_of(&p);
+        assert_eq!(b.len(), 128);
+        // plane 0 = [1,0,0,1] (identity_frustum の左面)
+        assert_eq!(&b[0..4], 1.0f32.to_le_bytes());
+        assert_eq!(&b[4..8], 0.0f32.to_le_bytes());
+        assert_eq!(&b[12..16], 1.0f32.to_le_bytes());
+        // camera @96
+        assert_eq!(&b[96..100], 7.0f32.to_le_bytes());
+        assert_eq!(&b[100..104], 8.0f32.to_le_bytes());
+        assert_eq!(&b[104..108], 9.0f32.to_le_bytes());
+        assert_eq!(&b[108..112], 0.0f32.to_le_bytes());
+        // policy @112: x=max_d 512, y=margin 0.5, z=count 11, w=0
+        assert_eq!(&b[112..116], 512.0f32.to_le_bytes());
+        assert_eq!(&b[116..120], 0.5f32.to_le_bytes());
+        assert_eq!(&b[120..124], 11.0f32.to_le_bytes());
+        assert_eq!(&b[124..128], 0.0f32.to_le_bytes());
+    }
+
+    /// wave 44-4: 一括変換は順序・長さを保持する決定的写像。
+    #[test]
+    fn candidates_to_wire_preserves_order_and_len() {
+        let cands = vec![
+            cand(1.0, 0.0, 0.5, 36),
+            cand(2.0, 0.0, 0.5, 60),
+            cand(3.0, 0.0, 0.5, 0),
+        ];
+        let wires = candidates_to_wire(&cands);
+        assert_eq!(wires.len(), 3);
+        assert_eq!(wires[0].center, [1.0, 0.0, 0.5]);
+        assert_eq!(wires[1].vertex_count, 60);
+        assert_eq!(wires[2].vertex_count, 0);
+        // 丸ごとバイト列 (3×48=144B) として決定的
+        let bytes: &[u8] = bytemuck::cast_slice(&wires);
+        assert_eq!(bytes.len(), 144);
+    }
+
+    /// wave 44-5: candidate_count > 2^24 は f32 輸送の整数厳密性が破れる
+    /// ため構築時 fail-loud。
+    #[test]
+    #[should_panic(expected = "candidate_count")]
+    fn params_wire_rejects_count_over_2pow24() {
+        let f = identity_frustum();
+        let _ = ParamsWire::new(
+            &f,
+            [0.0, 0.0, 0.0],
+            &CompactPolicy::default(),
+            (1 << 24) + 1,
+        );
     }
 
     #[test]

@@ -2325,3 +2325,44 @@ naga parse テストで機械ピンし、無断のシェーダ混入を検知可
 ### 検証結果 (全て実測)
 - lib テスト **729/729** (+11)。rustfmt hunk 増分 0 (HEAD 由来 1 温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AT. mesh_compactor.rs ワイヤ構造体 closing (wave 44, 2026-07-23)
+
+見送り棚卸し closing 第 3 弾。wave 28 の契約注記 1「将来の GPU 配線は
+明示ワイヤ変換必須」を、配線実機に先んじて決定的に解消する
+(ワイヤ構造体そのものは CPU 側で完全に決定可能であり、GPU 待ちの
+技術的理由は存在しない — 棚卸し解除は正当)。
+
+### AT-1: CandidateWire (48B) — WGSL 配置規則の厳密再現
+WGSL struct 配置は「メンバ i+1 の offset = roundUp(align(i+1), end(i))」
+(vec3<f32> の trailing gap を後続スカラが再利用する) ため、
+中心 @0..12 [穴 12..16] half_ext @16..28 の直後 @28 に vertex_count が
+載る。Rust repr(C) では `[f32;3]`(+`_pad0: u32`) で穴を 1 本だけ明示
+すれば同型にでき、**`_pad1` を追加すると 32 開始となり GPU 配置と
+永久的にズレる**ことを doc で禁則化。オフセット列 (0,16,28,32,36,40,44)
+span 48 は wave 28 の naga 実測と閉じた一致 (両側独立ピンで相互
+ドリフト検知)。bytemuck::Pod derive 自体がパディング不在をコンパイル
+時証明。変換は全フィールド明示 (bool→0/1 の `u32::from`、u16→u32 ゼロ
+拡張、予約 frustum_seen=0、穴ゼロ)。
+
+### AT-2: ParamsWire (128B) + policy.z の f32 輸送契約
+planes@0 camera@96 policy@112 span 128。`policy.z` は candidate_count を
+**f32 として輸送**する (WGSL 側 `u32(params.policy.z)`) ため、2^24 超では
+整数厳密性が破れ誤カウント化する — `MAX_COUNT = 1<<24` と構築時
+fail-loud で契約化。camera.w / policy.w の予約 0 も明示。
+`IndirectDrawCmd` は従来から Pod で Cmd (16B) と同型だったが、
+その旨の doc と size/offset ピンを補完して契約を閉じた。
+
+### テスト (+5)
+- wire_layout_offsets_match_naga_pins (offset_of! で 0,16,28,32,36,40,44
+  /48、Cmd 16、Params 0/96/112/128 — naga ピンとの鏡合わせ)
+- to_wire_is_byte_exact (0xAABBCCDD 等の視認パターンで LE バイト位置・
+  ゼロ穴・bool 0/1・u16 拡張を 48B 全域機械固定)
+- params_wire_is_byte_exact (plane[0]/camera/policy のバイト厳密、
+  count 11 → 11.0f32 LE)
+- candidates_to_wire_preserves_order_and_len (3 件順序保持 + 144B cast)
+- params_wire_rejects_count_over_2pow24 (should_panic)
+
+### 検証結果 (全て実測)
+- lib テスト **734/734** (+5)。rustfmt hunk 増分 0 (HEAD 由来 4 温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
