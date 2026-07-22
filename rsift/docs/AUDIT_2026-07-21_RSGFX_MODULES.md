@@ -1820,3 +1820,41 @@ SoaAabbs AE-1 と同型: pub フィールド手組みで不等長を作れる。
 - lib テスト **668/668** (+8)。rustfmt hunk 増分 0 (CRLF 維持、両側 0;
   struct_lit_width=18 規則による複数行化は正準形で対応)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AJ. entity_tick_lod.rs 監査 (wave 34, 2026-07-22)
+
+`entity_tick_lod.rs` (距離帯別エンティティ tick スケジューリング、Tier 5)
+全行照合。crate 内では render_pipeline:130 がフィールド保持のみ
+(選択実行は外部ブリッジ経路)。opt-gfx 668 → **674** (+6)。
+
+### AJ-1 (低〜中・静寂飢餓) 非有限 dist の RenderOnly 化 — fail-loud 根治
+`band_for_distance` は全比較 `<` の連鎖で、NaN を与えると全不成立 → else の
+**RenderOnly に静寂着地**し、そのエンティティは描画され続けながら AI tick
+が永久停止する (spatial_hash wave 26 / NaN 系と同型の「静寂欠損」)。
+NaN は「遠い」のではなく観測欠損 → `dist.is_finite()` assert で fail-loud 化
+(±∞ も有限入力の overflow として Minecraft ±30M blocks 契約外で併置拒否)。
+実経路は有限 feed のため不発、pub API としての堅牢性修正。
+
+### AJ-2 (契約明文化) hashed 経路の hash ⊇ positions 前提
+`select_tickable_hashed` の返却は「hash ∩ positions ∩ その tick の帯」。
+hash に無い id は**距離 0 でも tick されない** — 陳腐 hash による近距離
+飢餓を防ぐ責務が呼び出し側にあることを doc 契約化 (テストで実証ピン)。
+hash query_radius 出力のソート性 (wave 26) と positions の id 昇順が揃う時、
+naive 版と**逐一致**することも実証 (順序非依存ではなく厳密同値)。
+
+### 陰性確認
+帯境界の等号は次帯落ち (32→Every2 … 256→RenderOnly)、should_tick の
+位相列、advance wrapping (2^k 帯は u64 wrap を跨いでも mod が破れない —
+2^k | 2^64)、band 5 値の過不足なし — 全て厳密テストで固定。
+
+### 追加テスト (+6, fail-loud)
+- band_boundaries_exact (8 点厳密、等号 4 辺)
+- should_tick_phase_sequences_and_wraparound (t=0..9 列×3 帯 + MAX→0 wrap)
+- select_tickable_exact_membership_and_order (3-4-5 exact dist、帯×位相×順序)
+- select_tickable_hashed_matches_naive_on_sorted_ids (逐一致 + hash 陳腐/
+  非網羅の契約実証)
+- nan/infinite_position_rejected (should_panic ×2)
+
+### 検証結果 (全て実測)
+- lib テスト **674/674** (+6)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
