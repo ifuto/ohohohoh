@@ -1982,3 +1982,51 @@ dedupe、capacity 枯渇時の部分受理 (生存側のみ) — 既存 4 テス
 ### 検証結果 (全て実測)
 - lib テスト **691/691** (+6)。rustfmt hunk 増分 0 (HEAD 由来 3 温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AN. gl33_compat.rs 監査 (wave 38, 2026-07-22)
+
+`gl33_compat.rs` (wgpu-backed GL3.3 等価物: VAO/UBO/Instancing/MDI/TimerQuery
+互換、Tier 1) 全行照合。crate 内消費者なし (lib re-export のみ)。
+opt-gfx 691 → **696** (+5)。
+
+### AN-1 (契約) InstanceBuffer::from_pod の ZST 受理 — fail-loud 化
+ZST (size 0) を渡すと stride=0 の instance buffer が生成されるが、
+GPU 側 (wgpu vertex stride 0) では受理されず意味を成さない
+→ `size_of::<T>() > 0` の fail-loud assert。
+
+### AN-2 (低・観測欠測混入) TimerQueryCompat::end の 0.0 混入 — 根治
+`begin` 未対応の `end` (二重 end 含む) が 0.0 を samples に push し、
+`average_ms` を意味なく汚染していた (drs wave 23 の NaN と同型の
+「観測欠測の混入」)。begin 未対応なら**記録せず** last_ms を返す
+(観測欠測 drop) 契約に根治。
+
+### AN-3 (低・無駄 O(n)) samples 上限維持の Vec::remove(0) — VecDeque 化
+120 件超過ごとに全要素 memmove する O(n) front-removal を
+(Vec 全体を見れば不要な)data movement。
+`VecDeque::pop_front` O(1) に置換 (push_back/pop_front)。
+用途は 60–240Hz 程度で絶対量は小さいが、Roofline 的に不要な
+data movement は原理上削除対象 (複雑さ増分ゼロで支配的改善)。
+
+### AN-4 (doc) total_triangles の端数切捨て明記
+`index_count / 3 * instance_count` の端数 (primitive 未完成分) は
+描画規則と同じく切捨て — doc 明文化 (挙動変更なし)。
+
+### 陰性確認
+DrawIndexedIndirectArgs (20B Pod)、GlVaoCompat::terrain_compact
+(stride 12 = 3×u32 packed、PersistentVboPool VERTEX_STRIDE_BYTES と一致)、
+UBO dirty 遷移、FrameUbo 96B、アルゴリズム部分の変更が無いこと
+(平均計算式不変) — 全て一致。
+
+### 追加テスト (+5, fail-loud)
+- timer_beginless_end_does_not_pollute_samples
+  (begin 前 0.0 返却/混入なし、二重 end は前値のみ、samples==2 厳密)
+- timer_window_capped_at_120 (130 回で 120 件ピン — 構造のみ、
+  実時間値は非決定のため対象外)
+- instance_buffer_exact_wire_and_zst_rejected (stride/count/raw 厳密) +
+  instance_buffer_rejects_zst (should_panic)
+- triangles_fraction_floor_and_ubo_transitions (35/3→11×2=22、
+  bytes 20B、UBO dirty 遷移列、FrameUbo 96B ピン)
+
+### 検証結果 (全て実測)
+- lib テスト **696/696** (+5)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
