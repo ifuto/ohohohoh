@@ -1387,6 +1387,34 @@ mod tests {
     }
 
     // 診断 W11-B14: 条件付きサブシステムの選択切断 (恒久ではない)。
+    // 診断 W11-B15: 同一 matrix を逐次直列化 (恒久ではない)。
+    #[test]
+    fn probe_matrix_sequential() {
+        {
+            let (_d, mut p) = guarded_new("m1", 39);
+            p.feather.enabled = false;
+            p.profile.hzb_occlusion = false;
+            p.profile.cpu_masked_occlusion = false;
+            p.profile.multi_draw_indirect = false;
+            p.profile.vertex_pull_4byte = false;
+            p.profile.noise_upsampling = false;
+            p.low_spec.pre_mesh_occlusion = false;
+            p.low_spec.quad_budget = 0;
+            let _ = guarded_frame(&mut p, &[(0, 0)], 201);
+        }
+        {
+            let (_d, mut p) = guarded_new("m2", 39);
+            p.profile.hzb_occlusion = false;
+            p.profile.cpu_masked_occlusion = false;
+            let _ = guarded_frame(&mut p, &[(0, 0)], 203);
+        }
+        {
+            let (_d, mut p) = guarded_new("m3", 39);
+            let _ = guarded_frame(&mut p, &[(0, 0)], 205);
+        }
+    }
+
+    #[cfg(any())] // 診断 W11-B15: 逐次 matrix への譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_full_strip() {
         let (_d, mut p) = guarded_new("probe_strip", 39);
@@ -1401,6 +1429,7 @@ mod tests {
         let _ = guarded_frame(&mut p, &[(0, 0)], 101);
     }
 
+    #[cfg(any())] // 診断 W11-B15: 逐次 matrix への譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_no_hzb() {
         let (_d, mut p) = guarded_new("probe_nohzb", 39);
@@ -1409,6 +1438,7 @@ mod tests {
         let _ = guarded_frame(&mut p, &[(0, 0)], 103);
     }
 
+    #[cfg(any())] // 診断 W11-B15: 逐次 matrix への譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_no_feather() {
         let (_d, mut p) = guarded_new("probe_nofeather", 39);
@@ -1416,6 +1446,7 @@ mod tests {
         let _ = guarded_frame(&mut p, &[(0, 0)], 105);
     }
 
+    #[cfg(any())] // 診断 W11-B15: 逐次 matrix への譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_no_mdi_pull() {
         let (_d, mut p) = guarded_new("probe_nomdi", 39);

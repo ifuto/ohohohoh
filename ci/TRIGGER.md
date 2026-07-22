@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 40
+- count: 41
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -58,3 +58,4 @@
 - 2026-07-22: wave 11 診断B12 (シングル4本のみ解放: コンテンツ既知判明)
 - 2026-07-22: wave 11 診断B13 (逐次ステージプローブ: prepare→build→単独frame→2chunk)
 - 2026-07-22: wave 11 診断B14 (選択切断プローブ: 全strip/HZB切/feather切/MDI+pull切)
+- 2026-07-22: wave 11 診断B15 (matrix 逐次化: 201=full_strip 203=no_hzb 205=default)
