@@ -688,6 +688,10 @@ pub fn mesh_section_pull(palette: &SectionPalette, chunk_x: i32, chunk_z: i32) -
     mesh_section_pull_inner(palette, chunk_x, chunk_z, true)
 }
 
+/// 列メッシュ (pull 経路)。`face_culling` は名前は歴史的経緯のもので、
+/// 実体は「Y 空層スキップ」の可否として inner に委譲される。
+/// 層スキップは空マスクの merge を省くだけなので**出力 quad 列には一切
+/// 影響しない** (純粋な perf スイッチ。emit 結果は true/false で bit 同一)。
 pub fn mesh_chunk_column_pull(
     sections: &[SectionPalette],
     chunk_x: i32,
@@ -1034,6 +1038,9 @@ pub fn merge_section_meshes(
     }
 }
 
+/// 列メッシュ (12B 経路)。`face_culling` の実体は pull 版と同じく
+/// 「Y 空層スキップ」の可否であり、出力頂点・index 列には影響しない
+/// (純粋な perf スイッチ: true/false で出力 bit 同一)。
 pub fn mesh_chunk_column(
     sections: &[SectionPalette],
     chunk_x: i32,
@@ -1088,6 +1095,11 @@ pub fn demo_column_rle(cx: i32, cz: i32) -> Vec<RleSection> {
 
 /// SWAR 64-bit Bitboard Directional Mask Slice comparison for ultra-fast neighbor culling.
 /// A 16x16 slice (256 bits) is represented as `[u64; 4]`.
+///
+/// 監査メモ (2026-07-22): この bitboard 系 3 関数 (`*_swar` / `*_avx2` /
+/// `extract_bitboard_span`) は将来の隣接チャンク横断カリング用に用意された
+/// 未接続の公開ユーティリティであり、現時点では本番経路のどこからも
+/// 呼ばれていない。正しさは SWAR 実装を正準として AVX2 版とテストで照合する。
 #[inline]
 pub fn bitboard_slice_cull_swar(slice_curr: &[u64; 4], slice_next: &[u64; 4]) -> [u64; 4] {
     [
@@ -1116,6 +1128,9 @@ pub unsafe fn bitboard_slice_cull_avx2(slice_curr: &[u64; 4], slice_next: &[u64;
 }
 
 /// Fast bit-scan (`trailing_zeros`) segment extraction from a 64-bit row mask.
+/// 最下位の連続 run 1 つだけを (start, len) で返す (後続の run は呼び出し側が
+/// run 除去後に再呼び出しして順に処理する規約)。`len` は `64 - start` で
+/// clamp され、全 1 マスクでも (0, 64) を正確に返す。
 #[inline]
 pub fn extract_bitboard_span(mut row_mask: u64) -> Option<(u32, u32)> {
     if row_mask == 0 {
@@ -1165,6 +1180,53 @@ mod tests {
         let culled = bitboard_slice_cull_swar(&curr, &next);
         assert_eq!(culled[0], 0x00F0_00F0_00F0_00F0);
         assert_eq!(extract_bitboard_span(0x0000_0000_0000_00F0), Some((4, 4)));
+    }
+
+    /// extract_bitboard_span の境界仕様 (モジュール固定セマンティクスから導出):
+    /// - 0 → None
+    /// - 最下位 run のみを返し、後続の孤立 bit は無視する
+    /// - len は 64 - start で clamp される (全 1 → (0,64)、bit63 → (63,1))
+    #[test]
+    fn bitboard_span_edge_cases() {
+        assert_eq!(extract_bitboard_span(0), None);
+        assert_eq!(extract_bitboard_span(u64::MAX), Some((0, 64)));
+        // bit63 のみ: clamp (64 - 63 = 1) が効く境界。
+        assert_eq!(extract_bitboard_span(1u64 << 63), Some((63, 1)));
+        assert_eq!(extract_bitboard_span(0x3), Some((0, 2)));
+        // 先頭 run のみ返す規約: 最上位の孤立 bit は後続処理に委ねる。
+        assert_eq!(extract_bitboard_span(0x8000_0000_0000_0001), Some((0, 1)));
+        // 複数 run では最下位 run のみ: 0xF0F0 = runs [4..8) と [12..16)。
+        assert_eq!(extract_bitboard_span(0xF0F0), Some((4, 4)));
+        // 0b0111_0000: run は [4..7)。
+        assert_eq!(extract_bitboard_span(0x70), Some((4, 3)));
+    }
+
+    /// AVX2 版は SWAR 版 (正準) と全入力で一致しなければならない。
+    /// CI ランナーが AVX2 非対応なら早期 return (SWAR が正準フォールバック)。
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[test]
+    fn bitboard_avx2_matches_swar_when_available() {
+        if !std::arch::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let cases: [([u64; 4], [u64; 4]); 5] = [
+            ([0; 4], [0; 4]),
+            ([u64::MAX; 4], [0; 4]),
+            ([u64::MAX; 4], [u64::MAX; 4]),
+            (
+                [0x00FF_00FF_00FF_00FF, 0xAAAA_AAAA_AAAA_AAAA, 0x1234_5678_9ABC_DEF0, 1],
+                [0x000F_000F_000F_000F, 0x5555_5555_5555_5555, 0xFEDC_BA98_7654_3210, 1],
+            ),
+            (
+                [0xDEAD_BEEF_CAFE_F00D, 42, u64::MAX, 0x0101_0101_0101_0101],
+                [0x0000_FFFF_0000_FFFF, 43, 0, 0x1010_1010_1010_1010],
+            ),
+        ];
+        for (a, b) in cases {
+            let swar = bitboard_slice_cull_swar(&a, &b);
+            let avx2 = unsafe { bitboard_slice_cull_avx2(&a, &b) };
+            assert_eq!(swar, avx2, "avx2 diverged from swar for {a:x?} vs {b:x?}");
+        }
     }
 }
 

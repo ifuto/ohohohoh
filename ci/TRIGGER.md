@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 52
+- count: 53
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -70,3 +70,4 @@
 - 2026-07-22: wave 11 診断F1 (M-4 根治後 det 系の最小 guard 再装着)
 - 2026-07-22: wave 11 最終形 (guard 撤去: M-4 根治 + det 567テスト 検証)
 - 2026-07-22: wave 12 — bobby_cache 全通読監査 (N-1 rebuild 時刻復元で LRU 決定性根治 / N-6 dim汚染skip / N-5 doc正直化 / N-2/N-4 防御) + テスト4本 (opt-gfx 571)
+- 2026-07-22: wave 13 — binary_greedy_meshing 全通読監査 (等価性再証明15件陰性 + AVX2/SWAR照合・span境界テスト + face_culling実意味doc化) (opt-gfx 573)

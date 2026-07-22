@@ -746,3 +746,52 @@ opt-gfx 567 → **571** (+4: rebuild 時刻 direct / rebuild 後 LRU / dim junk 
 parse 厳密)。全テスト名は決定的 red→green 対応が設計段階で証明済み
 (直感値ではなくモジュール固定セマンティクス = ファイル形式レイアウトと
 ソート規則から導出。K-6 教訓の運用)。
+
+---
+
+## O. binary_greedy_meshing.rs 全通読監査 (wave 13, 2026-07-22)
+
+メッシング心臓部 (1533 行) を全行監査。bench 決定性ダイジェストの根幹のため、
+新旧実装の等価性主張を手計算で再証明することに主眼を置いた。
+
+### 陰性確認 (再証明済み・問題なし) — O-1..O-15
+
+- bit 化 merge の等価性証明: 旧 `greedy_merge_2d_pull` で「等しい行ブロック内の
+  矩形拡張チェックは構造的常真」→ `actual_rows == row_span` 恒等、col_span は
+  row_bits の連続 run 長に一致。新 `*_bits` 版の trailing_zeros/ones 走査は
+  emit 順序 (row-major・左 run から・行ブロック単位) まで同一。数学的に確認
+  (既存 fuzz オラクル 4 件と二重の裏付け)。
+- `face_rows_for_slice`: 3 軸の rows マッピング (Y→(z,x)/X→(z,y)/Z→(y,x)) が
+  旧 mask 添字規約と一致。slice=15 の pos 面は `col >> 16 == 0` (u16→u32 昇格
+  のおかげ) で `bit_15` に正しく帰着 = is_opaque OOB 規約と厳密一致。
+- `run_mask = (((1u32 << span) - 1) << col0) as u16`: col0+span ≤ 16 が不変条件
+  のため上位溢れなし、切り詰めは正確。
+- `extract_bitboard_span`: tz 走査 + `min(64-start)` clamp が全境界で正しいこと
+  を手計算確認 (テストで固定化も実施)。
+- `emit_pull_quad` の clamp/`block==0` 早期 return/`w.max(1)` は全て構造的 no-op
+  の防御 (mask bit ⟺ origin voxel 不透明の対応を 3 軸で検証)。
+- `mesh_chunk_column_pull_world` の 64³ window 再パック: x+w ≤ 15+16 = 31 < 64 で
+  COORD_BITS 6bit 内、drop 判定・face/light_ao 持ち越しも正しい。
+- 非空セクション ⇒ 面 ≥1 (外周存在) が成立するため `is_empty` の取りこぼしなし。
+
+### O-16 (中): 未接続の unsafe SIMD に等価性テスト不足
+
+`bitboard_slice_cull_swar` / `bitboard_slice_cull_avx2` /
+`extract_bitboard_span` の 3 関数は**モジュール外のどこからも呼ばれていない**
+(将来の隣接チャンク横断カリング用の公開ユーティリティ)。特に AVX2 版は
+`unsafe` + `#[target_feature]` で、正準 SWAR 版との照合テストが存在しなかった。
+- 対応: `bitboard_avx2_matches_swar_when_available` (検出済み AVX2 時のみ実行、
+  全 0/全 1/混在パターン 5 ケースで厳密一致を検証) と
+  `bitboard_span_edge_cases` (0/全1/bit63 clamp/複数 run の最下位規約) を追加。
+- 併せて「現時点で本番経路からは未呼出」であることを doc に明記 (誠実性:
+  「ultra-fast neighbor culling」とだけ謳うと稼働中の最適化と誤読される)。
+
+### O-24 (低・誠実性): `face_culling` パラメータの命名と実体の乖離
+
+`mesh_chunk_column_pull` / `mesh_chunk_column` の `face_culling` は実体として
+「Y 空層スキップ」の可否であり、**出力には一切影響しない** (空マスク merge の
+省略は純粋な perf スイッチ。true/false で出力 bit 同一)。両関数の doc に明記。
+
+### テスト数
+
+opt-gfx 571 → **573** (+2: span 境界 / AVX2↔SWAR 等価)。
