@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 26
+- count: 27
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -44,3 +44,4 @@
 - 2026-07-22: wave 9 根治 (visgraph_reachable: flood_fill 始点含有設計に期待値訂正 0→1) 全3テスト再有効化
 - 2026-07-22: wave 10 — paging 真LRU根治(L-1/L-2) + region OOB拒否(L-3/L-4) + WGSL レイアウト陰性確認(563テスト)
 - 2026-07-22: wave 10 根治 (LRU テストのページ譲受トレース期待値誤記 1 箇所訂正: D は page0 譲受)
+- 2026-07-22: wave 11 — render_pipeline 全通読 (M-1 実速度計測根治) + 実統計交差決定性 (565テスト)
