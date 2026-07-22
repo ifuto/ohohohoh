@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 30
+- count: 31
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -48,3 +48,4 @@
 - 2026-07-22: wave 11 診断B2 (speed 単独切り分け: determinism テストを cfg 切断)
 - 2026-07-22: wave 11 診断B3 (determinism 半分分割: det_core / det_pull)
 - 2026-07-22: wave 11 診断B4 (det_core 単独切り分け)
+- 2026-07-22: wave 11 診断B5 (det_core さらに半分: core_x ビルド/カリング量系 / core_y 判決/wiring/速度系)
