@@ -1686,3 +1686,48 @@ capacity ヒントでハードキャップでない点 (Vec 成長; 踏み越え
 ### 検証結果 (全て実測)
 - lib テスト **652/652** (+2)。rustfmt hunk 増分 0 (HEAD 由来 1 hunk 温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AG. diff_mesh.rs 監査 (wave 31, 2026-07-22)
+
+`diff_mesh.rs` (16³ セクション差分 dirty 追跡 + MeshPatch 集約、Tier 2)
+全行照合。crate 内消費は render_pipeline:1118-1120 (chunk ingest 時の
+カメラ高セクション mark) のみで、patches/dirty の読み出しは外部ブリッジ
+(lib.rs:82 で re-export) 経路。opt-gfx 652 → **656** (+4)。
+
+### AG-1 (契約の明文化) 水平隣接チャンク伝播は呼び出し側の責務
+`mark_block_dirty` は**垂直**隣接セクション (local_y∈{0,15} で sy∓1) だけを
+伝播する。ブロックが chunk 端 (local x/z ∈ {0,15}) の場合、隣接チャンクの
+セクションメッシュもこのブロックに依存し陳腐化し得るが、API が chunk 内
+座標を受け取らない以上ここで扱えない → doc で契約明文化 (該当時は隣接
+チャンクにも同 block_y で呼ぶ)。今回コード変更は設計変更 (シグネチャ拡張)
+を伴うため文書側を直す選択 — 現消費 (ingest 時のカメラ高 3 点 mark) では
+発火しないため実害なしと根拠付け。
+
+### AG-2 (契約の明文化) MeshPatch 整合性は非検証
+`quad_count` と vertex/index bytes の整合 (stride 倍数、quad×6 等) は
+本モジュールに検証根拠 (stride 定義) がなく、勝手な assert は正当な
+生成側を拒否し得る → 非検証である旨を doc 明文化 (K-6 教訓:
+根拠なき直感 assert を入れない)。
+
+### 陰性確認
+`block_to_section_y` の div_euclid 規則 (負側も floor 方向で正しく、
+-65→-1 拒否 / 320→24 拒否)、bit 操作の u32 << sy (sy<24<32 で wrap なし)、
+dirty_sections の bit 昇順走査による完全決定性、patches の同一セクション
+位置保持置換 (順序安定)、take_dirty_mask の排他消費 (2 度読み不可)、
+dirty/_bits と patches の非整合 (独立) — 全て読み合わせ一致。
+既存テスト (marks_neighbors_on_boundary) の y=-64/y=-49 振る舞いは
+厳密列ピンで包含確認。
+
+### 追加テスト (+4, fail-loud)
+- section_y_mapping_exact_boundaries (hand-derived 厳密列 9 点 +
+  範囲外両端で dirty 非残留)
+- dirty_bits_exact_with_boundary_clamps_and_take_exclusive
+  (0x18 / 1<<23 / 1 / 1<<4 / (1<<23)|(1<<22) bit ピン — 途中 y=300 の
+  自前コメント導出誤りを実測前レビューで自己捕捉・訂正済)
+- dirty_sections_ascending_deterministic (昇順列ピン + 未登録=空)
+- push_patch_replaces_same_section_and_drains_all (位置保持置換、
+  drain 全回収で pending 0)
+
+### 検証結果 (全て実測)
+- lib テスト **656/656** (+4)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
