@@ -1402,7 +1402,8 @@ mod tests {
             p.low_spec.quad_budget = 0;
             let _ = guarded_frame(&mut p, &[(0, 0)], 201);
         }
-        // 診断 W11-B21: 全 strip 基底に 1 系統ずつ復帰 (恒久ではない)。
+        // 診断 W11-B22: 交互対照実験 (budget off/on/off/on — フレーク vs
+        // 設定因果の分別。恒久ではない)。
         let strip = |p: &mut RsiftRenderPipeline| {
             p.feather.enabled = false;
             p.profile.hzb_occlusion = false;
@@ -1414,28 +1415,26 @@ mod tests {
             p.low_spec.quad_budget = 0;
         };
         {
-            let (_d, mut p) = guarded_new("a1", 39);
+            let (_d, mut p) = guarded_new("c1", 39);
             strip(&mut p);
-            p.profile.multi_draw_indirect = true; // pool 不在で no-op 確認 (baseline)
-            let _ = guarded_frame(&mut p, &[(0, 0)], 221);
+            let _ = guarded_frame(&mut p, &[(0, 0)], 231);
         }
         {
-            let (_d, mut p) = guarded_new("a2", 39);
-            strip(&mut p);
-            p.profile.noise_upsampling = true;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 223);
-        }
-        {
-            let (_d, mut p) = guarded_new("a3", 39);
-            strip(&mut p);
-            p.low_spec.pre_mesh_occlusion = true;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 225);
-        }
-        {
-            let (_d, mut p) = guarded_new("a4", 39);
+            let (_d, mut p) = guarded_new("c2", 39);
             strip(&mut p);
             p.low_spec.quad_budget = 4096;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 227);
+            let _ = guarded_frame(&mut p, &[(0, 0)], 233);
+        }
+        {
+            let (_d, mut p) = guarded_new("c3", 39);
+            strip(&mut p);
+            let _ = guarded_frame(&mut p, &[(0, 0)], 235);
+        }
+        {
+            let (_d, mut p) = guarded_new("c4", 39);
+            strip(&mut p);
+            p.low_spec.quad_budget = 4096;
+            let _ = guarded_frame(&mut p, &[(0, 0)], 237);
         }
         {
             let (_d, mut p) = guarded_new("a5", 39);
