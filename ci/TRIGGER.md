@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 42
+- count: 43
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -60,3 +60,4 @@
 - 2026-07-22: wave 11 診断B14 (選択切断プローブ: 全strip/HZB切/feather切/MDI+pull切)
 - 2026-07-22: wave 11 診断B15 (matrix 逐次化: 201=full_strip 203=no_hzb 205=default)
 - 2026-07-22: wave 11 診断B16 (no-HZB 基底で6システム逐次切断: feather/MDI/pull/noise/occ/budget)
+- 2026-07-22: wave 11 診断B17 (203 config 確定済のため除外して 207 から逐次)

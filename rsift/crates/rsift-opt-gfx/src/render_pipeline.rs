@@ -1403,12 +1403,6 @@ mod tests {
             let _ = guarded_frame(&mut p, &[(0, 0)], 201);
         }
         {
-            let (_d, mut p) = guarded_new("m2", 39);
-            p.profile.hzb_occlusion = false;
-            p.profile.cpu_masked_occlusion = false;
-            let _ = guarded_frame(&mut p, &[(0, 0)], 203);
-        }
-        {
             let (_d, mut p) = guarded_new("m3", 39);
             p.profile.hzb_occlusion = false;
             p.profile.cpu_masked_occlusion = false;
