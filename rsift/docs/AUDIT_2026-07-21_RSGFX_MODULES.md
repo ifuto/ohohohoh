@@ -1731,3 +1731,41 @@ dirty/_bits と patches の非整合 (独立) — 全て読み合わせ一致。
 ### 検証結果 (全て実測)
 - lib テスト **656/656** (+4)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AH. tick_render_split.rs 監査 (wave 32, 2026-07-22)
+
+`tick_render_split.rs` (固定 20 TPS tick 時計 + 描画補間、Tier 3) 全行照合。
+実消費者は render_pipeline:44 (FixedTickClock)。opt-gfx 656 → **660** (+4)。
+
+### AH-1 (中・NaN 永久汚染) consume_ticks の NaN dt 凍結 — 根治
+`frame_dt_sec.clamp(0.0, 0.25)` は **NaN を素通しする** (clamp の panic 条件は
+min>max / 境界 NaN のみで入力 NaN は比較不成立で自己返還)。NaN が accumulator
+に加算されると以後全フレームで `acc >= TICK_DT` が偽となり、
+**tick が永久凍結**する (drs wave 23・frame_pacing S-3 と同型の観測欠損
+汚染)。NaN を観測欠測として drop (戻り 0、状態不変) に根治。
+±∞ は clamp が責任を持つ (0.25→5 tick / 0) ため従来どおり受理 — 生成係が
+実クロック dt (常に有限非負) の render_pipeline 経路では不発だったが、
+pub API としての堅牢性問題。
+
+### 陰性確認
+TICK_DT == 0.05 リテラルは bit 一致 (exact rational 検証) で剰余ゼロの
+1 tick 着地、1 フレーム dt 0.25 上限 = 最大 5 tick → 既定 max_catchup=10 の
+reset 分岐は単一 consume からは**不到達** (catchup < 10 の損失分岐) だが
+with_max_catchup 小指定時に確かに発火、n==max_catchup での残余破棄は
+spiral of death 防止として妥当、with_max_catchup(0) の 1 矯正 (0 だと
+n==0==max で毎フレーム acc reset の永久 0 tick 化を回避 — 既設ガード正当)、
+render_alpha ∈ [0,1) (consume 後 acc < TICK_DT が不変条件)、
+lerp の評価順 a+(b-a)*alpha — 全て読み合わせ+厳密テストで一致。
+
+### 追加テスト (+4, fail-loud)
+- consume_ticks_exact_sequence (0.05→1 tick 残余 0 / 0.024→alpha 0.48f32
+  bit 0x3ef5c28f / 0.026 累積で 1 tick / 9.0→5 tick / -3.0→0 tick)
+- nan_dt_is_dropped_without_poisoning (NaN で状態不変 + 直後の正常動作 —
+  旧実装では永久凍結で確実に赤)
+- max_catchup_discards_remainder_and_zero_is_coerced (上限 2 で残余破棄
+  alpha=0 ピン + 0→1 矯正)
+- lerp_exact_values (2.0/2.5/端点厳密)
+
+### 検証結果 (全て実測)
+- lib テスト **660/660** (+4)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
