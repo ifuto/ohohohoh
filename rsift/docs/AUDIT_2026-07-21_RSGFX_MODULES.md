@@ -956,3 +956,91 @@ sky>0) を**純粋関数 validate に集約**し、`set_inputs` (GPU) と
 
 opt-gfx 579 → **582** (+3: validate 受理境界 / 契約違反 7 分野拒否 /
 ddgi_update_cpu 入口拒否 should_panic)。
+
+---
+
+## S. frame_pacing / FSR1 3連鎖 / frame_reference 深度監査 (wave 17, 2026-07-22)
+
+ユーザー指示: 「完璧だと思うところまで続けてよい、勝手にデバッグを行う」の継続。
+未通読だった `frame_*` 系列のうち 4 モジュール (frame_pacing 82 / fsr1.wgsl・fsr1.rs /
+frame_reference 752 / frame_fsr1 357+行) を全行監査。**アルゴリズム偽装 1 件・
+GPU 乖離 1 件・実質ハング 1 件**を含む 8 件を修正。opt-gfx 582 → **594** (+12)。
+
+### S-1 (🔴 アルゴリズム偽装) FSR1 RCAS が「ぼかし」だった (wave 1 A1 と同種)
+
+`shaders/fsr1.wgsl::fsr_rcas` とその精密ミラー `frame_reference::fsr1_reference` の
+両方が `out = c + lap * sharpness` (lap = 4近傍平均 − 中心) で、中心画素を近傍
+平均へ近づける = **鮮鋭化ではなくぼかし**。`fsr1.rs::rcas` (正しい `p - lap*s`、
+「加算だとブラーになる」の注意書き付き) や wave 1 で公式照合修正済の
+`cas.rs::cas_sample` と符号が矛盾しており、FSR1 GPU 実パス全体
+(GpuFsr1Pass: EASU→RCAS 2 dispatch) が「RCAS を名乗る平滑化フィルタ」だった。
+- 修正: WGSL とミラーを `c - lap * sharpness` に同時反転 (3連鎖の符詞整合:
+  fsr1.rs::rcas ↔ fsr1.wgsl::fsr_rcas ↔ frame_reference::fsr1_reference)。
+- 方向性テスト: `fsr1_rcas_sharpens_valley_and_peak` — sharpness=0 (EASU のみ)
+  を対照基底とし、谷底は 0 より深く・峰は高くなることを直接固定
+  (旧ぼかし符号では決定的に失敗する設計。EASU 位置寄せ値への依存を排除)。
+- `fsr1_flat_region_is_identity` の境界期待値を厳密値へ格上げ: OOB=0 近傍で
+  辺 ×1.05=126 / 角 ×1.10=132 の「明転ハロー」 (旧: 114/108 への暗転期待は
+  ぼかし符号を pin していたため修正に追随)。
+
+### S-2 (🔴 GPU 乖離) frame_reference の深度が透視補正補間だった
+
+GPU 固定機能ラスタライザは `z_ndc = clip.z/clip.w` を**スクリーン空間線形**で
+補間する (z_ndc = A + B/w、1/w が画面アフィン ⟹ z_ndc も画面アフィン、
+標準透視では clip.z が clip.w のアフィン関数となることから導かれる定石結果を
+手計算で再証明)。`raster_tri` は透視補正式 `Σλ(z/w) / Σλ(1/w)` を採っており、
+三角形内で w が変化する限り GPU 深度と一致しない (誤差 ∝ λ 加重の 1/w の分散)。
+「GPU/CPU 相互検証用参照実装」という存在意義に反するため
+`z = w0*za + w1*zb + w2*zc` の画面線形に訂正。これに伴い `sw` (1/w 配列) と
+`wa` 引数・`inv_w` ガードは完全デッド化したため除去 (シグネチャは private)。
+Hi-Z 3 テストは深度値の微細移動に対して頑健 (意味論固定) で変更後も緑。
+
+### S-3 (🟠 実質ハング) FramePacer::next_present_time の逐次加算ループ
+
+`while t < now { t += interval }` はギャップが interval 比 ~6e10 (タイマー
+リセット直後やデバッガ停止後) で実質ハング。さらに `refresh_hz <= 0` / NaN
+(= interval ≤ 0) では**無限ループ**。除算による直接推定 + ±1 ステップの
+端数補正で O(1) 化し、「now 以上の最早境界」の意味論は保存。契約 fail-loud
+(interval が有限正に定まらない refresh_hz は new で拒否) を明文化。
+合わせて `record_frame` の NaN/±inf 観測値による EMA 永久汚染を遮断
+(非有限は欠測として捨てる)。現呼出側 (full_graph_wiring, 60Hz 固定値) は
+影響なし。+6 テスト (巨大ギャップ O(1)/最早性掃引 2000 件/非有限遮断 bit 不変/
+NaN-now 旧挙動互換/契約拒否 2 件)。
+
+### S-4 (🟡 3連鎖ドリフト) EASU 勾配チャンネルの不統一
+
+WGSL (R のみ) ↔ ミラー (R のみ) に対し `fsr1.rs::easu_reconstruct` だけが
+luma 加重で勾配を計算し、モジュール doc の「WGSL は fsr1.rs と同一数学」声明が
+偽になっていた。出荷系 (WGSL↔ミラー) を正として fsr1.rs を R チャンネルに統一
+(GPU 可視出力は不変。消費者は full_graph_wiring の tick 連鎖のみで、
+prev_frame_color 内部状態は report に流出しないことを grep で確認済)。
+WGSL 内の未使用 `fn luma` と fsr1.rs の参照ゼロ `Vec3`/`luma` (workspace 全走査で
+参照ゼロ証明) を同一根のデッドコードとして除去。方向性テスト 2 件追加
+(R 平坦/G-B 変動で寄せ不発の厳密 bit、R 変動での寄せ発動の厳密 fx2)。
+
+### S-5 (🟡 契約未強制) GpuFsr1Pass の次元チェック不在
+
+0 次元 (wgpu 検証 panic / WGSL 除算不定)、low > full (アップスケーラ想定外の
+縮小)、full_w > 2^30 (`full_w*4` u32 溢れ) を純粋関数 `validate_dims` に集約し
+`with_sharpness` 入口で強制 (DDGI wave 16 の validate() パターン踏襲)。
+受理境界 (等倍 1:1, 1x480→640x480) と全違反分野をテスト固定。
+
+### S-6 (検証基盤) naga による WGSL↔Rust ワイヤ形式の自動突合
+
+`struct Params` の naga 計算レイアウト (span=24B、メンバ offset 表) が
+`queue.write_buffer` の実 payload (`[f32; 6]` = 24B) と一致することを
+`params_uniform_layout_matches_rust_wire` で固定。uniform レイアウトの
+ドリフトを GPU 無し CI で検出可能に (gpu_culling の L-5 レイアウト照合を
+自動化したもの)。
+
+### 検証結果 (全て実測)
+- lib テスト **594/594** (582 → +12: pacing 6, fsr1.rs 2, frame_reference 1,
+  frame_fsr1 3)。
+- wide_static_bench structural digest **`004c1cf5fb17bfe8` (rows=357) 不変**。
+- pseudo_mc_bench 決定的値 8 点 (S1 24543/314193, C 303895/3646740B,
+  A 861656/27572992, ACMR 1.669→0.929, hit 90.9%, edit 24511704B,
+  水 116719, palette 248110B) spot 一致。
+- rustfmt: 編集 5 ファイルで新規 diff ゼロ (fsr1.rs の 2 件は HEAD 由来の
+  既存偏差として保存、増分 0)。clippy: 編集箇所に新規警告 0。
+- 残 frame_* 未通読: frame_reuse (426) / frame_vct (615) / frame_hiz (745) /
+  frame_pipeline (700)。以降の wave で消化予定。

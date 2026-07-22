@@ -1,6 +1,11 @@
 // FSR 1.0 — EASU (edge-aware upsample) + RCAS (sharpen) reference compute pass.
-// Mirrors the CPU reference in fsr1.rs: detect the luma gradient, shift the
-// sample position toward 0.5 along strong edges, then bilinear reconstruct.
+// Mirrors the CPU reference in fsr1.rs and the GPU/CPU cross-check mirror
+// frame_reference::fsr1_reference: detect the gradient, shift the sample
+// position toward 0.5 along strong edges, then bilinear reconstruct.
+//
+// 勾配チャンネル規約 (3連鎖で統一): エッジ検出は **R チャンネルのみ** で行う
+// (luma 加重は使わない)。fsr1.rs::easu_reconstruct ↔ 本シェーダ ↔
+// frame_reference::fsr1_reference が同一演算順であること。
 
 struct Params { inputSize: vec2<f32>, outputSize: vec2<f32>, sharpness: f32, _pad: f32 };
 @group(0) @binding(0) var<uniform> params: Params;
@@ -9,8 +14,6 @@ struct Params { inputSize: vec2<f32>, outputSize: vec2<f32>, sharpness: f32, _pa
 @group(0) @binding(3) var dstTex: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(4) var casTex: texture_2d<f32>;
 @group(0) @binding(5) var casOut: texture_storage_2d<rgba8unorm, write>;
-
-fn luma(c: vec3<f32>) -> f32 { return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)); }
 
 // EASU: upsample a low-res source into the (larger) destination.
 @compute @workgroup_size(8, 8)
@@ -55,5 +58,8 @@ fn fsr_rcas(@builtin(global_invocation_id) gid: vec3<u32>) {
     let w = textureLoad(casTex, coord + vec2<i32>(-1, 0), 0).rgb;
     let lap = (n + s + e + w) * 0.25 - c;
     let sharp = vec3<f32>(params.sharpness);
-    textureStore(casOut, coord, vec4<f32>(clamp(c + lap * sharp, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0));
+    // 鮮鋭化は中心を近傍平均から「遠ざける」方向: c - lap*sharp
+    // (c + lap*sharp は平均へ近づくため「ぼかし」になる — fsr1.rs::rcas、
+    //  cas.rs::cas_sample (FidelityFX CAS 準拠) と同一の符号規則)。
+    textureStore(casOut, coord, vec4<f32>(clamp(c - lap * sharp, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0));
 }

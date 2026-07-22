@@ -22,6 +22,31 @@ use tracing::debug;
 /// 既定シャープネス (`full_graph_wiring` の `Fsr1 { sharpness: 0.2 }` と同値)。
 pub const DEFAULT_SHARPNESS: f32 = 0.2;
 
+/// 次元契約の純粋検査 (wgpu デバイス不要 — GPU 無し環境でも全契約が検証可能)。
+///
+/// - 全次元 ≥ 1 (0 幅テクスチャは wgpu 検証エラー / WGSL で inputSize 除算が不定)
+/// - low ≤ full (FSR1 はアップスケーラ。縮小は EASU の想定外)
+/// - full_w ≤ 2^30 (`full_w * 4` の u32 オーバーフローで readback 行サイズ計算が
+///   panic するのを未然防止)
+pub fn validate_dims(low_w: u32, low_h: u32, full_w: u32, full_h: u32) -> Result<(), String> {
+    if low_w == 0 || low_h == 0 || full_w == 0 || full_h == 0 {
+        return Err(format!(
+            "dims must be non-zero (low={low_w}x{low_h} full={full_w}x{full_h})"
+        ));
+    }
+    if low_w > full_w || low_h > full_h {
+        return Err(format!(
+            "FSR1 is an upscaler: low ({low_w}x{low_h}) must not exceed full ({full_w}x{full_h})"
+        ));
+    }
+    if full_w > (1 << 30) {
+        return Err(format!(
+            "full_w {full_w} exceeds 2^30 (row-bytes u32 overflow guard)"
+        ));
+    }
+    Ok(())
+}
+
 /// FSR1 (EASU + RCAS) の実 GPU パス。低解像度 LDR → 全解像度 LDR + readback。
 pub struct GpuFsr1Pass {
     pub full_w: u32,
@@ -56,6 +81,7 @@ impl GpuFsr1Pass {
         full_h: u32,
         sharpness: f32,
     ) -> Self {
+        validate_dims(low_w, low_h, full_w, full_h).unwrap_or_else(|e| panic!("GpuFsr1Pass: {e}"));
         let mk = |format: wgpu::TextureFormat, usage: wgpu::TextureUsages, label: &str| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -353,5 +379,66 @@ mod tests {
                 "entry point '{ep}' not found"
             );
         }
+    }
+
+    /// WGSL `struct Params` の naga 計算レイアウトが Rust 側の wire 形式
+    /// (`[f32; 6]` = 24B、render_full の queue.write_buffer と同じ) と
+    /// 一致すること。uniform レイアウトのドリフトを GPU 無しで検出する。
+    #[test]
+    fn params_uniform_layout_matches_rust_wire() {
+        let module = naga::front::wgsl::parse_str(crate::fsr1::FSR1_WGSL)
+            .unwrap_or_else(|e| panic!("fsr1 WGSL invalid: {e}"));
+        let (_, ty) = module
+            .types
+            .iter()
+            .find(|(_, t)| t.name.as_deref() == Some("Params"))
+            .expect("struct Params must exist");
+        let naga::TypeInner::Struct { members, span } = &ty.inner else {
+            panic!("Params must be a struct");
+        };
+        assert_eq!(*span, 24, "Params must be 24B (Rust writes [f32; 6])");
+        let expect = [
+            ("inputSize", 0u32),
+            ("outputSize", 8),
+            ("sharpness", 16),
+            ("_pad", 20),
+        ];
+        assert_eq!(members.len(), expect.len());
+        for (m, (name, off)) in members.iter().zip(expect) {
+            assert_eq!(m.name.as_deref(), Some(name));
+            assert_eq!(m.offset, off, "member {name} offset");
+        }
+        // Rust 側の実 payload も 24B であること (render_full の [f32; 6])。
+        assert_eq!(std::mem::size_of::<[f32; 6]>(), 24);
+    }
+
+    /// 次元契約: 受理境界 (等倍含む)。
+    #[test]
+    fn validate_dims_accepts_upscale_bounds() {
+        for (lw, lh, fw, fh) in [
+            (1, 1, 1, 1),
+            (320, 240, 640, 480),
+            (640, 480, 640, 480),
+            (1, 480, 640, 480),
+        ] {
+            super::validate_dims(lw, lh, fw, fh)
+                .unwrap_or_else(|e| panic!("{lw}x{lh}->{fw}x{fh} must be accepted: {e}"));
+        }
+    }
+
+    /// 次元契約: 違反の全分野を拒否 (0 次元 / 縮小 / u32 overflow 防止)。
+    #[test]
+    fn validate_dims_rejects_violations() {
+        // 0 次元 (4 変数それぞれ)
+        assert!(super::validate_dims(0, 240, 640, 480).is_err());
+        assert!(super::validate_dims(320, 0, 640, 480).is_err());
+        assert!(super::validate_dims(320, 240, 0, 480).is_err());
+        assert!(super::validate_dims(320, 240, 640, 0).is_err());
+        // 縮小 (幅 / 高さ それぞれ)
+        assert!(super::validate_dims(641, 240, 640, 480).is_err());
+        assert!(super::validate_dims(320, 481, 640, 480).is_err());
+        // u32 overflow ガード
+        assert!(super::validate_dims(1, 1, (1 << 30) + 1, 1).is_err());
+        assert!(super::validate_dims(1, 1, 1 << 30, 1).is_ok());
     }
 }

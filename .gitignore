@@ -1,0 +1,6 @@
+# --- ビルド成果物 (cargo) ---
+target/
+
+# --- 実行時生成キャッシュ ---
+.rsift_cache/
+**/.rsift_cache/

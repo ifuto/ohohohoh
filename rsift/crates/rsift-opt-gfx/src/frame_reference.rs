@@ -28,8 +28,11 @@ pub struct CpuFrame {
     pub quads: u32,
     /// 被覆ピクセルの平均輝度 (内容があることの定量指標)。
     pub avg_lum: f32,
-    /// 全ピクセルの NDC z 深度 (1.0 = 未被覆 / far)。透視補正 z、
-    /// `Depth32Float` クリア値と同一規則。Phase C Hi-Z 参照の実入力。
+    /// 全ピクセルの NDC z 深度 (1.0 = 未被覆 / far)。補間は**スクリーン空間
+    /// 線形** — GPU 固定機能ラスタライザ (Depth32Float アタッチメント) と
+    /// 同一規則 (wave 17 で透視補正補間から訂正: z_ndc = clip.z/clip.w は
+    /// 画面重心座標の厳密なアフィン関数であり、透視補正式
+    /// Σλ(z/w)/Σλ(1/w) とは数学的に一致しない)。
     pub depth: Vec<f32>,
 }
 
@@ -113,7 +116,6 @@ pub fn render_reference(
             let mut sx = [0.0f32; 4];
             let mut sy = [0.0f32; 4];
             let mut sz_ndc = [0.0f32; 4];
-            let mut sw = [0.0f32; 4];
             let mut visible = true;
             for c in 0..4 {
                 let local = corner_pos(face, [ox, oy, oz], qw, qh, c as u32);
@@ -135,7 +137,6 @@ pub fn render_reference(
                 sx[c] = (nx * 0.5 + 0.5) * width as f32;
                 sy[c] = (1.0 - (ny * 0.5 + 0.5)) * height as f32;
                 sz_ndc[c] = clip[2] / w;
-                sw[c] = 1.0 / w;
             }
             if !visible {
                 continue;
@@ -153,7 +154,6 @@ pub fn render_reference(
                     [sx[tri[1]], sy[tri[1]]],
                     [sx[tri[2]], sy[tri[2]]],
                     [sz_ndc[tri[0]], sz_ndc[tri[1]], sz_ndc[tri[2]]],
-                    [sw[tri[0]], sw[tri[1]], sw[tri[2]]],
                     col,
                     width,
                     height,
@@ -192,14 +192,21 @@ pub fn render_reference(
     }
 }
 
-/// エッジ関数ベースの実三角形ラスタ (透視補正 ndc.z 深度)。
+/// エッジ関数ベースの実三角形ラスタ (深度は画面重心座標の線形補間)。
+///
+/// z_ndc = clip.z/clip.w はスクリーン空間で厳密にアフィン (z_ndc = A + B/w と
+/// 1/w が画面アフィンであることから導かれる定石結果) であり、GPU 固定機能
+/// ラスタライザはこれを画面線形で補間する。旧実装は透視補正式
+/// Σλ(z/w)/Σλ(1/w) を採っていたが、これは z_ndc に対しては
+/// 同一三角形内で w が変化する限り GPU 値と一致しない (誤差は λ 加重の
+/// 1/w の分散に比例)。wave 17 でハードウェア規則の画面線形に訂正。
+/// ただし z 比較は全角 w>0 (quad 棄却で保証) の正深度領域でのみ行う。
 #[allow(clippy::too_many_arguments)]
 fn raster_tri(
     a: [f32; 2],
     b: [f32; 2],
     c: [f32; 2],
     za: [f32; 3],
-    wa: [f32; 3],
     col: [f32; 3],
     width: u32,
     height: u32,
@@ -227,12 +234,8 @@ fn raster_tri(
             if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
                 continue;
             }
-            // 透視補正: Σ(λi * (1/wi)) で z を補間 (ndc.z は 1/w 線形)
-            let inv_w = w0 * wa[0] + w1 * wa[1] + w2 * wa[2];
-            if inv_w <= 1e-9 {
-                continue;
-            }
-            let z = (w0 * za[0] * wa[0] + w1 * za[1] * wa[1] + w2 * za[2] * wa[2]) / inv_w;
+            // z_ndc の画面線形補間 (GPU 深度アタッチメントと同一規則)。
+            let z = w0 * za[0] + w1 * za[1] + w2 * za[2];
             let idx = (y * width + x) as usize;
             if z < depth[idx] {
                 depth[idx] = z;
@@ -270,7 +273,7 @@ pub fn fsr1_reference(
         ]
     };
 
-    // --- fsr_easu (輝度勾配は WGSL 同様 R チャンネルのみ) ---
+    // --- fsr_easu (勾配は R チャンネルのみ — WGSL/fsr1.rs 3連鎖規約) ---
     let mut inter = vec![[0.0f32; 3]; (full_w * full_h) as usize];
     for gy in 0..full_h {
         for gx in 0..full_w {
@@ -305,6 +308,9 @@ pub fn fsr1_reference(
     }
 
     // --- fsr_rcas (OOB textureLoad = 0、WGSL 準拠) ---
+    // 符号規約: `c - lap * sharpness` (中心を近傍平均から遠ざける = 鮮鋭化)。
+    // `+` は「ぼかし」であり fsr1.rs::rcas / cas.rs::cas_sample と矛盾する
+    // (wave 17 で WGSL 側と同時に修正、3連鎖は常に同符号)。
     let load = |x: i64, y: i64| -> [f32; 3] {
         if x < 0 || y < 0 || x >= full_w as i64 || y >= full_h as i64 {
             [0.0; 3]
@@ -322,7 +328,7 @@ pub fn fsr1_reference(
             let w = load(gx - 1, gy);
             for ch in 0..3 {
                 let lap = (n[ch] + s[ch] + e[ch] + w[ch]) * 0.25 - c[ch];
-                let v = (c[ch] + lap * sharpness).clamp(0.0, 1.0);
+                let v = (c[ch] - lap * sharpness).clamp(0.0, 1.0);
                 out.push((v * 255.0 + 0.5) as u8);
             }
             out.push(255);
@@ -547,23 +553,63 @@ mod tests {
 
     #[test]
     fn fsr1_flat_region_is_identity() {
-        // 全面同一色の低解像度入力 → EASU+RCAS 後も同一色 (勾配ゼロ、lap=0)
-        // ただし外周は WGSL の OOB textureLoad=0 規則により近傍がゼロ扱いとなり
-        // lap<0 でわずかに暗転する (GPU も同一規則 — CPU ミラーはこれを再現している)。
+        // 全面同一色の低解像度入力 → 内部は EASU+RCAS を通っても完全同一色
+        // (勾配ゼロ、lap=0)。
+        // 外周は WGSL の OOB textureLoad=0 規則により近傍ゼロが混入する。
+        // RCAS は鮮鋭化 (中心を近傍平均から遠ざける: out = c - lap·s) なので、
+        // 近傍平均がゼロ混入で低い → lap<0 → 境界画素は規則的に「明転」する。
+        //   辺   : 平均 = 3c/4 → lap = -c/4 → c·(1 + s/4)  = 120·1.05 = 126
+        //   角   : 平均 = c/2  → lap = -c/2 → c·(1 + s/2)  = 120·1.10 = 132
+        // (旧ぼかし符号では暗転方向に振れていた — wave 17 RCAS 符号修正の回帰固定。
+        //  GPU も WGSL 経由でこの同一規則に従う)
         let lo = vec![120u8; 4 * 4 * 4];
         let out = fsr1_reference(&lo, 4, 4, 8, 8, 0.2);
         assert_eq!(out.len(), 8 * 8 * 4);
         for y in 0..8usize {
             for x in 0..8usize {
                 let v = out[(y * 8 + x) * 4];
-                if (1..7).contains(&x) && (1..7).contains(&y) {
-                    assert_eq!(v, 120, "interior must stay flat");
-                } else {
-                    // 境界: 辺は近傍ゼロ1個 (≈0.95倍→114)、角は2個 (≈0.9倍→108) まで低下
-                    assert!((108..=120).contains(&v), "border darkening bounded: {v}");
+                let border_x = x == 0 || x == 7;
+                let border_y = y == 0 || y == 7;
+                match (border_x, border_y) {
+                    (false, false) => assert_eq!(v, 120, "interior must stay flat"),
+                    (true, true) => assert_eq!(v, 132, "corner: 2 OOB taps → ×1.10 halo"),
+                    _ => assert_eq!(v, 126, "edge: 1 OOB tap → ×1.05 halo"),
                 }
             }
         }
+    }
+
+    #[test]
+    fn fsr1_rcas_sharpens_valley_and_peak() {
+        // 谷底 (周囲より暗い中心) は鮮鋭化でさらに深く、峰はさらに高くなる。
+        // sharpness=0 (RCAS 無効 = EASU のみ) との差分で検証するため、
+        // EASU のエッジ位置寄せの中間値には一切依存しない
+        // (符号の向きそのものの直接固定。旧ぼかし符号 c + lap·s では
+        //  本テストは両分岐とも決定的に失敗する)。
+        let mut lo = vec![128u8; 3 * 3 * 4];
+        for ch in 0..3 {
+            lo[(1 * 3 + 1) * 4 + ch] = 64; // 谷底
+        }
+        let easu_only = fsr1_reference(&lo, 3, 3, 3, 3, 0.0);
+        let sharpened = fsr1_reference(&lo, 3, 3, 3, 3, 0.2);
+        let c0 = easu_only[(1 * 3 + 1) * 4];
+        let c1 = sharpened[(1 * 3 + 1) * 4];
+        assert!(
+            c1 < c0,
+            "valley must deepen under RCAS: sharp {c1} vs easu-only {c0}"
+        );
+
+        for ch in 0..3 {
+            lo[(1 * 3 + 1) * 4 + ch] = 255; // 峰
+        }
+        let easu_only = fsr1_reference(&lo, 3, 3, 3, 3, 0.0);
+        let sharpened = fsr1_reference(&lo, 3, 3, 3, 3, 0.2);
+        let c0 = easu_only[(1 * 3 + 1) * 4];
+        let c1 = sharpened[(1 * 3 + 1) * 4];
+        assert!(
+            c1 > c0,
+            "peak must rise under RCAS: sharp {c1} vs easu-only {c0}"
+        );
     }
 
     #[test]
