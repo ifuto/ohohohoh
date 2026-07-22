@@ -1370,6 +1370,33 @@ mod tests {
         }
     }
 
+    // 診断 W11-B10: マルチチャンク条件要素の切り分け (恒久ではない)。
+    #[test]
+    fn probe_frame_two_pos() {
+        let (_d, mut p) = guarded_new("probe_2p", 39);
+        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0)], 81);
+    }
+
+    #[test]
+    fn probe_frame_multi_no_occ() {
+        let (_d, mut p) = guarded_new("probe_noocc", 39);
+        p.low_spec.pre_mesh_occlusion = false;
+        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 83);
+    }
+
+    #[test]
+    fn probe_frame_single_far() {
+        let (_d, mut p) = guarded_new("probe_far", 39);
+        let _ = guarded_frame(&mut p, &[(2, 0)], 85);
+    }
+
+    #[test]
+    fn probe_frame_multi_no_frustum() {
+        let (_d, mut p) = guarded_new("probe_nofr", 39);
+        p.low_spec.frustum_cull = false;
+        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 87);
+    }
+
     #[cfg(any())] // 診断 W11-B9: probes への通信譲渡 (恒久撤去ではない)
     #[test]
     fn frame_demo_stats_det_core_x() {
