@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 64
+- count: 65
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -82,3 +82,4 @@
 - 2026-07-22 (count 62): wave 28 — mesh_compactor Gribb near 根治 (第3 extractor 統一) + WGSL wire format 厳密ピン (4 件) 完了。CI 緑確認
 - 2026-07-22 (count 63): wave 29 — simd_frustum SoaAabbs 等長契約 fail-loud 化 (UB 根絶) + ディスパッチ契約化 (6 件) 完了。CI 緑確認
 - 2026-07-22 (count 64): wave 30 — azdo overhead_saved 境界根治 + doc 正直化 + mask 等長契約化 (2 件) 完了。CI 緑確認
+- 2026-07-22 (count 65): wave 31 — diff_mesh 契約明文化 + 厳密列ピン (4 件) 完了。CI 緑確認
