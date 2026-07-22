@@ -518,6 +518,19 @@ mod strict_tests {
         assert_eq!(inst2, inst3);
     }
 
+    /// 診断 C3: main 関数(早期 return・空 if・storage 書き込み)と、それ以外の
+    /// 宣言 (structs/vars/helper fns) のどちらが naga 0.20 に拒否されるか切り分け。
+    /// プレフィックスは宣言境界で切断 (@compute 手前) した自己完結モジュール。
+    #[test]
+    fn culling_wgsl_parse_prefix_without_main() {
+        let src = GPU_CULL_SHADER_WGSL;
+        let cut = src.find("@compute").expect("@compute marker");
+        let prefix = &src[..cut];
+        let module = naga::front::wgsl::parse_str(prefix)
+            .unwrap_or_else(|e| panic!("prefix WGSL (no main) invalid: {e}"));
+        assert!(module.entry_points.is_empty(), "prefix には EP 無し");
+    }
+
     #[test]
     #[ignore = "診断D2: naga parse 0.20 の受理性差を分離"]
     fn culling_wgsl_parses_with_main_entry_point() {
