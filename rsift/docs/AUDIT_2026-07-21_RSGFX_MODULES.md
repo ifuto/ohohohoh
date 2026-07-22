@@ -1769,3 +1769,54 @@ lerp の評価順 a+(b-a)*alpha — 全て読み合わせ+厳密テストで一�
 ### 検証結果 (全て実測)
 - lib テスト **660/660** (+4)。rustfmt hunk 増分 0 (CRLF 維持、両側 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AI. soa_layout.rs 監査 (wave 33, 2026-07-22)
+
+`soa_layout.rs` (EntitySoA + XZY indexing + 64B アライン確保、Tier 3) 全行照合。
+crate 内消費者なし (lib.rs:109 で re-export のみ)。opt-gfx 660 → **668** (+8)。
+
+### AI-1 (高・ゼロデイ) alloc_aligned_64 は一度もアライン補正を達成していなかった — Aligned64 で根治
+旧実装は `vec![0u8; len+64]` を確保後、ポインタ由来のオフセットを
+`raw.drain(0..align_off)` で除去する設計だったが、**`Vec::drain` は要素を前方
+シフトするだけで先頭ポインタ (アロケーション先頭) は不変**。事後検査
+`raw.as_ptr() % 64 != 0` が初期確保が 64 の倍数だった場合を除き必ず発火し、
+fallback の `vec![0u8; len]` (64B 非保証) を返していた。すなわち名前に反し
+**ほぼ任意の入力で misaligned を静寂返却** — aligned SIMD load
+(`_mm256_load_ps` 等) を前提にした消費者は実機 crash し得た。
+`std::alloc` Layout(align=64) 直確保 + 自前 Drop の `Aligned64` newtype
+(NonNull 保持、Deref/DerefMut → [u8], Send/Sync を SAFETY 注記つきで実装、
+len==0 は 1B 確保で Layout 非零要件を回避、alloc null は handle_alloc_error、
+dealloc は同一 layout) に根治。crate 内消費者なしを確認した上で API 置換。
+
+### AI-2 (中・静寂 aliasing) xzy_index の範囲外 z ≥ sx 衝突 — fail-loud 化
+旧実装は `(x*sx + z)*sy + y` のみで範囲検査なし。`z >= sx` で異なるセルが
+同一 index に衝突する (例: sx=16 で (1,0,0) と (0,0,16) が共に 256)。
+XZY の z ストライドを sx で仮定する設計は sz == sx の正方形断面 (chunk
+16×16) を暗黙前提としていた → 契約を明文化し `x < sx && z < sx && y < sy`
+を fail-loud assert。decode 側は有効 index の一貫復元 (相互逆写像) を確認。
+
+### AI-3 (契約) EntitySoa 7 配列等長の強制
+SoaAabbs AE-1 と同型: pub フィールド手組みで不等長を作れる。`integrate` は
+範囲外 index panic、`to_aos` は `get` の None で**出力を静寂に短く打ち切る**
+不誠実な振る舞いだった。`assert_uniform_len` (7 配列の実長全列挙) を両入口で。
+`get` 自体は寛容アクセサとして残置 (None は契約内)。
+
+### 陰性確認
+`xzy_decode` の除剰合成、`integrate` の x+=vx*dt 左結合、`with_capacity` の
+7 配列統一確保 — 全て一致。EntityAos に PartialEq derive を追加
+(additive、テスト可読性のため)。
+
+### 追加テスト (+8, fail-loud)
+- xzy_index_decode_exact_table (0/306/4095/column-scan +1 連続/代表 5 点逆写像)
+- xzy_index_rejects_{x,y,z}_out_of_range (should_panic ×3、
+  z=16=sx 等号境界含む)
+- aligned64_actually_aligned_zeroed_and_writable (len ∈ 0,1,63,64,65,4096 で
+  ptr%64==0 + ゼロ初期化 + Deref/DerefMut RW 疎通)
+- integrate_exact_and_aos_roundtrip (2.0/1.5/11.0/0.0/3.0/100.0 厳密 +
+  往復一致)
+- integrate/to_aos_rejects_non_uniform_soa (should_panic ×2)
+
+### 検証結果 (全て実測)
+- lib テスト **668/668** (+8)。rustfmt hunk 増分 0 (CRLF 維持、両側 0;
+  struct_lit_width=18 規則による複数行化は正準形で対応)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
