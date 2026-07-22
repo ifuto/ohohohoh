@@ -2491,3 +2491,43 @@ f32 では単位ベクトル同士の dot が丸めで −1−2^-23 まで振れ
 ### 検証結果 (全て実測)
 - lib テスト **748/748** (+7)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AX. intern_pool.rs 監査 (wave 48, 2026-07-23)
+
+full_graph_wiring:98/:1135 で実消費 (マテリアル ID インターン)、
+examples でもベンチ用に消費。
+
+### AX-1 (高・ゼロデイ級): 二重 release の release build 無防備を根治
+`release` の refs>0 検査は **debug_assert のみ**で、release build では
+二重 release が `0 − 1 → u32::MAX` アンダーフローにより実体を不死化、
+さらにスロット再利用後の誤 release が新規オーナーの参照カウントを
+奪う永久破壊に発展し得た。全ビルド fail-loud の `assert!` に根治し、
+範囲外 ID も明示メッセージ化。
+**偽主張の撤去**: 「ABA 防止用」と謳われた `gen` フィールドは一度も
+読まれない write-only であり、InternId に世代も入っていないため ABA
+検出は原理的に不可能だった。gen を撤去し「intern/release の 1:1 対応は
+呼出側規律」を正直化 (write-only な状態保持は将来の誤用を誘う)。
+(参考: workspace 内に InternPool::release の実消費者は存在しない)
+
+### AX-2 (高): quantize の i32 飽和誤共有を根治
+`(aabb/q).round() as i32` は i32 域外で**飽和潰れ** — Minecraft ワールド
+端 (±3e7 blocks) を細かい quant (例 1e-3) で量子化すると 3e10 quanta ≫
+2^31 で、**遠方形状が全て i32::MAX に潰れて別形状と誤共有**される
+(衝突形状の誤マージに直結)。NaN 入力も飽和 0 → 原点ボックス誤共有。
+→ intern_shape 入口で成分 finite + `|v/q| < 2^31` を fail-loud assert 化
+(量子化域の明示)。`ShapeCache::new` の `.max(1e-4)` 静寂矯正も
+「正の有限値」契約 assert に置き換え (消費者は 0.001/0.01 のみで整合)。
+
+### テスト (+7)
+- quantize_rounding_exact_values (round half away from zero の厳密列
+  [−0.25,0.75]→[−1,2]、sort+dedup 正準形の順序ピン)
+- release_rejects_double_release / release_rejects_out_of_range_id
+  (should_panic ×2)
+- intern_shape_rejects_nan / rejects_far_coordinates (should_panic ×2、
+  3e6 blocks ÷ 1e-3 = 3e9 > 2^31 の現実的到達点で)
+- shape_cache_rejects_zero_quant / rejects_nan_quant (should_panic ×2)
+
+### 検証結果 (全て実測)
+- lib テスト **755/755** (+7)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- cargo check --all-targets エラー 0 (gen 撤去は private 構造体内で完結)。

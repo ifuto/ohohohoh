@@ -106,8 +106,6 @@ pub struct InternId(pub u32);
 #[derive(Debug)]
 struct Entry {
     refs: u32,
-    /// 世代カウンタ: remove→空きスロット再利用時の ABA 防止用
-    gen: u32,
 }
 
 /// 汎用インターンプール（値 → 単一実体）。
@@ -141,15 +139,12 @@ impl<T: Hash + Eq + Clone> InternPool<T> {
         }
         self.misses += 1;
         let id = if let Some(slot) = self.free_slots.pop() {
-            self.entries[slot as usize] = Entry {
-                refs: 1,
-                gen: self.entries[slot as usize].gen.wrapping_add(1),
-            };
+            self.entries[slot as usize] = Entry { refs: 1 };
             self.values[slot as usize] = Some(v.clone());
             InternId(slot)
         } else {
             let slot = self.entries.len() as u32;
-            self.entries.push(Entry { refs: 1, gen: 0 });
+            self.entries.push(Entry { refs: 1 });
             self.values.push(Some(v.clone()));
             InternId(slot)
         };
@@ -158,12 +153,35 @@ impl<T: Hash + Eq + Clone> InternPool<T> {
     }
 
     /// 参照を手放す。0 になったら実体を回収（スロットは再利用）。
+    ///
+    /// **契約 (2026-07-23 wave 48 厳格化)**: `id` は `intern` が返した
+    /// **生存中**の ID 必須。二重 release は refs==0 で **全ビルド**で
+    /// fail-loud (旧実装は debug_assert のみで、release build では
+    /// `0 - 1 → u32::MAX` へアンダーフローして実体が不死化し、
+    /// スロット再利用後の誤 release が他人の参照カウントを奪う
+    /// 永久破壊に発展し得た)。
+    /// **注意 (正直化)**: `InternId` は世代を持たないため「解放後に
+    /// スロットが再利用され新しい実体が同じ ID 値を持つ」ABA は API 上
+    /// 検出できない。intern/release の 1:1 対応は呼出側の規律とする
+    /// (旧コメントの「gen による ABA 防止」は gen が一度も読まれない
+    /// 偽主張だったため、wave 48 で gen ごと撤去)。
     pub fn release(&mut self, id: InternId) {
-        let e = &mut self.entries[id.0 as usize];
-        debug_assert!(e.refs > 0, "release on free slot");
+        let idx = id.0 as usize;
+        assert!(
+            idx < self.entries.len(),
+            "release 契約違反: 範囲外 InternId {} (entries={})",
+            id.0,
+            self.entries.len()
+        );
+        let e = &mut self.entries[idx];
+        assert!(
+            e.refs > 0,
+            "release 契約違反: 解放済みスロット {} への二重 release",
+            id.0
+        );
         e.refs -= 1;
         if e.refs == 0 {
-            if let Some(v) = self.values[id.0 as usize].take() {
+            if let Some(v) = self.values[idx].take() {
                 self.map.remove(&v);
             }
             self.free_slots.push(id.0);
@@ -213,15 +231,35 @@ pub struct ShapeBox {
 }
 
 impl ShapeCache {
+    /// **契約 (2026-07-23 wave 48 厳格化)**: `quant` は正の有限値必須
+    /// (旧実装は `.max(1e-4)` で負・ゼロ・NaN を静寂に 1e-4 矯正していた)。
     pub fn new(quant: f32) -> Self {
+        assert!(
+            quant.is_finite() && quant > 0.0,
+            "ShapeCache::new 契約違反: quant は正の有限値必須 ({quant})"
+        );
         Self {
             pool: InternPool::new(),
-            quant: quant.max(1e-4),
+            quant,
         }
     }
 
     fn quantize(&self, aabb: [f32; 6]) -> ShapeBox {
         let q = self.quant;
+        for (i, &v) in aabb.iter().enumerate() {
+            assert!(
+                v.is_finite(),
+                "intern_shape 契約違反: aabb[{i}] が非有限 ({v}) — NaN の飽和 0 化による誤共有を防止"
+            );
+            // i32 飽和 cast で遠方形状が静寂に i32::MAX へ潰れ、
+            // 別形状との誤共有 (衝突形状の誤マージ) が起きるのを防ぐ
+            // (Minecraft ワールド端 ±3e7 blocks ÷ 細かい quant で容易に到達)。
+            let sc = v / q;
+            assert!(
+                sc.abs() < 2147483648.0,
+                "intern_shape 契約違反: aabb[{i}]/quant = {sc} が i32 量子化域外 — quant を大きくするか座標系を見直せ"
+            );
+        }
         ShapeBox {
             min: [
                 (aabb[0] / q).round() as i32,
@@ -314,5 +352,77 @@ mod tests {
         let a = sc.intern_shape(&[[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]]);
         let b = sc.intern_shape(&[[0.0, 0.0, 0.0, 1.0001, 0.9999, 1.0]]);
         assert_eq!(a, b, "1e-4 差は量子化で同一視");
+    }
+
+    /// wave 48-1: 量子化の丸め規則 (round half away from zero) を厳密値でピン。
+    #[test]
+    fn quantize_rounding_exact_values() {
+        let mut sc = ShapeCache::new(0.5);
+        // 1.0/0.5 = 2.0 → 2; 0.75/0.5 = 1.5 → 2 (half away from zero);
+        // -0.25/0.5 = -0.5 → -1 (対称対称 round)。いずれも f32 厳密値。
+        let id = sc.intern_shape(&[[-0.25, 0.0, 0.75, 1.0, 1.0, 1.0]]);
+        let shape = sc.pool().get(id).expect("alive");
+        assert_eq!(shape[0].min, [-1, 0, 2]);
+        assert_eq!(shape[0].max, [2, 2, 2]);
+        // 同一正準形は同一 ID (順序非依存の sort+dedup 経由)
+        let id2 = sc.intern_shape(&[
+            [1.0, 1.0, 1.0, 1.0, 1.0, 2.0],
+            [-0.25, 0.0, 0.75, 1.0, 1.0, 1.0],
+        ]);
+        // 1.0/0.5=2,2.0/0.5=4 → 2 要素目は [2,2,2]→[2,2,4]
+        let shape2 = sc.pool().get(id2).expect("alive");
+        assert_eq!(shape2.len(), 2);
+        assert_eq!(shape2[0].min, [-1, 0, 2], "sort 後先頭は小さい方");
+        assert_eq!(shape2[1].max, [2, 2, 4]);
+    }
+
+    /// wave 48-2: 二重 release は全ビルドで fail-loud
+    /// (旧 debug_assert 限定で release build は u32 underflow 不死化)。
+    #[test]
+    #[should_panic(expected = "解放済みスロット 0")]
+    fn release_rejects_double_release() {
+        let mut p: InternPool<u32> = InternPool::new();
+        let a = p.intern(1);
+        p.release(a);
+        p.release(a);
+    }
+
+    /// wave 48-3: 範囲外 ID の release も明示 fail-loud。
+    #[test]
+    #[should_panic(expected = "範囲外 InternId 9")]
+    fn release_rejects_out_of_range_id() {
+        let mut p: InternPool<u32> = InternPool::new();
+        p.intern(5);
+        p.release(InternId(9));
+    }
+
+    /// wave 48-4: 非有限座標は飽和 0 化での誤共有を防ぐため拒否。
+    #[test]
+    #[should_panic(expected = "aabb[0] が非有限")]
+    fn intern_shape_rejects_nan() {
+        let mut sc = ShapeCache::new(0.001);
+        let _ = sc.intern_shape(&[[f32::NAN, 0.0, 0.0, 1.0, 1.0, 1.0]]);
+    }
+
+    /// wave 48-5: i32 量子化域外 (遠方座標) は飽和潰れ誤共有を防ぐため拒否。
+    #[test]
+    #[should_panic(expected = "i32 量子化域外")]
+    fn intern_shape_rejects_far_coordinates_below_quant_domain() {
+        let mut sc = ShapeCache::new(0.001);
+        // 3e6 blocks / 1e-3 = 3e9 quanta > 2^31 (2.147e9)
+        let _ = sc.intern_shape(&[[3.0e6, 0.0, 0.0, 1.0, 1.0, 1.0]]);
+    }
+
+    /// wave 48-6: quant 契約 — ゼロ/NaN は静寂矯正せず拒否。
+    #[test]
+    #[should_panic(expected = "quant は正の有限値必須")]
+    fn shape_cache_rejects_zero_quant() {
+        let _ = ShapeCache::new(0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "quant は正の有限値必須")]
+    fn shape_cache_rejects_nan_quant() {
+        let _ = ShapeCache::new(f32::NAN);
     }
 }
