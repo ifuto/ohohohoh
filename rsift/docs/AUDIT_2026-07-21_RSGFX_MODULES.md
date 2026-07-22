@@ -1351,3 +1351,46 @@ fail-silent だった。非有限 (NaN/±inf) は観測欠測として捨てる�
   署名 1 hunk・CRLF 行末は規律上温存、新規分は正準形)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - 直前 push (wave 21+22) の bench-ci run 29908670601 は **success**。
+
+## Z. taa_ycocg.rs 監査 (wave 24, 2026-07-22)
+
+`taa_ycocg.rs` (125 行: YCoCg 変換対 + Jimenez 分散クリップ、
+full_graph_wiring の TAA 経路が実消費者) と WGSL ミラー
+(`shaders/taa_ycocg.wgsl` — エントリポイント無しのユーティリティ関数集)
+を全行照合。opt-gfx 616 → **621** (+5)。
+
+### 陰性確認
+RGB↔YCoCg 変換対・clamp_to_variance の演算順は WGSL と完全一致。
+変換対の代数逆性を厳密証明 (0.25x+0.5y+0.25z 等の係数和が恒等的に
+x,y,z へ戻る)。mean_sigma の空入力既定値 (0.5,0,0)/(0.1×3) は既存の
+strict テストがピン済み (full_graph_wiring.rs:2122)。
+
+### Z-1 (中・panic DX) gamma 契約を明示 fail-loud 化
+clamp_to_variance は gamma<0 で lo>hi、NaN で境界 NaN となり、どちらも
+`f32::clamp` 内部 assert で「std の意味不明メッセージ」のまま panic
+していた (レンダーホットパスで DX 最悪)。モジュール入口で
+`gamma.is_finite() && >= 0` を契約 assert (fail-loud、should_panic テスト
+2 件)。現行消費者 full_graph_wiring は gamma=1.25 固定で契約内 —
+挙動変化なし (σ 非負は mean_sigma の sqrt により構造保証)。
+
+### Z-2 (doc 正直化) YCoCg 往復は bit 厳密でない
+係数が 2 の冪のため順変換は完全決定的だが、往復は丸めで R/B が 2-3 ulp
+ずれる (G は厳密一致)。「可逆」という直感で bit 厳密を期待する罠を doc に
+明記し、順変換 bits [0x3f133334, 0xbeb33333, 0x3cccccd0] /
+往復 bits [0x3e4cccd0, 0x3f19999a, 0x3f666668] を機械ピン (全て exact
+rational 導出 = W-3 方式)。純色 (R/G/B) は厳密を別途ピン。
+
+### 追加テスト (+5, fail-loud)
+- ycocg_transform_exact_bits (順/往復/純色厳密ピン)
+- clamp_to_variance_exact_bounds_bits (gamma=1: lo/hi は f32 近似値、
+  gamma=1.25: 0.375/0.625 厳密、外れ値吸着と内側不変)
+- clamp_to_variance_rejects_negative_gamma / rejects_nan_gamma (should_panic)
+- wgsl_mirror_is_utility_functions_with_matching_coefficients (naga 実パース
+  + 3 fn 実在 + 係数ミラートークン + エントリ無し契約)
+
+### 検証結果 (全て実測)
+- lib テスト **621/621** (+5)。rustfmt hunk 増分 0 (0 → 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- naga 0.20 の知見記録: `module.functions.iter()` は (Handle, &Function)
+  タプル、非エントリ関数名は Option<String> — 今後の WGSL 関数実在テストは
+  `f.1.name.as_deref() == Some(name)` 形を使う。
