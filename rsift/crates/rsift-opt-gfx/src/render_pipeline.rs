@@ -1348,14 +1348,36 @@ mod tests {
         };
     }
 
+    // 診断 W11-B7: exit 101 (自前コード 61..79 未到達) に対し、frame()/new() の
+    // パニックを catch_unwind で独立コード化する (恒久ではない)。
+    fn guarded_new(tag: &str, code: i32) -> (std::path::PathBuf, RsiftRenderPipeline) {
+        match std::panic::catch_unwind(|| unique_pipeline(tag)) {
+            Ok(v) => v,
+            Err(_) => std::process::exit(code),
+        }
+    }
+
+    fn guarded_frame(
+        p: &mut RsiftRenderPipeline,
+        coords: &[(i32, i32)],
+        code: i32,
+    ) -> FrameStats {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            p.frame(coords, 640, 360, 0.016)
+        })) {
+            Ok(s) => s,
+            Err(_) => std::process::exit(code),
+        }
+    }
+
     #[test]
     fn frame_demo_stats_det_core_x() {
-        let (dir_a, mut a) = unique_pipeline("det_corex_a");
-        let (dir_b, mut b) = unique_pipeline("det_corex_b");
+        let (dir_a, mut a) = guarded_new("det_corex_a", 39);
+        let (dir_b, mut b) = guarded_new("det_corex_b", 40);
         let coords = [(0, 0), (1, 0), (-1, 0)];
         for _ in 0..2 {
-            let sa = a.frame(&coords, 640, 360, 0.016);
-            let sb = b.frame(&coords, 640, 360, 0.016);
+            let sa = guarded_frame(&mut a, &coords, 41);
+            let sb = guarded_frame(&mut b, &coords, 42);
             field_code!(sa.chunks_built == sb.chunks_built, 61);
             field_code!(sa.cache_hits == sb.cache_hits, 62);
             field_code!(sa.visible_chunks == sb.visible_chunks, 63);
@@ -1369,12 +1391,12 @@ mod tests {
 
     #[test]
     fn frame_demo_stats_det_core_y() {
-        let (dir_a, mut a) = unique_pipeline("det_corey_a");
-        let (dir_b, mut b) = unique_pipeline("det_corey_b");
+        let (dir_a, mut a) = guarded_new("det_corey_a", 39);
+        let (dir_b, mut b) = guarded_new("det_corey_b", 40);
         let coords = [(0, 0), (1, 0), (-1, 0)];
         for _ in 0..2 {
-            let sa = a.frame(&coords, 640, 360, 0.016);
-            let sb = b.frame(&coords, 640, 360, 0.016);
+            let sa = guarded_frame(&mut a, &coords, 41);
+            let sb = guarded_frame(&mut b, &coords, 42);
             field_code!(sa.shading_skipped == sb.shading_skipped, 71);
             field_code!(sa.empty_culled == sb.empty_culled, 72);
             field_code!(sa.visgraph_culled == sb.visgraph_culled, 73);
