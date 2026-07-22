@@ -2446,3 +2446,48 @@ mask 実装のまま防御整合) であることを doc 明記。
 ### 検証結果 (全て実測)
 - lib テスト **741/741** (+4)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AW. meshlet_cone.rs 監査 (wave 47, 2026-07-23)
+
+full_graph_wiring:1121 で実消費 (面法線クラスタ錐体カリング)。
+
+### AW-1: 可視判定の数学的正当性を検証の上で明文化
+錐体 (axis A, 半角 α) 内の `max dot(n, V)` = `cos(max(0, β−α))`
+(β = angle(V,A))。「一部でも前面」 ⟺ `max dot > 0` ⟺ `β < α+90°` ⟺
+`cos β > −sin α`。よって `cos_angle = −sin(α)` との比較は厳密に正しく、
+実装は正しかった — ただし無文書だったため導出を doc に明文化
+(境界 == は conservative 可視側処理でこれも正しい)。
+
+### AW-2 (高): NaN 法線の静寂な永久カリングを根治
+NaN 法線は `f32::min` の「片側 NaN なら他方」を経て min_cos を偽装し、
+`dot >= cos_angle` の NaN 比較で**メッシュレットを永久カリング**して
+いた (billboard_lod AL-1 同型の形状蒸発)。観測欠測の静寂混入を拒否:
+from_normals / visible の成分 finite assert で fail-loud 化。
+また、空 normals で axis がゼロへ退化して静寂に「常に可視」へ着地する
+経路も非空 assert で塞いだ (消費者は !is_empty ガード済で整合)。
+
+### AW-3 (高): roundoff による sqrt(負) NaN → 永久カリングを根治
+f32 では単位ベクトル同士の dot が丸めで −1−2^-23 まで振れ得るため、
+`min_cos` は上界 1.0 に鉗制済みでも**下界は鉗制なし**で、
+`1 − min_cos²` が負 → `sqrt(負) = NaN` → cos_angle NaN → 比較恒偽で
+**静寂な永久カリング**が起き得た。被開ケ子の `max(0.0)` 鉗制で根治
+(数学的根拠: roundoff 超過は高々 2ε で、真の sin は 0 に近い)。
+退化 (法線和ゼロ → axis ゼロ → cos_angle = −1 で常に可視、
+|ax| < 1e-8 縮小 axis → conservative 側のみ変形) も「誤りにならない
+方向にのみ倒れる」設計であることを検証の上で文書化。
+
+### テスト (+7)
+- from_normals_single_exact_bits (axis 厳密一致、cos_angle = −0.0 の
+  ビットピン、正面/背面/edge-on/カメラ真上の 4 規則)
+- antiparallel_degenerates_to_always_visible (ゼロ axis、cos_angle =
+  −1.0 厳密、全方向可視)
+- nearly_antiparallel_never_produces_nan (eps 1e-20/-30/-38 の 3 構成で
+  cos_angle・axis の有限性 + 正面可視の回帰ガード)
+- boundary_equality_kept_visible (3-4-5 三平方で正規化除算を 0.8/−0.6
+  に正確丸めし、dot == cos_angle の bit 一致を構成 → 可視側ピン)
+- from_normals_rejects_empty / rejects_nan_normal /
+  visible_rejects_nan_to_camera (should_panic ×3)
+
+### 検証結果 (全て実測)
+- lib テスト **748/748** (+7)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
