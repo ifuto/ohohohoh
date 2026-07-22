@@ -1386,6 +1386,31 @@ mod tests {
         let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 83);
     }
 
+    // 診断 W11-B13: 単一テスト内で逐次実行 (並列レース排除) し、
+    // frame() を構成ステージごとに catch_unwind で被覆 (恒久ではない)。
+    #[test]
+    fn probe_stage_by_stage_sequential() {
+        let (_d, mut p) = guarded_new("probe_stage", 39);
+        // stage 1: デモ列生成
+        let r1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| p.prepare_column(2, 0)));
+        let (sections, rle, _saved, _sy0) = match r1 {
+            Ok(v) => v,
+            Err(_) => std::process::exit(91),
+        };
+        // stage 2: 単チャンク build
+        let r2 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            p.build_chunk(2, 0, 0, 32.0, Some(&sections), Some(&rle))
+        }));
+        if r2.is_err() {
+            std::process::exit(93);
+        }
+        // stage 3: (0,0) 単独のデモフレーム
+        let _ = guarded_frame(&mut p, &[(0, 0)], 95);
+        // stage 4: 2 チャンク最小マルチ
+        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0)], 97);
+    }
+
+    #[cfg(any())] // 診断 W11-B13: 逐次ステージプローブへの譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_single_far() {
         let (_d, mut p) = guarded_new("probe_far", 39);
@@ -1422,6 +1447,7 @@ mod tests {
 
     // 診断 W11-B8: パニックのコンテンツ依存性プローブ (恒久ではない。
     // パニック時は frame 呼出地点のコードで終了する)。
+    #[cfg(any())] // 診断 W11-B13: 逐次ステージプローブへの譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_single_origin() {
         let (_d, mut p) = guarded_new("probe_o", 39);
@@ -1429,12 +1455,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(_d);
     }
 
+    #[cfg(any())] // 診断 W11-B13: 逐次ステージプローブへの譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_single_neg() {
         let (_d, mut p) = guarded_new("probe_n", 39);
         let _ = guarded_frame(&mut p, &[(-1, 0)], 53);
     }
 
+    #[cfg(any())] // 診断 W11-B13: 逐次ステージプローブへの譲渡 (恒久撤去ではない)
     #[test]
     fn probe_frame_single_pos() {
         let (_d, mut p) = guarded_new("probe_p", 39);

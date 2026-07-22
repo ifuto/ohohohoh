@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 38
+- count: 39
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -56,3 +56,4 @@
 - 2026-07-22: wave 11 診断B10 (2chunk/occ切/遠方単独/frustum切 4プローブ)
 - 2026-07-22: wave 11 診断B11 (occ ON(57) vs OFF(83) の2本のみ解放)
 - 2026-07-22: wave 11 診断B12 (シングル4本のみ解放: コンテンツ既知判明)
+- 2026-07-22: wave 11 診断B13 (逐次ステージプローブ: prepare→build→単独frame→2chunk)
