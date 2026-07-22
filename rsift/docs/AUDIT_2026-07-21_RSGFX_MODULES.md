@@ -1585,3 +1585,58 @@ mesh_compactor AD-1)。far = sub(r3, r2) は旧来正しい。
 - lib テスト **644/644** (+4)。rustfmt hunk 増分 0
   (HEAD 由来 4 hunk は規律上温存、新規テストは正準形で投入)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AE. simd_frustum.rs 監査 (wave 29, 2026-07-22)
+
+`simd_frustum.rs` (SoA AABB 一括カリング: ポータブル 4-wide + AVX2/FMA 8-lane
+自動ディスパッチ) 全行照合。実消費者は full_graph_wiring:480-535
+(extract_frustum_planes の 6 平面を SimdFrustum へ供給、
+**cull_soa_portable 直叩き** — digest 経路は決定的)。
+opt-gfx 644 → **650** (+6)。
+
+### AE-1 (高・安全性) SoaAabbs 等長契約の未強制 — fail-loud 化で UB 根絶
+`SoaAabbs` は pub フィールドで外部から 6 Vec 不等長インスタンスを構築可能。
+`cull_soa_avx2` は `_mm256_loadu_ps(ptr.add(base))` で各配列から長検査なしに
+8 要素ずつ読むため、不等長 SoA を渡すと **ヒープ範囲外読み (UB)** になり得た
+(portable 側は index による安全 panic に留まるが契約は不明だった)。
+両カリング入口に `SoaAabbs::assert_uniform_len` (6 配列の実長を余さず列挙した
+契約メッセージ) を追加 — UB を契約付き panic に格下げ。
+`from_aabbs` 経由の構成は常に等長のため実動作への影響なし。
+
+### AE-2 (正直化) ディスパッチ判定の機械依存性を契約化
+AVX2 パスは FMA + `c*pz + (b*py + fma(a,px,d))` 評価順、ポータブルは丸めあり
+左結合 `((a*x+b*y)+c*z)+d` — 距離が 0 ごく近傍の**境界上の箱で判定が割れ得る**
+(機械依存)。`cull`/`cull_fast` の doc に明文化し、厳密決定性経路は
+`cull_soa_portable` 直接利用を契約とした (full_graph_wiring:535 が実例)。
+両パスとも「真の距離が負なら必ず除去・正なら誤除去しない」保守性は
+浮動小数丸めの範囲で同等。また NaN 距離の扱いは両者一致を確認
+(scalar `NaN < 0.0` = false ≡ `_CMP_LT_OQ` の ordered=false → ともに可視側)。
+
+### AE-3 (doc 過剰主張の訂正)
+SoaAabbs の doc 「cache-line aligned AABB testing」は過剰: `repr(C, align(64))`
+は struct 自体の配置のみを整列し、6 Vec のヒープ領域は 64B アライン非保証。
+読み出しは loadu 系のため動作上は不問だが、事実関係を訂正。
+
+### 陰性確認
+p-vertex 選択規則 (a>=0 → max、3 パス共通)、剰余ループ (4-wide/8-wide 両方)、
+空入力早期 return、`simd_frustum.wgsl` がコメントのみのスタブで
+gpu_runtime の naga 検証を空モジュールとして受理すること — 全て一致。
+保守側カリング (dist==0 触接=可視) の境界規則も 3 パス同一。
+
+### 追加テスト (+6, fail-loud)
+- boundary_touching_is_visible_exact_sequence_with_remainder
+  (dist==0 触接=可視ピン + n=5 で chunk+remainder 経路厳密列)
+- portable_matches_scalar_bitexact_on_structured_set
+  (混合符号 6 平面×13 箱: portable は intersects と式順一致で bit 完全等価)
+- soa_length_mismatch_panics_portable (should_panic 契約)
+- soa_length_mismatch_panics_avx2_when_detected
+  (AVX2+FMA 実機検出時のみ: UB ではなく panic 化を catch_unwind で実証)
+- avx2_matches_portable_on_integer_geometry_when_detected
+  (全積和が f32 正確の整数幾何 19 箱で avx2==portable==scalar 厳密一致 —
+  本 sandbox で検出・実実行済み)
+- empty_and_wgsl_stub_contract (空入力 + WGSL スタブ=空モジュールの機械ピン)
+
+### 検証結果 (全て実測)
+- lib テスト **650/650** (+6)。rustfmt hunk 増分 0
+  (HEAD 由来 6 hunk 温存、新規分は正準形)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。

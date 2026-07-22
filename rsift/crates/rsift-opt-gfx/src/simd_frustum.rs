@@ -24,7 +24,16 @@ pub struct Aabb {
     pub max: [f32; 3],
 }
 
-/// Structure of Arrays (SoA) layout for high-throughput cache-line aligned AABB testing.
+/// Structure of Arrays (SoA) layout for high-throughput AABB testing.
+///
+/// `repr(C, align(64))` は struct 自体の配置のみを整列する。6 本の `Vec` の
+/// ヒープ領域は 64B アラインを**保証しない** (読み出しは loadu 系のため動作は
+/// アライン不問で正しい)。
+///
+/// **契約**: 6 配列は全て等長必須。`from_aabbs` 経由なら自動的に満たされるが、
+/// pub フィールドの手組みで不等長にすると `cull_soa_portable` /
+/// `cull_soa_avx2` が契約メッセージ付きで panic する (2026-07-22 wave 29 で
+/// fail-loud 化。それ以前は avx2 側が範囲外読みになり得た)。
 #[repr(C, align(64))]
 #[derive(Debug, Clone)]
 pub struct SoaAabbs {
@@ -37,6 +46,28 @@ pub struct SoaAabbs {
 }
 
 impl SoaAabbs {
+    /// 6 配列の等長契約を検査 (fail-loud)。
+    #[inline]
+    #[track_caller]
+    fn assert_uniform_len(&self) {
+        let n = self.min_x.len();
+        assert!(
+            self.min_y.len() == n
+                && self.min_z.len() == n
+                && self.max_x.len() == n
+                && self.max_y.len() == n
+                && self.max_z.len() == n,
+            "SoaAabbs 契約違反: 6 配列は等長必須 (min_x={}, min_y={}, min_z={}, \
+             max_x={}, max_y={}, max_z={})",
+            self.min_x.len(),
+            self.min_y.len(),
+            self.min_z.len(),
+            self.max_x.len(),
+            self.max_y.len(),
+            self.max_z.len()
+        );
+    }
+
     pub fn from_aabbs(boxes: &[Aabb]) -> Self {
         let n = boxes.len();
         let mut min_x = Vec::with_capacity(n);
@@ -103,6 +134,14 @@ impl SimdFrustum {
     }
 
     /// SoA レイアウトから最適な SIMD パスへ自動ディスパッチしてカリング。
+    ///
+    /// **契約 (2026-07-22 wave 29 明文化)**: AVX2 パスは FMA + 評価順
+    /// `c*pz + (b*py + fma(a,px,d))`、ポータブルパスは丸めあり左結合
+    /// `((a*x + b*y) + c*z) + d` で演算するため、距離が 0 ごく近傍の
+    /// **境界上の箱では両者の判定が割れ得る** (機械依存)。決定的ダイジェスト等で
+    /// 厳密性が必要な経路は `cull_soa_portable` を直接使うこと
+    /// (full_graph_wiring が実例)。普段のカリングでは両者とも「真の距離が負なら
+    /// 必ず除去、正なら誤除去しない」保守性は浮動小数丸めの範囲で同等。
     pub fn cull_fast(&self, boxes: &[Aabb]) -> Vec<bool> {
         if boxes.is_empty() {
             return Vec::new();
@@ -119,6 +158,7 @@ impl SimdFrustum {
 
     /// Portable 4-wide SWAR/vectorized culling over SoA arrays.
     pub fn cull_soa_portable(&self, soa: &SoaAabbs) -> Vec<bool> {
+        soa.assert_uniform_len();
         let n = soa.len();
         let mut results = vec![true; n];
 
@@ -173,6 +213,9 @@ impl SimdFrustum {
         #[cfg(target_arch = "x86_64")]
         use std::arch::x86_64::*;
 
+        // 安全契約: この関数は 6 配列の等長を前提として生ポインタで読む。
+        // 契約違反を UB (範囲外読み) にせず fail-loud に倒す (wave 29)。
+        soa.assert_uniform_len();
         let n = soa.len();
         let mut results = vec![true; n];
         let chunks8 = n / 8;
@@ -318,5 +361,170 @@ mod tests {
         let r_fast = f.cull_fast(&boxes);
         let r_scalar = boxes.iter().map(|b| f.intersects(b)).collect::<Vec<_>>();
         assert_eq!(r_fast, r_scalar);
+    }
+
+    /// wave 29 追加テスト用の簡潔コンストラクタ (rustfmt 正準形と可読性の両立)。
+    fn pl(a: f32, b: f32, c: f32, d: f32) -> Plane {
+        Plane { a, b, c, d }
+    }
+    fn bx(mn: [f32; 3], mx: [f32; 3]) -> Aabb {
+        Aabb { min: mn, max: mx }
+    }
+
+    /// wave 29-1: 境界触接 (dist == 0) は保守側=可視、剰余 (n=5: 4+1) 経路込みの
+    /// 厳密列ピン。
+    #[test]
+    fn boundary_touching_is_visible_exact_sequence_with_remainder() {
+        let f = unit();
+        let boxes = vec![
+            // 0: x=1 面に触接 (箱自体は外側) — dist == 0 → 可視 (保守)
+            bx([1.0, 0.0, 0.0], [2.0, 1.0, 1.0]),
+            // 1: x=1 面の完全外 — cull
+            bx([4.0, 0.0, 0.0], [5.0, 1.0, 1.0]),
+            // 2: 内部 — 可視
+            bx([-0.5; 3], [0.5; 3]),
+            // 3: x=-1 面の完全外 — cull
+            bx([-3.0; 3], [-2.0; 3]),
+            // 4: (1,1,1) コーナー触接 — dist == 0.1 超の内側 → 可視
+            bx([0.9; 3], [1.0; 3]),
+        ];
+        let soa = SoaAabbs::from_aabbs(&boxes);
+        assert_eq!(
+            f.cull_soa_portable(&soa),
+            vec![true, false, true, false, true]
+        );
+        assert_eq!(
+            boxes.iter().map(|b| f.intersects(b)).collect::<Vec<_>>(),
+            vec![true, false, true, false, true]
+        );
+    }
+
+    /// wave 29-2: portable は intersects と同一式順 (左結合・丸めあり) の
+    /// はずで、境界込み任意入力で **bit 完全一致** することを構造化集合で固定。
+    #[test]
+    fn portable_matches_scalar_bitexact_on_structured_set() {
+        let f = SimdFrustum::new([
+            pl(1.0, 0.0, 0.0, 3.0),  // x >= -3
+            pl(-1.0, 0.0, 0.0, 3.0), // x <= 3
+            pl(0.0, 1.0, 0.0, 2.0),  // y >= -2
+            pl(0.0, -1.0, 1.0, 2.0), // -y + z + 2 >= 0 (斜め)
+            pl(1.0, 1.0, 0.0, 4.0),  // x + y >= -4 (斜め)
+            pl(0.0, 0.0, -1.0, 5.0), // z <= 5
+        ]);
+        // 13 箱 (chunk 3 + remainder 1)。0.25 刻みは f32 正確。
+        let boxes: Vec<Aabb> = (0..13)
+            .map(|i| {
+                let x = (i % 5) as f32 - 3.5; // -3.5 .. 0.5
+                let y = (i % 3) as f32 * 0.25 - 2.0; // -2.0 .. -1.5
+                let z = (i % 4) as f32 * 0.5 - 1.0; // -1.0 .. 0.5
+                let hx = 0.25 * (1 + (i % 3)) as f32;
+                Aabb {
+                    min: [x, y, z],
+                    max: [x + hx, y + 0.5, z + 0.25],
+                }
+            })
+            .collect();
+        let soa = SoaAabbs::from_aabbs(&boxes);
+        let portable = f.cull_soa_portable(&soa);
+        let scalar: Vec<bool> = boxes.iter().map(|b| f.intersects(b)).collect();
+        assert_eq!(
+            portable, scalar,
+            "portable と scalar は式順一致で bit 等しいはず"
+        );
+    }
+
+    /// wave 29-3: 等長契約 fail-loud (portable)。
+    #[test]
+    #[should_panic(expected = "SoaAabbs 契約違反")]
+    fn soa_length_mismatch_panics_portable() {
+        let f = unit();
+        let bad = SoaAabbs {
+            min_x: vec![0.0; 8],
+            min_y: vec![0.0; 8],
+            min_z: vec![0.0; 8],
+            max_x: vec![0.0; 8],
+            max_y: vec![0.0; 8],
+            max_z: vec![0.0; 4], // 不等長
+        };
+        let _ = f.cull_soa_portable(&bad);
+    }
+
+    /// wave 29-4: 等長契約 fail-loud (avx2)。検出できる環境では UB ではなく
+    /// panic に倒れることを実機検証、非搭載環境では skip。
+    #[test]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    fn soa_length_mismatch_panics_avx2_when_detected() {
+        if !(std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma")) {
+            return;
+        }
+        let f = unit();
+        let bad = SoaAabbs {
+            min_x: vec![0.0; 8],
+            min_y: vec![0.0; 8],
+            min_z: vec![0.0; 8],
+            max_x: vec![0.0; 8],
+            max_y: vec![0.0; 8],
+            max_z: vec![0.0; 4], // 不等長
+        };
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+            let _ = f.cull_soa_avx2(&bad);
+        }));
+        assert!(
+            r.is_err(),
+            "avx2 パスも契約違反で panic するはず (UB ではない)"
+        );
+    }
+
+    /// wave 29-5: 整数幾何 (全積和が f32 正確) では avx2 == portable == scalar
+    /// が厳密に一致することを実機検証。境界割れの余地が無い値域のみ使用。
+    #[test]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    fn avx2_matches_portable_on_integer_geometry_when_detected() {
+        if !(std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma")) {
+            return;
+        }
+        let f = SimdFrustum::new([
+            pl(1.0, 0.0, 0.0, 4.0),
+            pl(-1.0, 0.0, 0.0, 4.0),
+            pl(0.0, 1.0, 0.0, 4.0),
+            pl(0.0, -1.0, 0.0, 4.0),
+            pl(1.0, 1.0, 1.0, 8.0),
+            pl(-1.0, -1.0, -1.0, 8.0),
+        ]);
+        // 19 箱 (chunk8x2 + remainder 3)。座標は全て整数で |v|<=6、
+        // 係数も整数 → 積和は最大数十程度で全て f32 正確 (FMA/左結合で不変)。
+        let boxes: Vec<Aabb> = (0..19)
+            .map(|i| {
+                let x = (i % 7) as f32 - 4.0; // -4 .. 2
+                let y = (i % 5) as f32 - 3.0; // -3 .. 1
+                let z = (i % 3) as f32 - 2.0; // -2 .. 0
+                Aabb {
+                    min: [x, y, z],
+                    max: [x + 1.0, y + 1.0, z + 1.0],
+                }
+            })
+            .collect();
+        let soa = SoaAabbs::from_aabbs(&boxes);
+        let portable = f.cull_soa_portable(&soa);
+        let avx2 = unsafe { f.cull_soa_avx2(&soa) };
+        let scalar: Vec<bool> = boxes.iter().map(|b| f.intersects(b)).collect();
+        assert_eq!(avx2, portable);
+        assert_eq!(portable, scalar);
+    }
+
+    /// wave 29-6: 空入力・WGSL スタブの機械ピン。
+    #[test]
+    fn empty_and_wgsl_stub_contract() {
+        let f = unit();
+        assert!(f.cull(&[]).is_empty());
+        let soa = SoaAabbs::from_aabbs(&[]);
+        assert!(f.cull_soa_portable(&soa).is_empty());
+        // 現状 WGSL はコメントのみのスタブ = naga で空モジュール。
+        // 将来カーネル実装時はこのピンを実エントリポイント検証へ更新する。
+        let module = naga::front::wgsl::parse_str(SIMD_FRUSTUM_WGSL).expect("stub WGSL must parse");
+        assert!(
+            module.entry_points.is_empty(),
+            "simd_frustum.wgsl は現状スタブ"
+        );
     }
 }
