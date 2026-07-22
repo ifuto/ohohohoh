@@ -1402,6 +1402,47 @@ mod tests {
             p.low_spec.quad_budget = 0;
             let _ = guarded_frame(&mut p, &[(0, 0)], 201);
         }
+        // 診断 W11-B21: 全 strip 基底に 1 系統ずつ復帰 (恒久ではない)。
+        let strip = |p: &mut RsiftRenderPipeline| {
+            p.feather.enabled = false;
+            p.profile.hzb_occlusion = false;
+            p.profile.cpu_masked_occlusion = false;
+            p.profile.multi_draw_indirect = false;
+            p.profile.vertex_pull_4byte = false;
+            p.profile.noise_upsampling = false;
+            p.low_spec.pre_mesh_occlusion = false;
+            p.low_spec.quad_budget = 0;
+        };
+        {
+            let (_d, mut p) = guarded_new("a1", 39);
+            strip(&mut p);
+            p.profile.multi_draw_indirect = true; // pool 不在で no-op 確認 (baseline)
+            let _ = guarded_frame(&mut p, &[(0, 0)], 221);
+        }
+        {
+            let (_d, mut p) = guarded_new("a2", 39);
+            strip(&mut p);
+            p.profile.noise_upsampling = true;
+            let _ = guarded_frame(&mut p, &[(0, 0)], 223);
+        }
+        {
+            let (_d, mut p) = guarded_new("a3", 39);
+            strip(&mut p);
+            p.low_spec.pre_mesh_occlusion = true;
+            let _ = guarded_frame(&mut p, &[(0, 0)], 225);
+        }
+        {
+            let (_d, mut p) = guarded_new("a4", 39);
+            strip(&mut p);
+            p.low_spec.quad_budget = 4096;
+            let _ = guarded_frame(&mut p, &[(0, 0)], 227);
+        }
+        {
+            let (_d, mut p) = guarded_new("a5", 39);
+            strip(&mut p);
+            p.profile.vertex_pull_4byte = true; // pull 単独復帰 (cache=プロファイル依存)
+            let _ = guarded_frame(&mut p, &[(0, 0)], 229);
+        }
         {
             // 診断 W11-B20: 実デモ系データで tick_world を直接駆動 (恒久ではない)。
             let dir = std::env::temp_dir().join(format!(
