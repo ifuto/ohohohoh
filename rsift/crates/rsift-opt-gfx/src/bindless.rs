@@ -5,72 +5,29 @@
 //! material/texture binds into one descriptor array, slashing CPU bind-setup
 //! and helping integrated GPUs stream many materials cheaply.
 
-use std::ops::{Add, Mul, Sub};
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Vec3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-impl Vec3 {
-    pub fn new(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z }
-    }
-}
-impl Add for Vec3 {
-    type Output = Vec3;
-    fn add(self, o: Vec3) -> Vec3 {
-        Vec3::new(self.x + o.x, self.y + o.y, self.z + o.z)
-    }
-}
-impl Sub for Vec3 {
-    type Output = Vec3;
-    fn sub(self, o: Vec3) -> Vec3 {
-        Vec3::new(self.x - o.x, self.y - o.y, self.z - o.z)
-    }
-}
-impl Mul<f32> for Vec3 {
-    type Output = Vec3;
-    fn mul(self, s: f32) -> Vec3 {
-        Vec3::new(self.x * s, self.y * s, self.z * s)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Vec4 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub w: f32,
-}
-impl Vec4 {
-    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
-        Self { x, y, z, w }
-    }
-}
-impl Add for Vec4 {
-    type Output = Vec4;
-    fn add(self, o: Vec4) -> Vec4 {
-        Vec4::new(self.x + o.x, self.y + o.y, self.z + o.z, self.w + o.w)
-    }
-}
-impl Sub for Vec4 {
-    type Output = Vec4;
-    fn sub(self, o: Vec4) -> Vec4 {
-        Vec4::new(self.x - o.x, self.y - o.y, self.z - o.z, self.w - o.w)
-    }
-}
-impl Mul<f32> for Vec4 {
-    type Output = Vec4;
-    fn mul(self, s: f32) -> Vec4 {
-        Vec4::new(self.x * s, self.y * s, self.z * s, self.w * s)
-    }
-}
-
 /// Pack `(set, binding, index)` into one handle.
 /// Layout (32 bits): `[ set:4 | binding:8 | index:20 ]`.
+///
+/// **契約 (2026-07-23 wave 46 厳格化)**: `set < 16` かつ `binding < 256`
+/// かつ `index < 2^20` 必須。旧実装は `& 0xF` 等のマスクで範囲外入力を
+/// **静寂に切り捨て**、例えば set=16 のハンドルが set=0 と完全衝突し得た
+/// (非単射 — 誤テクスチャ参照に直結。旧テストは wrap を期待仕様として
+/// 祝っていた)。パッキングの要請は**全単射**なので fail-loud に根治。
+/// WGSL 側 (cs_unpack_handles) は契約内入力では本実装と bitwise 一致
+/// (GPU は assert 不可能なため mask 実装のまま防御整合)。
 pub fn pack_handle(set: u32, binding: u32, index: u32) -> u32 {
+    assert!(
+        set < 16,
+        "pack_handle 契約違反: set {set} >= 16 (4-bit 領域超過)"
+    );
+    assert!(
+        binding < 256,
+        "pack_handle 契約違反: binding {binding} >= 256 (8-bit 領域超過)"
+    );
+    assert!(
+        index < (1 << 20),
+        "pack_handle 契約違反: index {index} >= 2^20 (20-bit 領域超過)"
+    );
     ((set & 0xF) << 28) | ((binding & 0xFF) << 20) | (index & 0xFFFFF)
 }
 
@@ -103,11 +60,66 @@ mod tests {
         assert_ne!(a, c);
         assert_ne!(b, c);
     }
+    /// wave 46-1: レイアウトのビット位置を端点で機械ピン
+    /// ([ set:4 | binding:8 | index:20 ] の厳密配置)。
     #[test]
-    fn index_overflow_wraps_within_field() {
-        // index field is 20 bits; anything beyond is masked.
-        let h = pack_handle(0, 0, 0x1FFFFF + 1);
-        let (_, _, i) = unpack_handle(h);
-        assert_eq!(i, 0);
+    fn layout_bit_positions_pinned() {
+        assert_eq!(pack_handle(0, 0, 0), 0x0000_0000);
+        assert_eq!(pack_handle(8, 0, 0), 0x8000_0000, "set は bit 28..32");
+        assert_eq!(
+            pack_handle(0, 0x80, 0),
+            0x0800_0000,
+            "binding は bit 20..28"
+        );
+        assert_eq!(
+            pack_handle(0, 0, 0x8_0000),
+            0x0008_0000,
+            "index は bit 0..20"
+        );
+        // 全ビット使用の端点: 15/255/0xFFFFF → 0xFFFF_FFFF
+        assert_eq!(pack_handle(15, 255, 0xF_FFFF), 0xFFFF_FFFF);
+        assert_eq!(unpack_handle(0xFFFF_FFFF), (15, 255, 0xF_FFFF));
+        assert_eq!(unpack_handle(0), (0, 0, 0));
+    }
+
+    /// wave 46-2: roundtrip は全単射領域の構造部分集合で厳密
+    /// (set 全域 × binding/index の 2 進境界点)。
+    #[test]
+    fn roundtrip_exhaustive_on_structure() {
+        for set in 0..16u32 {
+            for &binding in &[0u32, 1, 127, 128, 254, 255] {
+                for &index in &[0u32, 1, 0x7_FFFF, 0x8_0000, 0xF_FFFE, 0xF_FFFF] {
+                    let h = pack_handle(set, binding, index);
+                    assert_eq!(
+                        unpack_handle(h),
+                        (set, binding, index),
+                        "roundtrip ({set}, {binding}, {index})"
+                    );
+                }
+            }
+        }
+    }
+
+    /// wave 46-3: 範囲外入力は fail-loud (旧実装の静寂切捨て wrap を根治。
+    /// 旧テスト index_overflow_wraps_within_field は非単射を祝う誤りだった
+    /// ため、このピンに置き換える)。
+    #[test]
+    #[should_panic(expected = "pack_handle 契約違反: index 1048576")]
+    fn pack_rejects_out_of_range_index() {
+        // 2^20 (= 1048576) は 20-bit 領域の最初の範囲外値
+        // (0x1FFFFF = 2^21−1 と混同しないこと — 2^20−1 = 0xFFFFF)。
+        let _ = pack_handle(0, 0, 1 << 20);
+    }
+
+    #[test]
+    #[should_panic(expected = "set 16 >= 16")]
+    fn pack_rejects_out_of_range_set() {
+        let _ = pack_handle(16, 0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "binding 256 >= 256")]
+    fn pack_rejects_out_of_range_binding() {
+        let _ = pack_handle(0, 256, 0);
     }
 }

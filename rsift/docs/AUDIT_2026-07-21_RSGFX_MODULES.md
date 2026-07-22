@@ -2406,3 +2406,43 @@ draw コマンドのみを入力とする本パスのシグネチャには存在
 - lib テスト **737/737** (+3)。rustfmt hunk 増分 0 (HEAD 由来 1 温存)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
   (消費者は戻り値 count のみ使用、batcher 後読みなしを機械確認済)。
+
+## AV. bindless.rs 監査 (wave 46, 2026-07-23)
+
+full_graph_wiring:1136・frame_worldgen:613/:1108 で実消費
+(ハンドル pack/unpack + WGSL 実 dispatch カーネル cs_unpack_handles)。
+
+### AV-1 (高): pack_handle の静寂切捨てマスクを fail-loud 化
+旧実装は `& 0xF` / `& 0xFF` / `& 0xFFFFF` で範囲外入力を**静寂に
+切り捨て**、例えば set=16 が set=0 と完全衝突する**非単射**だった
+(誤 texture 参照に直結するハンドル衝突)。旧テスト
+`index_overflow_wraps_within_field` はこの wrap を**期待仕様として
+固定**していた — パッキングの要請は全単射であるため、入力範囲契約
+(set<16 ∧ binding<256 ∧ index<2^20) の fail-loud assert に根治し、
+当該テストは should_panic ピンに置き換えた (wave 37→40 と同型の
+正直なセマンティクス反転)。消費者 3 経路 (full_graph_wiring・
+frame_worldgen テスト・frame_proof_extra example) は全て範囲内入力
+を機械確認。WGSL 側は契約内で bitwise 一致 (GPU は assert 不能のため
+mask 実装のまま防御整合) であることを doc 明記。
+**テスト赤検出が自己誤りを捕捉**: 初版テストは `0x1FFFFF+1` を
+「2^20」と誤記していたが `0x1FFFFF = 2^21−1` であり、panic メッセージ
+実測値 2097152 との不一致で即座に露出した (K-6 教訓の実践確認)。
+厳密形は最初の範囲外値 `1<<20 = 1048576` を入力とする。
+
+### AV-2: 死コード Vec3/Vec4 削除
+モジュール冒頭の Vec3/Vec4 (四則演算実装付き約 60 行) は pack/unpack
+と無関係に残置され、モジュール内・workspace 全体で参照ゼロを機械
+確認して削除 (公開 API だが workspace 全 consumer 非参照、
+`cargo check --all-targets` で無影響を検証)。
+
+### テスト (+4 正味: -1 +5)
+- layout_bit_positions_pinned (set/binding/index の各ビット位置を
+  0x8000_0000/0x0800_0000/0x0008_0000 と全 1 端点 0xFFFF_FFFF で固定)
+- roundtrip_exhaustive_on_structure (set 全域 16 × binding 6 境界値 ×
+  index 6 境界値 = 576 経路の厳密往復)
+- pack_rejects_out_of_range_index/set/binding (should_panic ×3、
+  index は最初の範囲外値 2^20 で)
+
+### 検証結果 (全て実測)
+- lib テスト **741/741** (+4)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
