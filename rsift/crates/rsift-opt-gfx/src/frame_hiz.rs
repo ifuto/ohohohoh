@@ -48,6 +48,19 @@ pub const HIZ_DIM: u32 = 64;
 /// **16KB** (iGPU の readback 帯域を圧迫しない実用上の上限)。
 pub const MAX_BLOCKS: usize = 4096;
 
+/// 画面寸法契約の純粋検査 (wgpu デバイス不要)。
+/// 0 幅/高を許すと downsample の `sw = src/HIZ_DIM` が 0 となり、セル走査が
+/// 全て空ループ → Hi-Z が全域 0.0 (最近深度) で埋まり、coverage=0 で
+/// **画面が全カリング (真っ黒) になる fail-silent** を招くため明示拒否する。
+/// w ≥ 1 かつ h ≥ 1 であれば x1−x0 ≥ 1 が証明できる
+/// (`ceil((i+1)·sw) > floor(i·sw)` because `(i+1)·sw > i·sw`)。
+pub fn validate_screen_dims(w: u32, h: u32) -> Result<(), String> {
+    if w == 0 || h == 0 {
+        return Err(format!("Hi-Z screen dims must be non-zero (got {w}x{h})"));
+    }
+    Ok(())
+}
+
 /// `hiz_raster.wgsl` `HizUniforms` と同一レイアウト (mat4x4 + vec2 + vec2 = 80B)。
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -120,6 +133,7 @@ impl GpuHiz {
         screen_h: u32,
         policy: OcclusionPolicy,
     ) -> Self {
+        validate_screen_dims(screen_w, screen_h).unwrap_or_else(|e| panic!("GpuHiz: {e}"));
         let dim = HIZ_DIM;
         let hiz_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Rsift Hi-Z 64x64"),
@@ -707,6 +721,67 @@ mod tests {
         assert_eq!(std::mem::size_of::<HizUniforms>(), 80);
         assert_eq!(std::mem::size_of::<BlockBox>(), 32);
         assert_eq!(MAX_BLOCKS * 4, 16 * 1024, "coverage readback must be 16KB");
+    }
+
+    /// naga 計算の WGSL offset が Rust repr(C) と逐語一致すること
+    /// (size 一致のみでは検出できない member 順/pad 位置ドリフトを恒久検出)。
+    #[test]
+    fn hiz_struct_offsets_match_wgsl_exact() {
+        use std::mem::offset_of;
+        assert_eq!(offset_of!(HizUniforms, view_proj), 0);
+        assert_eq!(offset_of!(HizUniforms, hiz_dim), 64);
+        assert_eq!(offset_of!(HizUniforms, _pad), 72);
+        assert_eq!(offset_of!(BlockBox, lo), 0);
+        assert_eq!(offset_of!(BlockBox, hi), 16);
+
+        let module = naga::front::wgsl::parse_str(HIZ_RASTER_WGSL)
+            .unwrap_or_else(|e| panic!("hiz_raster WGSL invalid: {e}"));
+        let find = |name: &str| {
+            module
+                .types
+                .iter()
+                .find_map(|(_, t)| {
+                    if t.name.as_deref() == Some(name) {
+                        let naga::TypeInner::Struct { members, span } = &t.inner else {
+                            panic!("{name} must be struct");
+                        };
+                        Some((
+                            members
+                                .iter()
+                                .map(|m| (m.name.clone().unwrap_or_default(), m.offset))
+                                .collect::<Vec<_>>(),
+                            *span,
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| panic!("struct {name} must exist"))
+        };
+        let (u, uspan) = find("HizUniforms");
+        assert_eq!(uspan, 80);
+        assert_eq!(
+            u,
+            vec![
+                ("view_proj".to_string(), 0),
+                ("hiz_dim".to_string(), 64),
+                ("_pad".to_string(), 72),
+            ]
+        );
+        let (b, bspan) = find("BlockBox");
+        assert_eq!(bspan, 32);
+        assert_eq!(b, vec![("lo".to_string(), 0), ("hi".to_string(), 16)]);
+    }
+
+    /// 画面寸法契約: 受理/拒否の境界。
+    #[test]
+    fn validate_screen_dims_bounds() {
+        assert!(super::validate_screen_dims(1, 1).is_ok());
+        assert!(super::validate_screen_dims(640, 480).is_ok());
+        assert!(super::validate_screen_dims(1, 4096).is_ok());
+        assert!(super::validate_screen_dims(0, 480).is_err());
+        assert!(super::validate_screen_dims(640, 0).is_err());
+        assert!(super::validate_screen_dims(0, 0).is_err());
     }
 
     /// face 別厳密 AABB: +Y 上面 4x2 矩形の占位を実 quad から検証。

@@ -1152,3 +1152,36 @@ GPU 無しで恒久検出可能に (wave 17 S-6 パターンの 2 例目適用)�
 ### 検証結果 (全て実測)
 - lib テスト **602/602** (+3)。rustfmt hunk 増分 0。
 - 残 frame_* 未通読: frame_hiz (745) / frame_pipeline (700) の 2 モジュール。
+
+---
+
+## V. frame_hiz.rs 全通読監査 (wave 20, 2026-07-22)
+
+`frame_hiz.rs` (746 行: Hi-Z 3 パス GPU 配線 + QueryCore 還元) と両側資産
+(`depth_psychic.wgsl` / `hiz_raster.wgsl` / `hiz_debug_view.wgsl`、`mul_v4`、
+CPU ミラー hiz_*_reference) を照合監査。opt-gfx 602 → **604** (+2)。
+
+### 陰性確認 (ミラー忠実性 — 乖離なし)
+- downsample: 範囲決め (floor/ceil + min(src_dim))・max 集約・初期値 0.0 まで
+  WGSL==ミラー一致。セル空走査の不可能性を証明
+  (`(i+1)·sw > i·sw` ⟹ `ceil((i+1)·sw) > floor(i·sw)` when sw>0)。
+- raster: 角選択 select 規則 (NaN→lo)・`!(w>1e-5)` ↔ partial_cmp 否定形・
+  offscreen 式・セル矩形 floor/ceil clamp + 1 セル下駄・DEPTH_EPS=1e-4 —
+  全て一致。`mul_v4` (列優先 M·v) ↔ WGSL `mat4x4 * vec4` も規約一致。
+- `aabb_from_mesh` の face 別 d0/d1 表を `corner_pos` 6 分岐に全数照合 — 一致。
+- debug_view は可視化のみ (深度→輝度 tint) で判定系に非干渉と確認。
+
+### V-1 (低・fail-silent 防止) 画面寸法 0 の契約不在
+`GpuHiz` 構築時の 0 幅/高は downsample の `sw = src/64` を 0 とし、全セルが
+空走査で 0.0 (最近深度) に埋まり coverage=0 = **画面全体の誤カリング
+(真っ黒) を静かに起こす**設計だった。純粋関数 `validate_screen_dims` に
+集約し with_policy 入口で強制 (fail-loud)。受理/拒否境界テスト追加。
+
+### V-2 (検証基盤) naga offset 突合へ格上げ (3 例目)
+`HizUniforms` (view_proj@0/hiz_dim@64/_pad@72, span 80) と `BlockBox`
+(lo@0/hi@16, span 32) の WGSL 計算 offset が Rust repr(C) と逐語一致する
+ことを固定 (旧は size のみで member 順/pad 位置を検出不能だった)。
+
+### 検証結果 (全て実測)
+- lib テスト **604/604** (+2)。rustfmt hunk 増分 0。
+- 残 frame_* 未通読: frame_pipeline (700 行) のみ (wave 21 で消化)。
