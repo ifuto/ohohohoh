@@ -1394,3 +1394,45 @@ rational 導出 = W-3 方式)。純色 (R/G/B) は厳密を別途ピン。
 - naga 0.20 の知見記録: `module.functions.iter()` は (Handle, &Function)
   タプル、非エントリ関数名は Option<String> — 今後の WGSL 関数実在テストは
   `f.1.name.as_deref() == Some(name)` 形を使う。
+
+## AA. texture_atlas.rs 監査 (wave 25, 2026-07-22)
+
+`texture_atlas.rs` (Tier 1: シェルフ packer / Texture2DArray builder /
+box mip chain) 全行照合。opt-gfx 621 → **628** (+7)。
+
+### AA-1 (中・fail-silent 経路閉塞) 次元契約の fail-loud 化 — 3 箇所
+- `TextureAtlasPacker::new`: dims > 2^31 で next_power_of_two が u32 溢れ、
+  release では 0 wrap → .max(64) により**静かに 64x64 ミニアトラス**になる
+  経路を契約 assert で閉塞 (should_panic ピン)。
+- `TextureArrayBuilder::new`: push 時 `w*h*4` の u32 乗算が 65536x65536
+  (=2^34) で wrap → **expect=0 で空ベクタを合法レイヤ受理**する経路。
+  new で 0 次元・w*h*4>u32::MAX を契約拒否、push の expect も u64 演算化。
+- `generate_mip_chain`: 0 次元 and len != w*h*4 を契約拒否 (旧: 短小で
+  途中 panic / 超過で静かに無視)。使用中の内部多重複製 (base + 各レベル
+  1 回ずつの余分 clone) も borrow 化でゼロに (出力は完全同一、
+  バイトピンで実証)。
+
+### AA-2 (厳密値) シェルフ配置・UV・mip 内容の手計算/独立参照ピン
+- 配置遷移を手追跡で厳密導出: 遅延失敗が shelf_y を進める一点 (F 失敗で
+  y=40 前進後に G が (0,40) に入る) を含む 5 成功 + 2 失敗列を全矩形座標・
+  UV ビット (2^7 除算 = 丸めゼロ)・failed 集計でピン。非重複不変条件も
+  全対で検査。
+- mip 4x4→2x2→1x1 全バイトを独立整数参照 (Python 整数のみ実装) で導出し
+  ピン。特に 1xN → 1x1 の**端クランプ発火ケース** (x*2+1 > w-1 = 0 で
+  列複製、4 サンプル平均) は本実装が生む唯一の clamp 経路であることを
+  解析確定し `[30,40,50,60]` で固定。
+
+### 陰性確認
+シェルフ構造の非重複性 (次シェルフ y は前 shelf_h 加算 · 単一前進/pack)、
+vram_bytes の base/3 mip 概算 (Σ4^-i = 4/3 の整数近似として誠実)、
+remap_uv の線形 remap、TextureArrayBuilder::vram_bytes 概算は全て
+読み合わせで乖離なし。pack_and_mip 既存テストは不変更で緑。
+
+### 追加テスト (+7, fail-loud)
+- shelf_layout_matches_hand_derived_geometry (矩形 + UV bits + failed + 非重複)
+- mip_chain_exact_bytes (4x4 両レベル + 1x3 クランプ列)
+- should_panic 5 件 (packer 2^31 超過 / builder overflow・0 次元 / mip 不整合・0 次元)
+
+### 検証結果 (全て実測)
+- lib テスト **628/628** (+7)。rustfmt hunk 増分 0 (CRLF 歴史行末は温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
