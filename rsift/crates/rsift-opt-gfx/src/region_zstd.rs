@@ -77,8 +77,12 @@ impl RegionCodec {
     }
 
     /// チャンク (cx, cz 0..32) の生データを登録。
-    pub fn put_chunk(&mut self, cx: usize, cz: usize, raw: &[u8]) {
-        debug_assert!(cx < 32 && cz < 32);
+    /// 範囲外座標は `false` を返して拒否する (旧実装は debug_assert /
+    /// リリースビルドでは配列境界パニックだった — 監査 2026-07-22 L-3)。
+    pub fn put_chunk(&mut self, cx: usize, cz: usize, raw: &[u8]) -> bool {
+        if cx >= 32 || cz >= 32 {
+            return false;
+        }
         let idx = cz * 32 + cx;
         let body = match self.choice.zstd_level() {
             None => raw.to_vec(),
@@ -86,11 +90,15 @@ impl RegionCodec {
                 .expect("zstd encode"),
         };
         self.chunks[idx] = Some(body);
+        true
     }
 
     /// チャンクの読み出し（展開済み）。
+    /// 範囲外座標は `None` (L-3: 旧実装は debug_assert / リリースでパニック)。
     pub fn get_chunk(&self, cx: usize, cz: usize) -> Option<Vec<u8>> {
-        debug_assert!(cx < 32 && cz < 32);
+        if cx >= 32 || cz >= 32 {
+            return None;
+        }
         let idx = cz * 32 + cx;
         self.chunks[idx].as_ref().map(|body| {
             if self.choice.zstd_level().is_none() {
@@ -135,6 +143,9 @@ impl RegionCodec {
         }
         let mut out = Vec::with_capacity(HEADER_BYTES + body.len());
         for loc in &self.locations {
+            // vanilla 形式: offset 24bit + セクタ数 8bit。
+            // 【注】1 チャンクが 255 セクタ (≈1 MiB) を超えると下位 8bit に潰れる
+            // 形式由来の制約。zstd 後の実チャンク (<64 KiB 級) では非到達。
             let v: u32 = (loc.offset_sectors << 8) | (loc.sectors & 0xFF);
             out.write_all(&v.to_be_bytes()).unwrap();
         }
@@ -145,6 +156,8 @@ impl RegionCodec {
     }
 
     /// 構築済みファイルのチャンク数・推定圧縮率。
+    /// 【L-4】Stored (無圧縮) では body 長をそのまま raw/packed 両辺に計上する
+    /// (旧実装は zstd デコード失敗で raw 未計上のまま比を構築していた)。
     pub fn stats(&self) -> (usize, f64) {
         let mut n = 0usize;
         let mut raw: usize = 0;
@@ -152,7 +165,9 @@ impl RegionCodec {
         for c in self.chunks.iter().flatten() {
             n += 1;
             packed += c.len();
-            if let Ok(d) = zstd::stream::decode_all(std::io::Cursor::new(c)) {
+            if self.choice.zstd_level().is_none() {
+                raw += c.len();
+            } else if let Ok(d) = zstd::stream::decode_all(std::io::Cursor::new(c)) {
                 raw += d.len();
             }
         }
@@ -245,5 +260,41 @@ mod tests {
         assert_eq!(CodecChoice::auto(2, false), CodecChoice::ZstdFast);
         assert_eq!(CodecChoice::auto(8, false), CodecChoice::ZstdBalanced);
         assert_eq!(CodecChoice::auto(8, true), CodecChoice::ZstdFast);
+    }
+
+    #[test]
+    fn out_of_range_access_is_rejected_without_panic() {
+        // L-3 回帰: 旧実装は debug_assert/リリースパニック。
+        let mut rc = RegionCodec::new(CodecChoice::ZstdFast);
+        let data = sample_chunk(3);
+        assert!(!rc.put_chunk(32, 0, &data));
+        assert!(!rc.put_chunk(0, 32, &data));
+        assert!(!rc.put_chunk(32, 32, &data));
+        assert!(!rc.put_chunk(usize::MAX, usize::MAX, &data));
+        assert!(rc.get_chunk(32, 0).is_none());
+        assert!(rc.get_chunk(0, 32).is_none());
+        assert!(rc.get_chunk(usize::MAX, 1).is_none());
+        // 範囲内は従来どおり受理・厳密往復。
+        assert!(rc.put_chunk(31, 31, &data));
+        assert_eq!(rc.get_chunk(31, 31).unwrap(), data);
+        let (n, _) = rc.stats();
+        assert_eq!(n, 1, "拒否分は格納されない");
+    }
+
+    #[test]
+    fn stored_stats_ratio_counts_both_sides() {
+        // L-4 回帰: Stored で raw 未計上だと ratio が虚偽に。
+        let mut rc = RegionCodec::new(CodecChoice::Stored);
+        let d1 = sample_chunk(11);
+        let d2 = sample_chunk(12);
+        rc.put_chunk(0, 0, &d1);
+        rc.put_chunk(1, 0, &d2);
+        let (n, ratio) = rc.stats();
+        assert_eq!(n, 2);
+        assert_eq!(
+            ratio.to_bits(),
+            1.0f64.to_bits(),
+            "無圧縮は packed/raw が厳密 1.0"
+        );
     }
 }

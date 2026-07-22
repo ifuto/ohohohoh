@@ -593,3 +593,37 @@ first-key 依存だが試験規模では容量到達しない)。
   cam_chunk=(0,0) 始点の 1 ノード。テスト期待値を訂正し再実行。
   教訓: 「0 であるはず」は曖昧な直感。厳密値は対象モジュールの固定済み
   セマンティクスから導出する (本監査の基本原則どおり)。
+
+## L. ページング/リージョンコーデック監査 (2026-07-22, 第 10 波)
+
+`out_of_core_paging.rs` (104 行) と `region_zstd.rs` (249 行) を全行読了。
+修正 + テストを本コミットで実施。
+
+- **L-1 (サイレント破壊バグ) OutOfCoreMmapPaging のページ置き換え**:
+  旧実装は `next_page_idx % max_pages` のラウンドロビン回送で、ページを剥奪
+  された旧チャンクの `page_table` エントリを除去しなかった。`max_pages`
+  を超える別チャンク書き込み後、**新旧 2 チャンクが同一物理ページを共有し、
+  古い側の read が無警告で他チャンクの内容を返す**破壊的バグ。
+  さらにモジュール doc の「memmap2 + LRU」は実態と無関係な虚偽だった
+  (実体はプレーン File I/O の回送)。真 LRU (read/write で最新化、最古キー
+  完全剥奪) + doc 正直化で根治。容量内のページ割当列 (0,1,...) は旧実装と
+  同一 (bench digest 互換)。
+- **L-2 (パニック) `max_pages == 0` で剰余ゼロ**: write 時 `x % 0` パニック。
+  `new` で理由付き Err を返すよう変更 (呼出側は 4096 で誘導されず latent)。
+  併せて `max_pages > u32::MAX` / `checked_mul` の usize 溢れも拒否。
+- **L-3 (境界パニック) region_zstd `put_chunk/get_chunk`**: `debug_assert`
+  依存でリリースでは配列境界パニックだった。bool 返却 / None 拒否に変更
+  (全呼出側は戻り値非使用のためソース互換)。
+- **L-4 (統計虚偽) region_zstd `stats()`**: Stored (無圧縮) で zstd デコード
+  失敗により raw 未計上のまま比を構築。両辺計上で厳密 1.0 となるよう訂正。
+  併せて location 24bit+8bit 形式由来の >255 セクタ制約を正直注記。
+- **L-5 (陰性確認の記録) gpu_culling WGSL/Rust レイアウト照合**: 先行
+  セッションで懸念されていた ChunkBox WGSL ~64B vs Rust 48B 不一致説を
+  全メンバオフセットで照合。WGSL storage アドレス空間: min_xyz@0(vec3,
+  align16) / is_visible@12 / max_xyz@16 / chunk_idx@28 / tex_id@32 /
+  pad0-2@36..48、struct サイズ = roundUp(16,48) = 48B。Rust repr(C):
+  同一オフセット・48B。IndirectCommand 20B / FrustumData (uniform)
+  96+16+16 = 128B も一致。**不一致は誤認で不一致なし**と確定記録。
+- **L-6 (wave 10: opt-gfx 558 → 563, +5)**: paging 4 本 (全域ビット往復、
+  0 ページ拒否、LRU 剥奪+read 最新化の被害者決定、超過ペイロード打止め) +
+  region 2 本 (OOB 非パニック拒否、Stored 厳密 1.0)。
