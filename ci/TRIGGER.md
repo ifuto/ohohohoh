@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 83
+- count: 84
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -101,3 +101,4 @@
 - 2026-07-23 (count 81): wave 47 meshlet_cone 監査の CI 緑確認
 - 2026-07-23 (count 82): wave 48 intern_pool 監査の CI 緑確認
 - 2026-07-23 (count 83): wave 49 string_intern 監査の CI 緑確認
+- 2026-07-23 (count 84): wave 50 texture_budget 監査の CI 緑確認
