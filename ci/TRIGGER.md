@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 23
+- count: 24
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -41,3 +41,4 @@
 - 2026-07-22: wave 9 — tick_world 全通読監査 (K-1..K-3 修正 + K-4 明文化) + 統合テスト3本 (opt-gfx 555→558)
 - 2026-07-22: wave 9 lib 失敗の切り分け再実行 (変更無し同一内容 — フレーク判定)
 - 2026-07-22: wave 9 診断B1 (chunked 単独切り分け: empty/periodic を cfg 切断)
+- 2026-07-22: wave 9 根治 (visgraph_reachable: flood_fill 始点含有設計に期待値訂正 0→1) 全3テスト再有効化

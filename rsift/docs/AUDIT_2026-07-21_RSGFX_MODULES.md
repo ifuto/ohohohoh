@@ -580,8 +580,16 @@ first-key 依存だが試験規模では容量到達しない)。
   非決定である旨の doc を明記。残り 15 フィールドは決定性検証で比較可能。
 - **K-5 (wave 9: opt-gfx 555 → 558, +3) tick_world 統合テスト**:
   (1) 空入力 4 tick の well-formedness (CLP 既定 0.0 ビット厳密、露光は
-  adapt クランプ域内、全カウンタ 0)。 (2) 1 チャンク/全 1 パレット入力での
+  adapt クランプ域内)。 (2) 1 チャンク/全 1 パレット入力での
   **厳密値** (K-1 回帰: aokana_visible_regions==1 を冠点テストから静的導出、
   3 層フィルタ全通過検証済み draw_command_count==1, frb_billboards==24) +
   2 インスタンス交差 bit-決定性 (15 フィールド、f32 は to_bits)。 (3) 601 tick
   で tick%600 SVDAG 再構築 / pso_lib.save / tick%120 CLP 周期跨ぎの交差決定性。
+- **K-6 (wave 9 失敗→根治の記録)**: 初回 push で lib テスト exit 101 (2 連続 =
+  非フレーク)。診断 B1 (chunked 単独分離) = 緑 → empty テストの
+  `visgraph_reachable == 0` 仮定が誤りと確定。visibility_graph::flood_fill の
+  設計は「始点 (dist=0) は opaqueness 非適用で結果に常時含む」(同モジュール
+  自身のテスト群で固定済み) のため、正しい期待値は 1。空入力でも
+  cam_chunk=(0,0) 始点の 1 ノード。テスト期待値を訂正し再実行。
+  教訓: 「0 であるはず」は曖昧な直感。厳密値は対象モジュールの固定済み
+  セマンティクスから導出する (本監査の基本原則どおり)。

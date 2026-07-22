@@ -2331,7 +2331,6 @@ mod strict_tests {
         inputs
     }
 
-    #[cfg(any())] // 診断 W9-B1: chunked 単独切り分け中 (恒久撤去ではない)
     #[test]
     fn tick_world_empty_inputs_wellformed() {
         let (dir, mut w) = unique_wiring("empty");
@@ -2341,7 +2340,11 @@ mod strict_tests {
             inputs.frame_index = t;
             let r = w.tick_world(&inputs);
             assert_eq!(r.aokana_visible_regions, 0, "tick {t}: パレットなし → リージョン未登録");
-            assert_eq!(r.visgraph_reachable, 0, "tick {t}: チャンクなし → BFS 到達なし");
+            assert_eq!(
+                r.visgraph_reachable, 1,
+                "tick {t}: グラフ無辺でも flood_fill は始点 (cam_chunk=(0,0), dist=0) を常時含む \
+                 (visibility_graph 設計: dist=0 は opaqueness 非適用)"
+            );
             assert_eq!(r.lbvh_culled, 0, "tick {t}: AABB なし → LBVH カリングなし");
             assert_eq!(r.nanite_meshlets, 0, "tick {t}: クアッドなし → メッシュレットなし");
             assert_eq!(r.nanite_meshlets_culled, 0, "tick {t}");
@@ -2388,7 +2391,6 @@ mod strict_tests {
         let _ = std::fs::remove_dir_all(&dir_b);
     }
 
-    #[cfg(any())] // 診断 W9-B1: chunked 単独切り分け中 (恒久撤去ではない)
     #[test]
     fn tick_world_periodic_rebuild_cross_instance_deterministic() {
         // tick%600 の SVDAG 再構築 / pso_lib.save / tick%120 の CLP ディスパッチ周期を
