@@ -795,3 +795,52 @@ parse 厳密)。全テスト名は決定的 red→green 対応が設計段階で
 ### テスト数
 
 opt-gfx 571 → **573** (+2: span 境界 / AVX2↔SWAR 等価)。
+
+---
+
+## P. frame_worldgen.rs 全通読監査 (wave 14, 2026-07-22)
+
+Phase E の wgpu 実 dispatch 配線 5 系統 (noise upsample / LBVH / bindless /
+half-vertex / meshlet cull) + Gribb/Hartmann frustum 抽出を全行監査。
+
+### 事実関係の記録 (接続状況)
+
+CPU 精密ミラー関数群 (`noise_coarse_cpu` 等) と GPU ラッパ (`GpuNoise` 等) は
+**現時点では本番フレーム経路からは呼ばれておらず、消費者はモジュール内
+テストのみ** (wgpu 配線の実働検証ハーネスとしての位置付け)。doc の
+「実 dispatch 配線」は「GPU 配線が実装された」意味では正確だが、フレーム
+パイプライン組込みではないことをここに記録する (O-16 bitboard と同種)。
+
+### 陰性確認 — P-1〜P-4
+
+- frustum_planes: identity view_proj での 6 平面が理論値表と一致
+  ((1,0,0,1),(-1,0,0,1),(0,1,0,1),(0,-1,0,1),(0,0,1,0),(0,0,-1,1))、
+  wgpu z∈[0,1] の near=r2 規約も正しい。正規化は d 項も割る (radius 比較に必須)。
+- P-2: coarse→fill を同一 compute pass で連続 dispatch している件は、
+  WebGPU 同期モデル (同一 pass 内 dispatch の program order 可視性) で保証
+  されるため問題なし。BGL binding 1 の read_write は 2 pipeline 共有由来で妥当。
+- P-3/P-4: `lbvh_codes_cpu` の clamp(0, 0.9999)*1024 → 最大 1023 で morton3 の
+  10bit 入力域に収まる。span=0 なら NaN/inf→saturating cast の経路があり得るが
+  span>0 は呼出契約 (現消費者はテストのみで 128 固定)。
+
+### P-5 (中): `coarse_dims` の stride=0 除算パニックが無契約
+
+public `coarse_dims` は `size / stride` のため **stride=0 で整数 0 除算パニック**
+となるが、契約が未記載だった。対応: doc 明記 + メッセージ付き `assert!` で
+明示拒否 (静かな未定義動作より派手な失敗の原則)。should_panic テストで固定。
+なお既存の呼出規約は全て `coarse_dims` 経由 (coarse/fill 両 CPU ミラーと
+`GpuNoise::run`) のため 1 箇所の assert で全経路がカバーされる。
+
+### P-6 (中・誠実性): CPU ミラーが planes 全件走査で「完全一致」に反し得た
+
+WGSL 側は uniform の `[[f32;4]; 6]` 固定配列 + `plane_count = min(6)` のため
+**先頭 6 平面のみ**で判定するのに、CPU 精密ミラー (`lbvh_cull_cpu`,
+`meshlet_cull_cpu`) は渡された planes を全件走査していた。7 個以上渡すと
+CPU≠GPU となり「完全一致」の doc 宣言が嘘になる。
+修正: 両ミラーを `.take(6)` に変更し厳密な動作一致を回復。
+テスト `cull_cpu_mirrors_gpu_plane_limit_of_six`: 7 番目に全カリング平面を
+置いても結果不変であることを両ミラーで固定 (旧実装は決定的に失敗)。
+
+### テスト数
+
+opt-gfx 573 → **575** (+2: 6平面制限 mirror / zero-stride 拒否)。

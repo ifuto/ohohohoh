@@ -88,7 +88,13 @@ pub struct UpsampleParams {
 }
 
 impl UpsampleParams {
+    /// coarse グリッドの次元。`stride` は 1 以上必須 (0 は除算パニックになる
+    /// ため契約違反として明示的に拒否する — 静かな未定義より派手な失敗)。
     pub fn coarse_dims(&self) -> (u32, u32, u32) {
+        assert!(
+            self.stride > 0,
+            "UpsampleParams.stride は 1 以上必須 (0 は coarse グリッドを定義できない)"
+        );
         (
             (self.size_x / self.stride) + 1,
             (self.size_y / self.stride) + 1,
@@ -378,11 +384,15 @@ pub fn lbvh_codes_cpu(spheres: &[[f32; 4]], min: [f32; 3], span: [f32; 3]) -> Ve
 }
 
 /// CPU 精密ミラー: WGSL `cs_cull` と完全一致 (0/1 マスク)。
+/// WGSL 側は `plane_count = min(planes.len(), 6)` の先頭 6 平面のみで判定する
+/// (uniform 配列が `[[f32;4]; 6]` 固定) ため、完全一致を保つにはこちらも
+/// 先頭 6 平面に制限する。7 個以上渡した場合に 7 個目以降で結果が変わる
+/// 実装は「完全一致」の宣言に反する。
 pub fn lbvh_cull_cpu(spheres: &[[f32; 4]], planes: &[[f32; 4]]) -> Vec<u32> {
     spheres
         .iter()
         .map(|s| {
-            let vis = planes.iter().all(|p| {
+            let vis = planes.iter().take(6).all(|p| {
                 let dist = p[0] * s[0] + p[1] * s[1] + p[2] * s[2] + p[3];
                 dist >= -s[3]
             });
@@ -925,11 +935,13 @@ pub struct MeshletParams {
 }
 
 /// CPU 精密ミラー: WGSL `cs_meshlet_cull` と完全一致 (0/1 マスク)。
+/// `lbvh_cull_cpu` と同じく WGSL の `[[f32;4]; 6]` 固定配列に合わせ、
+/// 判定は先頭 6 平面のみで行う (7 個目以降は GPU 側に存在しない)。
 pub fn meshlet_cull_cpu(meshlets: &[[f32; 4]], planes: &[[f32; 4]]) -> Vec<u32> {
     meshlets
         .iter()
         .map(|s| {
-            let vis = planes.iter().all(|p| {
+            let vis = planes.iter().take(6).all(|p| {
                 let dist = p[0] * s[0] + p[1] * s[1] + p[2] * s[2] + p[3];
                 dist >= -s[3]
             });
@@ -1256,5 +1268,58 @@ mod tests {
         let vis_out = meshlet_cull_cpu(&outside, &planes);
         assert_eq!(vis_in, vec![1], "target 点は視錐台内のはず");
         assert_eq!(vis_out, vec![0], "遠方点はカリングされるはず");
+    }
+
+    /// CPU 精密ミラーは WGSL の `[[f32;4]; 6]` 固定配列と同じく先頭 6 平面
+    /// だけで判定しなければならない。7 番目に「全カリング」平面を置いても
+    /// 結果に影響しないこと (全件走査の旧実装ではここで 0 になり決定的に
+    /// 失敗する) を両ミラーで固定する。
+    #[test]
+    fn cull_cpu_mirrors_gpu_plane_limit_of_six() {
+        let spheres = vec![[0.0, 0.0, 0.0, 1.0]];
+        // 先頭 6 平面: 原点を内側に含む (x/y/z ∈ [-50, 50])。
+        let mut planes: Vec<[f32; 4]> = vec![
+            [1.0, 0.0, 0.0, 50.0],
+            [-1.0, 0.0, 0.0, 50.0],
+            [0.0, 1.0, 0.0, 50.0],
+            [0.0, -1.0, 0.0, 50.0],
+            [0.0, 0.0, 1.0, 50.0],
+            [0.0, 0.0, -1.0, 50.0],
+        ];
+        assert_eq!(lbvh_cull_cpu(&spheres, &planes), vec![1]);
+        assert_eq!(meshlet_cull_cpu(&spheres, &planes), vec![1]);
+        // GPU 側に存在しない 7 番目 (x >= 1000 を要求 = 原点をカリング)。
+        planes.push([1.0, 0.0, 0.0, -1000.0]);
+        assert_eq!(
+            lbvh_cull_cpu(&spheres, &planes),
+            vec![1],
+            "7 番目の平面は WGSL 側に届かないため結果を変えてはならない"
+        );
+        assert_eq!(
+            meshlet_cull_cpu(&spheres, &planes),
+            vec![1],
+            "7 番目の平面は WGSL 側に届かないため結果を変えてはならない"
+        );
+    }
+
+    /// stride = 0 は coarse グリッドを定義できない契約違反。
+    /// 無検査なら整数 0 除算の裸パニックになるため、意図したメッセージ付きの
+    /// assert で拒否することを固定する (静かな未定義より派手な失敗)。
+    #[test]
+    #[should_panic(expected = "stride は 1 以上必須")]
+    fn coarse_dims_rejects_zero_stride() {
+        let p = UpsampleParams {
+            stride: 0,
+            seed: 0,
+            origin_x: 0,
+            origin_y: 0,
+            origin_z: 0,
+            size_x: 16,
+            size_y: 16,
+            size_z: 16,
+            cave_threshold: 0.0,
+            _pad: 0,
+        };
+        let _ = p.coarse_dims();
     }
 }
