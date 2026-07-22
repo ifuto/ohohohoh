@@ -1386,8 +1386,47 @@ mod tests {
         let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 83);
     }
 
+    // 診断 W11-B14: 条件付きサブシステムの選択切断 (恒久ではない)。
+    #[test]
+    fn probe_frame_full_strip() {
+        let (_d, mut p) = guarded_new("probe_strip", 39);
+        p.feather.enabled = false;
+        p.profile.hzb_occlusion = false;
+        p.profile.cpu_masked_occlusion = false;
+        p.profile.multi_draw_indirect = false;
+        p.profile.vertex_pull_4byte = false;
+        p.profile.noise_upsampling = false;
+        p.low_spec.pre_mesh_occlusion = false;
+        p.low_spec.quad_budget = 0;
+        let _ = guarded_frame(&mut p, &[(0, 0)], 101);
+    }
+
+    #[test]
+    fn probe_frame_no_hzb() {
+        let (_d, mut p) = guarded_new("probe_nohzb", 39);
+        p.profile.hzb_occlusion = false;
+        p.profile.cpu_masked_occlusion = false;
+        let _ = guarded_frame(&mut p, &[(0, 0)], 103);
+    }
+
+    #[test]
+    fn probe_frame_no_feather() {
+        let (_d, mut p) = guarded_new("probe_nofeather", 39);
+        p.feather.enabled = false;
+        let _ = guarded_frame(&mut p, &[(0, 0)], 105);
+    }
+
+    #[test]
+    fn probe_frame_no_mdi_pull() {
+        let (_d, mut p) = guarded_new("probe_nomdi", 39);
+        p.profile.multi_draw_indirect = false;
+        p.profile.vertex_pull_4byte = false;
+        let _ = guarded_frame(&mut p, &[(0, 0)], 107);
+    }
+
     // 診断 W11-B13: 単一テスト内で逐次実行 (並列レース排除) し、
     // frame() を構成ステージごとに catch_unwind で被覆 (恒久ではない)。
+    #[cfg(any())] // 診断 W11-B14: 選択切断プローブへの譲渡 (恒久撤去ではない)
     #[test]
     fn probe_stage_by_stage_sequential() {
         let (_d, mut p) = guarded_new("probe_stage", 39);
