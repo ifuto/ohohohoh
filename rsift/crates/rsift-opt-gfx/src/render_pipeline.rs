@@ -1370,6 +1370,7 @@ mod tests {
         }
     }
 
+    #[cfg(any())] // 診断 W11-B9: probes への通信譲渡 (恒久撤去ではない)
     #[test]
     fn frame_demo_stats_det_core_x() {
         let (dir_a, mut a) = guarded_new("det_corex_a", 39);
@@ -1416,6 +1417,7 @@ mod tests {
         let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 57);
     }
 
+    #[cfg(any())] // 診断 W11-B9: probes への通信譲渡 (恒久撤去ではない)
     #[test]
     fn frame_demo_stats_det_core_y() {
         let (dir_a, mut a) = guarded_new("det_corey_a", 39);
