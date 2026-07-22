@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 67
+- count: 68
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -85,3 +85,4 @@
 - 2026-07-22 (count 65): wave 31 — diff_mesh 契約明文化 + 厳密列ピン (4 件) 完了。CI 緑確認
 - 2026-07-22 (count 66): wave 32 — tick_render_split NaN 永久汚染根治 + 厳密列ピン (4 件) 完了。CI 緑確認
 - 2026-07-22 (count 67): wave 33 — soa_layout Aligned64 根治 (ゼロデイ) + 契約化 (8 件) 完了。CI 緑確認
+- 2026-07-22 (count 68): wave 34 — entity_tick_lod 非有限 fail-loud + hashed 契約化 (6 件) 完了。CI 緑確認
