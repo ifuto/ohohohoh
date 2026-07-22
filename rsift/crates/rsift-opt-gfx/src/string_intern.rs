@@ -2,19 +2,31 @@
 //!
 //! Minecraft 1.21.11 の `BlockState` プロパティ名 (`"minecraft:stone"`, `"axis=y"`, `"facing=north"`) や
 //! リソースロケーション文字列により発生する数百 MB 級のヒープメモリ肥大化 (`String`) を撲滅する。
-//! 1) `InlineStr`: 最大 15 バイトの文字列をポインタなしで `[u8; 16]` の内部にインライン格納 ($O(1)$, ヒープ確保 0)。
+//! 1) `InlineStr`: 最大 15 バイトの文字列をポインタなしで 16B 構造体
+//!    ([u8; 15] + u8 長) にインライン格納 ($O(1)$, ヒープ確保 0)。
 //! 2) `CompactSymbolTable`: 16 バイト超の文字列も `SymbolId(u32)` の 4 バイトハンドルへ一意集約。
 
 use std::collections::HashMap;
 
 /// 16 バイト固定長のインライン文字列（ヒープ確保ゼロ / SSO）。
+/// 実体レイアウトは `[u8; 15]` のデータ + `u8` の長さ (計 16B、
+/// `size_of == 16` はテストで機械ピン)。
+///
+/// **不変条件 (2026-07-23 wave 49 で型レベル強制)**: `data[..len]` は
+/// 常に有効な UTF-8 であり、len ≤ 15 かつ残りは 0 パディング。
+/// 不変条件は**構築経路を [`InlineStr::try_from_str`] のみに限定**することで
+/// 成立させる — 旧実装は `data`/`len` が pub で、`[0xFF; 15]` のような
+/// 無効 UTF-8 を直接構築して `as_str` の `from_utf8_unchecked` 前提を
+/// 迂回できた (**即 UB**)。フィールドを private に閉じて根治。
+/// (PartialEq/Hash は 0 パディング保証により全 16B 比較で代入的等価と一致)
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InlineStr {
-    pub data: [u8; 15],
-    pub len: u8,
+    data: [u8; 15],
+    len: u8,
 }
 
 impl InlineStr {
+    /// 唯一の構築経路 (UTF-8 不変条件の強制点)。15 バイト超は `None`。
     pub fn try_from_str(s: &str) -> Option<Self> {
         if s.len() <= 15 {
             let mut data = [0u8; 15];
@@ -30,7 +42,18 @@ impl InlineStr {
 
     pub fn as_str(&self) -> &str {
         let len = self.len as usize;
+        // SAFETY: 構築経路が `&str` 由来の try_from_str のみに閉じており、
+        // `data[..len]` は常に有効な UTF-8 (wave 49 でフィールド秘匿化)。
         unsafe { std::str::from_utf8_unchecked(&self.data[..len]) }
+    }
+
+    /// 格納バイト数 (0..=15)。
+    pub fn len(&self) -> u8 {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
 
@@ -109,5 +132,65 @@ mod tests {
         let id2 = table.intern("facing=north");
         assert_eq!(id1, id2);
         assert!(table.bytes_saved_estimate() > 0);
+    }
+
+    /// wave 49-1: 境界長 0/1/15 受理、16 拒否の厳密列 + ラウンドトリップ
+    /// 往復一致 (空文字列・ASCII・マルチバイトの 3 系)。
+    #[test]
+    fn inline_str_boundary_lengths_exact() {
+        assert!(InlineStr::try_from_str("").is_some(), "空文字列は受理");
+        assert!(InlineStr::try_from_str("a").is_some());
+        assert!(
+            InlineStr::try_from_str("0123456789abcde").is_some(),
+            "15B ちょうど受理"
+        );
+        assert!(
+            InlineStr::try_from_str("0123456789abcdef").is_none(),
+            "16B は拒否"
+        );
+        // ラウンドトリップ (ASCII / マルチバイト / 空)
+        for s in ["", "minecraft:stone", "日本語", "axis=y"] {
+            let is = InlineStr::try_from_str(s).expect("<=15B");
+            assert_eq!(is.as_str(), s);
+            assert_eq!(is.len() as usize, s.len());
+            assert_eq!(is.is_empty(), s.is_empty());
+        }
+        // 等価性は内容一致で完全決定 (0 パディング込み全 16B 一致)
+        let a = InlineStr::try_from_str("abc").unwrap();
+        let b = InlineStr::try_from_str("abc").unwrap();
+        assert_eq!(a, b);
+        let c = InlineStr::try_from_str("abd").unwrap();
+        assert_ne!(a, c, "残りが 0 パディングなので 16B 比較 == 内容比較");
+    }
+
+    /// wave 49-2: シンボル ID は追加順連番、resolve は追加後に必ず往復する
+    /// (append-only 安定性)。範囲外 resolve は None。
+    #[test]
+    fn symbol_table_id_sequence_and_resolve_roundtrip() {
+        let mut table = CompactSymbolTable::new();
+        let a = table.intern("minecraft:stone");
+        let b = table.intern("axis=y");
+        let c = table.intern("facing=north");
+        assert_eq!((a.0, b.0, c.0), (0, 1, 2), "ID は追加順連番");
+        assert_eq!(table.intern("axis=y"), b, "再インターンは既存 ID");
+        assert_eq!(table.resolve(a), Some("minecraft:stone"));
+        assert_eq!(table.resolve(b), Some("axis=y"));
+        assert_eq!(table.resolve(c), Some("facing=north"));
+        assert_eq!(table.resolve(SymbolId(99)), None, "範囲外は None");
+        assert_eq!(table.symbol_count(), 3);
+    }
+
+    /// wave 49-3: bytes_saved の厳密値 — 2 回目以降の各ヒットで
+    /// (24 + len) が加算されるモデルであることをピン
+    /// (アロケータ実装非依存の推定モデルであることは doc どおり)。
+    #[test]
+    fn bytes_saved_exact_accumulation() {
+        let mut table = CompactSymbolTable::new();
+        table.intern("facing=north"); // miss (len 12) → 加算なし
+        table.intern("facing=north"); // hit → +36
+        table.intern("axis=y"); // miss (len 6)
+        table.intern("axis=y"); // hit → +30
+        table.intern("axis=y"); // hit → +30
+        assert_eq!(table.bytes_saved_estimate(), 36 + 30 + 30);
     }
 }

@@ -2531,3 +2531,36 @@ examples でもベンチ用に消費。
 - lib テスト **755/755** (+7)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - cargo check --all-targets エラー 0 (gen 撤去は private 構造体内で完結)。
+
+## AY. string_intern.rs 監査 (wave 49, 2026-07-23)
+
+full_graph_wiring:99/:1139 で実消費 (ブロック名シンボルインターン)。
+
+### AY-1 (高): InlineStr の from_utf8_unchecked 前提を pub フィールド経由で
+迂回可能だった UB 経路を型レベル封鎖
+`InlineStr { pub data, pub len }` は任意コードが `[0xFF; 15]` 等の
+**無効 UTF-8 を直接構築**可能で、`as_str()` の unsafe
+`from_utf8_unchecked` 前提を破り**即 UB** となり得た。
+→ フィールドを private 化し、構築経路を `try_from_str` (&str 由来で
+UTF-8 保証) のみに限定 — 不変条件を型で強制。PartialEq/Hash は
+0 パディング保証により全 16B 比較と内容等価が一致することを併記。
+workspace 内で InlineStr の実利用はゼロ (消費は CompactSymbolTable
+のみ) であることを機械確認し、all-targets check で無影響を検証。
+len()/is_empty() アクセサを補完。ヘッダ doc の「[u8; 16] 内部に格納」
+は実体 ([u8;15]+u8) と微妙に乖離していたため明記に修正。
+
+### AY-2: CompactSymbolTable の決定性を機械ピン (監査で正当性確認)
+ID 追加順連番、append-only 安定性、resolve 往復、bytes_saved の
+蓄積規則は全て正しく設計されていた — 検証済の上で厳密値をピン化。
+
+### テスト (+3)
+- inline_str_boundary_lengths_exact (0/1/15/16B 境界、ASCII・マルチ
+  バイト・空の往復、0 パディング一致による内容等価性)
+- symbol_table_id_sequence_and_resolve_roundtrip (ID 連番 (0,1,2)、
+  再インターン既存化、resolve 往復、範囲外 None)
+- bytes_saved_exact_accumulation (miss/hit の蓄積規則を 36+30+30 で
+  厳密ピン)
+
+### 検証結果 (全て実測)
+- lib テスト **758/758** (+3)。rustfmt hunk 増分 0 (HEAD 0 → 0)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
