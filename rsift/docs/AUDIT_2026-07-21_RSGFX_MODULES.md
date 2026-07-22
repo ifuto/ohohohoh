@@ -1482,3 +1482,49 @@ remove の retain + 空セル消去による帳簿整合、同セル move no-op�
 - lib テスト **635/635** (+7)。rustfmt hunk 増分 0
   (spatial_hash の HEAD 由来 1 hunk は編集範囲と一致したため正準形へ)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+## AC. simd_kernels.rs 監査 (wave 27, 2026-07-22)
+
+`simd_kernels.rs` (Tier 3: popcount/merge_runs/Gribb frustum + rayon 並列版)
+全行照合。実消費者は low_spec_stack::frustum_culled
+(world_column_store::TerrainFrameConstants の p·M 行列を供給)。
+opt-gfx 635 → **640** (+5)。
+
+### AC-1 (中・規約逸脱) near 平面の GL 式体積 — 根治
+Gribb/Hartmann 抽出の near を `add4(r3, r2)` (w+z>=0 = **z >= -w の GL 式
+体積**) としていた。wgpu は z_ndc ∈ [0,1] で視体積は clip.z >= 0 ⟺
+`r2` 単体。旧式は誤カリングしない保守側 (near 背面の箱を可視扱いで残す) だが、
+doc の「matches terrain VS」と矛盾し frame_worldgen::frustum_planes
+(2026-07-21 監査で既知点検証済み) の r2 規則とも非対称だった。
+`r2` に根治 (far = sub4(r3, r2) は旧来正しい)。
+
+### AC-2 (doc 偽×2 訂正)
+- FrustumPlanes の法線は**内向き** (r3±r0 抽出は内側半空間 dist>=0 を与える)
+  — 旧 doc「outward normals」は偽。
+- 行列規約の相互供給禁止を明文化: 本関数は p·M (row-vector / world_column_store
+  系) 専用。M·p 系 (frame_pipeline::build_view_proj) を流すと転置ずれで
+  誤カリングするので frame_worldgen::frustum_planes を使う (二系統は
+  一方が他方の転置として成立することを実データで確認済み)。
+
+### 陰性確認
+正頂点 (positive vertex) 選択による outside 判定式 `p·v+d < 0`
+(符号付き境界 match)、正規化 len の (a,b,c) のみ版 (d 除外 = Gribb 正常)、
+batch ビット集合 i/64, i%64 レイアウト、並列版の per-index 独立性
+(rayon でも逐次と一致) — 読み合わせ+厳密テストで一致。退化平面
+(len 1e-8 床) と NaN 行列の「全可視」同化はカリングの安全側に倒れる
+設計として確認。
+
+### 追加テスト (+5, fail-loud)
+- identity_view_proj_planes_exact (整数平面 6 面、near=(0,0,1,0) — 旧 GL 式
+  (0,0,1,1) では確実に赤)
+- perspective_planes_match_hand_derived_gribb (90°/1x1/1..10、exact rational
+  導出 bits + z=-near で dist=0 の意味論実証)
+- merge_runs_edge_cases_exact (0/full/端 bit/交互/batch 行 index)
+- popcount_par_matches_seq_at_threshold (n=0,1,63,64,65,130 で逐次=並列=期待)
+- batch_bitset_layout_and_straddle_semantics (跨ぎ=可視・完全外=不可視・
+  near 背面カリング + 130 要素の bit 一致・par==seq)
+
+### 検証結果 (全て実測)
+- lib テスト **640/640** (+5)。rustfmt hunk 増分 0 (:67 aabb_outside_plane
+  の HEAD 由来 1 hunk は規律上温存)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
