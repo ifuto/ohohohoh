@@ -1334,11 +1334,12 @@ mod tests {
 
     /// frame() 2 フレームの実統計が、同一機械上の新鮮 2 インスタンスで
     /// 厳密一致すること (期間起動 %120 系を除く全カウンタ)。
-    #[cfg(any())] // 診断 W11-B2: speed 単独切り分け中 (恒久撤去ではない)
+    /// frame() 2 フレームの実統計が、同一機械上の新鮮 2 インスタンスで
+    /// 厳密一致すること。コア系 (診断 W11-B3 で半分分割)。
     #[test]
-    fn frame_demo_stats_cross_instance_deterministic() {
-        let (dir_a, mut a) = unique_pipeline("det_a");
-        let (dir_b, mut b) = unique_pipeline("det_b");
+    fn frame_demo_stats_det_core() {
+        let (dir_a, mut a) = unique_pipeline("det_core_a");
+        let (dir_b, mut b) = unique_pipeline("det_core_b");
         let coords = [(0, 0), (1, 0), (-1, 0)];
         for _ in 0..2 {
             let sa = a.frame(&coords, 640, 360, 0.016);
@@ -1355,6 +1356,25 @@ mod tests {
             assert_eq!(sa.range_culled, sb.range_culled);
             assert_eq!(sa.rle_palette_bytes, sb.rle_palette_bytes);
             assert_eq!(sa.svo_nodes_built, sb.svo_nodes_built);
+            // 仕様値の固定: 60 サブシステム配線。
+            assert_eq!(sa.wiring_subsystems, 60);
+            assert_eq!(sa.wiring_subsystems, sb.wiring_subsystems);
+            // M-1: デモ静止カメラでは実速度は厳密 0.0 (旧実装 ~375 固定ではない)。
+            assert_eq!(a.last_camera_speed.to_bits(), 0.0f32.to_bits());
+        }
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    /// frame() 実統計の厳密一致。pull/キャッシュ系 (診断 W11-B3 で半分分割)。
+    #[test]
+    fn frame_demo_stats_det_pull() {
+        let (dir_a, mut a) = unique_pipeline("det_pull_a");
+        let (dir_b, mut b) = unique_pipeline("det_pull_b");
+        let coords = [(0, 0), (1, 0), (-1, 0)];
+        for _ in 0..2 {
+            let sa = a.frame(&coords, 640, 360, 0.016);
+            let sb = b.frame(&coords, 640, 360, 0.016);
             assert_eq!(sa.frame_reuse_hits, sb.frame_reuse_hits);
             assert_eq!(sa.frame_reuse_misses, sb.frame_reuse_misses);
             assert_eq!(sa.pull_quads_built, sb.pull_quads_built);
@@ -1365,12 +1385,7 @@ mod tests {
             assert_eq!(sa.soft_occluded, sb.soft_occluded);
             assert_eq!(sa.lod_boxes, sb.lod_boxes);
             assert_eq!(sa.interior_culled_voxels, sb.interior_culled_voxels);
-            assert_eq!(sa.wiring_subsystems, sb.wiring_subsystems);
             assert_eq!(sa.wiring_ao_refined_quads, sb.wiring_ao_refined_quads);
-            // 仕様値の固定: 60 サブシステム配線。
-            assert_eq!(sa.wiring_subsystems, 60);
-            // M-1: デモ静止カメラでは実速度は厳密 0.0 (旧実装 ~375 固定ではない)。
-            assert_eq!(a.last_camera_speed.to_bits(), 0.0f32.to_bits());
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
