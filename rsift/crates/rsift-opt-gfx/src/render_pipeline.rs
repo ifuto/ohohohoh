@@ -1389,6 +1389,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir_b);
     }
 
+    // 診断 W11-B8: パニックのコンテンツ依存性プローブ (恒久ではない。
+    // パニック時は frame 呼出地点のコードで終了する)。
+    #[test]
+    fn probe_frame_single_origin() {
+        let (_d, mut p) = guarded_new("probe_o", 39);
+        let _ = guarded_frame(&mut p, &[(0, 0)], 51);
+        let _ = std::fs::remove_dir_all(_d);
+    }
+
+    #[test]
+    fn probe_frame_single_neg() {
+        let (_d, mut p) = guarded_new("probe_n", 39);
+        let _ = guarded_frame(&mut p, &[(-1, 0)], 53);
+    }
+
+    #[test]
+    fn probe_frame_single_pos() {
+        let (_d, mut p) = guarded_new("probe_p", 39);
+        let _ = guarded_frame(&mut p, &[(1, 0)], 55);
+    }
+
+    #[test]
+    fn probe_frame_multi_pos() {
+        let (_d, mut p) = guarded_new("probe_m", 39);
+        let _ = guarded_frame(&mut p, &[(0, 0), (1, 0), (2, 0)], 57);
+    }
+
     #[test]
     fn frame_demo_stats_det_core_y() {
         let (dir_a, mut a) = guarded_new("det_corey_a", 39);
