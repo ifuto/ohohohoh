@@ -3897,3 +3897,54 @@ perspective_rh_exact_rational_terms / mul4_identity_and_diagonal_exact。
   修正) → 最終 **23 (WORK-only hunk 0、HEAD 由来のみ温存)**。
 - cargo check -p rsift-opt-gfx --all-targets: エラー 0。
 - 不可視文字 0 / CRLF 0 (python 検査)。
+
+## BX. transform_svdag.rs 監査 (wave 74, 2026-07-24)
+
+transform_svdag.rs (139→352 行)。SVDAG (疎 voxel DAG) ノードを Y 面 D4 変換
+(Y 回転 × 鏡映、最大 8 元の軌道) で canonical 化して挿入するラッパ。
+live 消費: full_graph_wiring:866 `insert_transform_aware(node.clone())` (戻り破棄)。
+基底 svdag.rs (`insert_node` dedup、113 行) は未監査 → 棚卸し残に登録。
+
+### BX-1 (中): 中間 pool ヒット時の誤タグ返却 — D4 群合成で根治
+- 問題の定式化: 返却契約は `(id, tag): base_dag.nodes[id] == permute_node(&node, tag)`
+  (tag は「入力ノード → canonical ノード」の実変換)。しかし初回挿入で canonical_pool
+  には「入力ノード (非 canonical)」と「canonical」の 2 写像が乗る。後続ノードの最初の
+  pool ヒットが**非 canonical 中間ノード**の場合、旧実装は発見 tag (入力→中間) を
+  そのまま返し、契約 (入力→canonical) を破っていた (ゼロデイ修復)。
+- 具体例 (rustc 検算スクリプトで列挙順厳密再現済): n1=octant5 (child 42) 先行登録
+  (canonical=octant0、保存 tag (0,T,T)) の後に n2=octant1 を挿入すると、列挙順で
+  (0,F,T)→octant5 が最初のヒット = **非 canonical の n1 自身**。旧実装は (0,F,T) を
+  返し n2 適用先は octant5 (canonical でない)。正解は合成
+  compose((0,F,T),(0,T,T)) = (0,T,F) = mirror_x。
+- 修復: `compose_tags(first, second)` を新設。(x,z)∈{0,1}² の 4 点への作用で D4
+  群元を同定 (標準作用は faithful: 8 群元は正方形頂点の置換として全て異なる)、
+  関数等価なタグは列挙順 (rot 外周 → mx → mz) 最初の表現に潰す (16 記法→8 群元、
+  決定的)。発見 tag∘保存 tag を合成して返し、今回ノードも pool に memo 化
+  (以後の直接ヒットは O(1)、再最小化はしない)。doc で返却契約を明文化・機械ピン化。
+- アドバーサリアル検証: compose_tags 呼出を旧生タグ返却に一時置換 →
+  新テストが assert で赤 → 修復版へ復元 → 4/4 緑 (検出力の機械確認、BM-1 型)。
+
+### BX-2 (低): 列挙順決定性の厳密ピン (検算による自己誤り捕捉 2 件)
+- R90∘R90 は 16 記法で (2,F,F) と (0,T,T) (=XZ 全反転) の 2 表現を持ち、列挙順
+  (rot 外周が先) では **(0,T,T) が返る**。初稿期待値 (2,F,F) は誤りで、検算
+  スクリプトが捕捉 (「テスト赤=自己誤り捕捉装置」実績 6 件目)。
+- 初稿テストシナリオ (octant4) は非 canonical ヒット経路を踏まないことを検算で
+  捕捉 → octant1 シナリオに修正 (同実績 7 件目)。
+- 群閉包公理ピン: mirror 3 種はいずれも involution (m∘m=(0,F,F))、
+  R90∘R90=(0,T,T)、R180∘R180=(0,F,F)、octant6 (y 不変 orbit {6,7,3,2}) の
+  canonical=idx2 (child_mask 0b0000_0100、children[2]=7 で child 値追従を固定)。
+
+### テスト (+3 純増、866 全緑)
+composed_tag_maps_input_to_canonical_on_intermediate_pool_hit /
+compose_tags_group_closure_axioms /
+repeated_insert_is_deterministic_and_contract_preserving
+(ヘルパ `node_at(octant, child)` 新設。既存 test_transform_aware_canonicalization
+も維持緑、全値手導出・検算スクリプト裏付け)。
+
+### 検証結果 (全て実測)
+- lib **866/866** (+3)。structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (修復後に再測定、live 呼出は戻り破棄のため挙動影響なしの機械保証)。
+- fmt: HEAD baseline 46 → 初稿 69 (自前 4 箇所) → rustfmt 正準形へ是正後
+  **46 (WORK-only 差分行 0、HEAD 由来のみ温存)**。
+- 不可視文字 0 / CRLF 0 (python 検査)。
+- 引継ぎ: 基底 svdag.rs (dedup・解放順) は本監査対象外 → 棚卸し残。
