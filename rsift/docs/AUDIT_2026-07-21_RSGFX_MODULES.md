@@ -3627,3 +3627,41 @@ nan_depth_is_rejected / nan_color_is_rejected。
 ### 検証結果 (全て実測)
 - lib **838/838** (+5)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - fmt: HEAD=0 → 自前 3 hunk → rustfmt 全適用 → 0。
+
+## BS. temporal_mesh_diff.rs 監査 (wave 69, 2026-07-23)
+
+Temporal Mesh Diff (96 → 約170 行)。消費: full_graph_wiring (:127/:266
+struct、:742 mark_dirty×N/:749 take_dirty/:760 patch_for_block — 結果は
+コスト均一のカウンタ集計のみに利用)。
+
+### BS-1 (高 — doc 嘘の誠実化): 責務外主張の撤回
+旧 module ヘッダ「石1つ置いても8頂点だけ更新、従来全再構築を回避」は
+コードに根拠のない主張だった (該当機構は存在しない)。`patch_for_block`
+のコメント「6 面×2tri=12quad 影響・周辺 8 ブロック再生成指示」も同様に
+実体 (removed_quads=[block_idx] 1 個・added 空) と乖離。**真のメッシュ
+差分機構は diff_mesh.rs (監査済) に実装済み**で重複再実装は不要 — 本
+モジュールの責務を「dirty セクションの決定的追跡 + パレット差分列挙」
+に限定して誠実化し、diff_section の live 配線を消費者追加方針に基づく
+将来候補として記録 (削除ではなく配線候補)。契約 assert (block_idx <
+4096、live 呼出 `packed & 0xFFF` 適合実測) を追加。
+
+### BS-2 (中 — latent 非決定性の遮断): take_dirty のソート決定的化
+旧実装は HashMap イテレーション順 (RandomState、プロセス毎不定) をその
+まま返していた。現在の消費はコスト均一カウンタのため被害は latent だが、
+キー同一次第の処理 (予算繰越の identity 選択等) が将来入れば実行毎分岐
+のハザード。(cx, cz, sy) 昇順ソートを契約として固定 (SectionKey に Ord
+導出追加、無害な trait 拡張)。敵対的挿入順テストで機械固定。
+
+### BS-3 (低): patch_for_block の契約厳格化
+usize の `as u32` キャストは 4096 超で静寂切捨てし得た — 契約 assert +
+境界受理 (4095) / 拒否 (4096) ピン。
+
+### テスト (+3 純増、841 全緑)
+take_dirty_returns_sorted_deterministic_order /
+patch_for_block_boundary_acceptance /
+patch_for_block_rejects_out_of_section (should_panic)。
+
+### 検証結果 (全て実測)
+- lib **841/841** (+3)。structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (ソート化は均一カウンタ消費のみのため行項目不変を実測確認)。
+- fmt: HEAD=0 → 自前 5 hunk → rustfmt 全適用 → 0。
