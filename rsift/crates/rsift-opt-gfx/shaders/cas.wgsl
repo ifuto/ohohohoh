@@ -50,9 +50,12 @@ fn cas_run(x: i32, y: i32) -> vec3<f32> {
     let rcp_m = vec3<f32>(1.0) / max(mx, vec3<f32>(1.0e-30));
     let amp = sqrt(clamp(min(mn, vec3<f32>(1.0) - mx) * rcp_m, vec3<f32>(0.0), vec3<f32>(1.0)));
     // 負ローブカーネル: out = sat((c + (n+s+e+w)·w) / (1+4w))
+    // (加算順は n→s→e→w で cas.rs::cas_sample / frame_postfx::cas_run_cpu と
+    //  厳密一致 — 旧版の (n+w+e+s) は浮動小数加算の非結合性により最大 1 ulp
+    //  分岐していた。2026-07-23 wave 65 BO-1 で 3連鎖演算順を真に統一)
     let wg = amp * vec3<f32>(peak);
     let rcp_w = vec3<f32>(1.0) / (vec3<f32>(1.0) + vec3<f32>(4.0) * wg);
-    return clamp((c + (n + w + e + s) * wg) * rcp_w, vec3<f32>(0.0), vec3<f32>(1.0));
+    return clamp((c + (n + s + e + w) * wg) * rcp_w, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 @compute @workgroup_size(8, 8, 1)

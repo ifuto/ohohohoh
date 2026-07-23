@@ -272,4 +272,69 @@ mod tests {
             }
         }
     }
+
+    /// wave 65 BO-3: `cas_peak` の公式変換 `-1/lerp(8,5,sat(s))` を
+    /// f32 エミュレーション独立導出の厳密ビットで固定 (端点は数学的に
+    /// -1/8・-1/5。飽和クランプの等価性も機械固定)。
+    #[test]
+    fn cas_peak_exact_bits_and_saturation() {
+        assert_eq!(cas_peak(0.0).to_bits(), 0xbe000000, "s=0 → -1/8 exactly");
+        assert_eq!(cas_peak(1.0).to_bits(), 0xbe4ccccd, "s=1 → -0.2f32");
+        assert_eq!(
+            cas_peak(0.5).to_bits(),
+            0xbe1d89d9,
+            "s=0.5 → -1/6.5 (f32 emu derived)"
+        );
+        // 飽和: 区間外は端点とビット一致 (WGSL clamp(...) と同一規則)
+        assert_eq!(cas_peak(-0.7).to_bits(), cas_peak(0.0).to_bits());
+        assert_eq!(cas_peak(2.5).to_bits(), cas_peak(1.0).to_bits());
+    }
+
+    /// wave 65 BO-3: `cas_sample` 全経路 (soft min/max → amp → 負ローブ合成)
+    /// の厳密ビット固定。入力は matches_gpuopen_reference_formula と同一の
+    /// チャンネル非対称配置で、ch0/ch1 は非クランプ・ch2 はクランプ上限の
+    /// 共存形状 (期待値は f32 エミュレーション独立導出 — 入力リテラルも
+    /// f32 丸め済。W-3/BN 教訓の規律適用)。
+    #[test]
+    fn cas_sample_exact_bits_canonical() {
+        let out = cas_sample(
+            Vec3::new(0.3, 0.6, 0.9),
+            Vec3::new(0.2, 0.7, 0.4),
+            Vec3::new(0.8, 0.5, 0.1),
+            Vec3::new(0.4, 0.3, 0.2),
+            Vec3::new(0.9, 0.8, 0.7),
+            0.85,
+        );
+        assert_eq!(
+            [out[0].to_bits(), out[1].to_bits(), out[2].to_bits()],
+            [0x3e57fe57, 0x3f1d4f67, 0x3f800000],
+            "CAS canonical bit drift: {out:?}"
+        );
+    }
+
+    /// wave 65 BO-2: `cas.wgsl` が cas_sample と同一語彙で実装されている
+    /// ことの表記ピン (3連鎖: cas.rs ↔ cas_run_cpu ↔ cas.wgsl)。
+    /// 特に `(n + s + e + w)` の加算順は浮動小数非結合のため順序までが契約
+    /// (旧版の n+w+e+s 順で最大 1 ulp 分岐していた実績 — BO-1 で統一)。
+    #[test]
+    fn wgsl_mirror_lexical_tokens() {
+        const WGSL: &str = include_str!("../shaders/cas.wgsl");
+        for tok in [
+            // soft min/max は中心を含む cross 5 タップ
+            "let mn = min(min(min(n, s), min(e, w)), c);",
+            "let mx = max(max(max(n, s), max(e, w)), c);",
+            // CasSetup の peak 変換 (sat → lerp(8,5) → -rcp)
+            "-1.0 / (8.0 + (5.0 - 8.0) * clamp(params.sharpness, 0.0, 1.0))",
+            // MX_FLOOR ガード
+            "max(mx, vec3<f32>(1.0e-30))",
+            // amp = sqrt(sat(min(mn, 1-mx) * rcp_m))
+            "sqrt(clamp(min(mn, vec3<f32>(1.0) - mx) * rcp_m, vec3<f32>(0.0), vec3<f32>(1.0)))",
+            // 負ローブ分母 1+4w
+            "vec3<f32>(1.0) + vec3<f32>(4.0) * wg",
+            // 加算順契約 (n→s→e→w)
+            "(c + (n + s + e + w) * wg) * rcp_w",
+        ] {
+            assert!(WGSL.contains(tok), "cas.wgsl drift from cas_sample: {tok}");
+        }
+    }
 }

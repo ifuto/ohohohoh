@@ -3424,3 +3424,63 @@ sharpen_consumes_struct_sharpness (sharpness=0 恒等 + rcas 一致 +
   同「lib tests」step で wave 63 側 (818 件の上位互換スイート) が全緑のため
   wave 50 と同型の flaky/infra 確定 (log 取得は sandbox から results
   receiver への接続が EOF 遮断で不可、判定は後続 green 連鎖)。
+
+## BO. cas.rs 監査 (wave 65, 2026-07-23)
+
+FidelityFX CAS (Contrast Adaptive Sharpening) CPU 参照 (276 → 約380 行)。
+消費: full_graph_wiring (:1615 状態連鎖) / frame_postfx (cas_run_cpu 精密
+ミラー・GpuCas 実 dispatch・CAS_WGSL 参照) / drs (CAS_WGSL 参照) /
+fsr1,frame_reference (符号規約参照)。3連鎖: cas.rs ↔ frame_postfx::cas_run_cpu
+↔ shaders/cas.wgsl。モジュールは 2026-07-21 監査で公式式へ転換済の
+改修品。
+
+### BO-1 (中): cas.wgsl の加算順 1 ulp 分岐 — 3連鎖演算順を真に統一
+WGSL 最終合成が `(c + (n + w + e + s) * wg) * rcp_w` で、Rust 両ミラーの
+`(n + s + e + w)` と**加算順が不一致**だった。IEEE 加算は非結合 (非可換な
+丸め) のため最大 1 ulp 分岐し、WGSL ヘッダの「CPU ミラー (完全一致) …
+演算順も同一」の主張が偽だった。WGSL 側を Rust 順に統一 (2 サイト一致の
+方式へ 1 サイトを寄せる修復)。min/max 木は厳密演算のため順序非依存で
+無害と証明 (変更不要)。GPU 出力への影響は ±1 ulp 以下、sandbox では
+GPU 非実行・digest 非消費 (bench は WGSL ソースを行項目に含まないことを
+grep で実測確認) のため全側面安全。残差: 公式 CasFilter は近傍項毎に
+`b*w+d*w+...` と乗算先出しだが、実数上等価・プロジェクト 3 連鎖の内部
+規約として sum-first を採用済 (doc 記録)。
+
+### BO-4 (規格照合 — 変更なし): 公式 ffx_cas.h と全項目一致を一次情報確認
+GPUOpen-Effects/FidelityFX-CAS ffx-cas/ffx_cas.h を直接取得し照合:
+- CasSetup `sharp=-ARcpF1(ALerpF1(8.0,5.0,ASatF1(sharpness)))` (:389)
+  ⇔ cas_peak と完全同一。**sharpness 意味論**: 公式コメント「0 := default
+  (lower ringing), 1 := maximum (higest ringing)」(:378) — モジュール doc
+  「1 で最大鮮鋭化」は正しく、**誤った逆転ではなかった** (注意喚起して
+  いた先入観を一次情報で否定確認)。
+- CasFilter noScaling: mn/mx は d,e,f(中心含む)+b,h の cross+中心 (:453-466)
+  ✓、CAS_BETTER_DIAGONALS 無しの `1.0-mx` ✓ (:490-492)、sqrt(amp) ✓、
+  w=amp*peak ✓、rcpWeight=1/(1+4w) ✓、負ローブ合成 ✓。
+- 公式の rcp/sqrt は近似命令 (APrxLoRcpF1/APrxLoSqrtF1) 依存で、本実装の
+  IEEE 厳密演算選択と MX_FLOOR ガードは doc 記載通り妥当 (WGSL 側コメント
+  の精度注記と整合)。
+
+### BO-2/BO-3 (低): 厳密ピン強化
+- cas_peak_exact_bits_and_saturation: 0xbe000000 (-1/8) / 0xbe1d89d9
+  (-1/6.5) / 0xbe4ccccd (-0.2f32) + 区間外飽和の端点ビット等価。
+- cas_sample_exact_bits_canonical: チャンネル非対称入力で全経路の
+  f32 エミュレーション独立導出ビット固定 (ch2 はクランプ上限と共存)。
+- wgsl_mirror_lexical_tokens: peak 変換・MX_FLOOR・amp・1+4w・そして
+  **加算順 `(c + (n + s + e + w) * wg)` の順序まで契約として表記ピン
+  (BO-1 直接回帰)** — 7 トークン。
+
+### 判定記録: 修正対象外 (一次情報で正当性確認済)
+- `1+4w` の分母下限: peak ≥ -1/5 より 1+4w ≥ 0.2 > 0 で零除算不可 ✓。
+- Mn/mx 木の順序差 (min/max は結合・可換・厳密) ✓ 無害。
+- 公式の近似 rcp との差: CPU/WGSL 双方 IEEE 厳密路線は意図的選択
+  (cas.wgsl 精度注記)。
+
+### テスト (+3 純増、826 全緑)
+cas_peak_exact_bits_and_saturation / cas_sample_exact_bits_canonical /
+wgsl_mirror_lexical_tokens。既存 frame_postfx::cas_matches_module_fn_bitwise
+含む CAS 系全緑。
+
+### 検証結果 (全て実測)
+- lib **826/826** (+3)。wide_static_bench structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (WGSL 変更は digest 行項目に非含有)。
+- fmt: cas.rs HEAD=2 → WORK=2、hunk 位置完全一致 (25, 212 — HEAD 由来温存)。
