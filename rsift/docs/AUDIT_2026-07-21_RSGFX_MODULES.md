@@ -3348,3 +3348,79 @@ sharp`) をピン。ピクセル挙動の厳密ピンは既存 (flat/valley/edge
 - **インシデント**: Rust toolchain 6 度目の消失 (restore-env.sh で復旧)、
   git 破損 8 度目 (HEAD→base 巻戻り、fetch + reset --mixed で復旧、
   差分は frame_reference.rs 1 件のみであることを確認)。
+
+## BN. fsr1.rs 監査 (wave 64, 2026-07-23)
+
+FSR 1.0 (EASU + RCAS) CPU 参照実装 (189 → 約330 行)。消費: full_graph_wiring
+(struct 保持 :163、reconstruct 呼出 :1634) / frame_fsr1 (FSR1_WGSL 参照、
+DEFAULT_SHARPNESS との対応) / GPU 実パス GpuFsr1Pass (wgpu dispatch)。
+live GPU チェーンは frame_fsr1 が担任 (wave 13 実測配線済)、CPU 参照面が
+本モジュール。3連鎖: fsr1.wgsl (実シェーダ) ↔ fsr1.rs (参照) ↔
+frame_reference::fsr1_reference (GPU/CPU 突合ミラー、BM-4 で WGSL 語彙
+ピン済)。
+
+### BN-2 (低-中): easu_reconstruct の死引数 `_c` 撤去 (API 正直化)
+旧シグネチャ第 1 引数 `c` (中心画素) は WGSL が 2x2 ブロック 4 サンプル
+(p00/p10/p01/p11) のみ参照する規約と無関係な未使用引数であり、呼出側に
+「中心画素が意味を持つ」との誤認を与えていた。実害痕跡: full_graph_wiring
+:1634 は誤認通りに中心っぽい値 `[aa.r, aa.g, aa.b]` を第 1 引数に供給して
+いた (数学的影響はゼロ — 死引数ゆえ)。引数撤去 + wiring 呼出更新で
+「渡せば意味がある」の誤認可能性を型で根絶。digest 不変 (calldata 同一)。
+
+### BN-3a (低): Fsr1.sharpness の死に状態を解消 (消費者追加方針の適用)
+`Fsr1 { sharpness: 0.2 }` と初期化しても CPU 構造体のどのメソッドからも
+sharpness が消費されない死に状態だった (EASU は強度パラメータを持たない
+WGSL 規約。GPU パス側が別系統で uniform 保持)。**新方針「消費者ゼロ削除
+より消費者追加」に従い** `Fsr1::sharpen` (rcas に self.sharpness を適用)
+を追加配線 — CPU でも EASU+RCAS 完全 2 パスが API 上成立。あわせて
+wiring :308 を `Fsr1::default()` に集約 (0.2 リテラルの二重真実源を単一化)
+し `frame_fsr1::DEFAULT_SHARPNESS` とのドリフトをテストで機械固定。
+full_graph_wiring の数学は不変更 (digest 不変)、同ファイル本監査は
+大物 wave で実施予定。
+
+### BN-4 (低 — 規格確認、コード変更なし): WGSL `mix` の演算順ドリフトを
+### 一次情報で確定し doc 誠実化
+W3C WGSL (main ブランチ index.bs 直接取得) で一次確認:
+- `mix` の定義は「linear blend (e.g. `e1 * (T(1) - e3) + e2 * e3`)」の
+  **例示定義** (規範的演算順ではない)。
+- 精度表は「Inherited from `x * (1.0 - z) + y * z`」。
+- gpuweb/gpuweb#3260: Vulkan CTS 同等物が差分形 `x + (y - x) * z` を許容。
+よって GPU バックエンド間で mix の演算順は非一意であり、CPU ミラー
+(差分形) とのバイリニア部ドリフトは規格上起こり得る (±1-2 ulp、u8 の
+±1LSB 統計許容内 — frame_reference doc と同一結論)。勾配・エッジ寄せ・
+RCAS 部は演算順が全実装で厳密一致することを再確認済。module doc に
+一次情報引用付きで明記。
+
+### BN-3 (低): 厳密ビットピン強化 (+独立導出の自己誤り捕捉実績)
+- easu_exact_bits_canonical: 全経路 (勾配→応答→位置寄せ→3ch バイリニア)
+  の f32 エミュレーション独立導出ビット値固定。
+- rcas_clamp_bounds_are_exact: 上下両方向クランプ (1.0 / +0.0 丁度)。
+- rcas_exact_bits_non_clamped_and_channel_independent: 非クランプ域ビット
+  + チャンネル配置差によるクロスチャンネル混入検出力の確保。
+**自己誤り捕捉実績**: 初稿 RCAS 期待値が 1 ulp ずれ (0x3f733333 vs 実機
+0x3f733334)。原因は Python エミュレーションが**入力リテラルを f32 に
+丸めず f64 で逐次演算**していた導出バグ (W-3 規律の適用ミス) — 赤が
+自己誤りを正しく捕捉した (wave 46/52/61 と同型パターン、BM-3 に続き 2
+連続)。入力を f32 丸めした再導出で Rust 実機値と全 5 値一致を確認
+(EASU 値は入力が正確表現可能領域で不変、RCAS 2 箇所のみ訂正)。
+
+### テスト (+5 純増、823 全緑)
+easu_exact_bits_canonical / rcas_clamp_bounds_are_exact /
+rcas_exact_bits_non_clamped_and_channel_independent /
+sharpen_consumes_struct_sharpness (sharpness=0 恒等 + rcas 一致 +
+非ゼロ効果の死に状態回帰遮断) / default_sharpness_matches_gpu_pass_default。
+
+### 検証結果 (全て実測)
+- lib **823/823** (+5)。fsr1 系 11 件全緑。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (BN-2/BN-3a は calldata 同一の API 正直化のみ)。
+- fmt: fsr1 HEAD=2 → WORK=2 (既存行シフトのみ、新規 0)、
+  full_graph_wiring HEAD=21 → WORK=21 (HEAD 由来温存)。
+- **fmt 運用インシデント**: /tmp/headcheck が git 破損復旧で陳腐化し
+  「HEAD=0」の幻影を表示 → hunk 位置検証で発見、wave 毎再作成規律の
+  必要性を再確認 (worktree 再作成で正規 baseline 取得)。
+- all-targets check 通過。zero-width 0。
+- CI: wave 63 run (71afbf5) **success**。wave 62 run (0e786ec) failure は
+  同「lib tests」step で wave 63 側 (818 件の上位互換スイート) が全緑のため
+  wave 50 と同型の flaky/infra 確定 (log 取得は sandbox から results
+  receiver への接続が EOF 遮断で不可、判定は後続 green 連鎖)。

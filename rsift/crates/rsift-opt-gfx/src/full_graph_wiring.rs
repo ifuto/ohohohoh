@@ -305,7 +305,7 @@ impl FullGraphWiring {
             shadow_lod_inst: crate::shadow_lod::ShadowLod::new(),
             fxaa_inst: crate::fxaa::Fxaa::new(),
             smaa_inst: crate::smaa::Smaa::new(),
-            fsr1_inst: crate::fsr1::Fsr1 { sharpness: 0.2 },
+            fsr1_inst: crate::fsr1::Fsr1::default(),
             fsr2_inst: crate::fsr2::Fsr2::new(640, 360, 1280, 720),
             aces_inst: crate::aces_tonemap::AcesTonemap::new(),
             vco: crate::vertex_cache_opt::VertexCacheOptimizer::new(16),
@@ -1638,7 +1638,6 @@ impl FullGraphWiring {
         let _ = (is_edge, smaa_w);
         let prev = self.prev_frame_color;
         let fsr_color = self.fsr1_inst.reconstruct(
-            [aa.r, aa.g, aa.b],
             [prev[0], aa.r, aa.b],
             [aa.r, prev[1], aa.b],
             [aa.r, aa.g, prev[2]],

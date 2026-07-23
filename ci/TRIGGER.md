@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 97
+- count: 98
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -115,3 +115,4 @@
 - 2026-07-23 (count 95): wave 61 section_rle 監査の CI 緑確認
 - 2026-07-23 (count 96): wave 62 noise_upsample worldgen ゼロデイ根治の CI 緑確認
 - 2026-07-23 (count 97): wave 63 frame_reference 監査 (covered/avg_lum 修復) の CI 緑確認
+- 2026-07-23 (count 98): wave 64 fsr1 監査 (死引数・死に状態解消、厳密ピン) の CI 緑確認
