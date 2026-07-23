@@ -396,7 +396,7 @@ impl GpuFramePipeline {
         let mut draw_calls = 0u32;
         let mut quad_total = 0u32;
         for (i, (mesh, origin)) in chunks.iter().enumerate() {
-            if mesh.is_empty {
+            if mesh.is_empty() {
                 continue;
             }
             // Phase C: Hi-Z culled チャンクは draw 自体を発行しない

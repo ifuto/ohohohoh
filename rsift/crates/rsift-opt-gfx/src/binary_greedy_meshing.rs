@@ -672,10 +672,10 @@ fn mesh_section_pull_inner(
         quads.len(),
         quads.len() * 6
     );
+    // wave 56: is_empty フィールド廃止 (PullBuiltMesh::is_empty() は quads から導出)
     PullBuiltMesh {
         chunk_x,
         chunk_z,
-        is_empty: quads.is_empty(),
         quads,
     }
 }
@@ -752,10 +752,10 @@ pub fn mesh_chunk_column_pull_world(
             ));
         }
     }
+    // wave 56: is_empty フィールド廃止 (PullBuiltMesh::is_empty() は quads から導出)
     PullBuiltMesh {
         chunk_x,
         chunk_z,
-        is_empty: all_quads.is_empty(),
         quads: all_quads,
     }
 }

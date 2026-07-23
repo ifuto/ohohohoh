@@ -792,7 +792,6 @@ mod tests {
             chunk_x: 0,
             chunk_z: 0,
             quads: vec![q],
-            is_empty: false,
         };
         let b = aabb_from_mesh(&mesh, [0.0, 0.0, 0.0]);
         assert_eq!(b.min, [3.0, 6.0, 7.0]);
@@ -811,7 +810,6 @@ mod tests {
             chunk_x: 0,
             chunk_z: 0,
             quads: vec![q],
-            is_empty: false,
         };
         let b = aabb_from_mesh(&mesh, [0.0, 0.0, 0.0]);
         assert_eq!(b.min, [2.0, 0.0, 4.0]);

@@ -8,7 +8,6 @@ pub struct PullBuiltMesh {
     pub chunk_x: i32,
     pub chunk_z: i32,
     pub quads: Vec<PackedPullQuad>,
-    pub is_empty: bool,
 }
 
 impl PullBuiltMesh {
@@ -17,13 +16,26 @@ impl PullBuiltMesh {
             chunk_x: cx,
             chunk_z: cz,
             quads: vec![],
-            is_empty: true,
         }
     }
 
-    /// Draw call vertex count — no index buffer (`draw(0..n, 0..1)`).
+    /// **wave 56 BF-1**: 空判定は quad 列から一意に導出する (旧来の pub
+    /// `is_empty` フィールドは quads との非整合状態を構築可能で、
+    /// is_empty=true + quad 非空の組合せでは早期 return が**非空メッシュを
+    /// 静寂消失**させる一方向ハザードだった)。単一真実源化。
+    pub fn is_empty(&self) -> bool {
+        self.quads.is_empty()
+    }
+
+    /// Draw call vertex count — no index buffer (`draw(0..n, 0..1)`)。
+    /// **契約**: quads 数は u32::MAX/6 超過を拒否 (巨大 Vec の静寂 wrap を遮断)。
     pub fn pull_vertex_count(&self) -> u32 {
-        self.quads.len() as u32 * VERTICES_PER_PULL_QUAD
+        let n = self.quads.len();
+        assert!(
+            n <= (u32::MAX as usize) / (VERTICES_PER_PULL_QUAD as usize),
+            "pull_vertex_count 契約違反: quads={n} は draw カウント {n}×6 を u32 に収められない"
+        );
+        n as u32 * VERTICES_PER_PULL_QUAD
     }
 
     pub fn ssbo_bytes(&self) -> usize {
@@ -67,7 +79,6 @@ mod tests {
             chunk_x: -3,
             chunk_z: 7,
             quads: (0..n).map(|_| quad()).collect(),
-            is_empty: n == 0,
         }
     }
 
@@ -75,10 +86,24 @@ mod tests {
     fn empty_mesh_reports_zero() {
         let m = PullBuiltMesh::empty(5, -9);
         assert_eq!((m.chunk_x, m.chunk_z), (5, -9));
-        assert!(m.is_empty);
+        assert!(m.is_empty());
         assert_eq!(m.pull_vertex_count(), 0);
         assert_eq!(m.ssbo_bytes(), 0);
         m.log_stats(); // パニックしないこと
+    }
+
+    /// wave 56 BF-1: 空判定は quad 列から一意に導出する (非整合状態を構築不能にすることを型で保証)。
+    #[test]
+    fn is_empty_is_single_source_of_truth() {
+        assert!(PullBuiltMesh::empty(0, 0).is_empty());
+        assert!(!mesh_with_quads(1).is_empty());
+        // 直接 struct 構築でも is_empty 状態は構文的に quads と一致する
+        let m = PullBuiltMesh {
+            chunk_x: 0,
+            chunk_z: 0,
+            quads: vec![],
+        };
+        assert!(m.is_empty());
     }
 
     #[test]

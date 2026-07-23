@@ -164,7 +164,7 @@ impl GpuVertexPullEngine {
         mesh: &PullBuiltMesh,
         uniforms: &FrameUniforms,
     ) {
-        if mesh.is_empty {
+        if mesh.is_empty() {
             return;
         }
 
@@ -268,7 +268,7 @@ impl PullSsboPool {
     }
 
     pub fn upload_pull_mesh(&mut self, mesh: &PullBuiltMesh) -> Option<PullPoolSlot> {
-        if mesh.is_empty {
+        if mesh.is_empty() {
             self.slots.remove(&(mesh.chunk_x, mesh.chunk_z));
             return None;
         }
@@ -338,7 +338,7 @@ mod tests {
     fn pull_mesh_no_indices() {
         let p = demo_palette(1, 2);
         let mesh = mesh_section_pull(&p, 1, 2);
-        assert!(!mesh.is_empty || mesh.quads.is_empty());
+        assert!(!mesh.is_empty() || mesh.quads.is_empty());
         assert_eq!(mesh.pull_vertex_count(), mesh.quads.len() as u32 * 6);
         if !mesh.quads.is_empty() {
             assert!(mesh.vram_ratio_vs_12b_indexed() > 2.0);

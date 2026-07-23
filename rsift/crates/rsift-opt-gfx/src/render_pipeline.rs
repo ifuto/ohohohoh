@@ -411,7 +411,9 @@ impl RsiftRenderPipeline {
             if self.low_spec.material_sort {
                 sort_quads_by_material(&mut pull.quads);
             }
-            pull.is_empty = pull.quads.is_empty();
+            // wave 56 BF-1: is_empty フィールドは廃止 (PullBuiltMesh::is_empty() が
+            // quads から常時導出) — AO refine / material sort による quads 変化後の
+            // 手動再同期は不要になった (旧設計ではこの行自体が同期漏れハザードだった)。
             self.frame_stats.pull_quads_built += pull.quads.len() as u32;
             self.frame_stats.pull_verts_drawn += pull.pull_vertex_count();
             self.frame_stats.pull_ssbo_bytes += pull.ssbo_bytes() as u64;

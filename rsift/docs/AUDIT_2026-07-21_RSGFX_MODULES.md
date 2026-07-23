@@ -2865,3 +2865,53 @@ face_normal の 0:+X/5:-Z) をテキストピン — 片側のみ変更された
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
   (bench 入力列は全く同一のまま層分離のみ実施)。
 - fmt 0→0 (正準化適用後)。all-targets check 0。
+
+## BF. pull_mesh.rs 監査 (wave 56, 2026-07-23)
+### PullBuiltMesh の空判定を単一真実源化 + draw カウント wrap 遮断
+
+Vertex-pull 経路の CPU 側メッシュ保持型。消費: binary_greedy_meshing
+(2 構築経路)、gpu_vertex_pull (draw 判定 + SSBO pool)、frame_pipeline
+(フレーム draw 巡回)、render_pipeline (統計)、frame_hiz (AABB テスト)。
+
+### BF-1 (高): pub `is_empty: bool` フィールド → `is_empty()` 導出メソッド化
+旧設計は quads と独立した pub bool フィールドで、**非整合状態
+(is_empty=true + quads 非空) を構築可能** にし、gpu_vertex_pull の
+早期 return が**非空メッシュを静寂消失**させる一方向ハザードだった。
+実害の証拠として render_pipeline.rs （旧） :414 に
+`pull.is_empty = pull.quads.is_empty();` という**手動再同期行**が存在
+(AO refine / material sort による quads 変化の**後**に自分で直す設計 —
+同期漏れ経路が型で防げていなかった) 。消費側も `mesh.is_empty` (field)
+が 6 箇所に散在。
+→ フィールドを撤去し `is_empty() = quads.is_empty()` の導出メソッドに
+単一真実源化。非整合状態は型上構築不能になり、render_pipeline の手動
+再同期行は削除 (コメントで経緯を明記)。構築側 2 経路 (bgm) は ctor から
+フィールドを除去、消費側 6 箇所 (gpu_vertex_pull ×3、frame_pipeline ×1、
+frame_hiz テスト ×2、render_pipeline ×1) をメソッド呼出に更新。
+**初回コンパイルが E0560/E0615 で旧フィールド参照 4 件を機械列挙** —
+前セッション grep の捕捉漏れを型システムが完全列挙し、フィールド→
+メソッド移行の機械的完全性が保証された。
+なお BuiltChunkMesh (binary_greedy_meshing :1009/:1035、chunk_mesh、
+lod_hybrid) は**別 struct** (同名フィールドを持つが本 wave の対象外、
+将来の監査対象として記録)。
+
+### BF-2 (中): pull_vertex_count の `as u32 * 6` 静寂 wrap → assert 化
+`self.quads.len() as u32 * 6` は巨大 Vec (>715M quads) で **usize→u32
+切捨てと ×6 の wrap が直列** で、draw カウントの静寂誤化を起こし得た
+(実機では VRAM 規模上到達困難だが契約として)。`n <= u32::MAX/6` を
+assert し fail-loud 化。
+
+### テスト (+1 純増)
+- is_empty_is_single_source_of_truth: 空構築/非空構築/直接 struct 構築の
+  3 経路で is_empty() ≡ quads.is_empty() (非整合構築不能の型保証を
+  消費側から確認)
+
+### 検証結果 (全て実測)
+- lib **783/783** (+1)。pull_mesh 系 7 件全緑。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (判定行の撤去は出力非影響)。
+- fmt: pull_mesh/frame_hiz 0→0 (全適用)、bgm 1→1、gvp 1→1、
+  frame_pipeline 0→0、render_pipeline 3→3 (HEAD 由来温存)。
+- all-targets check 通過 (warning は既存由来のみ)。
+- **インシデント**: git HEAD が 5 度目の base 巻戻りを起こし、確立手順
+  (fetch → reset --mixed FETCH_HEAD) で復旧 — 差分が wave 56 3 ファイル
+  のみであることを確認済。
