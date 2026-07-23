@@ -3112,3 +3112,46 @@ reader ゼロの vanity telemetry だが嘘ではなく原子カウンタの実�
   frame_reuse 2→1、render_pipeline 3→3、lod_hybrid 1→1、leaf_fast_path
   0→0、persistent_vbo_pool 6→6、vertex_pool 1→1 (全て HEAD 以下)。
 - all-targets check 通過。
+
+## BJ. voxel_cone_tracing.rs 監査 (wave 60, 2026-07-23)
+### ConeRay 契約 fail-loud (+∞ max_dist 発散ループ遮断) + 厳密蓄積ピン確立
+
+Diffuse GI コーントレーシング (CPU)。消費: full_graph_wiring :894
+(camera 由来 ConeRay 実走査)、frame_vct (lod_from_diameter 一元化、
+VCT_WGSL dispatch)。WGSL (voxel_cone_tracing.wgsl main) とのミラーは
+ループ条件・f32 演算順まで照合し**真に一致** (under-blend 式
+`C += (1−α)aC`, `α += (1−α)a`、dist=0.5、diameter=max(2a·dist,1)、
+step=diameter·0.75、閾 0.99/0.001 の全て一致確認)。
+
+### BJ-1 (高): ConeRay 非有限で発散/静寂黒出力 → validate_contract 化
+- `max_dist = +∞`: dist が step ≥ +0.75 で伸びても ∞ に到達しないため
+  **while 発散** (空 SVO なら CPU 永遠ループ、WGSL 側供給なら
+  **GPU ハング = device loss** の実害クラス)。
+- NaN origin/dir/aperture: sample 拒否で「静寂に黒が返る」だけで発見不能。
+- 負 aperture: cone が負に広がり (diameter=max(負,1)=1 で常時)
+  意味論のない退化 ray サンプリングに静寂着地。
+→ `ConeRay::validate_contract()` を設置し trace_diffuse_cone 入口で強制
+ (全成分有限 + aperture ≥ 0 + max_dist 有限かつ ≥ 0)。live producer
+ (wiring: aperture 0.577/max_dist 32.0) は契約適合を実測確認。
+
+### BJ-2 (低): WGSL ミラー語彙ピン
+dist 初期値/ループ条件否定形/diameter 式/weight 式/step 式/ミラー注記
+の 6 表記を VCT_WGSL からピン。
+
+### 副次確認 (誠実記録): alpha>0.001 ガードは CPU では Option 後の
+冗長条件 (実 alpha ∈ {1/8..=1} で常真) だが WGSL では NO_HIT (w=−1)
+の実条件 — ミラー対称のため保持を doc 明記。
+
+### テスト (+6 純増、既存 1 件を範囲検査→厳密値に強化)
+- lod_from_diameter 2 冪境界 ±1ulp 厳密ピン (k=1..=9 全網羅) +
+  NaN/0/負→0、1024 以上・+∞→clamp 10
+- 全面 solid → (0.5, 1.0) 厳密 (weight 1 で即飽和)
+- 下半分 solid + aperture 16 → weight 系列 0.5, 0.25 の厳密 dyadic 蓄積
+  (C=0.375, α=0.75) を独立手導出ピン (dist 系列 0.5→12.5→312.5 終了
+  まで全演算 f32 厳密であることを明白性コメントで担保)
+- 契約 should_panic ×3 (NaN origin / +∞ max_dist / 負 aperture)
+
+### 検証結果 (全て実測)
+- lib **807/807** (+7)。voxel_cone_tracing 系 8 件全緑。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt 0→0 (HEAD 0 のため全適用後)。all-targets check 通過。
