@@ -179,6 +179,13 @@ fn decode_mesh(data: &[u8], expect_x: i32, expect_z: i32) -> Result<BuiltChunkMe
         if off + len > raw.len() {
             return Err("truncated rle header".into());
         }
+        // wave 61 BK: rle ペイロードを実検証。旧来は長さだけ見てスキップする
+        // write-only 領域だった — 破損 rle (Σcount≠4096、wire 厳格違反) を
+        // 含むキャッシュエントリはここで拒否し再構築へ倒す (section_rle の
+        // from_bytes 厳格化で初めて検証可能になった)。
+        if RleSection::from_bytes(&raw[off..off + len]).is_none() {
+            return Err("corrupt rle section".into());
+        }
         off += len;
     }
     let vlen = read_u32(&raw, &mut off)? as usize;
@@ -305,6 +312,27 @@ mod tests {
         assert!(!c.put(&m, &one_rle(), 0));
         assert!(c.get(0, 0, 0).is_none());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// wave 61 BK: rle ペイロード破損 (Σcount≠4096) のエントリは拒否される
+    /// (旧来は長さだけ見てスキップする write-only 領域だった)。
+    #[test]
+    fn decode_rejects_corrupt_rle_payload() {
+        let m = sample_mesh(1, 2);
+        let packed = encode_mesh(&m, &one_rle()).expect("encode ok");
+        let mut raw = zstd::decode_all(packed.as_slice()).expect("zstd roundtrip");
+        // decode_mesh 側 wire 配置: [u32 version][i32 cx][i32 cz][u16 slen]
+        //   [u32 len][rle blob] → blob は offset 18 から。
+        // blob 内配置: [run_count:u16][block:u16 count:u16]* → run0 count は
+        //   offset 18+4=22 の LE 2B。4096→4095 ではなく run0(=1) を 4095 に
+        //   改竄して Σ=8190≠4096 を作る。
+        raw[22] = 0xFF;
+        raw[23] = 0x0F;
+        let corrupt = zstd::encode_all(raw.as_slice(), 3).expect("re-encode");
+        assert!(
+            decode_mesh(&corrupt, 1, 2).is_err(),
+            "Σcount≠4096 の rle を含むエントリは拒否 (再構築へ倒す)"
+        );
     }
 
     #[test]

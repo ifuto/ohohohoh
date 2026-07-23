@@ -1,7 +1,7 @@
 //! Chunk visibility culling — VisGraph + frustum + empty-column fast path.
 
 use crate::binary_greedy_meshing::SECTIONS_PER_COLUMN;
-use crate::section_rle::{occupied_section_indices, RleSection};
+use crate::section_rle::RleSection;
 
 /// Per-chunk cull decision before mesh build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,11 +59,10 @@ impl ChunkCullPass {
         if dist > self.view_radius_blocks {
             return CullVerdict::OutOfRange;
         }
-        if self.visgraph_enabled {
-            // VisGraph section stats only — never hide whole chunks without neighbor data
-            // (hiding chunks here caused “transparent holes” when the camera moved).
-            let _occupied = occupied_section_indices(sections);
-        }
+        // wave 61 BK: 旧来は visgraph_enabled 時に occupied_section_indices を
+        // 計算して**そのまま破棄**する死に計算があった (cull 熱経路での純粋無駄)。
+        // 隣接データ無しにチャンク全体を occluded 判定しない設計自体は正しい
+        // (カメラ移動時の「透過ホール」障害の再発防止) ので、実計算のみ撤去。
         CullVerdict::Visible
     }
 

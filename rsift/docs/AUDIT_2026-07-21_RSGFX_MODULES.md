@@ -3155,3 +3155,56 @@ dist 初期値/ループ条件否定形/diameter 式/weight 式/step 式/ミラ�
 - lib **807/807** (+7)。voxel_cone_tracing 系 8 件全緑。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - fmt 0→0 (HEAD 0 のため全適用後)。all-targets check 通過。
+
+## BK. section_rle.rs 監査 (wave 61, 2026-07-23)
+### 破損 RLE の静寂 air 注入を fail-loud 化 + write-only 語彙撤去 + cache 破損検証配線
+
+16³ パレット RLE + 層占有語彙。消費: binary_greedy_meshing (RleSection/
+layer_masks_from_palette)、frame_reuse (rle/occupied 保持、:343 実消費)、
+mesh_cache (disk serialize)、chunk_cull (verdict_column)、render_pipeline
+(prepare_column の encode/decode)。
+
+### BK-1 (高): decode の count 総和超過/不足を fail-loud 化
+旧実装は `end > VOLUME → break` の**静寂切捨て** + 不足時は末尾 0 初期化
+のまま返却で、破損 wire や手組み RleSection が**空気ボクセルを静寂
+注入**し得た (ワールド消失バグ種)。decode 入口で Σcount == VOLUME (=4096)
+を assert に変更。encode() 経由の RLE は全要素走査から Σ=4096 が不変
+条件であることを証明し doc 明記 (count: u16 で最大 run 4096 < 65535 の
+余地証明も)。
+
+### BK-2 (高): from_bytes に厳格契約 (長さ完全一致 + Σcount 検査)
+旧実装は (a) 末端ゴミ黙認、(b) Σcount 未検査で破損 wire を受理 →
+BK-1 の被害源。from_bytes は両者を拒否 (None) する厳格語彙に強化。
+検証可能になったことで **mesh_cache の rle ペイロードを実検証に配線**
+(旧来は長さだけ見てスキップする write-only 領域 — 破損 rle 混じりの
+エントリを拒否→再構築へ倒す実利得)。
+
+### BK-3 (中): 消費ゼロ語彙 2 件撤去
+- `encode_row_mask_rle`: workspace 全域に呼出・デコーダ皆無の
+  write-only wire (BA-2 同根拠)。
+- `RleSection::layer_occupancy`: 消費者ゼロ (層 skip は palette 版が担う)。
+- chunk_cull :62-66: visgraph_enabled 時に occupied_section_indices を
+  **計算して即破棄**する死に計算を撤去 (cull 熱経路の純粋無駄。
+  「隣接無しに全チャンクを occluded 判定しない」設計は正しく温存)。
+- doc 冒頭の「10–50×」→ 最悪ケース ~2× 膨張を明記した誠実版に訂正。
+
+### BK-4 (記録): `required_section_indices` ×8 語彙
+frame_reuse 内で等価比較のみに消費される閉じた語彙であることを
+テストにピンで明文化 (OccupiedVisGraph ノード ID 名前空間結合)。
+
+### テスト (+6 新規、−3 撤去 = 純増 +3)
+- decode Σ 超過/不足 should_panic ×2
+- from_bytes: 末尾ゴミ拒否、Σ=4095 拒否 (wire バイト改竄)、Σ=4097 拒否
+- encode 不変条件ピン (1 run=4096、Σ=4096)
+- occupied_section_indices ×8 語彙ピン
+- mesh_cache: 破損 rle エントリ拒否 (zstd 往復 + wire offset 厳密導出)
+- 既存 is_solid/layer_masks/roundtrip 系は緑維持
+
+### 検証結果 (全て実測)
+- lib **810/810** (+3)。section_rle 11 / mesh_cache 10 / chunk_cull 8 全緑。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: section_rle 0→0 (全適用後)、chunk_cull/mesh_cache 0→0。
+- all-targets check 通過。
+- **インシデント**: Rust toolchain 5 度目の消失 → restore-env.sh で復旧。
+- **備考**: 赤 2 件は私のテストバグ (encode_mesh 引数数、air move) を
+  コンパイラが捕捉 — 既知の自己誤り検出パターン。

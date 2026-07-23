@@ -1,7 +1,16 @@
 //! Run-length encoding for 16³ section palettes and Y-layer occupancy masks.
 //!
-//! Sparse terrain (air runs, flat layers) compresses 10–50× vs raw `[u16; 4096]`.
+//! Sparse terrain (air runs, flat layers) compresses vs raw `[u16; 4096]`
+//! (全空気は 8192B→6B で ~1365×、層状地形で数十×。**最悪ケース** (全ボクセル
+//! 交互違い) は 4B/run × 4096 + 2B = 16386B で **~2× 膨張** — wave 61 で
+//! 誇大の無い範囲を明記)。
 //! Used before meshing (skip empty layers) and in disk cache (bandwidth).
+//!
+//! ## wave 61 BK 監査で撤去 (消費ゼロ実測、根拠を記録)
+//! - `encode_row_mask_rle`: workspace 全域に呼出・デコーダ共に皆無の
+//!   write-only wire 語彙だった (BA-2 と同根拠で撤去)。
+//! - `RleSection::layer_occupancy`: 同じく消費者ゼロ (meshing の層 skip は
+//!   palette 版 `layer_masks_from_palette` が担う)。
 
 use crate::binary_greedy_meshing::{SectionPalette, SECTION_SIZE};
 
@@ -22,6 +31,9 @@ pub struct RleSection {
 
 impl RleSection {
     /// Encode palette in x-major order (matches Minecraft section indexing).
+    ///
+    /// count の u16 安全性: 1 run の最大長は VOLUME=4096 < u16::MAX なので
+    /// `count < u16::MAX` の分岐は到達不能の防御 (wave 61 監査で証明・明記)。
     pub fn encode(palette: &SectionPalette) -> Self {
         let mut runs = Vec::with_capacity(64);
         if VOLUME == 0 {
@@ -43,13 +55,21 @@ impl RleSection {
     }
 
     pub fn decode(&self) -> SectionPalette {
+        // **契約 (wave 61 BK-1 で fail-loud 化)**: runs の count 総和は必ず
+        // VOLUME (=4096)。旧実装は超過時に `break` で静寂切捨て・不足時は
+        // 末尾を 0 (空気) のまま返し、破損 wire/手組み RLE が**空気ボクセル
+        // を静寂注入**し得た。encode() 経由の RLE は Σ=VOLUME が不変条件
+        // (ループが palette 全 4096 要素を走査して push される count の
+        // 総和は定義通り 4096)。
+        let total: usize = self.runs.iter().map(|r| r.count as usize).sum();
+        assert!(
+            total == VOLUME,
+            "RleSection::decode 契約違反: count 総和 {total} != VOLUME {VOLUME} (破損/手組み RLE の静寂 air 化を拒否)"
+        );
         let mut out = [0u16; VOLUME];
         let mut i = 0usize;
         for run in &self.runs {
             let end = i + run.count as usize;
-            if end > VOLUME {
-                break;
-            }
             out[i..end].fill(run.block);
             i = end;
         }
@@ -79,25 +99,6 @@ impl RleSection {
             .sum()
     }
 
-    /// Y-layer occupancy: bit `y` set if layer has any non-air block.
-    pub fn layer_occupancy(&self) -> u16 {
-        let mut bits = 0u16;
-        let mut idx = 0usize;
-        for run in &self.runs {
-            if run.block != 0 {
-                for off in 0..run.count as usize {
-                    let i = idx + off;
-                    if i < VOLUME {
-                        let y = (i / SECTION_SIZE) % SECTION_SIZE;
-                        bits |= 1u16 << y;
-                    }
-                }
-            }
-            idx += run.count as usize;
-        }
-        bits
-    }
-
     /// Serialize to compact bytes: `[u16 run_count][block:u16 count:u16]*`
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(2 + self.runs.len() * 4);
@@ -109,13 +110,17 @@ impl RleSection {
         out
     }
 
+    /// **厳格 wire 復元 (wave 61 BK-2 で強化)**:
+    /// (a) バイト長はヘッダの run_count と**完全一致** (末尾ゴミも拒否)、
+    /// (b) count 総和は VOLUME (=4096) に一致。旧実装は (b) を検査せず
+    /// 破損 wire を受理し、decode 時の静寂 air 注入に繋げていた (BK-1)。
     pub fn from_bytes(data: &[u8]) -> Option<Self> {
         if data.len() < 2 {
             return None;
         }
         let run_count = u16::from_le_bytes([data[0], data[1]]) as usize;
         let need = 2 + run_count * 4;
-        if data.len() < need {
+        if data.len() != need {
             return None;
         }
         let mut runs = Vec::with_capacity(run_count);
@@ -126,28 +131,12 @@ impl RleSection {
             off += 4;
             runs.push(RleRun { block, count });
         }
+        let total: usize = runs.iter().map(|r| r.count as usize).sum();
+        if total != VOLUME {
+            return None; // Σ≠4096 は破損 wire (BK-1 の静寂 air 注入源)
+        }
         Some(Self { runs })
     }
-}
-
-/// RLE-compress a row of 16 face-visibility bits (one Y slice row).
-pub fn encode_row_mask_rle(rows: &[u16; SECTION_SIZE]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(SECTION_SIZE * 2);
-    for &row in rows {
-        if row == 0 {
-            out.push(0);
-            out.push(1);
-        } else if row == 0xFFFF {
-            out.push(0xFF);
-            out.push(0xFF);
-            out.push(16);
-        } else {
-            out.push((row & 0xFF) as u8);
-            out.push((row >> 8) as u8);
-            out.push(1);
-        }
-    }
-    out
 }
 
 /// Build per-Y layer opaque row masks from RLE.
@@ -227,12 +216,67 @@ mod tests {
         assert_eq!(rle.decode(), back.decode());
     }
 
+    /// wave 61 BK-1: 超過 run を持つ手組み RLE の decode は fail-loud
+    /// (旧実装は末尾を断ち切って静寂受理していた)。
     #[test]
-    fn layer_occupancy_detects_solid_y() {
-        let mut p = [0u16; VOLUME];
-        p[idx(0, 3, 0)] = 1;
+    #[should_panic(expected = "RleSection::decode 契約違反")]
+    fn decode_rejects_overrun_runs() {
+        let bad = RleSection {
+            runs: vec![
+                RleRun {
+                    block: 1,
+                    count: VOLUME as u16,
+                },
+                RleRun { block: 1, count: 1 },
+            ],
+        };
+        let _ = bad.decode();
+    }
+
+    /// wave 61 BK-1: 不足 (Σ<4096) の手組み RLE も fail-loud
+    /// (旧実装は末尾を空気のまま静寂返却していた)。
+    #[test]
+    #[should_panic(expected = "RleSection::decode 契約違反")]
+    fn decode_rejects_underrun_runs() {
+        let bad = RleSection {
+            runs: vec![RleRun {
+                block: 1,
+                count: (VOLUME - 1) as u16,
+            }],
+        };
+        let _ = bad.decode();
+    }
+
+    /// wave 61: encode の不変条件 (Σcount == VOLUME、最大 run ≤4096) を
+    /// 一様パレットでピン — count: u16 の余地証明。
+    #[test]
+    fn uniform_palette_single_max_run() {
+        let p = [5u16; VOLUME];
         let rle = RleSection::encode(&p);
-        assert!(rle.layer_occupancy() & (1 << 3) != 0);
+        assert_eq!(rle.runs.len(), 1);
+        assert_eq!(
+            (rle.runs[0].block, rle.runs[0].count),
+            (5, VOLUME as u16),
+            "1 run = 4096 (< u16::MAX = 65535 で安全)"
+        );
+        let total: usize = rle.runs.iter().map(|r| r.count as usize).sum();
+        assert_eq!(total, VOLUME, "encode 不変条件 Σ=VOLUME");
+    }
+
+    /// wave 61: occupied_section_indices の ×8 語彙ピン
+    /// (VisGraph ノード ID 名前空間との結合語彙 — 値自体は
+    /// frame_reuse 内で等価比較のみに消費される閉じた語彙)。
+    #[test]
+    fn occupied_section_indices_vocabulary() {
+        let air = RleSection::encode(&[0u16; VOLUME]);
+        let mut solid = [0u16; VOLUME];
+        solid[0] = 1;
+        let solid = RleSection::encode(&solid);
+        assert_eq!(
+            occupied_section_indices(&[solid.clone(), air.clone(), solid]),
+            vec![0, 16]
+        );
+        assert!(occupied_section_indices(&[air]).is_empty());
     }
 }
 
@@ -257,6 +301,34 @@ mod extra_tests {
         lying2.extend_from_slice(&1u16.to_le_bytes());
         lying2.extend_from_slice(&[7u8, 7u8]);
         assert!(RleSection::from_bytes(&lying2).is_none());
+    }
+
+    /// wave 61 BK-2: 厳格復元の新規則 — (a) 末尾ゴミ拒否、(b) Σcount≠VOLUME 拒否。
+    #[test]
+    fn from_bytes_rejects_trailing_garbage_and_bad_sum() {
+        let sec: SectionPalette = [3u16; VOLUME];
+        let bytes = RleSection::encode(&sec).to_bytes(); // 1 run (3, 4096)
+                                                         // 末尾に 1B 追加 → 厳格一致で拒否
+        let mut padded = bytes.clone();
+        padded.push(0);
+        assert!(RleSection::from_bytes(&padded).is_none(), "末尾ゴミは拒否");
+        // count を 4096 → 4095 に改竄 (Σ 不足) → 拒否
+        // (wire 配置: [run_count:u16][block:u16][count:u16] の LE 2B = index 4,5)
+        let mut tampered = bytes.clone();
+        tampered[4] = 0xFF;
+        tampered[5] = 0x0F; // count = 0x0FFF = 4095
+        assert!(
+            RleSection::from_bytes(&tampered).is_none(),
+            "Σ=4095 (<4096) は拒否"
+        );
+        // count を超過側に改竄 (2 run 構成で Σ=4097) → 拒否
+        let mut over = Vec::new();
+        over.extend_from_slice(&2u16.to_le_bytes());
+        over.extend_from_slice(&3u16.to_le_bytes());
+        over.extend_from_slice(&(VOLUME as u16).to_le_bytes());
+        over.extend_from_slice(&3u16.to_le_bytes());
+        over.extend_from_slice(&1u16.to_le_bytes());
+        assert!(RleSection::from_bytes(&over).is_none(), "Σ>4096 は拒否");
     }
 
     #[test]
@@ -288,33 +360,5 @@ mod extra_tests {
         for y in [1usize, 2, 3, 5, 15] {
             assert_eq!(masks[y], 0, "empty layer y={y} must be zero mask");
         }
-    }
-
-    #[test]
-    fn encode_row_mask_rle_emits_exact_wire_bytes() {
-        // 語彙: 全 0 行 → [0,1] / 全 F 行 → [0xFF,0xFF,16] / 部分行 → [lo,hi,1]。
-        let mut rows = [0u16; SECTION_SIZE];
-        let b0 = encode_row_mask_rle(&rows);
-        assert_eq!(b0.len(), 2 * SECTION_SIZE, "zero rows → 2B each");
-        assert_eq!(&b0[0..2], &[0u8, 1u8]);
-
-        rows[0] = 0xFFFF;
-        rows[1] = 0x00F3;
-        let b1 = encode_row_mask_rle(&rows);
-        assert_eq!(&b1[0..3], &[0xFFu8, 0xFF, 16], "0xFFFF row → mark + len16");
-        assert_eq!(&b1[3..6], &[0xF3u8, 0x00, 1], "partial row → LE 2B + len1");
-    }
-
-    #[test]
-    fn row_masks_of_solid_y_layer_are_all_ffff() {
-        // y=2 層だけ全面固体 → その層の行マスクは全て 0xFFFF。
-        let mut p: SectionPalette = [0u16; VOLUME];
-        for z in 0..SECTION_SIZE {
-            for x in 0..SECTION_SIZE {
-                p[idx(x, 2, z)] = 1;
-            }
-        }
-        let rle = RleSection::encode(&p);
-        assert_eq!(rle.layer_occupancy(), 1 << 2);
     }
 }
