@@ -1172,7 +1172,8 @@ impl FullGraphWiring {
                 crate::enhanced_barriers::BarrierAccess::NoAccess,
                 crate::enhanced_barriers::BarrierAccess::CopyDest,
             );
-            self.barriers.uav_barrier(2);
+            // wave 54: uav_barrier は subresource 明示化 (出力内容は従来と同一 0)
+            self.barriers.uav_barrier(2, 0);
         }
         let batched_barriers = self.barriers.flush();
 

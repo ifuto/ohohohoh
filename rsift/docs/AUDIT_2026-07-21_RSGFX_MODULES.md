@@ -2766,3 +2766,53 @@ Cigolle 系 octahedral 写像を完全実装: L1 正規化 → z<0 半球の
   と乖離 → 文書訂正)。
 - lib **773/773** (+5)、digest `004c1cf5fb17bfe8` rows=357 不変、
   fmt 5→0 (全面改訂に伴い正準化)、all-targets check 0。
+
+## BD. enhanced_barriers.rs 監査 (wave 54, 2026-07-23)
+### D3D12 Enhanced Barriers モデルの仕様適合化 (一次情報: Microsoft DirectX-Specs/D3D12EnhancedBarriers.md)
+
+full_graph_wiring.rs:123/:262/:1166-1177 で実消費 (transition + uav_barrier
+→ flush。flush 結果は len の debug_assert のみに消費される構造モデル)。
+**既存 wiring 出力は全て仕様適合**であることを監査で確認 (All/All sync は
+universal 適合、UAV バリアは Compute×UAV / UAV layout×UAV で適合)。
+
+### BD-1 (中): 「分割バリアでオーバーラップ」の doc 嘘 → 全パラメータ API
+旧 `transition` は sync を All/All にハードコード — Enhanced Barriers の
+核心である細粒度 Sync スコープ (これが overlap を可能にする機構) を
+**表現不能**であり、ヘッダ主張は願望だった。全 8 パラメータ指定の
+`barrier()` (spec TEXTURE_BARRIER 対応) を追加し、transition は安全側既定
+(保守的だが誤りではない All/All) の簡易 API と明確化。ヘッダを実体に
+正直化。
+
+### BD-2 (中): 仕様互換性表の機械検証 `TextureBarrier::validate` を全構築経路に強制
+一次情報から 3 規則を機械化:
+1. **Layout-Access 表**: Common/Present↔{SRV,CopySrc,CopyDst}、
+   GenericRead↔{SRV,CopySrc}、RenderTarget↔RT、UAV↔UAV、DepthWrite↔DSW、
+   CopySrc/Dst↔同名のみ。NoAccess/Common は任意レイアウト (no-claim 規則)。
+2. **Access-Sync 表** (モデル sync 変種への射影): All=universal、
+   Draw↔{VB,IB,CBV,SRV,UAV,RT,DSW}、Compute↔{CBV,SRV,UAV}、
+   Copy↔{CopySrc,CopyDst}、None↔NoAccess のみ (モデル規則)。
+3. **buffer-layout 排他原則** (spec: "Buffer resources have only a linear
+   layout, regardless of access type"): VertexBuffer/IndexBuffer/
+   ConstantBuffer access は texture barrier では**カテゴリエラー**として
+   拒否 — 旧実装は texture バリアに混入可能だった。
+また `D3D12_BARRIER_LAYOUT_PRESENT == LAYOUT_COMMON = 0` の**エイリアス**
+である一次情報を確認し、Present の互換判定は Common と同一に厳密化。
+
+### BD-3 (低): uav_barrier の subresource 暗黙 0 → 明示引数化
+旧実装は subresource を暗黙 0 固定 (transition の全指定 0xFFFFFFFF と
+不整合な黙契約)。`uav_barrier(id, subresource)` に明示化し、wiring 呼出は
+`(2, 0)` で出力内容を bit 不変に保持 (SUBRESOURCE_ALL 定数も公開)。
+
+### テスト (+5)
+- barrier_full_params_exact (全 8 フィールド保持 + 細粒度スコープ例)
+- validate_layout_access_table_exact (19 ペア表ピン + 全レイアウト×
+  {NoAccess,Common} 許容スイープ)
+- validate_sync_access_table_exact (射影表ピン、layout 適合は分離)
+- validate_rejects_buffer_access_in_texture_barrier (3 buffer access 拒否)
+- barrier_rejects_illegal_combo (構築経路の fail-loud) +
+  uav_barrier subresource 引数ピン
+
+### 検証結果 (全て実測)
+- lib **778/778** (+5)。digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: enhanced_barriers 6→0 (全面改訂に伴い正準化)、
+  full_graph_wiring 21→21 (2 行追加で増分なし)。all-targets check 0。
