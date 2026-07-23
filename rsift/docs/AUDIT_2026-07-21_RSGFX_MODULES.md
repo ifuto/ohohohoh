@@ -3484,3 +3484,59 @@ wgsl_mirror_lexical_tokens。既存 frame_postfx::cas_matches_module_fn_bitwise
 - lib **826/826** (+3)。wide_static_bench structural_digest
   `004c1cf5fb17bfe8` rows=357 不変 (WGSL 変更は digest 行項目に非含有)。
 - fmt: cas.rs HEAD=2 → WORK=2、hunk 位置完全一致 (25, 212 — HEAD 由来温存)。
+
+## BP. aces_tonemap.rs 監査 (wave 66, 2026-07-23)
+
+ACES Filmic (Narkowicz 2015 近似) トーンマッパ (139 → 約220 行)。消費:
+frame_pipeline (:261 post パス ACES_WGSL + exposure uniform :330、検証対象
+一覧 :660) / full_graph_wiring (:165 状態連鎖) / frame_reference (BM-2 で
+WGSL 語彙ピン担任済) / lib.rs export。3連鎖: aces_tonemap.rs ↔
+frame_reference::aces_srgb ↔ aces_tonemap.wgsl (GPU 実パス)。
+
+### BP-2 (一次情報照合 — 変更なし): Narkowicz 原著と完全一致を確認
+原著ブログ (knarkowicz.wordpress.com 2016/01/06) を fetch_page で直接取得:
+- HLSL `saturate((x*(a*x+b))/(x*(c*x+d)+e))`、係数 a=2.51, b=0.03, c=2.43,
+  d=0.59, e=0.14 — **式構造・係数とも本実装と完全一致**。
+- 著者用法注記「exposure はトーンマップ前乗算、gamma は後」— 本モジュール
+  の tonemap_display 構造と同順 (frame_pipeline の post パスも同順)。
+- 「1 on input maps to ~0.8」⇔ 実値 aces(1.0)=0.8038 (既存コメントの数値
+  を独立導出で確認)。著者明示の限界 (luminance only fit・ブライト過飽和)
+  を module doc に誠実転記。
+
+### BP-1 (低): 厳密ビットピン新設 (従来は単調性・範囲の弱 assert のみ)
+- aces_channel_exact_bits_canonical: 0.0/0.5/1.0/2.0/5.0 の 5 点を
+  f32 エミュレーション独立導出ビットで固定 (乗除加算のみで全環境決定的)。
+- exposure_multiplies_before_curve: exposure=2.0 で 0.5 → aces(1.0) と
+  ビット一致 (**前乗算位置の厳密検証**)。
+- srgb_encode_midpoint_within_1ulp_class_tolerance: powf は libm 依存
+  (±1ulp 実装間差) のため bit ではなく 1e-6 許容ピン — 方針を doc 明記。
+  契約外 (>1.0/負) の Rust 側飽和挙動も厳密固定。
+
+### BP-3 (低 — doc 誠実化): 負入力は saturate せず wrap する数学的性格
+初稿テスト「負入力は厳密 +0.0」は x=-1.0/-30.0 で**偽** (分子が再び正と
+なり正リターンに wrap、2 点とも clamp で 1.0) — Python 実機検算で即捕捉
+(自己誤り捕捉装置 3 wave 連続稼働)。正確な領域分岐を固定:
+0 ≥ x > -b/a (≈-0.01195) は +0.0、x < -b/a は正 wrap。分母は判別式
+0.59²-4·2.43·0.14 < 0 より実数全域で厳に正 (0 除算 NaN 不可達) と証明。
+
+### 3連鎖差分の文書化 (BO-1 同型の未然残り火を全点検)
+- WGSL `pow(max(x,0),1/2.2)` (上限飽和無し) vs Rust `linear_to_srgb`
+  (x≥1 → 1.0 飽和)。実パスでは aces 出力 (≤1.0 clamp 済) のみ到達し
+  両者一致。差は契約外直接呼出のみ — module doc に明記 (frame_reference
+  の aces_srgb は WGSL 形 (max のみ)、本モジュールは飽和形で並走)。
+- WGSL `hdr * u.exposure` (フレームパス uniform) ⇔ Rust `c * self.exposure`
+  — 位置一致確認。
+
+### テスト (+4 純増、830 全緑)
+aces_channel_exact_bits_canonical / exposure_multiplies_before_curve /
+aces_channel_negative_input_behavior_is_deterministic /
+srgb_encode_midpoint_within_1ulp_class_tolerance。
+
+### 検証結果 (全て実測)
+- lib **830/830** (+4)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: HEAD baseline 0 hunk (git 破損 #9 復旧後に再測定 — 前回測定値
+  HEAD=1 WORK=1 は toolchain 消失過程の不完全実行と判明し破棄)、
+  自前 1 hunk → rustfmt 全適用 0 hunk。
+- **インシデント**: Rust toolchain 7 度目の消失 (restore-env.sh 復旧)、
+  git 破損 9 度目 (HEAD→base 巻戻り、fetch+reset mixed で復旧、差分
+  aces_tonemap.rs 1 件のみ確認)。
