@@ -2915,3 +2915,78 @@ assert し fail-loud 化。
 - **インシデント**: git HEAD が 5 度目の base 巻戻りを起こし、確立手順
   (fetch → reset --mixed FETCH_HEAD) で復旧 — 差分が wave 56 3 ファイル
   のみであることを確認済。
+
+## BG. svo.rs 監査 (wave 57, 2026-07-23)
+### trace の意味論スタブ根治 (厳密最近接走査化) + 到達不能 dominant の構造根絶
+
+Sparse Voxel Octree (far-LOD 語彙)。消費: frame_vct/frame_ddgi
+(WGSL ミラー走査)、frame_reuse (SvoEncoding)、full_graph_wiring、
+render_pipeline (:361 from_column)、voxel_cone_tracing。
+WGSL (voxel_cone_tracing.wgsl/ddgi.wgsl 共有領域) は CPU sample_lod の
+完全ミラーで健全 — 壊れていたのは `trace` のみで、しかも呼出側ゼロ。
+
+### BG-1 (critical): `SparseVoxelOctree::trace` が意味論スタブだった
+旧実装の検出問題 (全て実証):
+1. **ray-AABB 交差判定が全く無い** — Branch では全 8 子に親の t 区間を
+   無条件伝播するため、ray と交差しない占有葉でもヒットし得た
+   (幾何から遠ざかる ray でも Some。テストは is_some() のみ検査で潜伏)。
+2. `world` は **ray.origin 固定** (stack 初期化で t_enter=0 が全ノードに
+   伝播) — ヒット位置情報が完全な嘘。
+3. DFS **index 順**の最初の占有葉を返すのみで最近接保証なし。
+4. `steps` は 0 固定。push 境界も `if sp < 63` の**静寂ドロップ**。
+5. palette fallback も `world: ray.origin` の嘘で、DDA (外部原点を即座
+   拒否する実装) が既存テスト経路では実質実行されない死に経路。
+
+根治内容 (「スタブ無し・数学的に正しく」方針に基づく完全再実装):
+- **slab 法** ray-AABB 交差を導入し子を関門 (非交差子は push しない)。
+- 交差子を t_enter 昇順ソート→降順 push の順序付き DFS: 兄弟ボックスは
+  互いに素、子孫区間は親区間に包含されるため、最初に到達する葉が
+  **厳密に最近接**であることを構造証明 (コメント明記)。
+- `world` = origin + dir × max(t_enter,0) の葉ボックス入射点。
+- `steps` = 訪問ノード数 (fallback 時は + DDA ステップ)。
+- 凍結軸 (カラム DAG 共有) の縮退子はノード id で重複除去。
+- 非有限 ray (NaN/±∞) は入口で拒否 (crate 哲学統一: NaN=欠測は drop)。
+- slab 内の 0×∞=NaN は「dir 成分 0 × 境界面一致」のみに発生することを
+  場合分け証明し、その軸を全区間受理に正規化 (ソートに NaN が出ない
+  ことを構造保証、partial_cmp expect は fail-loud ドキュメント)。
+- スタック watermark ≤ 1+7×max_depth (≤43) を証明し assert で fail-loud 化
+  (旧来の静寂 push ドロップ撤去)。
+- palette fallback の DDA ヒットはボクセル [x,x+1)³ への slab 入射 t で
+  world を**厳密復元** (入射側面 z=3.0 等を exact ピン)。
+
+### BG-2 (中): 到達不能 dominant 葉 (+ id≥16 静寂消失ハザード) の構造根絶
+両 builder の深度キャップ腕 (`depth >= MAX_DEPTH/self.max_depth ||
+size<=1`) は**到達不能**と証明: size は 2 冪半減列を同期して辿るため
+depth キャップ到達時に恒に 1x1x1、かつ 1 セルは直前の uniform 判定に
+恒に捕捉される。到達不能ゆえ撤去しても**ツリー bit 同一**。
+加えて dominant 実装はカウント配列 [u32; 16] で**ブロック id ≥16 を
+静寂に対象外**とする潜在バグを抱えていた (全セル id≥16 の領域が
+Empty 化し得た) — 腕ごと撤去して構造的に根絶。depth パラメータ・
+dominant_block/dominant_block_column (2 fn) も撤去。
+
+### BG-2b (低): from_column の静寂切捨てを fail-loud 化
+旧実装は sections 5 本以上を min/take で**静寂切捨て** (実ボクセル消失)、
+0 本を高さ 1 退化ツリーに**静寂着地**。契約 assert (1..=4 本) に根治
+(live 供給: column_for_mesh=4 固定、demo/noise=4 固定を実測確認)。
+
+### BG-3 (低): WGSL SVO 走査語彙の表記一致ピン
+NODE_STRIDE=10u、tag 規則 (w0==0 / w0>=2)、子並び dz*4+dy*2+dx、
+粗 LOD solid/8、ミラー注記の 6 表記を VCT_WGSL からピン
+(共有領域の byte 同一性は frame_ddgi 側が既に assert)。
+
+### テスト (+9 純増)
+- 最近接ヒット + 入射点 world 厳密ピン (y=-1 → leaf y=0 入射、
+  world=[8.5,0.0,8.5] / 空気層起点 → 背後葉棄却 → block2 @ y=8.0)
+- 非交差/遠ざかり/空気柱 ray → None (旧 DFS では他列占有葉に化け得た)
+- dir 成分 0 の退化軸 ray (x=0 入射面、±∞ で NaN 不発) 厳密ピン
+- palette fallback 入射 t 復元 (world=[3.5,3.5,3.0]、steps=4 exact)
+- 非有限 ray 拒否 ×3
+- LCG 混合 (id=100 含有) 4096 voxel 全域 sample_lod ↔ palette 性質一致
+  + GPU 語列に tag 2+100 保持 (id≥16 消失なし)
+- from_column 契約 should_panic ×2 / WGSL 語彙ピン ×6
+
+### 検証結果 (全て実測)
+- lib **792/792** (+9)。svo 系 16 件全緑。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (撤去腕は到達不能でツリー bit 同一、wiring 出力非影響)。
+- fmt 0→0 (HEAD 0 のため全適用後)。all-targets check 通過。
