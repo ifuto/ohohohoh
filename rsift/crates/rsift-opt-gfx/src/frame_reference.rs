@@ -27,10 +27,21 @@ pub struct CpuFrame {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>, // RGBA8 (ACES+sRGB 適用済み)
-    /// 深度が実際に書き込まれた (ジオメトリで被覆された) ピクセル数。
+    /// ジオメトリで被覆されたピクセル数。同一ピクセルへの重複深度勝利
+    /// (いったん書かれたピクセルが手前の三角形で上書きされるケース) は
+    /// 1 回としてのみ計数する。不変条件:
+    /// `depth.iter().filter(|&&d| d < 1.0).count()` と厳密一致する
+    /// (深度は初期値 1.0、`z < depth[idx]` の狭義単調減少でのみ書き込まれるため、
+    ///  「一度でも書かれた」⟺「depth < 1.0」が恒真)。
+    /// wave 63 BM-1 で仕様確定: 旧実装は「深度書き込み成功回数」を数えており、
+    /// 深度オーバーラップのあるシーンで被覆数を被覆ピクセル数超に誇飾していた。
     pub covered_px: u32,
     pub quads: u32,
     /// 被覆ピクセルの平均輝度 (内容があることの定量指標)。
+    /// 未被覆ピクセル (sky) は**分子に含めず**、`covered_px` で除算する。
+    /// wave 63 BM-1 で修正: 旧実装は sky 込みの全ピクセル輝度和を被覆数で
+    /// 除しており、被覆が疎なフレームでは数千ピクセル分の sky 輝度が分子に
+    /// 混入し平均を激しく誇飾していた (doc「被覆ピクセルの平均」との乖離)。
     pub avg_lum: f32,
     /// 全ピクセルの NDC z 深度 (1.0 = 未被覆 / far)。補間は**スクリーン空間
     /// 線形** — GPU 固定機能ラスタライザ (Depth32Float アタッチメント) と
@@ -170,18 +181,25 @@ pub fn render_reference(
     }
 
     // ACES + sRGB (post パスと同一)
+    // 輝度は被覆ピクセルのみ集計する。被覆マスクは `depth[i] < 1.0` —
+    // raster の初回計数不変条件 (covered_px 参照) により、マスクの個数と
+    // `covered` は厳密に一致し、分子・分母は同一集合で閉じる。
+    // z == 1.0 丁度のジオメトリは far 面境界として未被覆 (GPU 側も
+    // frame_pipeline の depth_compare=Less・クリア 1.0 で書き換わらず観測不能)。
     let mut pixels = Vec::with_capacity(npix * 4);
     let mut lum_sum = 0.0f64;
-    for px in color.iter() {
+    for (i, px) in color.iter().enumerate() {
         let srgb = aces_srgb(*px);
-        lum_sum += (srgb[0] * 0.2126 + srgb[1] * 0.7152 + srgb[2] * 0.0722) as f64;
+        if depth[i] < 1.0 {
+            lum_sum += (srgb[0] * 0.2126 + srgb[1] * 0.7152 + srgb[2] * 0.0722) as f64;
+        }
         pixels.push((srgb[0].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
         pixels.push((srgb[1].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
         pixels.push((srgb[2].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
         pixels.push(255);
     }
     let avg_lum = if covered > 0 {
-        (lum_sum / covered.max(1) as f64) as f32
+        (lum_sum / covered as f64) as f32
     } else {
         0.0
     };
@@ -242,9 +260,13 @@ fn raster_tri(
             let z = w0 * za[0] + w1 * za[1] + w2 * za[2];
             let idx = (y * width + x) as usize;
             if z < depth[idx] {
+                // 初回被覆のみ計数 (書き込みは初期値 1.0 からの狭義単調減少なので
+                // `depth[idx] == 1.0` ⟺ 未書き込みの sentinel)。
+                if depth[idx] == 1.0 {
+                    *covered += 1;
+                }
                 depth[idx] = z;
                 color[idx] = col;
-                *covered += 1;
             }
         }
     }
@@ -798,6 +820,92 @@ mod tests {
             "coverage must be partial (sky visible)"
         );
         assert!(fr.avg_lum > 0.01, "shaded pixels must be non-black");
+        assert_mask_consistent(&fr);
+    }
+
+    /// wave 63 BM-1: `covered_px` が深度マスク数と厳密一致し、`avg_lum` が
+    /// 被覆ピクセルのみの平均輝度と一致する (1 LSB 量子化余裕) ことを、
+    /// 返却データからの**独立再集計**で検証する共通述語。
+    ///
+    /// 輝度再集計の誤差解析: byte = trunc(v·255 + 0.5) より各チャネルは
+    /// |byte/255 - v| ≤ 0.5/255、輝度係数の和は 0.2126+0.7152+0.0722 = 1.0
+    /// なので画素あたり誤差 ≤ 0.5/255、平均しても ≤ 0.5/255。f32→f64 集計の
+    /// 丸め (~1e-7) を併せても 1.0/255 の比較余裕で決定的に安全側。
+    fn assert_mask_consistent(fr: &CpuFrame) {
+        let mut n = 0u64;
+        let mut lum = 0.0f64;
+        for (i, &d) in fr.depth.iter().enumerate() {
+            if d < 1.0 {
+                let s = i * 4;
+                lum += (fr.pixels[s] as f64 * 0.2126
+                    + fr.pixels[s + 1] as f64 * 0.7152
+                    + fr.pixels[s + 2] as f64 * 0.0722)
+                    / 255.0;
+                n += 1;
+            }
+        }
+        assert_eq!(
+            fr.covered_px as u64, n,
+            "covered_px must equal the depth-mask coverage count exactly"
+        );
+        if n > 0 {
+            let recomputed = (lum / n as f64) as f32;
+            assert!(
+                (fr.avg_lum - recomputed).abs() <= 1.0 / 255.0,
+                "avg_lum {} must track covered-pixel luminance {} within 1 LSB",
+                fr.avg_lum,
+                recomputed
+            );
+        } else {
+            assert_eq!(fr.avg_lum, 0.0, "empty frame must report zero luminance");
+        }
+    }
+
+    /// wave 63 BM-1 回帰固定: 深度オーバーラップ (同一壁をカメラ方向に 4
+    /// 手前へ複写) があっても covered_px はピクセル数であり、avg_lum は
+    /// 被覆ピクセルのみの平均であること。旧実装は (a) 重なり領域の深度
+    /// 上書きを 2 重計上し (covered_px > マスク数)、(b) sky 約 15 万画素分の
+    /// 輝度を分子に混入し被覆数で除していた (avg_lum の激しい誇飾) —
+    /// このテストの厳密一致・独立再集計をどちらも破る。
+    #[test]
+    fn coverage_and_luminance_stay_mask_consistent_under_depth_overlap() {
+        let cam = FrameCamera {
+            eye: [8.0, 24.0, -30.0],
+            target: [8.0, 24.0, 16.0],
+            up: [0.0, 1.0, 0.0],
+            fov_y_deg: 60.0,
+            aspect: 640.0 / 480.0,
+            near: 0.1,
+            far: 500.0,
+        };
+        let vp = build_view_proj(&cam);
+        let wall: Vec<crate::binary_greedy_meshing::SectionPalette> = vec![[1u16; 16 * 16 * 16]; 4];
+        let mesh = crate::binary_greedy_meshing::mesh_chunk_column_pull_world(
+            &wall, 0, 0, 0, 0, 0, 0, true,
+        );
+        assert!(!mesh.is_empty(), "wall must mesh");
+        let single = render_reference(&[(mesh.clone(), [0.0, 0.0, 0.0])], &vp, 640, 480);
+        // 手前にずらした 2 枚目 (z=-4) は 1 枚目の投影を包含し深度上書きする。
+        // 同一位置の完全重ね合わせだと `z < depth` が不成立で上書き自体が
+        // 起きず回帰検出力を失うため、ずらしは必須。
+        let overlap = render_reference(
+            &[(mesh.clone(), [0.0, 0.0, 0.0]), (mesh, [0.0, 0.0, -4.0])],
+            &vp,
+            640,
+            480,
+        );
+        assert!(single.covered_px > 0);
+        // 手前の壁が大きく投影されるため被覆は非減少であり、なおかつ
+        // 2 枚分のピクセル数 (旧書き込み回数計数の下界) を**厳密に**下回る
+        // — すなわち重複計上の構造的不成立。
+        assert!(
+            (overlap.covered_px as usize) < 2 * single.covered_px as usize,
+            "double-counting regression: {} vs 2×{}",
+            overlap.covered_px,
+            single.covered_px
+        );
+        assert_mask_consistent(&single);
+        assert_mask_consistent(&overlap);
     }
 
     /// wave 21-1: SUN_DIR は normalize(0.6, 1.0, 0.3) の f32 演算評価と bit 一致し、
@@ -887,5 +995,138 @@ mod tests {
                 assert_eq!(shade(7, 0, f)[c].to_bits(), 0, "band zero must be black");
             }
         }
+    }
+
+    /// wave 63 BM-2: `aces_tonemap.wgsl` が `aces_srgb` のミラー規則 ——
+    /// Narkowicz 係数 5 つ、`1/2.2` 冪エンコード、exposure 乗算 —— を
+    /// 同一語彙で実装していることを機械固定する (GPU/CPU 相互検証の成立条件)。
+    /// 係数を WGSL 側だけ変更した場合に fail-loud。
+    #[test]
+    fn wgsl_aces_mirror_constants_and_fullscreen_triangle() {
+        const WGSL: &str = include_str!("../shaders/aces_tonemap.wgsl");
+        for lit in [
+            "let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;",
+            "pow(max(x, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2))",
+            // exposure=1.0 前提の doc と整合する乗算位置。
+            "textureSampleLevel(hdrTex, samp, uv, 0.0).rgb * u.exposure",
+        ] {
+            assert!(
+                WGSL.contains(lit),
+                "aces_tonemap.wgsl must mirror frame_reference.rs aces_srgb: {lit}"
+            );
+        }
+        // 全画面三角形 (バッファ無し): vid 0→(-1,-1), 1→(-1,3), 2→(3,-1)。
+        for tok in ["i32(vid / 2u) * 4 - 1", "i32(vid % 2u) * 4 - 1"] {
+            assert!(
+                WGSL.contains(tok),
+                "vs_main fullscreen triangle mapping lost: {tok}"
+            );
+        }
+    }
+
+    /// wave 63 BM-4: `fsr1.wgsl` の EASU/RCAS が `fsr1_reference` と同一
+    /// 語彙であることの表記ピン (ピクセル挙動の厳密ピンは既存の
+    /// fsr1_flat_region_is_identity 等が担任; こちらは WGSL 側回帰の遮断)。
+    #[test]
+    fn wgsl_fsr1_mirror_lexical_tokens() {
+        const WGSL: &str = include_str!("../shaders/fsr1.wgsl");
+        for tok in [
+            // EASU: 勾配は R チャネルのみ (3連鎖規約)、斜率→エッジ応答、
+            // エッジ方向への画素位置寄せ。
+            "abs((p10.r + p11.r) - (p00.r + p01.r))",
+            "abs((p00.r + p10.r) - (p01.r + p11.r))",
+            "gx / (gx + 0.5)",
+            "gy / (gy + 0.5)",
+            "f.x + (0.5 - f.x) * ex",
+            "f.y + (0.5 - f.y) * ey",
+        ] {
+            assert!(
+                WGSL.contains(tok),
+                "fsr1.wgsl EASU must mirror fsr1_reference: {tok}"
+            );
+        }
+        for tok in [
+            // RCAS: 4 近傍ラプラシアンと鮮鋭化符号 (`-` で中心を平均から遠ざける)。
+            "(n + s + e + w) * 0.25 - c",
+            "c - lap * sharp",
+        ] {
+            assert!(
+                WGSL.contains(tok),
+                "fsr1.wgsl RCAS must mirror fsr1_reference: {tok}"
+            );
+        }
+    }
+
+    /// wave 63 BM-3: `write_bmp` のバイトレイアウト厳密ピン (54B ヘッダ +
+    /// BGR 行 + 4B アライン padding + top-down 負高さ)。2x1 (pad=2) と
+    /// 1x2 (pad=1・行順序) の 2 系統で全バイトを手導出一致させる。
+    /// アルファチャネルは BMP に含まれない (0x00 / 0xFF 両方で不変を確認)。
+    #[test]
+    fn write_bmp_emits_exact_byte_layout() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "rsift_frame_reference_bmp_pin_{}.bmp",
+            std::process::id()
+        ));
+
+        // --- 2x1: 行バイト数 6 → pad 2 ---
+        let rgba = [
+            0x11u8, 0x22, 0x33, 0xFF, // px0: R,G,B,A=0xFF
+            0xAA, 0xBB, 0xCC, 0x00, // px1: R,G,B,A=0x00 (alpha は無視される)
+        ];
+        write_bmp(&path, 2, 1, &rgba).expect("write 2x1 bmp");
+        let got = std::fs::read(&path).expect("read 2x1 bmp");
+        #[rustfmt::skip]
+        let want: Vec<u8> = vec![
+            b'B', b'M', // signature
+            62, 0, 0, 0, // bfSize = 54 + 8
+            0, 0, 0, 0, // reserved
+            54, 0, 0, 0, // pixel data offset
+            40, 0, 0, 0, // BITMAPINFOHEADER size
+            2, 0, 0, 0, // width
+            0xFF, 0xFF, 0xFF, 0xFF, // height = -1 (top-down)
+            1, 0, // planes
+            24, 0, // bpp
+            0, 0, 0, 0, // compression = BI_RGB
+            8, 0, 0, 0, // image size = (6 + 2) × 1
+            0, 0, 0, 0, // x ppm
+            0, 0, 0, 0, // y ppm
+            0, 0, 0, 0, // palette colors
+            0, 0, 0, 0, // important colors
+            // 行: BGR 順 + pad (alpha 非出力)
+            0x33, 0x22, 0x11, 0xCC, 0xBB, 0xAA, 0, 0,
+        ];
+        assert_eq!(got, want, "2x1 bmp byte layout mismatch");
+
+        // --- 1x2: 行バイト数 3 → pad 1、行順序 (top-down: y=0 が先頭) ---
+        let rgba = [
+            0x01u8, 0x02, 0x03, 0xFF, // y=0
+            0xF1, 0xF2, 0xF3, 0xFF, // y=1
+        ];
+        write_bmp(&path, 1, 2, &rgba).expect("write 1x2 bmp");
+        let got = std::fs::read(&path).expect("read 1x2 bmp");
+        #[rustfmt::skip]
+        let want: Vec<u8> = vec![
+            b'B', b'M',
+            62, 0, 0, 0, // bfSize = 54 + 8
+            0, 0, 0, 0,
+            54, 0, 0, 0,
+            40, 0, 0, 0,
+            1, 0, 0, 0, // width
+            0xFE, 0xFF, 0xFF, 0xFF, // height = -2 (top-down)
+            1, 0,
+            24, 0,
+            0, 0, 0, 0,
+            8, 0, 0, 0, // image size = (3 + 1) × 2
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0x03, 0x02, 0x01, 0, // y=0 → BGR + pad
+            0xF3, 0xF2, 0xF1, 0, // y=1
+        ];
+        assert_eq!(got, want, "1x2 bmp byte layout mismatch");
+
+        let _ = std::fs::remove_file(&path);
     }
 }

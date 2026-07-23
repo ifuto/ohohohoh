@@ -3259,3 +3259,92 @@ bench も当該 fallback 経路を踏まないため structural_digest
 - lib **814/814** (+4)。noise_upsample 系 6 件全緑。
 - digest 上記のとおり不変。fmt: HEAD 3 → WORK 3 (HEAD 由来温存)。
 - all-targets check 通過。
+
+## BM. frame_reference.rs 監査 (wave 63, 2026-07-23)
+
+GPU/CPU 相互検証の CPU 参照ラスタライザ (約 900 行)。消費: なし (src 内)、
+**examples frame_proof.rs / frame_proof_extra.rs が render_reference /
+render_reference_fsr / write_bmp / hiz 参照 2 fn を実利用** (BMP 実画像出力
+とオクルージョン実証)。lib テスト内からの消費多数。参照先: packed4 /
+pull_mesh / binary_greedy_meshing / frame_pipeline (build_view_proj, mul_v4)
+/ occlusion_query (QueryBox) / frame_hiz (HIZ_DIM, aabb_from_mesh)。
+方針メモ (ユーザー指示 2026-07-23): 「消費者ゼロ」を削除理由にしない —
+系統価値が上がるなら消費者の追加配線を先に検討する。本モジュールは
+examples 消費があり存置は自明だが、以降の wave でも同判定手順を適用。
+
+### BM-1 (中-高): covered_px / avg_lum の doc 二重乖離を根源修正
+- **(a) covered_px の過大計上**: 旧実装は raster_tri で「深度テスト通過の
+  たび」に計上していたため、同一ピクセルへの重複深度勝利 (手前ジオメトリ
+  による上書き) が 2 重計上された。doc「被覆ピクセル数」と乖離。
+  初回被覆 (depth == 1.0 sentinel、書き込みは狭義単調減少ゆえ厳密同値) の
+  み計上へ修正し、不変条件
+  `covered_px == depth.iter().filter(|&&d| d < 1.0).count()` を doc 明文化。
+- **(b) avg_lum の sky 混入**: 旧実装の最終ループは color 全ピクセル
+  (sky=ACES 後空色を含む 3 万〜16 万画素) の輝度を加算し covered でのみ
+  除算していた。被覆が疎なフレームでは sky 数千画素分が分子に混入し
+  「被覆ピクセルの平均輝度」を激しく誇飾。depth[i] < 1.0 マスクで被覆
+  ピクセルのみ集計へ修正 (マスクと (a) の計数は同一不変条件で閉じ、
+  分子分母が同一集合で一致)。GPU 側は frame_pipeline depth_compare=Less・
+  クリア 1.0 で z==1.0 は観測不能 (境界明記済)。
+- **定量的実害の実測** (アドバーサリアル検証): 旧セマンティクスを一時
+  注入すると重なりシーン (壁 2 枚、手前 4 ずらし) で covered_px =
+  214652 vs 真の被覆 106560 (約 2.01 倍誇飾)、demo シーン (128²) でも
+  3142 vs マスク数で乖離 → 新テスト 2 件が確実に赤になる検出力を実測
+  確認後に本源コードを復元 (両テスト緑)。
+- 備考: render_reference_fsr 側の被覆統計は「ACES 後の sky 色と異なる
+  画素」を全解像度側で計測する自成り規則で、本修正と独立に整合
+  (BM-1 と挙動変更なし)。
+
+### BM-2 (低): ACES+sRGB の WGSL ミラー表記ピンを新設
+aces_tonemap.wgsl 本文の実測確認 (係数行
+`let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;`、
+`pow(max(x, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2))`、exposure 乗算位置、
+全画面三角形写像 `i32(vid / 2u) * 4 - 1` / `i32(vid % 2u) * 4 - 1`) に
+対し include_str! 経由の 8 トークンピンを追加。WGSL 側だけ係数を変更
+した退行を fail-loud 化。
+
+### BM-3 (低): write_bmp の全バイト厳密ピンを新設
+54B ヘッダ (bfSize / オフセット / DIB40 / 幅 LE / **高さ負値=top-down** /
+planes=1 / bpp=24 / BI_RGB / img_size) + BGR 行 + 4B アライン padding +
+行順序 (y=0 先頭) を、2x1 (pad=2) と 1x2 (pad=1) の 2 系統 62+62 バイトを
+手導出値と厳密照合。alpha 非出力も両値 (0x00/0xFF) で確認。
+備考 (自己誤りの捕捉実績): 初稿テスト値の 1x2 bfSize/img_size を誤記
+(58/4) していたが脳内再検算 (3+1)×2=8 / 54+8=62 で捕捉訂正 — wave 46/52/
+61 以来の「テスト値は必ず手続き的に導出する」規律の実例。
+
+### BM-4 (低): fsr1.wgsl 三連鎖の WGSL 側表記ピンを新設
+EASU (R のみ勾配 2 式 / `gx / (gx + 0.5)` / `f.x + (0.5 - f.x) * ex` 等 6
+トークン) + RCAS (`(n + s + e + w) * 0.25 - c` / 鮮鋭化符号 `c - lap *
+sharp`) をピン。ピクセル挙動の厳密ピンは既存 (flat/valley/edge 3 件) が
+担任。fsr1.rs / cas.rs 側のミラーピンは各モジュール監査 wave の担任として
+重複ピンを回避 (今後の wave で実施)。
+
+### 健全性確認 (変更なし)
+- raster_tri: area 符号除算の両回り対応重心座標、画面線形 z (wave 17 訂正
+  由来、GPU 固定機能と同規則)、z NaN は `z < depth[idx]` 不成立で正規拒否。
+- quad 棄却 `!(w > 1e-5)` は NaN w 正規拒否、near 後方の保守的棄却。
+- hiz_downsample_reference の max 集約・hiz_test_reference の 8 角射影・
+  保守的可視 (any_invalid/offscreen → coverage=1) を WGSL 対照で再確認。
+- SUN_DIR f32 再導出テスト (wave 21) 含む既存 12 テスト全緑。
+
+### テスト (+4 純増)
+- coverage_and_luminance_stay_mask_consistent_under_depth_overlap:
+  壁 2 枚の深度オーバーラップ下で covered==マスク厳密一致・輝度独立
+  再集計 (u8 量子化誤差解析 ≤0.5/255 に対し 1/255 余裕) を検証。
+  ヘルパ assert_mask_consistent を既存 reference_frame_has_real_coverage
+  _and_shading にも配線。
+- wgsl_aces_mirror_constants_and_fullscreen_triangle (BM-2)
+- write_bmp_emits_exact_byte_layout (BM-3)
+- wgsl_fsr1_mirror_lexical_tokens (BM-4)
+
+### 検証結果 (全て実測)
+- lib **818/818** (+4)。frame_reference 16 件全緑。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: HEAD 0 hunk → 自前 2 hunk 発生のため rustfmt 全適用 → 0 hunk。
+- all-targets check 通過。zero-width 文字 0。
+- frame_proof example (release) を実実行: exit=0、新セマンティクスで
+  covered_px 29925/307200, avg_lum 0.3656 (妥当値)、全 assert 通過。
+  出力 BMP は作業ツリーから除去。
+- **インシデント**: Rust toolchain 6 度目の消失 (restore-env.sh で復旧)、
+  git 破損 8 度目 (HEAD→base 巻戻り、fetch + reset --mixed で復旧、
+  差分は frame_reference.rs 1 件のみであることを確認)。
