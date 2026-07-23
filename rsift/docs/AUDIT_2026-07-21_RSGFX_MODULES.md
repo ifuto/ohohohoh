@@ -3745,3 +3745,81 @@ infinite_distance_uses_comparison_result / simplify_empty_mesh_passthrough。
 ### 検証結果 (全て実測)
 - lib **849/849** (+4)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - fmt: HEAD=0 → 自前 1 hunk → rustfmt 全適用 → 0。
+
+## BV. vertex_cache_opt.rs 監査 (wave 72, 2026-07-23)
+
+Forsyth (Tipsify) 式 post-transform vertex cache 最適化 (328 → 約390 行)。
+消費: full_graph_wiring:166 (vco struct 保持) / :311 (new(16)) /
+:1050-1052 (acmr→optimize→acmr の draw indices 経路) / gpu_runtime:88-89
+(WGSL 登録) / examples pseudo_mc_{bench,live} (実 mesh indices 6/quad)。
+
+### BV-1 (低-中): 半端な末尾 index の静寂 drop を fail-loud 契約へ転換
+`optimize` は `ntri = len/3` (floor) + `chunks_exact(3)` で、len%3 != 0 の
+場合に末尾 1-2 index を静寂に捨てていた (部分三角の消失)。`acmr` は逆に
+全 index を走査しつつ ntri=floor で除算するため、端数 index がミス計上
+だけを膨らませ比を誇飾していた (両者で非対称の静寂挙動)。両者に
+`len % 3 == 0` の入口 assert を追加 (契約違反は誤用として即検出する
+fail-loud 文化、BT-2 同型)。live 呼出 full_graph_wiring:1048 は
+`(0..quad_positions.len())` 連番で長さが 3 の倍数とは限らず assert で
+実害 panic し得たため、呼出側を `len/3*3` 切り捨てに明示化 — 同ファイル
+nanite 経路 (:1088) と同一規則。`>= 96` ゲートは整数全域で旧挙動と等価
+(95 以下は不発、96-98→ntri 32、99→ntri 33)。structural digest 実測で
+不変を確認 (`004c1cf5fb17bfe8` rows=357)。
+
+### BV-2 (低): cache_size=0 の usize underflow を入口契約で明示
+`acmr(indices, 0)` は LRU ミス経路の `cache[cs - 1]` で usize 0-1
+underflow し、debug では subtract overflow panic、release では wrap 後の
+OOB index panic という原因不明瞭な二系統の最後段パニックに落ちる。
+`VertexCacheOptimizer::new` は .max(4) clamp で安全だが `acmr` は生 u32 を
+直接受け取る。pub フィールド直書き (cache_size:0) で `optimize` 側も
+空模擬キャッシュへの use_vertex 破綻 (cache[len-1] OOB) が可能なため
+こちらにも同契約を追加。panic 意図メッセージを should_panic テストで
+機械固定 (2 件)。
+
+### BV-3 (低-中): 厳密出力シーケンス 2 ピン (heap tie-break 規則の手導出)
+候補 heap は (score total_cmp 降順, 同点は tri 番号降順) の全順序で pop 列
+が一意 — この規則から手導出で固定:
+(a) 非共有 2 三角 [0,1,2],[3,4,5] (cache=4): 全スコア 0 同点 → tri 降順で
+  [3,4,5] 先行、頂点共有無しで再スコア不発 → 出力 [3,4,5,0,1,2]。
+(b) 共有辺 [0,1,2],[2,1,3] (cache=4): T1 放出で cache=[3,1,2,-1]、T0 は
+  cache_pos v0=-1(0.0)/v1=1(10.75)/v2=2(10.75) の計 21.5 に再スコア
+  され続けて放出 → 出力 [2,1,3,0,1,2]。世代番号つき lazy invalidation
+  heap の stale skip 経路 (ver 不整合 pop→continue) も本ピン通過で検証。
+初回実行で手導出通り全一致。加えて LRU モデルの厳密整数比ピン
+(全ミス 6/2 = 3.0、4 ミス 2 ヒット 4/2 = 2.0、f32 誤差ゼロ) を併設。
+
+### BV-4 (低): WGSL 注記の CacheScore 例示式を Rust 実装の逐語ミラーへ改修
+vertex_cache_opt.wgsl は dispatch 無しの注記ファイルだが、例示 fn の
+スコア式 (未キャッシュ 0.75 / MRU3 1/(p+1) / 減衰 2/(p+2)) が Rust
+vertex_score (0.0 / 10.75 / 2·scaled²) と全値不一致で、読者を誤誘導する
+文書だった。注記も実契約に一致させる誠実性原則 (BO-1 同型) に従い
+cacheSize 引数つきへ拡張のうえ逐語ミラー化 (span clamp も i32 max → f32 順
+で一致)。gpu_runtime の naga sweep / runtime-dispatched 両検証もスイート内
+で通過。4 語彙 (`0.75 + 10.0` / `2.0 * scaled * scaled` /
+`max(cacheSize - 3, 1)` / `return 0.0;`) を Rust 側テストで語彙ピンし、
+将来のドリフトを機械捕捉 (BM-2 型 2 連鎖)。
+
+### 判定記録 (変更なし)
+- CSR 化 (vt_off+vt_flat、ti 昇順維持)・世代番号つき lazy invalidation heap
+  (積み直し禁止の飢餓回避 doc 論証)・LRU 追放追跡 (evicted の位置 -1
+  無効化)・score_table 事前計算 (=vertex_score bit 同一)・acmr の LRU
+  モデル一致は、doc 主張と実装の照合で全て正確と確認、変更なし。
+- heap pop の expect は「未放出の各三角に有効エントリがちょうど 1 つ」の
+  不変条件より到達不能 (防御的残置として妥当)。
+- full_graph_wiring ブロックの「実 draw indices」注記 vs identity 連番の
+  意味論差異 (実 mesh 配線ではない点、および改善判定が採用に繋がっていない
+  点) は full_graph_wiring 本監査 (未監査、2,415 行) の棚卸しへ引継ぎ記録。
+
+### テスト (+7 純増、856 全緑)
+emits_exact_sequence_empty_cache_tie /
+emits_exact_sequence_shared_edge_rescore / acmr_exact_pins_lru_model /
+acmr_rejects_zero_cache_size / optimize_rejects_partial_triangle /
+acmr_rejects_partial_triangle / wgsl_note_mirrors_vertex_score_vocabulary。
+
+### 検証結果 (全て実測)
+- lib **856/856** (+7)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: vertex_cache_opt.rs HEAD=57 → WORK=57 (新規分は全て正準形)、
+  full_graph_wiring.rs HEAD=158 → WORK=158 (初稿 +3 の差分行を同一測定系で
+  捕捉し正準形へ是正)。
+- cargo check -p rsift-opt-gfx --all-targets 通過 (既存の未使用警告のみ)。
+- 不可視文字 (U+200B/FEFF/NBSP 等) 混入 0、CRLF 0 を python 検査で確認。

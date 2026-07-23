@@ -1045,7 +1045,7 @@ impl FullGraphWiring {
         // 4. LOD / 未来帳システム: micro/nanite/distant (実クアッド・実 index)
         // ============================================================
         // 実 draw indices を vertex-cache 最適化し ACMR 改善時のみ採用 (実効果)。
-        let flat_indices: Vec<u32> = (0..inputs.quad_positions.len() as u32).collect();
+        let flat_indices: Vec<u32> = (0..(inputs.quad_positions.len() / 3 * 3) as u32).collect();
         if flat_indices.len() >= 96 {
             let before = crate::vertex_cache_opt::VertexCacheOptimizer::acmr(&flat_indices, 16);
             let optimized = self.vco.optimize(&flat_indices);

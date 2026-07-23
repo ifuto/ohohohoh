@@ -41,7 +41,20 @@ impl VertexCacheOptimizer {
     }
 
     /// Reorder `indices` (flat triangle list) for optimal cache reuse.
+    ///
+    /// Contract: `indices.len()` must be a multiple of 3 (fail-loud; 以前は
+    /// `chunks_exact(3)` が末尾の半端な 1-2 index を静寂に捨てていた)。
+    /// `cache_size` は > 0 必須 (模擬キャッシュの末尾アクセスが underflow する)。
     pub fn optimize(&self, indices: &[u32]) -> Vec<u32> {
+        assert!(
+            indices.len() % 3 == 0,
+            "optimize: indices.len() ({}) must be a multiple of 3 (flat triangle list; 端数 index を静寂 drop しない)",
+            indices.len()
+        );
+        assert!(
+            self.cache_size > 0,
+            "optimize: cache_size must be > 0 (模擬キャッシュ配列が空)"
+        );
         let ntri = indices.len() / 3;
         let mut tris: Vec<[u32; 3]> = Vec::with_capacity(ntri);
         for t in indices.chunks_exact(3) {
@@ -210,7 +223,19 @@ impl VertexCacheOptimizer {
     /// `optimize` と同じ LRU モデルでシミュレートする (ヒット時に MRU へ昇格、
     /// 追放時に位置を無効化)。以前は追放頂点の `pos` が残りミスを過少計上して
     /// いた。
+    ///
+    /// Contract: `indices.len()` は 3 の倍数 (fail-loud、`optimize` と同一)。
+    /// `cache_size` は > 0 必須 — 0 だと `cache[cs - 1]` が usize underflow
+    /// (debug: subtract overflow panic / release: OOB panic) し、エラー原因が
+    /// 不明瞭になるため入口で明示する (`new` は .max(4) で安全だが `acmr` は
+    /// 生の u32 を直接受け取る)。
     pub fn acmr(indices: &[u32], cache_size: u32) -> f32 {
+        assert!(cache_size > 0, "acmr: cache_size must be > 0");
+        assert!(
+            indices.len() % 3 == 0,
+            "acmr: indices.len() ({}) must be a multiple of 3",
+            indices.len()
+        );
         let ntri = indices.len() / 3;
         if ntri == 0 {
             return 0.0;
@@ -323,5 +348,71 @@ mod tests {
         let idx: Vec<u32> = (0..30u32).collect(); // 10 disjoint triangles
         let acmr = VertexCacheOptimizer::acmr(&idx, 16);
         assert!((acmr - 3.0).abs() < 1e-3, "got {acmr}");
+    }
+
+    #[test]
+    fn emits_exact_sequence_empty_cache_tie() {
+        // BV-3a 手導出ピン: 全スコア 0 同点 → heap 規則「スコア降順、同点は
+        // tri 番号降順」(BinaryHeap max-heap, `Ord` doc) により tri 1 を先に
+        // pop する。放出後も頂点共有が無いので再スコアは起きず tri 0 が続く。
+        let opt = VertexCacheOptimizer::new(4);
+        let out = opt.optimize(&[0, 1, 2, 3, 4, 5]);
+        assert_eq!(out, vec![3, 4, 5, 0, 1, 2]);
+    }
+
+    #[test]
+    fn emits_exact_sequence_shared_edge_rescore() {
+        // BV-3b 手導出ピン: 共有辺 (v1, v2)。初回 pop は同点規則で T1。
+        // use_vertex(2),(1),(3) 後 cache=[3,1,2,-1]、T0 の cache_pos は
+        // v0=-1(→0.0), v1=1, v2=2 (直近3枠 → 各 0.75+10=10.75) で再スコア
+        // 0+10.75+10.75=21.5 となり T0 が続けて放出される。世代番号つき heap の
+        // stale エントリは skip され、更新なし再スキャンでも飢餓しない。
+        let opt = VertexCacheOptimizer::new(4);
+        let out = opt.optimize(&[0, 1, 2, 2, 1, 3]);
+        assert_eq!(out, vec![2, 1, 3, 0, 1, 2]);
+    }
+
+    #[test]
+    fn acmr_exact_pins_lru_model() {
+        // 独立導出ピン: LRU 手順 (ヒット時 MRU 昇格・末尾追放の位置無効化) を
+        // 手計算で追跡した厳密値。misses/ntri は整数比 → f32 誤差ゼロ。
+        // [3,4,5,0,1,2]: 全ミス 6/2 = 3.0 (ワースト)
+        assert_eq!(VertexCacheOptimizer::acmr(&[3, 4, 5, 0, 1, 2], 4), 3.0);
+        // [2,1,3,0,1,2]: v2,v1,v3,v0 ミス → v1,v2 ヒット = 4/2 = 2.0
+        assert_eq!(VertexCacheOptimizer::acmr(&[2, 1, 3, 0, 1, 2], 4), 2.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "cache_size must be > 0")]
+    fn acmr_rejects_zero_cache_size() {
+        // BV-2: cache[cs-1] の usize underflow (debug: subtract overflow /
+        // release: OOB) による不明瞭パニックを入口契約で明示する。
+        let _ = VertexCacheOptimizer::acmr(&[0, 1, 2], 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "multiple of 3")]
+    fn optimize_rejects_partial_triangle() {
+        // BV-1: chunks_exact(3) が末尾 1-2 index を静寂 drop する経路を
+        // fail-loud 契約に転換 (契約違反は誤用であり即座に検出すべき)。
+        let _ = VertexCacheOptimizer::new(4).optimize(&[0, 1, 2, 3]);
+    }
+
+    #[test]
+    #[should_panic(expected = "multiple of 3")]
+    fn acmr_rejects_partial_triangle() {
+        let _ = VertexCacheOptimizer::acmr(&[0, 1, 2, 3], 8);
+    }
+
+    #[test]
+    fn wgsl_note_mirrors_vertex_score_vocabulary() {
+        // BV-4: vertex_cache_opt.wgsl の CacheScore は vertex_score の逐語
+        // ミラー (dispatch なしの注記ファイルだが、例示式が Rust 実装と値不一致
+        // だと誤誘導するため契約語彙でピンする)。
+        let wgsl = VERTEX_CACHE_OPT_WGSL;
+        assert!(wgsl.contains("0.75 + 10.0"), "直近3枠スコア (10.75) の語彙");
+        assert!(wgsl.contains("2.0 * scaled * scaled"), "減衰 2次式の語彙");
+        assert!(wgsl.contains("max(cacheSize - 3, 1)"), "span clamp の語彙");
+        assert!(wgsl.contains("return 0.0;"), "未キャッシュ=0 の語彙");
     }
 }
