@@ -8,6 +8,11 @@
 
 pub mod error;
 pub mod phase;
+// vertex は winapi 非依存の純粋 bit 演算のみ (f16 量子化 + 固定小数点) のため
+// cfg(windows) ゲート対象外。ゲートされていた旧配置では Linux CI/sandbox
+// からの検証が封じられていた (2026-07-23 wave 52 BB-2: subnormal RNE 根治の
+// 検証に必須)。
+pub mod vertex;
 pub mod win;
 
 #[cfg(windows)]
@@ -28,8 +33,6 @@ pub mod voxel;
 pub mod radiance;
 #[cfg(windows)]
 pub mod post_process;
-#[cfg(windows)]
-pub mod vertex;
 #[cfg(windows)]
 pub mod cpu_culling;
 #[cfg(windows)]

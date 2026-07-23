@@ -54,12 +54,18 @@ pub fn f32_to_f16_bits(v: f32) -> u16 {
             return sign as u16;
         }
         mant |= 0x80_0000;
-        let shift = (14 - exp) as u32;
+        let shift = (14 - exp) as u32; // exp ∈ [-10, 0] より shift ∈ [14, 24]
         let mut half_mant = mant >> shift;
-        let sticky = mant & ((1 << shift) - 1);
-        // Round to nearest even
-        let round = (half_mant & 1) | if sticky != 0 { 1 } else { 0 };
-        half_mant += round;
+        // Round to nearest even (2026-07-23 wave 52 BB-2 根治): 旧実装は
+        // round_bit ゲートが無く、ドロップ bit 非零なら常に (keep 奇数の厳密
+        // 表現可能値でも) 繰上げる系統的上方向バイアスだった
+        // (例: 3·2^-24 = 0x0003 厳密の入力が 0x0004 に化けた)。
+        // dropped 全体を半 ulp と比較する正しい ties-to-even に置換。
+        let dropped = mant & ((1u32 << shift) - 1);
+        let half = 1u32 << (shift - 1);
+        if dropped > half || (dropped == half && (half_mant & 1) == 1) {
+            half_mant += 1; // 0x3FF+1 → 0x400 (min normal) は整数桁上げで自然実現
+        }
         return (sign | half_mant) as u16;
     }
 
@@ -128,5 +134,46 @@ mod tests {
     #[test]
     fn packed_size() {
         assert_eq!(std::mem::size_of::<PackedVertex>(), 14);
+    }
+
+    /// wave 52: 2^-n は f32 で厳密 (powi は 2 の冪の square/multiply のみ)。
+    /// 単一 dyadic 同士の積・24bit 幅内の和も厳密に構成できる。
+    fn p2(n: i32) -> f32 {
+        (2.0f32).powi(n)
+    }
+
+    /// wave 52 BB-2: subnormal 域の真の RNE (期待値は Python Fraction 厳密
+    /// オラクルで導出)。★は旧実装が 1 ulp 誤っていた回帰ピン。
+    #[test]
+    fn f16_subnormal_rne_exact() {
+        assert_eq!(f32_to_f16_bits(3.0 * p2(-24)), 0x0003); // ★厳密値 (旧: 0x0004)
+        assert_eq!(f32_to_f16_bits(p2(-24)), 0x0001);
+        assert_eq!(f32_to_f16_bits(p2(-25)), 0x0000); // 0/最小sub の tie → even 0
+        assert_eq!(f32_to_f16_bits(8193.0 * p2(-38)), 0x0001); // tie の直上
+        assert_eq!(f32_to_f16_bits(9.0 * p2(-26)), 0x0002); // 2.25 sub-ulp → 切捨て (旧: 上げ)
+        assert_eq!(f32_to_f16_bits(5.0 * p2(-25)), 0x0002); // tie → even 2 (旧: 3)
+        assert_eq!(f32_to_f16_bits(11.0 * p2(-26)), 0x0003); // 2.75 ulp → 繰上げ
+        assert_eq!(f32_to_f16_bits(1023.0 * p2(-24)), 0x03FF); // ★頂点 subnormal 厳密 (旧: 0x0400)
+        assert_eq!(f32_to_f16_bits(2047.0 * p2(-25)), 0x0400); // sub/normal 中点 tie → even min normal
+        assert_eq!(f32_to_f16_bits(p2(-14)), 0x0400); // min normal
+                                                      // 符号対称性 / ±0
+        assert_eq!(f32_to_f16_bits(-3.0 * p2(-24)), 0x8003);
+        assert_eq!(f32_to_f16_bits(-0.0), 0x8000);
+        assert_eq!(f32_to_f16_bits(-p2(-30)), 0x8000);
+    }
+
+    /// wave 52: normal/overflow 域は旧実装も正しかった — 回帰ピン化。
+    #[test]
+    fn f16_normal_and_overflow_rne_exact() {
+        assert_eq!(f32_to_f16_bits(1.0 + p2(-11)), 0x3C00); // tie → even 下
+        assert_eq!(f32_to_f16_bits(1.0 + p2(-10) + p2(-11)), 0x3C02); // tie keep 奇数 → 上
+        assert_eq!(f32_to_f16_bits(1.0 + 3.0 * p2(-12)), 0x3C01); // 0.75 ulp → 上
+        assert_eq!(f32_to_f16_bits(65504.0), 0x7BFF);
+        assert_eq!(f32_to_f16_bits(65519.0), 0x7BFF);
+        assert_eq!(f32_to_f16_bits(65520.0), 0x7C00); // tie → even = Inf
+        assert_eq!(f32_to_f16_bits(f32::NAN), 0x7E00);
+        assert_eq!(f32_to_f16_bits(f32::from_bits(0xFFC0_0000)), 0xFE00);
+        assert_eq!(f32_to_f16_bits(f32::INFINITY), 0x7C00);
+        assert_eq!(f32_to_f16_bits(f32::NEG_INFINITY), 0xFC00);
     }
 }
