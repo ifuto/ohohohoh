@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 84
+- count: 85
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -102,3 +102,4 @@
 - 2026-07-23 (count 82): wave 48 intern_pool 監査の CI 緑確認
 - 2026-07-23 (count 83): wave 49 string_intern 監査の CI 緑確認
 - 2026-07-23 (count 84): wave 50 texture_budget 監査の CI 緑確認
+- 2026-07-23 (count 85): wave 51 zerocopy_cast 監査 + wave 50 CI 失敗の再現性切り分け
