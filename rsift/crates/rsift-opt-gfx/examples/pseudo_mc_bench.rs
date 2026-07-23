@@ -16,7 +16,7 @@
 //!
 //! ※ これは各エンジンの公知アルゴリズムの再現実装による比較モデルであり、
 //!    実バイナリの CPU プロファイルそのものではない。
-//!    Pipe B の引用先は `docs/BENCH_SODIUM_VS_RSIFT.md` にファイル:行番号で明記。
+//!    Pipe B の引用先は `docs/internal/BENCH_SODIUM_VS_RSIFT.md` にファイル:行番号で明記。
 //! ※ Vanilla/Sodium のグラフ遮蔽は同族アルゴリズム (Sodium は vanilla
 //!   `VisibilitySet` を再エンコードして使う) のため、遮蔽探索自体は
 //!   A/B 共通実測とし、差は頂点形式・draw call ・更新スケジューリングで測る。
@@ -2484,7 +2484,7 @@ fn main() {
          Rsift の優位軸は 12B 頂点 (頂点当たり A 比 62.5% 減、重複排除込みの\n\
          総量では A 比 86.8% 減 — 頂点メモリ行実測) / zstd 並列 I/O / DDA による\n\
          真の遮蔽判定 (実体カリング表の occluded 数) / indirect 固定 2 draw。\n\
-         詳細は docs/BENCH_SODIUM_VS_RSIFT.md 参照。"
+         詳細は docs/internal/BENCH_SODIUM_VS_RSIFT.md 参照。"
     );
     // メモリ比較
     let packed_bytes: usize = {
