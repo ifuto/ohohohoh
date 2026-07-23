@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 101
+- count: 102
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -119,3 +119,4 @@
 - 2026-07-23 (count 99): wave 65 cas 監査 (WGSL 加算順 3連鎖統一) の CI 緑確認
 - 2026-07-23 (count 100): wave 66 aces_tonemap 監査 (Narkowicz 一次情報照合、厳密ピン) の CI 緑確認
 - 2026-07-23 (count 101): wave 67 checkerboard 監査 (wrapping parity 統一) の CI 緑確認
+- 2026-07-23 (count 102): wave 68 wboit 監査 (NaN 静寂最近接化遮断) の CI 緑確認

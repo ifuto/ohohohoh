@@ -3584,3 +3584,46 @@ wgsl_mirror_lexical_tokens。frame_postfx::checker_matches_module_fns 等
 ### 検証結果 (全て実測)
 - lib **833/833** (+3)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - fmt: HEAD=0 → WORK=0 (新規コードもクリーン)。
+
+## BR. wboit.rs 監査 (wave 68, 2026-07-23)
+
+Weighted Blended OIT (McGuire & Bavoil 2013) CPU 参照 (113 → 約200 行)。
+消費: full_graph_wiring (:158/:303 struct、:1560-1568 半透明 1 サンプル
+計算→破棄の状態連鎖) / gpu_runtime (:110 WGSL 一覧)。2連鎖: wboit.rs ↔
+wboit.wgsl (weight/accumulate/resolve 全式厳密一致を実測照合)。
+
+### BR-1 (低 — doc 誠実化): 簡約単一ターゲット形である明記
+モジュール参照の原論文は resolve に**第二ターゲット revealage Π(1−a_i)**
+を使う完全形だが、本実装 (および WGSL ミラー) は accum のみの簡約形で
+あり、返り alpha は正規化されない **Σ(a_i·w_i)** — near フラグメント
+重複で 1.0 超 (a=0.5×3 枚 = 厳密 1.5) に成り得る。生成物は配線で破棄
+される状態 (実合成非消費) のため実害なしだが、引用アルゴリズムとの
+差分を module doc に明記 + 非正規化挙動を厳密値ピンで決定的に固定。
+完全形 (revealage 第二ターゲット) 導入は挙動変更であり実機 GPU 検証を
+要するため本 wave では行わない (実施判断と根拠を記録)。
+
+### BR-2 (低-中): NaN depth の静寂な最近接化ハザードを入口 assert で遮断
+Rust `f32::max(NaN, 0.0)` は 0.0 を返す (標準ライブラリ仕様) ため、
+旧実装は **NaN depth を静寂に d=0 (weight=1.0 = 最前面優位) 化**していた。
+WGSL max も片側 NaN で不定値返却が規格上許容 (決定的経路を持てない)。
+「NaN=観測欠測は拒否」哲学に従い weight/accumulate 入口に有限 assert
+(色成分も同契約)。should_panic 2 件で回帰固定。配線供給値
+(chunk_dists.max(1.0)) は現状有限確認済。
+
+### BR-3 (低): 厳密ビットピン新設 (従来は不等号 + 1e-5 許容のみ)
+- weight_exact_bits_canonical: near 以下 → 厳密 1.0、1/9・1/17 独立導出。
+- accumulate_resolve_exact_bits_canonical: far red + near blue の全経路
+  (front-bias を 0.83/0.17 に定量化) を独立導出 7 値で固定。
+- resolve_alpha_is_unnormalized_sum_documented_behavior: Σ(a·w)=1.5 の
+  非正規化挙動ピン (BR-1 直接回帰)。
+- single_fragment 既存テストの 1e-5 許容理由 ((x·s)/s は bit 非恒等) を
+  コメントで誠実化。
+
+### テスト (+5 純増、838 全緑)
+weight_exact_bits_canonical / accumulate_resolve_exact_bits_canonical /
+resolve_alpha_is_unnormalized_sum_documented_behavior /
+nan_depth_is_rejected / nan_color_is_rejected。
+
+### 検証結果 (全て実測)
+- lib **838/838** (+5)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: HEAD=0 → 自前 3 hunk → rustfmt 全適用 → 0。
