@@ -3948,3 +3948,52 @@ repeated_insert_is_deterministic_and_contract_preserving
   **46 (WORK-only 差分行 0、HEAD 由来のみ温存)**。
 - 不可視文字 0 / CRLF 0 (python 検査)。
 - 引継ぎ: 基底 svdag.rs (dedup・解放順) は本監査対象外 → 棚卸し残。
+
+## BY. vertex_pool.rs 監査 (wave 75, 2026-07-24)
+
+vertex_pool.rs (171→276 行)。単一 GPU バッファのリング割当器 (chunk 毎 VBO
+アロケート排除)。live 消費: render_pipeline (:45/:96/:194 adaptive、
+:675/:677/:749/:751 upload_mesh **戻り破棄**、:876 active_chunks telemetry)。
+persistent_pool (persistent_vbo_pool) 優先で vertex_pool は fallback 経路。
+slots は現状描画未消費 (簿記/telemetry用途)。
+
+### BY-1 (中): oversize 拒否時の stale slot 残留 — 「None ⇒ slot 無し」に一貫化
+- 問題の定式化: 有効 slot 保有の chunk に容量超過メッシュが来た場合、旧実装は
+  `None` を返しつつ**旧 slot を map に残存**させた。空メッシュ経路は evict する
+  のに非対称で、不変量が経路依存。現状の live は戻り破棄 + 描画未消費のため
+  無害だが、将来 slots を描画に使う消費者は **stale geometry を参照**し得る
+  (ゼロデイの卵。消費者追加方針の事前安全化でもある)。
+- 修復: 拒否時に `slots.remove` + `oversize_rejects` (telemetry, pub 追加) 計数 +
+  `debug!` 通知 (静寂拒否の解消)。doc で返却契約を明文化。
+- 影響範囲検証: slots の live 消費は active_chunks() (telemetry) のみ →
+  描画挙動無影響を digest 実測不変で機械確認。
+- アドバーサリアル検証: 旧実装 (evict 無し) を一時注入 → 新テストが :202
+  `active_chunks()==0` で赤 → 復元後 8/8 緑 (検出力の機械確認、BM-1/BX-1 型)。
+
+### BY-2 (低): refresh セマンティクスの厳密ピン
+同一 chunk 再 upload: 旧領域は ring 上に放棄 (cursor 非巻戻し、回収は ring
+reset まで遅延)、新 slot がマッピングを置換。手導出ピン: 4v/6i → 8v/12i で
+(0,4)→(4,6,8,12)、active_chunks==1、ring_uploads==2、slots[(0,0)]==新 slot。
+
+### BY-3 (低): 境界・定数の厳密ピン
+- `cursor + count == capacity` は適合 (`>` 比較の境界、reset しない):
+  cap 8 に 8v/12i 丁度 → offset 0 gen 0、次 4v/6i → reset gen 1 offset 0。
+- `capacity_indices = v*3/2` の floor: cap 5 → idx cap 7、quad (4v/6i) 適合。
+- generation `wrapping_add(1)` 契約: pub 直書きで MAX 強制 → reset で 0
+  (2^32 周の世代衝突は実時間到達不能として ring 設計に doc 明記)。
+- 評価済み見送り: `adaptive()` の `mb*1024*1024/12` は bump_arena_mb:usize
+  (実値 2-24、max(4) 併合) で overflow 不能 → 変更なし判定。
+
+### テスト (+4 純増、870 全緑)
+oversize_reject_evicts_stale_slot_and_counts /
+refresh_replaces_mapping_and_abandons_old_region /
+exact_capacity_boundary_fits_then_next_resets /
+generation_wraps_on_reset_and_floor_ratio_pin (全値手導出、初回実行で一致)。
+
+### 検証結果 (全て実測)
+- lib **870/870** (+4、vertex_pool 8/8)。structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (修復後に再測定)。
+- fmt: HEAD baseline 4 → 自前 3 箇所を rustfmt 正準形へ是正後 **4
+  (WORK-only 差分行 0、HEAD 由来のみ温存)**。
+- cargo check -p rsift-opt-gfx --all-targets: エラー 0。
+- 不可視文字 0 / CRLF 0 (python 検査)。
