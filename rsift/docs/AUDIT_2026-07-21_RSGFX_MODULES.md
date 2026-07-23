@@ -2718,3 +2718,51 @@ truncation (doc は「簡易」と正直) に加えて **NaN → Inf 静寂変�
 - fmt: half_vertex.rs 0→0 (全面改訂後に正準化)、vertex.rs 0→0、
   lib.rs は HEAD 2 → 1 (cfg 群 HEAD 由来逸脱、増分なし)。
 - cargo check -p rsift-opt-gfx -p rsift-dx12 --all-targets エラー 0。
+
+## BC. vertex_compression_r10g10.rs 監査 (wave 53, 2026-07-23)
+### BB-3 引継ぎ事項の一体処理 — スタブ全廃と数学的根治
+
+workspace 消費者ゼロ (lib.rs 宣言のみ) の API 完成度棚卸しモジュール。
+「スタブや見送り無し・すべて数学的に正しく」の指針に基づき全面根治。
+
+### BC-1 (高): 第 3 の f16 実装 (「簡易」版) を撤去し proven 実装に一元化
+旧 `f32_to_f16_bits` は truncation (round 無し) に加え、**NaN 入力を f16
+Inf (0x7C00) へ静寂変換**する欠陥があった (exp>=31 直落ち分岐)。
+pack_uv の `clamp(0.0,1.0)` は (a) NaN 素通し (AH-1 既知) を経て NaN→Inf
+化を完成させ、(b) **タイル UV (範囲外パラメータ) を静寂破壊**していた。
+→ wave 52 BB-1 で真の RNE + FTZ 化・全テーブル機械検証済みの
+`half_vertex::f32_to_f16` に全面移管 (実装の単一化 = 数学的真実の単一化)。
+pack_uv は有限値 assert (±65504 までの任意 UV を正直に保持、
+|uv| ≥ 65520 は f16 Inf へ RNE 規約どおり)。
+
+### BC-2 (中): UNORM pack の切捨てバイアス → round-to-nearest
+`(x.clamp * 1023.0) as u32` の切捨ては 0.5/1023 の系統的下方向バイアス
+(全 texel がわずかに暗く/低く量子化される)。D3D 固定小数変換の
+意味論どおり round-to-nearest (f32::round, ties-away) に根治。
+併せて成分の有限 assert と a2 ≤ 3 assert を入口強制 (旧: 上位 bit 静寂
+マスク)。unpack 逆変換の誤差は半量子 + 除算丸め (テスト境界を 1/1023
+から 0.5/1023 + eps へ厳密化)。
+
+### BC-3 (中): compress_vertex_stream の zip 静寂打切り → 等長 assert
+長さ不一致のストリームを静寂に最短長で打ち切っていた (AK-1 同型)。
+等長 assert 化。併せて positions は chunk-local [0, `CHUNK_POS_SCALE`=64]
+有限の契約を assert (範囲外は clamp 先への幾何 welding = 破壊バグ)。
+
+### BC-4 (高・スタブ根絶): normal_oct 常時 0 スタブ → octahedral 完全実装
+旧 stream は `normal_oct: 0` を出力 (全法線が物理的に (0,0,1) を偽装)。
+Cigolle 系 octahedral 写像を完全実装: L1 正規化 → z<0 半球の
+(1-|y|,1-|x|)·sign 折畳み → 16bit×2 SNORM 量子化 (round-to-nearest)。
+符号規約 sign(0)=+1 を固定し (0,0,-1) → (32767,32767) の一意性を確保。
+復号参照 `unpack_normal_oct` (CPU 検証用・将来 GPU デコード配線の
+参照仕様) も実装。契約: 成分 finite・L1>0 (ゼロ法線 assert)。
+
+### 検証 (全て実測/厳密導出)
+- 軸・fold 量子化ピン: 期待値は独立手導出 (+X→0x0000_7FFF、-Z→0x7FFF_7FFF、
+  (±1,±1,±1)/√3 → round(32767/3)=10922 / round(-2/3·32767)=-21845)。
+- 復号往復角度誤差: Python 400k サンプル推定 ≈ 6.4e-5 rad に対し
+  15× マージン 1e-3 rad 閾値で LCG 200k 方向 sweep (f64 acos 評価)。
+- 軸法線 (±X,+Y,+Z,-Z) は復号厳密往復。
+- 12B サイズ compile-time assert (旧 doc「16byte/帯域1/3」は実体 12B/1/4
+  と乖離 → 文書訂正)。
+- lib **773/773** (+5)、digest `004c1cf5fb17bfe8` rows=357 不変、
+  fmt 5→0 (全面改訂に伴い正準化)、all-targets check 0。
