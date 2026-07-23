@@ -3823,3 +3823,77 @@ acmr_rejects_partial_triangle / wgsl_note_mirrors_vertex_score_vocabulary。
   捕捉し正準形へ是正)。
 - cargo check -p rsift-opt-gfx --all-targets 通過 (既存の未使用警告のみ)。
 - 不可視文字 (U+200B/FEFF/NBSP 等) 混入 0、CRLF 0 を python 検査で確認。
+
+## BW. world_column_store.rs 監査 (wave 73, 2026-07-23)
+
+live Minecraft コラムストア (ClientLevel → 圧縮 SectionPalette + フレーム定数、
+318 → 約560 行)。消費: render_pipeline (:123 world struct / :259 new /
+:281 column_for_mesh / :1103 ingest_world_column 経由 / :1145 prune)、
+low_spec_stack:374 (TerrainFrameConstants::from_camera)、rsift-jvm
+c_abi_vtable:55 / chunk_bridge:158 (FFI 実入口 — 両者とも
+`len >= section_count*4096` を事前保証していることを一次確認済)。
+
+### BW-1 (低-中): 非有限カメラ座標の静寂受理を drop 拒否へ (FFI 安全形)
+`set_camera` は NaN/±∞ を無検査でキャメラに反映していた。NaN は
+`NaN as i32 = 0` の飽和により mesh_origin が静寂に原点附近化
+(見えない世界シフト)、±∞ は `(cx-1) * SECTION_SIZE` で i32 overflow
+(debug: panic / release: wrap)。FFI 入口 (C ABI ready 経路) のため
+panic=abort 回避で「非有限は観測欠測として drop し直前の有限カメラを
+維持」に転換 + debug! 通知。拒否後に有限値を送れば正常復帰することも
+ピン (状態固着なし)。NaN=欠測は拒否、の哲学に整合しつつ FFI 境界では
+panic しない設計 (wboit BR-2 の assert 型とは入口の性質差で選択)。
+
+### BW-3 (低): 帳簿カウンタの差分会計化 (O(n²) bulk ingest の解消)
+旧 `recount_bytes` は ingest 毎に全カラム O(n) 走査 → bulk ingest で
+O(n²) 悪化。ingest を差分加減算 (上書き時は旧カラム分を引いてから新分を
+足す) に変更し、全再計算は `reconcile_byte_counters` として公開 API 化
+(消費者: 将来の外部直接操作の回復路 + 本 wave の不変量テスト)。
+u64 整数のため「差分 == 全再計算」を**整数等値**で要求できる — 新規 /
+増設 / 縮退上書き / cold↔hot 往復の 4 経路で不変量ピン
+(byte_counters_match_full_reconcile_as_invariant)。dense は
+2 カラム × 1 section の厳密値も同時固定。compress_distant / prune_outside
+は元々 O(columns) 全走査する処理なので全再計算呼出のまま (簡潔さ優先、
+差分化の計算利得なし — 判定記録)。
+
+### BW-2 (判定記録 ↔ doc 明文化): ingest の短配列は契約外防御として air 充填
+`if end <= flat.len()` 分岐 (flat 不足セクションを air のまま残す) は
+静寂挙動に見えるが、2 系統の実 FFI 呼出 (JNI chunk_bridge:149-151 で
+`len < need` なら return / c_abi_vtable:40-55 で sections = len/2/4096
+切捨て) が共に十分長を保証すると一次確認 — 到達不能防御。**削除せず**
+「契約外入力は欠測=air として受理」契約を doc に明文化して固定
+(section_count==0 no-op と併せて)。
+
+### BW-4 (低): mesh_origin / column_for_mesh 窓の厳密ピン
+- オリジン計算: div_euclid による負側丸め (-8 → section -1、trunc 除算
+  だと 0 誤り) を含む厳密ピン。カメラ section の 1 つ手前が窓の min 隅
+  ((-1..2) の 4 section 窓)。
+- column_for_mesh: 窓は半開区間 [want_base, want_base+4)。境界両側ピン:
+  sy=6 → Some (窓内最終)、sy=7 → None (窓外)、no-overlap → None
+  (air-only の Some を返さない契約、meshing 入力契約として機械固定)。
+
+### BW-5 (低): 行列ユーティリティの厳密数学ピン (simd_kernels との語彙一致裏付け)
+- look_at_rh: 単位軸ケース (f=+z) で全要素 ±1/0/低整数の厳密行列ピン
+  (s,u,-f 行 + 平行移動行、除算は norm=1 のみ)。
+- perspective_rh: near=1, far=2 で m22=m32=-2 (f32 厳密な有理値) +
+  構造ゼロ項 11 箇所 + m23=-1 を厳密ピン。m00/m11 は cot(fov/2) で tan
+  libm 依存のため直接ピンせず、m00·aspect≈m11 (rel < 1e-6) と f の
+  単調減少性で構造固定 (一貫性: アスペクト補正の存在を機械保証)。
+- mul4: A·I=A、diag 右乗算=列スケールの全要素 f32 厳密ピン (錬成は
+  ×1.0 厳密・+0.0 加算は値不変の算術裏付けつき)。
+- from_camera 合成は既存 frame_constants_have_origin (chunk_origin 一致)
+  と simd_kernels の「同型 row-major」主張でカバー (変更なし判定)。
+
+### テスト (+7 純増、863 全緑)
+non_finite_camera_is_rejected_and_previous_camera_kept /
+byte_counters_match_full_reconcile_as_invariant /
+column_for_mesh_no_overlap_returns_none /
+mesh_origin_tracks_camera_section_exact / look_at_rh_exact_unit_axes /
+perspective_rh_exact_rational_terms / mul4_identity_and_diagonal_exact。
+
+### 検証結果 (全て実測)
+- lib **863/863** (+7)。structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (BW-3 差分会計化後に再測定、挙動同一の機械保証)。
+- fmt: HEAD baseline 29 行 → 初稿 +29 (自前 hunk を rustfmt 正準形へ 5 箇所
+  修正) → 最終 **23 (WORK-only hunk 0、HEAD 由来のみ温存)**。
+- cargo check -p rsift-opt-gfx --all-targets: エラー 0。
+- 不可視文字 0 / CRLF 0 (python 検査)。
