@@ -3665,3 +3665,43 @@ patch_for_block_rejects_out_of_section (should_panic)。
 - lib **841/841** (+3)。structural_digest `004c1cf5fb17bfe8` rows=357 不変
   (ソート化は均一カウンタ消費のみのため行項目不変を実測確認)。
 - fmt: HEAD=0 → 自前 5 hunk → rustfmt 全適用 → 0。
+
+## BT. vrs.rs 監査 (wave 70, 2026-07-23)
+
+Variable Rate Shading マスク生成 (161 → 約230 行)。消費: full_graph_wiring
+(:157/:302/:1664) / frame_postfx (vrs_run_cpu 精密ミラー、Vrs::build_mask
+との liveness テスト :1070) / gpu_runtime (:105)。3連鎖: vrs.rs ↔
+vrs_run_cpu ↔ vrs.wgsl (score 式・厳密大なり 4 閾値・逐次平均・コード写像
+全て一致を実測照合、BO-1 同型分岐なし)。WGSL ヘッダ「ハードウェア VRS は
+wgpu 非対応、マスク生成が実効果」の誠実注記を確認 (良好)。
+
+### BT-2 (低): build_mask の tile=0 が素朴 0 除算 panic
+frame_postfx::vrs_run_cpu 側には「tile は 1 以上必須」の明示 assert が
+あったが、vrs.rs 本体には無く `(w + tile - 1) / tile` の 0 除算 panic
+エラーメッセージ不明瞭だった。同一 fail-loud 契約を 3連鎖全入口で強制
+(should_panic + tile=1 受理ピン追加)。
+
+### BT-1 (低): 厳密大なり境界の厳密固定
+score ≡ 0.6 / 0.3 / 0.05 / -0.3 (全て f32 リテラルと bit 一致する導出済
+入力: 0.375·0.8f32 ≡ 0.3f32 を利用) で次段へ進まないこと、および
+0.6+1ulp (from_bits) で厳密に最粗化することを機械固定。旧テストの不等号
+のみから閾値非対称性の仕様固定へ強化。
+
+### BT-3 (低): WGSL 語彙ピン新設
+score 式 (clamp 両辺)・4 閾値・逐次加算と個数除算・コード割当の
+9 トークン。
+
+### 判定記録 (変更なし)
+- (w + tile - 1) / tile の usize 加算は assert 済み w*h バッファサイズ
+  制約下で現実的 overflow 不可 (w*h の usize 積が先に満たせない)。
+- score 加重 (motion_weight=1.0, variance_weight=0.8) と一律平均の規則は
+  WGSL/liveness 両面で一致。
+- 高速近似なし (逐次 f32 加算) は決定性優先の設計として妥当。
+
+### テスト (+4 純増、845 全緑)
+select_thresholds_are_strictly_greater / build_mask_rejects_zero_tile /
+build_mask_accepts_tile_one / wgsl_mirror_lexical_tokens。
+
+### 検証結果 (全て実測)
+- lib **845/845** (+4)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: HEAD=0 → 自前 3 hunk → rustfmt 全適用 → 0。

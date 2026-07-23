@@ -80,7 +80,22 @@ impl Vrs {
 
     /// Build a coarse rate-tile buffer (one code per `tile`×`tile` block) by
     /// averaging per-pixel motion/variance. `motion`/`var` are row-major `w`×`h`.
-    pub fn build_mask(&self, w: usize, h: usize, tile: usize, motion: &[f32], var: &[f32]) -> Vec<u32> {
+    ///
+    /// **契約 (wave 70 BT-2)**: `tile` は 1 以上必須 (0 では `(w + tile - 1)
+    /// / tile` が 0 除算 panic となる)。`frame_postfx::vrs_run_cpu` と同一の
+    /// fail-loud 契約を 3連鎖全入口で強制する。
+    pub fn build_mask(
+        &self,
+        w: usize,
+        h: usize,
+        tile: usize,
+        motion: &[f32],
+        var: &[f32],
+    ) -> Vec<u32> {
+        assert!(
+            tile > 0,
+            "vrs tile は 1 以上必須 (0 ではタイル数の計算が 0 除算パニック)"
+        );
         assert_eq!(motion.len(), w * h, "motion buffer size mismatch");
         assert_eq!(var.len(), w * h, "variance buffer size mismatch");
         let tw = (w + tile - 1) / tile;
@@ -152,9 +167,85 @@ mod tests {
         let var = vec![0.0f32; w * h];
         let mask = v.build_mask(w, h, tile, &motion, &var);
         assert_eq!(mask.len(), 2 * 1); // 8/4=2 wide, 4/4=1 tall
-        // left tile = static flat => Rate1x2 (code 1)
+                                       // left tile = static flat => Rate1x2 (code 1)
         assert_eq!(mask[0], ShadingRate::Rate1x2.as_code());
         // right tile = fast motion => Rate4x4 (code 4)
         assert_eq!(mask[1], ShadingRate::Rate4x4.as_code());
+    }
+
+    /// wave 70 BT-1: 閾値比較は全て**厳密大なり** (等号成立時は**粗くしない**
+    /// 側へ落ちる) — 境界丁度の score で次段へ進まないことを厳密固定。
+    /// score 値は全て f32 厳密に閾値リテラルと一致するよう導出済み:
+    ///   select(0.6, 0.0): score ≡ 0.6f32 → 4x4 ではなく 2x4
+    ///   select(0.3, 0.0): score ≡ 0.3f32 → 2x4 ではなく 2x2
+    ///   select(0.05, 0.0): score ≡ 0.05f32 → 2x2 ではなく 1x2
+    ///   select(0.0, 0.375): 0.375·0.8f32 ≡ 0.3f32 → score ≡ -0.3f32 →
+    ///   1x2 ではなく 1x1 (var=0.375 は var*0.8 が 0.3f32 丁度となる値)
+    #[test]
+    fn select_thresholds_are_strictly_greater() {
+        let v = Vrs::new();
+        assert_eq!(v.select(0.6, 0.0), ShadingRate::Rate2x4, "score==0.6 stays");
+        assert_eq!(v.select(0.3, 0.0), ShadingRate::Rate2x2, "score==0.3 stays");
+        assert_eq!(
+            v.select(0.05, 0.0),
+            ShadingRate::Rate1x2,
+            "score==0.05 stays"
+        );
+        assert_eq!(
+            v.select(0.0, 0.375),
+            ShadingRate::Rate1x1,
+            "score==-0.3 stays"
+        );
+        // 1 ulp 超過側は厳密に次段へ (境界の非対称性の両側固定)。
+        let just_above_06 = f32::from_bits(0x3f19999a + 1); // 0.6f32 + 1ulp
+        assert_eq!(
+            v.select(just_above_06, 0.0),
+            ShadingRate::Rate4x4,
+            "score = 0.6+1ulp must coarsen"
+        );
+    }
+
+    /// wave 70 BT-2: tile=0 は 0 除算 panic 前に契約違反として fail-loud。
+    /// (frame_postfx::vrs_run_cpu と同一契約。境界 tile=1 は受理で実作業確認)
+    #[test]
+    #[should_panic(expected = "vrs tile は 1 以上必須")]
+    fn build_mask_rejects_zero_tile() {
+        let v = Vrs::new();
+        let _ = v.build_mask(4, 4, 0, &[0.0; 16], &[0.0; 16]);
+    }
+
+    #[test]
+    fn build_mask_accepts_tile_one() {
+        let v = Vrs::new();
+        let mask = v.build_mask(2, 2, 1, &[1.0; 4], &[0.0; 4]);
+        assert_eq!(mask.len(), 4, "tile=1 → 2x2 tiles");
+        assert!(mask.iter().all(|&c| c == ShadingRate::Rate4x4.as_code()));
+    }
+
+    /// wave 70 BT-3: vrs.wgsl が select/build_mask と同一語彙であることの
+    /// 表記ピン (3連鎖: vrs.rs ↔ vrs_run_cpu ↔ vrs.wgsl)。
+    #[test]
+    fn wgsl_mirror_lexical_tokens() {
+        const WGSL: &str = include_str!("../shaders/vrs.wgsl");
+        for tok in [
+            // score 式 (clamp 両辺)
+            "clamp(motion, 0.0, 1.0) * mw - clamp(variance, 0.0, 1.0) * vw",
+            // 厳密大なり閾値 4 段
+            "score > 0.6",
+            "score > 0.3",
+            "score > 0.05",
+            "score > -0.3",
+            // タイル平均 (逐次加算 → 個数除算)
+            "ms = ms + motion_in[i];",
+            "let motion = ms / f32(cnt);",
+            // コード割当 (4=最粗 … 0=最細)
+            "return 4u;",
+            "return 0u;",
+        ] {
+            assert!(
+                WGSL.contains(tok),
+                "vrs.wgsl drift from module rules: {tok}"
+            );
+        }
     }
 }
