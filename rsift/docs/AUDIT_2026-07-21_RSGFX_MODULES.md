@@ -2816,3 +2816,52 @@ universal 適合、UAV バリアは Compute×UAV / UAV layout×UAV で適合)。
 - lib **778/778** (+5)。digest `004c1cf5fb17bfe8` rows=357 不変。
 - fmt: enhanced_barriers 6→0 (全面改訂に伴い正準化)、
   full_graph_wiring 21→21 (2 行追加で増分なし)。all-targets check 0。
+
+## BE. packed4.rs 監査 (wave 55, 2026-07-23)
+### 基盤 PackedPullQuad 語彙の fail-loud 化 (raw/new 層分離)
+
+基盤データ型 (8B/quad GPU pull 語彙)。消費: binary_greedy_meshing
+(emit_pull_quad/リージョン再梱包)、full_graph_wiring (ao_refine)、
+pull_mesh (VERTEX 係数)、render_pipeline 経由。
+
+### BE-1 (高): pack 契約の debug_assert 限定 → 実データ入口 new() の assert 化
+旧実装は pack_word0/pack_word1 の語彙域検査が debug_assert のみで、
+**release ビルドでは超過値が隣接フィールドへ静寂ビット滲出** (GPU 幾何/
+テクスチャ破壊) し得た。ただし初版で raw 関数に直接 assert したところ
+**wide_static_bench E セクションが意図的語彙外入力 (rng.below(384) 等) で
+パニック** — bench は「任意 bit 列の raw throughput 測定」という正当な
+ハンマ用途であり、この赤は私の設計誤りを捕捉した。
+→ 層分離で解決: raw 語彙関数 (pack_word0/pack_word1) は debug_assert の
+デュアルモード (debug=開発時捕捉 / release=無検査スループット) として
+残置し、**全実データ生成経路が通る `new()`** に検査を集約 (release でも
+fail-loud)。実生成経路 3 件全て `new()` 経由であることを機械確認。
+現行供給域も監査で確認 (実セクション 16³ → 座標 ≤15、tex はパレット
+アトラス index、ao ≤3 clamp 済、face 機械的 exhaustive、w/h ≤64)。
+
+### BE-2 (中): face_index の `_ => 5` 静寂誤分類 → 軸一意 assert
+違法組合せ (複数軸/ゼロ軸) が **-Z (face 5) として静寂着地** (WGSL
+face_normal の default も同値の一貫ゴミポリシ)。軸フラグちょうど 1 つを
+assert。実生成経路は (Axis,bool) exhaustive match で常に合法 ✓。
+
+### BE-3 (低): WGSL ミラー語彙の表記一致ピン
+SHADER_VERTEX_PULL の bit 語彙 (COORD_MASK=63u/TEX_MASK=4095u/全 shift/
+face_normal の 0:+X/5:-Z) をテキストピン — 片側のみ変更された場合の
+機械検出。
+
+### 雑録: 誤誘導定数 PULL_CHUNK_VOXELS=32 の撤去
+実セクションは SECTION_SIZE=16 で、参照設計の語彙定数 32 と矛盾
+(消費者ゼロ実測)。語彙 6bit (64 可) はリージョン再梱包経路の 0..64
+フィルタと整合 — モジュール doc に規約を明文化。
+
+### テスト (+2 純増)
+- word0 厳密 bit 列ピン (0b11_000000000100_000011_000010_000001 独立導出)
+- new 語彙超過拒否 ×8 + raw デュアルモード (debug 捕獲/release 構成可)
+- face_index 6 面厳密ピン + 違法軸拒否 ×3
+- WGSL 表記一致ピン ×12
+
+### 検証結果 (全て実測)
+- lib **782/782** (+4。テストの赤 2 回はいずれも私のテスト/設計誤りを
+  捕捉: bench ハンマ用途の見落し、debug_assert のデュアルモード性)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (bench 入力列は全く同一のまま層分離のみ実施)。
+- fmt 0→0 (正準化適用後)。all-targets check 0。
