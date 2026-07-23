@@ -3540,3 +3540,47 @@ srgb_encode_midpoint_within_1ulp_class_tolerance。
 - **インシデント**: Rust toolchain 7 度目の消失 (restore-env.sh 復旧)、
   git 破損 9 度目 (HEAD→base 巻戻り、fetch+reset mixed で復旧、差分
   aces_tonemap.rs 1 件のみ確認)。
+
+## BQ. checkerboard.rs 監査 (wave 67, 2026-07-23)
+
+チェッカーボードレンダリング (半画素シェード + 斜め 4 近傍再構成)
+(97 → 約190 行)。消費: full_graph_wiring (:1693-1702 状態連鎖) /
+frame_postfx (checker_run_cpu 精密ミラー :275、GpuCheckerboard 実
+dispatch、checker_matches_module_fns liveness テスト) / gpu_runtime
+(:84 WGSL 配線一覧)。3連鎖: checkerboard.rs ↔ checker_run_cpu ↔
+checkerboard.wgsl は parity/方向/加算順とも健全一致を確認 (BO-1 同型の
+分岐なし)。
+
+### BQ-1 (低): is_rendered を wrapping_add 化 — debug panic 経路の根絶
+旧実装 `x + y` は debug ビルドで u32::MAX 級座標に対し overflow panic
+し得た (画像座標契約外だが WGSL `(gid.x + gid.y) & 1u` の u32 wrap
+セマンティクスとも非整合)。パリティは mod 2 の性質であり wrap 周回で
+不変 (`(x+y) mod 2^32 ≡ x+y (mod 2)`) なので wrapping_add で
+debug/release/WGSL 3 者を厳密一致化。さらに `(x+y)&1 == (x^y)&1` は
+桁上がりが bit1 以上にしか寄与しないことから数学的恒等 — 厳密同一性を
+スイープテストで機械固定 (2 冪・2 冪-1・MAX 系 × 直積)。
+
+### BQ-2/BQ-3 (低): 厳密ビットピン + WGSL 語彙ピン新設
+- reconstruct_exact_bits_canonical: 左結合和×0.25 の独立導出ビット
+  (非対称配置でクロスチャンネル混入検出可能)。
+- wgsl_mirror_lexical_tokens: parity `(gid.x + gid.y) & 1u) == 0u` /
+  コピー経路 / 斜め 4 方向 gather / 左結合平均の 7 トークン。
+
+### 判定記録 (変更なし)
+- 3連鎖の parity/gather 方向/加算順/端 clamp は全一致 (実測照合)。
+- 設計上の発見: 時系列パリティ反転 (temporal CB) は本モジュールには無いが、
+  **adaptive_shading が独自の per-frame/chunk parity 制御を既に実装**
+  (テスト名 A: checkerboard_alternates_per_frame_and_chunk_parity が実在)。
+  本モジュールは空間再構成規則の担当として正しく、時系列拡張は
+  frame/mirror 層の設計判断として記録 (未着手)。
+- full_graph_wiring の is_rendered(frame_index%2, 0) 呼出はフレーム偶奇
+  判定の簡易利用 (同ファイル本監査は大物 wave で実施予定)。
+
+### テスト (+3 純増、833 全緑)
+mask_parity_is_exact_and_wrap_safe / reconstruct_exact_bits_canonical /
+wgsl_mirror_lexical_tokens。frame_postfx::checker_matches_module_fns 等
+既存の liveness テスト全緑。
+
+### 検証結果 (全て実測)
+- lib **833/833** (+3)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: HEAD=0 → WORK=0 (新規コードもクリーン)。
