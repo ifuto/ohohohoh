@@ -47,7 +47,7 @@ impl LodHybridSelector {
 
     /// Downgrade mesh complexity for mid/far (geometry thinning, not resolution).
     pub fn simplify_mesh(&self, mut mesh: BuiltChunkMesh, tier: LodTier) -> BuiltChunkMesh {
-        if tier == LodTier::Near || mesh.is_empty {
+        if tier == LodTier::Near || mesh.is_empty() {
             return mesh;
         }
         let stride = match tier {
@@ -70,7 +70,8 @@ impl LodHybridSelector {
         }
         mesh.vertices = new_verts;
         mesh.indices = new_idx;
-        mesh.is_empty = mesh.vertices.is_empty();
+        // wave 59 BI-A: is_empty フィールドは廃止 (BuiltChunkMesh::is_empty() が
+        // vertices から常時導出) — この行は LOD 簡略化後の手動再同期ハザードだった。
         trace!(
             "[LodHybrid] {:?} chunk ({}, {}) → {} verts",
             tier,
@@ -110,7 +111,6 @@ mod tests {
         BuiltChunkMesh {
             chunk_x: 0,
             chunk_z: 0,
-            is_empty: n_quads == 0,
             vertices,
             indices,
         }
@@ -144,7 +144,7 @@ mod tests {
         let m = sel.simplify_mesh(mesh_with_quads(3), LodTier::Mid);
         assert_eq!(m.vertices.len(), 8);
         assert_eq!(m.indices, vec![0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4]);
-        assert!(!m.is_empty);
+        assert!(!m.is_empty());
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod tests {
         let mut m3 = mesh_with_quads(1);
         m3.vertices.truncate(3);
         let m3 = sel.simplify_mesh(m3, LodTier::Mid);
-        assert!(m3.is_empty);
+        assert!(m3.is_empty());
     }
 
     #[test]

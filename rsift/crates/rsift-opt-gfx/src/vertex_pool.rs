@@ -52,7 +52,7 @@ impl VertexPool {
 
     /// Allocate or refresh a slot for chunk mesh data.
     pub fn upload_mesh(&mut self, mesh: &BuiltChunkMesh) -> Option<PoolSlot> {
-        if mesh.is_empty {
+        if mesh.is_empty() {
             self.slots.remove(&(mesh.chunk_x, mesh.chunk_z));
             return None;
         }
@@ -112,7 +112,6 @@ mod tests {
         BuiltChunkMesh {
             chunk_x: cx,
             chunk_z: cz,
-            is_empty: quads == 0,
             vertices,
             indices,
         }

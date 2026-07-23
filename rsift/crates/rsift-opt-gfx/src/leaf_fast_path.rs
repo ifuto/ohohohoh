@@ -64,7 +64,6 @@ pub fn merge_leaf_mesh(base: &BuiltChunkMesh, leaf_overlay: &BuiltChunkMesh) -> 
     BuiltChunkMesh {
         chunk_x: base.chunk_x,
         chunk_z: base.chunk_z,
-        is_empty: vertices.is_empty(),
         vertices,
         indices,
     }
@@ -186,14 +185,12 @@ mod tests {
         let base = BuiltChunkMesh {
             chunk_x: 2,
             chunk_z: -3,
-            is_empty: false,
             vertices: vec![vert(); 5],
             indices: vec![0, 1, 2, 0, 2, 3],
         };
         let overlay = BuiltChunkMesh {
             chunk_x: 2,
             chunk_z: -3,
-            is_empty: false,
             vertices: vec![vert(); 4],
             indices: vec![0, 1, 2],
         };
@@ -205,7 +202,7 @@ mod tests {
             "overlay 側は base 頂点数分オフセット"
         );
         assert_eq!((merged.chunk_x, merged.chunk_z), (2, -3));
-        assert!(!merged.is_empty);
+        assert!(!merged.is_empty());
         // 空 overlay 追加は no-op 相当 (bytes 等価)。
         let empty_overlay = BuiltChunkMesh {
             vertices: vec![],

@@ -134,7 +134,7 @@ impl PersistentVboPool {
 
     /// Write mesh into pool bucket; reuses freed space when chunk reloads.
     pub fn upload_mesh(&mut self, mesh: &BuiltChunkMesh) -> Option<PersistentSlot> {
-        if mesh.is_empty {
+        if mesh.is_empty() {
             self.release(mesh.chunk_x, mesh.chunk_z);
             return None;
         }
@@ -379,7 +379,6 @@ mod tests {
             chunk_z: cz,
             vertices: vec![Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0); n],
             indices: (0..(n as u32)).collect(),
-            is_empty: false,
         }
     }
 

@@ -78,7 +78,7 @@ impl MeshDiskCache {
         section_rle: &[RleSection],
         section_y: i32,
     ) -> bool {
-        if !self.enabled || mesh.is_empty {
+        if !self.enabled || mesh.is_empty() {
             return false;
         }
         let path = self.key_path(mesh.chunk_x, mesh.chunk_z, section_y);
@@ -195,7 +195,6 @@ fn decode_mesh(data: &[u8], expect_x: i32, expect_z: i32) -> Result<BuiltChunkMe
     Ok(BuiltChunkMesh {
         chunk_x: cx,
         chunk_z: cz,
-        is_empty: vertices.is_empty(),
         vertices,
         indices,
     })
@@ -234,7 +233,6 @@ fn decode_mesh_v1(
     Ok(BuiltChunkMesh {
         chunk_x: cx,
         chunk_z: cz,
-        is_empty: vertices.is_empty(),
         vertices,
         indices,
     })
@@ -267,7 +265,6 @@ mod tests {
             chunk_z: cz,
             vertices: vec![v, v, v, v],
             indices: vec![0, 1, 2, 0, 2, 3],
-            is_empty: false,
         }
     }
 
@@ -297,8 +294,14 @@ mod tests {
     fn put_rejects_empty_mesh() {
         let root = tmp_root("empty");
         let mut c = MeshDiskCache::new(&root, true);
-        let mut m = sample_mesh(0, 0);
-        m.is_empty = true;
+        // wave 59 BI-A: 空判定は vertices からの導出 — 空メッシュを直接構築する
+        // (旧実装は is_empty=true 手書きで「頂点非空だが空」非整合を発生させていた)。
+        let m = BuiltChunkMesh {
+            chunk_x: 0,
+            chunk_z: 0,
+            vertices: vec![],
+            indices: vec![],
+        };
         assert!(!c.put(&m, &one_rle(), 0));
         assert!(c.get(0, 0, 0).is_none());
         let _ = fs::remove_dir_all(&root);
@@ -313,7 +316,7 @@ mod tests {
         assert!(c.put(&src, &one_rle(), 3));
         let got = c.get(-7, 13, 3).expect("hit after put");
         assert_eq!((got.chunk_x, got.chunk_z), (-7, 13));
-        assert!(!got.is_empty);
+        assert!(!got.is_empty());
         assert_eq!(verts_bytes(&got), expect_v, "vertex bytes must round-trip");
         assert_eq!(got.indices, src.indices);
         assert_eq!(c.stats(), (1, 0));

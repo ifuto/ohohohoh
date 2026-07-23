@@ -181,7 +181,6 @@ impl FrameReuseCache {
                     chunk_z: cz,
                     vertices: vec![],
                     indices: vec![],
-                    is_empty: true,
                 },
                 rle: entry.rle.clone(),
                 occupied: entry.occupied.clone(),
@@ -583,7 +582,6 @@ mod tests {
             chunk_z: 0,
             vertices: vec![Quantized12ByteVertex::zeroed(); 10],
             indices: vec![0u32; 30],
-            is_empty: false,
         };
         let bytes = FrameReuseCache::entry_bytes(&rle, &occupied, Some(&mesh), None);
         assert_eq!(bytes, (3 + 5) * 4 + 2 * 4 + 10 * 12 + 30 * 4);
@@ -604,7 +602,6 @@ mod tests {
         let small = BuiltChunkMesh {
             vertices: vec![],
             indices: vec![],
-            is_empty: true,
             ..mesh
         };
         cache.store(

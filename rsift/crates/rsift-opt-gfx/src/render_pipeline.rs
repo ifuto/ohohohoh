@@ -364,7 +364,6 @@ impl RsiftRenderPipeline {
                 chunk_z: cz,
                 vertices: vec![],
                 indices: vec![],
-                is_empty: true,
             };
         }
 
@@ -435,7 +434,7 @@ impl RsiftRenderPipeline {
             svo: None,
             encoding: ReuseEncoding::Mesh,
         });
-        if !mesh.is_empty {
+        if !mesh.is_empty() {
             self.cache.put(&mesh, &rle, section_y);
         }
         self.frame_stats.chunks_built += 1;
@@ -486,7 +485,6 @@ impl RsiftRenderPipeline {
                 chunk_z: cz,
                 vertices: vec![],
                 indices: vec![],
-                is_empty: true,
             })
     }
 
@@ -672,7 +670,7 @@ impl RsiftRenderPipeline {
             if !pull_live {
                 if let Some(reused) = self.frame_reuse.try_reuse(cx, cz, dist, &self.lod) {
                     occupied_per_chunk.push((cx, cz, reused.occupied));
-                    if !reused.mesh.is_empty {
+                    if !reused.mesh.is_empty() {
                         if let Some(pool) = self.persistent_pool.as_mut() {
                             pool.upload_mesh(&reused.mesh);
                         } else if let Some(pool) = self.vertex_pool.as_mut() {
@@ -746,7 +744,7 @@ impl RsiftRenderPipeline {
                     artifacts.encoding,
                 );
             }
-            if !mesh.is_empty {
+            if !mesh.is_empty() {
                 if let Some(pool) = self.persistent_pool.as_mut() {
                     pool.upload_mesh(&mesh);
                 } else if let Some(pool) = self.vertex_pool.as_mut() {

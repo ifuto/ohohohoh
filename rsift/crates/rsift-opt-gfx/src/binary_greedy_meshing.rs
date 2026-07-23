@@ -967,7 +967,6 @@ pub fn mesh_section(palette: &SectionPalette, chunk_x: i32, chunk_z: i32) -> Bui
         return BuiltChunkMesh {
             chunk_x,
             chunk_z,
-            is_empty: true,
             vertices: vec![],
             indices: vec![],
         };
@@ -1006,7 +1005,6 @@ fn mesh_section_inner(
     BuiltChunkMesh {
         chunk_x,
         chunk_z,
-        is_empty: vertices.is_empty(),
         vertices,
         indices,
     }
@@ -1020,7 +1018,7 @@ pub fn merge_section_meshes(
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     for part in parts {
-        if part.is_empty {
+        if part.is_empty() {
             continue;
         }
         let base = vertices.len() as u32;
@@ -1032,7 +1030,6 @@ pub fn merge_section_meshes(
     BuiltChunkMesh {
         chunk_x,
         chunk_z,
-        is_empty: vertices.is_empty(),
         vertices,
         indices,
     }
@@ -1151,14 +1148,14 @@ mod tests {
         let mut p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
         p[idx(0, 0, 0)] = 1;
         let m = mesh_section(&p, 0, 0);
-        assert!(!m.is_empty);
+        assert!(!m.is_empty());
         assert!(m.vertices.len() >= 4);
     }
 
     #[test]
     fn air_section_empty() {
         let p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
-        assert!(mesh_section(&p, 0, 0).is_empty);
+        assert!(mesh_section(&p, 0, 0).is_empty());
     }
 
     #[test]

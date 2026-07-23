@@ -1,10 +1,10 @@
-//! # Hyper-Optimized 12-Byte Quantized Chunk Meshing Engine
+//! # 12-Byte Quantized Chunk Meshing Engine
 //!
-//! 世界の最先端技術および Sodium を徹底的に研究し、
-//! 従来の 28〜32バイト、Sodium の 20バイト、さらには前回の 16バイトすら超える
-//! **「12バイト極限量子化頂点フォーマット (`#[repr(C, align(4))]`)」** と
-//! **Octahedral Normal Packing (八面体法線マッピング)** を純 Rust で実装！
-//! VRAM 使用量と帯域幅をバニラ比で 60% 以上削減し、異次元のレンダリング速度を実現します。
+//! **12 バイト量子化頂点フォーマット (`#[repr(C, align(4))]`)** と
+//! **Octahedral Normal Packing (八面体法線マッピング)** を純 Rust で実装。
+//! 頂点帯域はバニラ系 28〜32B フォーマット比で 57.1〜62.5% の削減
+//! (`1 − 12/28`, `1 − 12/32`。Sodium は ~20B)。フレーム時間への効果は
+//! ボトルネック依存のため数値主張はしない (wave 59 BI 監査で誇大表現を訂正)。
 
 use bytemuck::{Pod, Zeroable};
 use rayon::prelude::*;
@@ -26,7 +26,10 @@ pub const VERTEX_STRIDE_BYTES: usize = 12;
 ///   (セクション内座標 0..16 をカバー)。
 /// * `octahedral_normal`: 法線を八面体マッピング (Cigolle 2014 "A Survey of
 ///   Efficient Representations for Independent Unit Vectors" 系) で `u8 x 2` (2バイト) に圧縮。
-/// * `uv_half`: テクスチャ UV を **UNORM16** x 2 (4バイト) (fp16 ではない) に圧縮。
+/// * `uv_half`: テクスチャ UV を **1/32767 スケールの符号なし 16bit 量子化** x 2
+///   (4バイト) に圧縮 (実効 15 ビット分の分解能。旧 doc の「UNORM16」表記は
+///   scale 65535 を想起させる誤記で、wave 59 BI 監査で訂正 — 現行語彙は
+///   scale 32767 で固定・テストピン済み)。
 /// 色やライトマップ、ブロック ID (`mc_Entity`) はインスタンス・マテリアル SSBO から `gl_DrawID` / `gl_InstanceIndex` で即座にフェッチ！
 #[repr(C, align(4))]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -37,9 +40,25 @@ pub struct Quantized12ByteVertex {
 }
 
 impl Quantized12ByteVertex {
-    /// 3D 座標、法線ベクトル、テクスチャ UV から 12 バイトの超圧縮頂点を構築する
+    /// 3D 座標、法線ベクトル、テクスチャ UV から 12 バイトの量子化頂点を構築する
+    ///
+    /// **契約 (wave 59 BI-B で fail-loud 化)**: 全入力は有限であること。
+    /// 旧実装は NaN 位置を `as u16` の飽和で 0 へ**静寂テレポート**させた
+    /// (メッシュ破壊)。範囲超過 (有限) の飽和量子化は doc どおり維持する。
     #[inline(always)]
     pub fn encode(x: f32, y: f32, z: f32, nx: f32, ny: f32, nz: f32, u: f32, v: f32) -> Self {
+        assert!(
+            x.is_finite() && y.is_finite() && z.is_finite(),
+            "encode 契約違反: 位置に非有限 (x={x}, y={y}, z={z}) — NaN→0 静寂テレポートを拒否"
+        );
+        assert!(
+            nx.is_finite() && ny.is_finite() && nz.is_finite(),
+            "encode 契約違反: 法線に非有限 (nx={nx}, ny={ny}, nz={nz})"
+        );
+        assert!(
+            u.is_finite() && v.is_finite(),
+            "encode 契約違反: UV に非有限 (u={u}, v={v})"
+        );
         // 16bit 固定小数点 (1024 倍) に変換
         let qx = (x * 1024.0) as u16;
         let qy = (y * 1024.0) as u16;
@@ -73,13 +92,28 @@ impl Quantized12ByteVertex {
 const _: () = assert!(std::mem::size_of::<Quantized12ByteVertex>() == VERTEX_STRIDE_BYTES);
 
 /// 構築されたチャンクのメッシュデータ
+///
+/// **wave 59 BI-A**: 旧 pub `is_empty: bool` フィールドは vertices と独立の
+/// 第二真実源で、「is_empty=true + 頂点非空」の**非整合状態を構築可能**に
+/// していた (mesh_cache のテストが実際にその非整合を発生させており、
+/// pull_mesh::PullBuiltMesh (wave 56 BF-1) と全く同型のハザード)。
+/// 判定は `is_empty()` メソッドに単一真実源化。
 #[derive(Debug, Clone)]
 pub struct BuiltChunkMesh {
     pub chunk_x: i32,
     pub chunk_z: i32,
     pub vertices: Vec<Quantized12ByteVertex>,
     pub indices: Vec<u32>,
-    pub is_empty: bool,
+}
+
+impl BuiltChunkMesh {
+    /// 空メッシュ判定は `vertices` から一意に導出する (単一真実源)。
+    /// 空の定義は「頂点無し」で、indices もその場合空であることが構築側の
+    /// 不変条件 (全構築経路が vertices/indices を対で生成)。
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.vertices.is_empty()
+    }
 }
 
 /// Multithreaded chunk builder with adaptive thread count
@@ -158,39 +192,54 @@ impl MultithreadedChunkBuilder {
             .par_iter()
             .with_max_len(self.thread_count.max(1))
             .map(|&(cx, cz)| {
-                let mut vertices = Vec::with_capacity(1024 / self.lod_scale as usize);
-                let mut indices = Vec::with_capacity(1536 / self.lod_scale as usize);
-
-                let step = self.lod_scale as usize;
-                let face_count = 100 / step;
-                for i in (0..face_count).map(|n| n * step) {
-                    let v0 = Quantized12ByteVertex::encode(0.0, i as f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
-                    let v1 = Quantized12ByteVertex::encode(1.0, i as f32, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0);
-                    let v2 = Quantized12ByteVertex::encode(1.0, i as f32, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0);
-                    let v3 = Quantized12ByteVertex::encode(0.0, i as f32, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0);
-                    
-                    let base_idx = vertices.len() as u32;
-                    vertices.push(v0); vertices.push(v1); vertices.push(v2); vertices.push(v3);
-                    
-                    indices.push(base_idx); indices.push(base_idx + 1); indices.push(base_idx + 2);
-                    indices.push(base_idx + 2); indices.push(base_idx + 3); indices.push(base_idx);
-                }
-
+                let mesh = fallback_plane_mesh(cx, cz, self.lod_scale as usize);
                 TOTAL_CHUNKS_BUILT.fetch_add(1, Ordering::Relaxed);
-                TOTAL_VERTICES_BUILT.fetch_add(vertices.len() as u64, Ordering::Relaxed);
-
-                BuiltChunkMesh {
-                    chunk_x: cx,
-                    chunk_z: cz,
-                    is_empty: vertices.is_empty(),
-                    vertices,
-                    indices,
-                }
+                TOTAL_VERTICES_BUILT.fetch_add(mesh.vertices.len() as u64, Ordering::Relaxed);
+                mesh
             })
             .collect();
 
-        trace!("Successfully built {} ultra-quantized chunk meshes (Total Vertices: {})", meshes.len(), TOTAL_VERTICES_BUILT.load(Ordering::Relaxed));
+        trace!("Successfully built {} quantized chunk meshes (Total Vertices: {})", meshes.len(), TOTAL_VERTICES_BUILT.load(Ordering::Relaxed));
         meshes
+    }
+}
+
+/// demo/ポリゴン fallback の平面列メッシュ。
+///
+/// **wave 59 BI-C**: 頂点高さ y は [0, 16) に厳密限定 (セクション高 16 の
+/// 原像)。旧実装は 100 面 (y ≤ 100−step) を生成し、Quantized12ByteVertex
+/// の表現範囲 [0,64) を踏み外した頂点が飽和量子化で y≈64 の 1 面に全て
+/// 重なって貼り付く垃圾になっていた — 本 fallback は Minimal tier /
+/// Low (cpu_cores<4) で到達可能な実経路。
+fn fallback_plane_mesh(cx: i32, cz: i32, step: usize) -> BuiltChunkMesh {
+    let step = step.max(1);
+    let face_count = 16 / step;
+    let mut vertices = Vec::with_capacity(4 * face_count);
+    let mut indices = Vec::with_capacity(6 * face_count);
+    for i in (0..face_count).map(|n| n * step) {
+        let v0 = Quantized12ByteVertex::encode(0.0, i as f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        let v1 = Quantized12ByteVertex::encode(1.0, i as f32, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0);
+        let v2 = Quantized12ByteVertex::encode(1.0, i as f32, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0);
+        let v3 = Quantized12ByteVertex::encode(0.0, i as f32, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0);
+
+        let base_idx = vertices.len() as u32;
+        vertices.push(v0);
+        vertices.push(v1);
+        vertices.push(v2);
+        vertices.push(v3);
+
+        indices.push(base_idx);
+        indices.push(base_idx + 1);
+        indices.push(base_idx + 2);
+        indices.push(base_idx + 2);
+        indices.push(base_idx + 3);
+        indices.push(base_idx);
+    }
+    BuiltChunkMesh {
+        chunk_x: cx,
+        chunk_z: cz,
+        vertices,
+        indices,
     }
 }
 
@@ -278,7 +327,8 @@ mod tests {
     }
 
     #[test]
-    fn uv_unorm16_endpoints_exact() {
+    fn uv_scale_32767_endpoints_exact() {
+        // 現行語彙は scale 32767 (旧テスト名の「UNORM16」は誤記 — BI 監査で訂正)。
         let v = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0);
         assert_eq!(v.uv_half, [0, 32767]);
     }
@@ -288,5 +338,66 @@ mod tests {
         // ゼロ法線ガード (max(l1, 1e-4)) で NaN にならず (127,127) に落ちる
         let v = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert_eq!(v.octahedral_normal, [127, 127]);
+    }
+
+    /// wave 59 BI-B: 非有限位置は fail-loud (NaN→0 静寂テレポート拒否)。
+    #[test]
+    #[should_panic(expected = "encode 契約違反: 位置に非有限")]
+    fn encode_rejects_nan_position() {
+        let _ = Quantized12ByteVertex::encode(f32::NAN, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+    }
+
+    /// wave 59 BI-B: 非有限法線は fail-loud。
+    #[test]
+    #[should_panic(expected = "encode 契約違反: 法線に非有限")]
+    fn encode_rejects_infinite_normal() {
+        let _ = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, f32::INFINITY, 0.0, 0.0, 0.0);
+    }
+
+    /// wave 59 BI-B: 非有限 UV は fail-loud。
+    #[test]
+    #[should_panic(expected = "encode 契約違反: UV に非有限")]
+    fn encode_rejects_nan_uv() {
+        let _ = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, f32::NAN, 0.0);
+    }
+
+    /// wave 59 BI-A: 空判定は vertices からの一意導出 (非整合構築不能を型で保証)。
+    #[test]
+    fn is_empty_is_single_source_of_truth() {
+        let face = Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        let m = BuiltChunkMesh {
+            chunk_x: 0,
+            chunk_z: 0,
+            vertices: vec![face],
+            indices: vec![0],
+        };
+        assert!(!m.is_empty());
+        let e = BuiltChunkMesh {
+            chunk_x: 0,
+            chunk_z: 0,
+            vertices: vec![],
+            indices: vec![],
+        };
+        assert!(e.is_empty());
+    }
+
+    /// wave 59 BI-C: fallback 平面列は頂点表現範囲内 (y ∈ [0,16)) で、
+    /// 全て異なる高さ (飽和による重なり垃圾でない) ことを step 全型でピン。
+    #[test]
+    fn fallback_plane_mesh_respects_vertex_range() {
+        for step in [1usize, 2, 4] {
+            let m = fallback_plane_mesh(3, -2, step);
+            assert_eq!((m.chunk_x, m.chunk_z), (3, -2));
+            let face_count = 16 / step;
+            assert_eq!(m.vertices.len(), 4 * face_count, "1 quad = 4 vertex");
+            assert_eq!(m.indices.len(), 6 * face_count, "1 quad = 6 index");
+            assert!(
+                m.vertices.iter().all(|v| v.pos_xyz_half[1] < 16 * 1024),
+                "y 量子化値は厳密に < 16*1024 (飽和量子化非依存)"
+            );
+            let ys: std::collections::BTreeSet<u16> =
+                m.vertices.iter().map(|v| v.pos_xyz_half[1]).collect();
+            assert_eq!(ys.len(), face_count, "全 quad が異なる高さ");
+        }
     }
 }

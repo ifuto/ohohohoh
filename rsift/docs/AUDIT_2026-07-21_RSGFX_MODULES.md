@@ -3047,3 +3047,68 @@ wave 58 で撤去済み」と歴史注記に更新。
   (HEAD 由来温存)、frame_pipeline 0→0。all-targets check 通過。
 - **インシデント**: Rust toolchain が再び消失 (4 度目)、restore-env.sh
   (34 秒) で復旧後に検証。
+
+## BI. chunk_mesh.rs 監査 (wave 59, 2026-07-23)
+### BuiltChunkMesh::is_empty 第二真実源の根絶 (BF-1 統一) + encode 非有限 fail-loud + demo 代表域修復
+
+12B 量子化頂点 + BuiltChunkMesh (legacy indexed メッシュ語彙)。消費:
+binary_greedy_meshing (構築)、mesh_cache (disk serialize)、frame_reuse、
+leaf_fast_path (構築+merge)、render_pipeline (:191 builder, :481 呼出)、
+lod_hybrid、vertex_pool、persistent_vbo_pool、rsift-launcher (builder 構築)。
+
+### BI-A (高): `is_empty: bool` フィールド → メソッド化 (BF-1 と同型)
+PullBuiltMesh (wave 56) と同じく、vertices と独立の pub フィールドが
+**非整合状態を構築可能**にしていた。監査で見つかった実被害の痕跡:
+1. lod_hybrid :73 — LOD 簡略化が vertices を置換した後に
+   `mesh.is_empty = mesh.vertices.is_empty();` という**手動再同期行**
+   (書き忘れれば静寂バグになる設計本身の欠陥の直物証)。
+2. mesh_cache テスト — `m.is_empty = true` で「頂点非空だが空」の
+   非整合を人為発生 (put_rejects_empty_mesh の入力作りに悪用)。
+3. leaf_fast_path テストの `..overlay.clone()` スプレッドが
+   vertices 空 + is_empty:false の非整合を暗黙生成。
+→ フィールド撤去 + `is_empty()` (vertices 導出) 単一真実源化。
+writer 13 箇所/reader 11 箇所/mutation 1 箇所 + コンパイラ追加列挙
+8 箇所 (lod_hybrid:73,113、persistent_vbo_pool:137,382、
+render_pipeline:367,488、vertex_pool:55,115) を機械移行
+(grep 後追いではなくコンパイラの E0560/E0615 が完全性を保証する
+移行パターン、wave 56 と同じ堅い手順)。
+
+### BI-B (中): encode() の NaN→0 静寂テレポート遮断
+`(x*1024.0) as u16` は NaN→0 飽和で、非有限位置が**メッシュ原点への
+静寂テレポート** (幾何破壊) になっていた。全 8 入力 (pos/normal/uv)
+に有限 assert を追加 (BC-2 同型の fail-loud 化。実生成経路は voxel
+座標ベースで全て有限 — 3511 頂点相当の bench 影響なし)。
+範囲超過 (有限) の飽和量子化は現契約どおり維持 (doc 明記)。
+
+### BI-C (中): demo フォールバックの表現範囲違反を修復
+MultithreadedChunkBuilder の非-BGM フォールバック (Minimal tier /
+Low cpu_cores<4 で到達可能、render_pipeline :481 から呼出) が
+y ≤ 100−step の 100 面を生成し、頂点表現範囲 [0,64) 超過分が飽和
+量子化で **y≈64 の 1 面に全頂点が重なる垃圾**になっていた。
+純粋生成器 fallback_plane_mesh に抽出し y ∈ [0,16) に厳密限定
+(SECTION_SIZE 原像) + step 全型 (1/2/4) で高さ一意性ピン。
+
+### BI-D (低): ドキュメント誠実化
+- 冒頭「異次元のレンダリング速度」「60% 以上削減」→ 算術記述
+  (12B vs 28–32B = 57.1–62.5%、速度効果はボトルネック依存で数値主証せず)。
+- `uv_half` の「UNORM16」→ scale 32767 (実効 15bit) 明記 (旧称誤記)。
+  デコード消費者が WGSL/他モジュールに存在しない (フィールドは
+  mesh_cache の byte serialize 往復のみ) — 語彙値は 32767 で固定・ピン済。
+  テスト名 uv_unorm16_endpoints_exact → uv_scale_32767_endpoints_exact。
+
+### 記録 (対応見送りではなく判断): TOTAL_CHUNKS/TOTAL_VERTICES
+reader ゼロの vanity telemetry だが嘘ではなく原子カウンタの実コスト
+のみ — 撤去価値が churn を下回るため温存 (監査で分類のみ記録)。
+
+### テスト (+5 純増)
+- encode 非有限拒否 should_panic ×3 (位置/法線/UV)
+- is_empty 単一真実源ピン
+- fallback_plane_mesh 表現範囲 (y<16·1024) + 高さ一意性 ×3 step
+
+### 検証結果 (全て実測)
+- lib **800/800** (+5)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: chunk_mesh 4→3、bgm 1→1、mesh_cache 0→0 (新規 hunk 修正後)、
+  frame_reuse 2→1、render_pipeline 3→3、lod_hybrid 1→1、leaf_fast_path
+  0→0、persistent_vbo_pool 6→6、vertex_pool 1→1 (全て HEAD 以下)。
+- all-targets check 通過。
