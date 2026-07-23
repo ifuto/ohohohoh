@@ -2990,3 +2990,60 @@ NODE_STRIDE=10u、tag 規則 (w0==0 / w0>=2)、子並び dz*4+dy*2+dx、
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
   (撤去腕は到達不能でツリー bit 同一、wiring 出力非影響)。
 - fmt 0→0 (HEAD 0 のため全適用後)。all-targets check 通過。
+
+## BH. gpu_vertex_pull.rs 監査 (wave 58, 2026-07-23)
+### 死に構造 3 件の撤去 (write-only 帳簿/未構築エンジン/ラッパ) + WGSL 契約ピン
+
+Vertex pull 語彙の供給元 (SHADER_VERTEX_PULL/SHADER_MESH_SHADER/
+FrameUniforms)。live 消費: frame_pipeline (実描画パス)、
+frame_worldgen (meshlet カリング compute 実 dispatch)。
+
+### BH-1 (高): PullSsboPool — write-only 帳簿 (+潜伏バグ 2 件) を撤去
+消費実測: render_pipeline :113 (field) / :232 (profile ゲート init) /
+:429 (`pool.upload_pull_mesh(&pull);` — **戻り slot を即破棄**) のみで、
+`slots`/`generation`/`PullPoolSlot` 全フィールドに reader 皆無
+(workspace 全域機械検索)。`adaptive()` は HW プローブ
+(`AdaptivePerfEngine::hardware()`) まで実行する死に重さ。
+さらに潜伏バグ 2 件を抱えていた:
+1. **容量超過時の stale slot**: `qcount > capacity` で warn+None 返却するが
+   旧 slot を残す → 消費側が存在すれば旧メッシュへの**静寂バージョン
+   スキュー**になる設計 (empty 経路は remove するのに非対称)。
+2. `mesh.quads.len() as u32` の暗黙切捨て (BF-2 同型)。
+**代替案 (pooled ring SSBO の実 wiring) を検討したが棄却**: 真の ring は
+frame 単位 fence が必須 (ring wrap で同一フレーム先行チャンクの SSBO
+領域を上書き → submit 後の draw が破壊される) で、draw 経路
+(frame_pipeline) の再設計 + sandbox で不可能な実機 GPU 検証を要する。
+動作中の per-draw パスを壊すリスクに見合わず、BA-2 と同根拠
+「消費ゼロかつ嘘を維持する構造は撤去」で撤去を選択 (根拠をモジュール
+doc に記録)。
+
+### BH-2 (高): GpuVertexPullEngine / PullEngineHandle — 構築ゼロの複製実装
+live 描画は frame_pipeline が深度 (Depth32Float) + HDR で別建て実施
+(frame_pipeline.rs :7,:245 が設計選択を記録)。`GpuVertexPullEngine`
+(深度無しサーフェス直結・draw 毎に SSBO 新規生成) は workspace 全域で
+**`new` の呼出箇所ゼロ**、そのラッパ `PullEngineHandle` も構築ゼロ。
+実機検証不能な未使用 GPU コードの温存は「このパスが動く」という嘘の
+維持のため撤去 (PullRenderPath/detect_path/glam_like_identity も一体)。
+frame_pipeline の参照コメント 2 箇所は「旧 GpuVertexPullEngine —
+wave 58 で撤去済み」と歴史注記に更新。
+
+### BH-3 (記録): 生存側の確認
+`vertex_pull_4byte` profile フラグは pull 経路選択 (:383,:624,:848) を
+持つ live 語彙のため**温存**。SHADER 両定数と FrameUniforms は live 供給
+のまま本モジュールを「語彙の単一供給元」として再定義。
+
+### テスト (+3 純増)
+- FrameUniforms 80B/align 4/B多倍数 + WGSL struct 表記ピン ×3
+- vs_pull/fs_pull entry・@builtin(vertex_index) 絶対 index 語彙・
+  binding 表記ピン ×3
+- terrain_mesh_shader.wgsl が compute 実カーネルであることの表記ピン ×2
+  (frame_worldgen CPU ミラー注記含む)
+
+### 検証結果 (全て実測)
+- lib **795/795** (+3)。撤去物の参照残存ゼロを全 crate grep で機械確認。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (死に構造のため出力非影響)。
+- fmt: gpu_vertex_pull 0→0 (全面改訂・全適用)、render_pipeline 3→3
+  (HEAD 由来温存)、frame_pipeline 0→0。all-targets check 通過。
+- **インシデント**: Rust toolchain が再び消失 (4 度目)、restore-env.sh
+  (34 秒) で復旧後に検証。

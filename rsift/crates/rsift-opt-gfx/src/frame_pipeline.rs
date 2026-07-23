@@ -4,9 +4,9 @@
 //!
 //! ## パイプライン構成 (全て実 wgpu オブジェクト)
 //! 1. **Raster**: `terrain_vertex_pull.wgsl` を深度 (Depth32Float) 付きで
-//!    HDR (`Rgba16Float`) ターゲットに実描画 (既存 `GpuVertexPullEngine` は
-//!    `depth_stencil: None` のサーフェス直結パス — 壊さないよう本モジュールで
-//!    深度対応パイプラインを別建てする)。
+//!    HDR (`Rgba16Float`) ターゲットに実描画。頂点プル描画は**すべて本
+//!    モジュールの深度対応パイプライン**が担う (旧 `GpuVertexPullEngine`
+//!    は深度無しの未構築死に構造で、wave 58 BH 監査で撤去済み)。
 //! 2. **Post**: `aces_tonemap.wgsl` (ACES + sRGB) を全画面三角形で LDR
 //!    (`Rgba8Unorm`) にマッピング。
 //! 3. **Readback**: `copy_texture_to_buffer` + `map_async` で実画素を CPU へ。
@@ -242,8 +242,8 @@ impl GpuFramePipeline {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
-            // 既存 GpuVertexPullEngine との差分: 実深度テストで painter-order
-            // 依存の前後関係破綻を解消する (inter-quad オクルージョンの実現)。
+            // 深度テストの設計根拠: painter-order 依存の前後関係破綻を解消
+            // する (inter-quad オクルージョンの実現)。
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: true,

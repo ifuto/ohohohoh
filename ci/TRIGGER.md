@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 91
+- count: 92
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -109,3 +109,4 @@
 - 2026-07-23 (count 89): wave 55 packed4 語彙 fail-loud 化の CI 緑確認
 - 2026-07-23 (count 90): wave 56 pull_mesh 単一真実源化の CI 緑確認
 - 2026-07-23 (count 91): wave 57 svo trace 根治の CI 緑確認
+- 2026-07-23 (count 92): wave 58 gpu_vertex_pull 死に構造撤去の CI 緑確認

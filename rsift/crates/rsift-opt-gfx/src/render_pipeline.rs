@@ -17,7 +17,6 @@ use crate::entity_tick_lod::EntityTickScheduler;
 use crate::frame_reuse::{FrameReuseCache, ReuseEncoding};
 use crate::full_graph_wiring::{FrameWiringInputs, FullGraphWiring};
 use crate::gpu_culling::ChunkBoundingBox;
-use crate::gpu_vertex_pull::PullSsboPool;
 use crate::hzb_2d::CameraState;
 use crate::leaf_fast_path::apply_leaf_fast_path;
 use crate::light_cache::LightPropagationCache;
@@ -110,7 +109,6 @@ pub struct RsiftRenderPipeline {
     pub camera: CameraState,
     pub svo_cache: HashMap<(i32, i32), SparseVoxelOctree>,
     pub frame_reuse: FrameReuseCache,
-    pub pull_pool: Option<PullSsboPool>,
     pub pull_meshes: Vec<PullBuiltMesh>,
     /// Latest pull-SSBO bytes uploaded to DX12 each frame.
     pub gpu_quad_bytes: Vec<u8>,
@@ -229,11 +227,6 @@ impl RsiftRenderPipeline {
             },
             svo_cache: HashMap::new(),
             frame_reuse: FrameReuseCache::adaptive(feather.enabled),
-            pull_pool: if profile.vertex_pull_4byte {
-                Some(PullSsboPool::adaptive())
-            } else {
-                None
-            },
             pull_meshes: Vec::new(),
             gpu_quad_bytes: Vec::new(),
             diff_mesh: DiffMeshUpdater::new(),
@@ -425,9 +418,6 @@ impl RsiftRenderPipeline {
                     }
                 }
                 self.gpu_quad_bytes.extend_from_slice(&bytes);
-            }
-            if let Some(pool) = self.pull_pool.as_mut() {
-                pool.upload_pull_mesh(&pull);
             }
             self.pull_meshes.push(pull);
         }

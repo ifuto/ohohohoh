@@ -1,332 +1,44 @@
-//! GPU vertex-pull pipeline — SSBO quads, draw without index buffer.
+//! GPU vertex-pull 語彙 — SSBO quads, draw without index buffer。
 //!
-//! Portable path: `@vertex` pull shader (`terrain_vertex_pull.wgsl`).
+//! **live 描画パス**: `frame_pipeline` が `terrain_vertex_pull.wgsl`
+//! (`SHADER_VERTEX_PULL`) を深度 (Depth32Float) 付き HDR (`Rgba16Float`)
+//! ターゲットに実描画する (深度対応パイプラインは frame_pipeline 側 — 同
+//! モジュール doc 参照)。本モジュールは両者が共有する**シェーダ語彙と
+//! uniform レイアウトの単一供給元**。
+//!
 //! Meshlet カリング: `terrain_mesh_shader.wgsl` の compute エミュレーションを
 //! `frame_worldgen::GpuMeshletCull` が実 dispatch する (mesh shader 自体は
 //! WGSL 非対応のためソフトエミュレーションが正)。
-
-use crate::packed4::PackedPullQuad;
-use crate::pull_mesh::PullBuiltMesh;
-use std::sync::Arc;
-use tracing::{debug, info, warn};
-use wgpu::util::DeviceExt;
+//!
+//! ## wave 58 BH 監査で撤去した死に構造 (2026-07-23、撤去根拠の記録)
+//! - `GpuVertexPullEngine` / `draw_pull_mesh` (深度無し・サーフェス直結・
+//!   draw 毎に SSBO を新規生成する単純パス): workspace 全域で**構築箇所
+//!   ゼロ** (live 描画は frame_pipeline が深度対応パイプラインを別建てで
+//!   実施 — frame_pipeline.rs :7,:245 に設計選択の記録あり)。実機 GPU で
+//!   検証不能な複製エンジンを温存することは「このパスが動く」という嘘の
+//!   維持に等しいため撤去 (BA-2 GpuUploadHeader 撤去と同根拠)。
+//! - `PullEngineHandle`: 上記エンジンの lazy 保持ラッパ。構築箇所ゼロ。
+//! - `PullSsboPool` / `PullPoolSlot` (render_pipeline :113,:232,:429):
+//!   upload の戻り slot は呼出側で即破棄、`slots`/`generation` の reader は
+//!   皆無の **write-only 帳簿** (`adaptive()` が HW プローブまで実行する死に
+//!   重さ)。しかも 2 つの潜在バグを抱えていた: 容量超過時に stale slot を
+//!   残したまま None を返す (旧メッシュへの静寂バージョンスキュー) 設計、
+//!   `len as u32` の暗黙切捨て。消費者が存在しないため wiring ではなく撤去
+//!   (将来 pooled ring SSBO を入れる場合は frame 単位の fence 設計と実機
+//!   GPU 検証が前提 — ring wrap で同一フレーム先行チャンクを上書きする
+//!   ハザードがあるため draw 毎新規 SSBO とは互換性が無い)。
 
 pub const SHADER_VERTEX_PULL: &str = include_str!("../shaders/terrain_vertex_pull.wgsl");
 pub const SHADER_MESH_SHADER: &str = include_str!("../shaders/terrain_mesh_shader.wgsl");
 
+/// frame_pipeline が group(0) binding(0) にバインドする per-frame uniform。
+/// WGSL `struct FrameUniforms` (mat4x4 64B + vec4 16B) とレイアウト一致が
+/// 契約 (テストで厳密ピン)。
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct FrameUniforms {
     pub view_proj: [[f32; 4]; 4],
     pub chunk_origin: [f32; 4],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PullRenderPath {
-    /// SSBO + vertex_index pull (WebGPU / all backends).
-    VertexPull,
-    /// Task + mesh shader (Vulkan NV/EXT — full WGSL in terrain_mesh_shader.wgsl).
-    /// Not selected on wgpu 0.20 / low-spec; VertexPull remains the default.
-    MeshShader,
-    /// Compute meshlet dispatch + vertex pull indirect.
-    TaskEmulation,
-}
-
-pub struct GpuVertexPullEngine {
-    pull_path: PullRenderPath,
-    pull_pipeline: wgpu::RenderPipeline,
-    uniform_buf: wgpu::Buffer,
-    bind_group_layout: wgpu::BindGroupLayout,
-    quads_uploaded: u64,
-    draw_calls: u64,
-}
-
-impl GpuVertexPullEngine {
-    pub fn new(device: &wgpu::Device, surface_format: wgpu::TextureFormat) -> Self {
-        let pull_path = Self::detect_path(device);
-        info!("[GpuPull] render path = {:?}", pull_path);
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Rsift Pull BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Rsift terrain_vertex_pull"),
-            source: wgpu::ShaderSource::Wgsl(SHADER_VERTEX_PULL.into()),
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Rsift Pull PL"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pull_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Rsift Pull RP"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_pull",
-                buffers: &[], // zero VBO — pure pull
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_pull",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
-        // 注: 旧 task_pipeline (SHADER_TASK_EMULATION の ComputePipeline) は
-        // エンジン初期化のたび実 WGSL コンパイルしながら一度も dispatch されない
-        // デッドリソースだったため、フィールド・構築 fn (try_task_pipeline)・
-        // 専用シェーダー (terrain_task_emulation.wgsl) ごと除去 (2026-07-21 監査。
-        // meshlet カリングは frame_worldgen::GpuMeshletCull 側が別途実 dispatch
-        // する設計は維持)。
-        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Rsift Pull Uniforms"),
-            contents: bytemuck::bytes_of(&FrameUniforms {
-                view_proj: glam_like_identity(),
-                chunk_origin: [0.0; 4],
-            }),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        Self {
-            pull_path,
-            pull_pipeline,
-            uniform_buf,
-            bind_group_layout,
-            quads_uploaded: 0,
-            draw_calls: 0,
-        }
-    }
-
-    fn detect_path(device: &wgpu::Device) -> PullRenderPath {
-        let feats = device.features();
-        // wgpu 0.20: mesh shaders not in stable Features — use vertex pull.
-        // SHADER_MESH_SHADER は破棄せず frame_worldgen::GpuMeshletCull が
-        // task/mesh 等価エミュレーションの meshlet カリング pass として実 dispatch
-        // する (mesh shader 自体は WGSL 非対応のためソフトエミュレーションが正)。
-        let _ = feats;
-        PullRenderPath::VertexPull
-    }
-
-    pub fn path(&self) -> PullRenderPath {
-        self.pull_path
-    }
-
-    pub fn stats(&self) -> (u64, u64) {
-        (self.quads_uploaded, self.draw_calls)
-    }
-
-    /// Upload SSBO + draw without index buffer.
-    pub fn draw_pull_mesh(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
-        mesh: &PullBuiltMesh,
-        uniforms: &FrameUniforms,
-    ) {
-        if mesh.is_empty() {
-            return;
-        }
-
-        let quad_bytes = bytemuck::cast_slice(&mesh.quads);
-        let ssbo = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Rsift Pull SSBO"),
-            contents: quad_bytes,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        });
-
-        queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(uniforms));
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Rsift Pull BG"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.uniform_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: ssbo.as_entire_binding(),
-                },
-            ],
-        });
-
-        let vertex_count = mesh.pull_vertex_count();
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Rsift Pull Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_pipeline(&self.pull_pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.draw(0..vertex_count, 0..1);
-        }
-
-        self.quads_uploaded += mesh.quads.len() as u64;
-        self.draw_calls += 1;
-        debug!(
-            "[GpuPull] draw ({}, {}) quads={} verts={} path={:?} ssbo={}B ibo=0",
-            mesh.chunk_x,
-            mesh.chunk_z,
-            mesh.quads.len(),
-            vertex_count,
-            self.pull_path,
-            quad_bytes.len()
-        );
-    }
-}
-
-fn glam_like_identity() -> [[f32; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-}
-
-/// Ring SSBO pool for pull quads (CPU bookkeeping; GPU upload in `GpuVertexPullEngine`).
-#[derive(Debug)]
-pub struct PullSsboPool {
-    pub capacity_quads: usize,
-    pub slots: std::collections::HashMap<(i32, i32), PullPoolSlot>,
-    pub quad_cursor: u32,
-    pub generation: u32,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PullPoolSlot {
-    pub quad_offset: u32,
-    pub quad_count: u32,
-    pub pull_vertex_count: u32,
-    pub generation: u32,
-}
-
-impl PullSsboPool {
-    pub fn adaptive() -> Self {
-        let hw = rsift_api::AdaptivePerfEngine::hardware();
-        let rp = rsift_api::AdaptivePerfEngine::render_profile(hw);
-        let mb = rp.bump_arena_mb.max(4);
-        let quads = (mb * 1024 * 1024) / PackedPullQuad::memory_bytes();
-        Self {
-            capacity_quads: quads,
-            slots: std::collections::HashMap::new(),
-            quad_cursor: 0,
-            generation: 0,
-        }
-    }
-
-    pub fn upload_pull_mesh(&mut self, mesh: &PullBuiltMesh) -> Option<PullPoolSlot> {
-        if mesh.is_empty() {
-            self.slots.remove(&(mesh.chunk_x, mesh.chunk_z));
-            return None;
-        }
-        let qcount = mesh.quads.len() as u32;
-        if qcount as usize > self.capacity_quads {
-            warn!("[PullSsboPool] chunk ({}, {}) exceeds capacity", mesh.chunk_x, mesh.chunk_z);
-            return None;
-        }
-        if self.quad_cursor + qcount > self.capacity_quads as u32 {
-            self.reset_ring();
-        }
-        let slot = PullPoolSlot {
-            quad_offset: self.quad_cursor,
-            quad_count: qcount,
-            pull_vertex_count: mesh.pull_vertex_count(),
-            generation: self.generation,
-        };
-        self.quad_cursor += qcount;
-        self.slots.insert((mesh.chunk_x, mesh.chunk_z), slot);
-        Some(slot)
-    }
-
-    fn reset_ring(&mut self) {
-        self.quad_cursor = 0;
-        self.generation = self.generation.wrapping_add(1);
-        self.slots.clear();
-        debug!("[PullSsboPool] ring reset gen={}", self.generation);
-    }
-}
-
-/// Lazy global pull engine (initialized when wgpu device is ready).
-pub struct PullEngineHandle {
-    inner: Option<GpuVertexPullEngine>,
-}
-
-impl PullEngineHandle {
-    pub fn new() -> Self {
-        Self { inner: None }
-    }
-
-    pub fn ensure(
-        &mut self,
-        device: Arc<wgpu::Device>,
-        queue: Arc<wgpu::Queue>,
-        format: wgpu::TextureFormat,
-    ) -> &mut GpuVertexPullEngine {
-        if self.inner.is_none() {
-            self.inner = Some(GpuVertexPullEngine::new(&device, format));
-            let _ = queue;
-        }
-        self.inner.as_mut().unwrap()
-    }
-}
-
-impl Default for PullEngineHandle {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[cfg(test)]
@@ -343,5 +55,67 @@ mod tests {
         if !mesh.quads.is_empty() {
             assert!(mesh.vram_ratio_vs_12b_indexed() > 2.0);
         }
+    }
+
+    /// wave 58 BH-4: FrameUniforms の GPU バインド契約の厳密ピン。
+    /// WGSL struct (mat4x4<f32> 64B + vec4<f32> 16B = 80B) と一致。
+    #[test]
+    fn frame_uniforms_layout_matches_wgsl() {
+        assert_eq!(
+            std::mem::size_of::<FrameUniforms>(),
+            80,
+            "view_proj 64B + chunk_origin 16B = 80B (WGSL struct と一致)"
+        );
+        assert_eq!(std::mem::align_of::<FrameUniforms>(), 4);
+        assert_eq!(
+            std::mem::size_of::<FrameUniforms>() % 16,
+            0,
+            "uniform バインドは 16B 倍数が規約"
+        );
+        let wgsl = SHADER_VERTEX_PULL;
+        for needle in [
+            "view_proj: mat4x4<f32>,",
+            "chunk_origin: vec4<f32>,",
+            "@group(0) @binding(0) var<uniform> frame: FrameUniforms;",
+        ] {
+            assert!(
+                wgsl.contains(needle),
+                "WGSL FrameUniforms 表記乖離: {needle}"
+            );
+        }
+    }
+
+    /// wave 58 BH-4: vertex pull 実カーネルの entry/binding/絶対 index 語彙ピン。
+    /// `draw(0..n)` の vertex_index がそのまま quads 配列の絶対 index になる
+    /// (VBO 無し pull の前提語彙)。
+    #[test]
+    fn wgsl_vertex_pull_kernel_vocabulary() {
+        let wgsl = SHADER_VERTEX_PULL;
+        for needle in [
+            "fn vs_pull(@builtin(vertex_index) vid: u32) -> VsOut {",
+            "fn fs_pull(in: VsOut) -> @location(0) vec4<f32> {",
+            "@group(0) @binding(1) var<storage, read> quads: array<PullQuad>;",
+        ] {
+            assert!(
+                wgsl.contains(needle),
+                "WGSL vertex pull 語彙ピン乖離: {needle}"
+            );
+        }
+    }
+
+    /// wave 58 BH-4: meshlet カリング WGSL は compute エミュレーションの
+    /// 実カーネル (frame_worldgen が実 dispatch)。死にシェーダでないことを
+    /// 表記ピン。
+    #[test]
+    fn meshlet_shader_is_real_compute_kernel() {
+        let wgsl = SHADER_MESH_SHADER;
+        assert!(
+            wgsl.contains("@compute @workgroup_size(64, 1, 1)"),
+            "compute dispatch エントリ"
+        );
+        assert!(
+            wgsl.contains("// CPU ミラー (完全一致): src/frame_worldgen.rs の meshlet_cull_cpu"),
+            "CPU ミラー注記 (frame_worldgen::meshlet_cull_cpu)"
+        );
     }
 }
