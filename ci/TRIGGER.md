@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 104
+- count: 105
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -122,3 +122,4 @@
 - 2026-07-23 (count 102): wave 68 wboit 監査 (NaN 静寂最近接化遮断) の CI 緑確認
 - 2026-07-23 (count 103): wave 69 temporal_mesh_diff 監査 (責務誠実化・決定的 drain) の CI 緑確認
 - 2026-07-23 (count 104): wave 70 vrs 監査 (tile 契約・閾値境界厳密固定) の CI 緑確認
+- 2026-07-23 (count 105): wave 71 lod_hybrid 監査 (NaN 距離遮断・真値表確定) の CI 緑確認

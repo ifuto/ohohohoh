@@ -3705,3 +3705,43 @@ build_mask_accepts_tile_one / wgsl_mirror_lexical_tokens。
 ### 検証結果 (全て実測)
 - lib **845/845** (+4)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - fmt: HEAD=0 → 自前 3 hunk → rustfmt 全適用 → 0。
+
+## BU. lod_hybrid.rs 監査 (wave 71, 2026-07-23)
+
+3-tier LOD hybrid (178 → 約250 行)。消費: frame_reuse (::7 利用、
+try_reuse/tier→svo/simplify の live 経路、wave 41 系) / render_pipeline
+(:102 struct、:182-185 FeatherRenderConfig 由来構築) / lib.rs re-export。
+設定空間は rsift-api FeatherRenderConfig (:21/:25、feather_minimal では
+両 flag true)。
+
+### BU-1 (低-中): NaN 距離が静寂に最低詳細 (Far) 化していたハザードを遮断
+旧実装は NaN が全ての `<=` 比較を false にし、tier_for_distance が
+**Far を返却** — 距離不明のサイレントな最低詳細化だった。NaN=欠測拒否
+哲学に従い入口 assert 化 (±∞ は比較の責務として受理: +∞→Far、
+-∞→Near)。live 供給 (frame_reuse 経路) は全スイート 849 件で有限を
+実測確認 (assert で破壊なし)。
+
+### BU-3 (低): use_svo_encoding の命名乖離を真値表で確定
+`svo_far_only` は名に反し **「SVO を Mid にも拡張」スイッチ** (false でも
+Far は SVO)。12 組合せ (enabled×svo_far_only×tier 3 値) 全エントリを
+真値表 doc + 機械ピンで固定。公開フィールドのリネームは 2 クレート跨ぎ
+(API 契約) のため見送り、真値表固定を選択 (根拠記録)。
+Near → SVO は全組合せで不成立 (設定 doc「not near terrain」と整合)。
+
+### BU-2 (低): 空メッシュ簡略化の早期 passthrough をピン化
+(頂点無しに再 index を走らせない契約の機械固定、chunk 座標 identity
+保持確認)。
+
+### 判定記録 (変更なし)
+- simplify_mesh の quad stride 間引き (Mid=2、Far=4、先頭側保持) は
+  「geometry thinning」規約通り一貫、再 index ・部分 quad drop 処理は
+  既存厳密テストで健全。
+- tier 境界 (<= で近い側) は既存テストで固定済み、変更なし。
+
+### テスト (+4 純増、849 全緑)
+svo_encoding_full_truth_table / nan_distance_is_rejected /
+infinite_distance_uses_comparison_result / simplify_empty_mesh_passthrough。
+
+### 検証結果 (全て実測)
+- lib **849/849** (+4)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: HEAD=0 → 自前 1 hunk → rustfmt 全適用 → 0。

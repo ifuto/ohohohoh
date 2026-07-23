@@ -32,7 +32,19 @@ impl LodHybridSelector {
         }
     }
 
+    /// Tier 選択 (境界は `<=` で近い側: [0,near]=Near、(near,mid]=Mid、
+    /// (mid,∞)=Far)。
+    ///
+    /// **契約 (wave 71 BU-1)**: dist_blocks は NaN 禁止。旧実装は NaN が
+    /// 全ての `<=` 比較を false にし、静寂に **Far (最低詳細)** を返していた
+    /// — 距離不明を「無限遠扱い」で誤描画サイレント化するハザード。
+    /// NaN=観測欠測は拒否 の哲学通り入口で fail-loud に遮断する。
+    /// ±∞ は比較の責務として受理 (+∞→Far、-∞→Near は素朴な比較結果)。
     pub fn tier_for_distance(&self, dist_blocks: f32) -> LodTier {
+        assert!(
+            !dist_blocks.is_nan(),
+            "lod_hybrid 契約違反: dist_blocks=NaN (静寂な最低詳細化を遮断)"
+        );
         if !self.enabled {
             return LodTier::Near;
         }
@@ -83,6 +95,22 @@ impl LodHybridSelector {
     }
 
     /// Far chunks: SVO + branchless DDA instead of greedy mesh (polygon-zero path).
+    ///
+    /// **真値表 (wave 71 BU-3 確定 — 命名注意)**:
+    /// | enabled | svo_far_only | Far  | Mid      | Near |
+    /// |---------|--------------|------|----------|------|
+    /// | false   | false        | ×    | ×        | ×    |
+    /// | false   | true         | ○    | ○        | ×    |
+    /// | true    | false        | ○    | ×        | ×    |
+    /// | true    | true         | ○    | ○        | ×    |
+    /// フィールド名 `svo_far_only` は「SVO を Far に限定する」に見えるが、
+    /// 真の意味は **「SVO を Mid にも拡張する」スイッチ** (false でも Far は
+    /// SVO 経路)。設定側 `FeatherRenderConfig` の doc「SVO/DAG only beyond
+    /// render distance (not near terrain)」と合わせ、Near → SVO は全組合せで
+    /// 不成立。enabled=false 呼出経路では tier は常に Near (tier_for_distance
+    /// 参照) のため flag_only 行は防御的経路 (到達不能ではないが無害)。
+    /// 公開フィールドのリネームは 2 クレート跨ぎ (API 契約) のため行わず、
+    /// 真値表を契約として機械固定する。
     pub fn use_svo_encoding(&self, tier: LodTier) -> bool {
         if !self.svo_far_only && !self.enabled {
             return false;
@@ -170,8 +198,69 @@ mod tests {
         assert!(!on.use_svo_encoding(LodTier::Mid)); // svo_far_only=false → Mid 対象外
         let svo = LodHybridSelector::new(true, false, true);
         assert!(svo.use_svo_encoding(LodTier::Mid)); // svo_far_only → Mid も符号化
-        // svo_far_only 単独 (enabled=false) でも Far 符号化は有効 (実装規約)。
+                                                     // svo_far_only 単独 (enabled=false) でも Far 符号化は有効 (実装規約)。
         let flag_only = LodHybridSelector::new(false, false, true);
         assert!(flag_only.use_svo_encoding(LodTier::Far));
+    }
+
+    /// wave 71 BU-3: use_svo_encoding の全組合せ真値表 (12 エントリ) を
+    /// 機械固定 — 命名 (「far に限定する」) と実意味 (「Mid にも拡張する」)
+    /// の乖離を含め、仕様を後付けでも**決定的に固定**する。
+    #[test]
+    fn svo_encoding_full_truth_table() {
+        #[rustfmt::skip]
+        let want: [((bool, bool), [bool; 3]); 4] = [
+            // (enabled, svo_far_only) → [Far, Mid, Near]
+            ((false, false), [false, false, false]),
+            ((false, true),  [true,  true,  false]),
+            ((true,  false), [true,  false, false]),
+            ((true,  true),  [true,  true,  false]),
+        ];
+        for ((en, svo), w) in want {
+            let sel = LodHybridSelector::new(en, false, svo);
+            for (tier, expect) in [
+                (LodTier::Far, w[0]),
+                (LodTier::Mid, w[1]),
+                (LodTier::Near, w[2]),
+            ] {
+                assert_eq!(
+                    sel.use_svo_encoding(tier),
+                    expect,
+                    "truth table ({en},{svo}) × {tier:?}"
+                );
+            }
+        }
+    }
+
+    /// wave 71 BU-1: NaN 距離は静寂な最低詳細化 (全 <= 比較が false → Far)
+    /// を入口 assert で遮断。±∞ は比較結果のまま受理 (+∞→Far、-∞→Near)。
+    #[test]
+    #[should_panic(expected = "lod_hybrid 契約違反")]
+    fn nan_distance_is_rejected() {
+        let sel = LodHybridSelector::new(true, false, false);
+        let _ = sel.tier_for_distance(f32::NAN);
+    }
+
+    #[test]
+    fn infinite_distance_uses_comparison_result() {
+        let sel = LodHybridSelector::new(true, false, false);
+        assert_eq!(sel.tier_for_distance(f32::INFINITY), LodTier::Far);
+        assert_eq!(sel.tier_for_distance(f32::NEG_INFINITY), LodTier::Near);
+    }
+
+    /// wave 71 BU-4: 空メッシュの簡略化は早期 passthrough (頂点無しに
+    /// 再 index を走らせない契約)。
+    #[test]
+    fn simplify_empty_mesh_passthrough() {
+        let sel = LodHybridSelector::new(true, false, false);
+        let m = BuiltChunkMesh {
+            chunk_x: 1,
+            chunk_z: 2,
+            vertices: vec![],
+            indices: vec![],
+        };
+        let m = sel.simplify_mesh(m, LodTier::Far);
+        assert!(m.is_empty());
+        assert_eq!((m.chunk_x, m.chunk_z), (1, 2), "identity fields preserved");
     }
 }
