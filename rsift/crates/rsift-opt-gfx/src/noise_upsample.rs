@@ -110,14 +110,32 @@ fn dot3(g: (f32, f32, f32), x: f32, y: f32, z: f32) -> f32 {
     g.0 * x + g.1 * y + g.2 * z
 }
 
-/// Full-resolution noise at integer world voxel (slow path / reference).
+/// ノイズ評価の周波数 (1 voxel = 1/8 周期)。勾配ノイズは整数格子点で
+/// 定義上恒に 0 (= 本関数の正規化で 0.5) となるため、実値を得るには
+/// 周波数スケール済みの**実数座標**で評価する必要がある (BL-1)。
+const PERLIN_FREQ: f32 = 1.0 / 8.0;
+
+/// Full-resolution noise at integer world voxel (slow path / reference)。
+/// 戻り値レンジは [0, 1]。
+///
+/// **wave 62 BL-1 (live worldgen のゼロデイ) で根治**: 旧実装は格子座標を
+/// `wx & 255`、のこり座標を `(wx as f32).fract().abs()` で得ていたが、
+/// 全呼出が整数 voxel のため fract ≡ 0 → fade ≡ 0 → 全補間項が消えて
+/// `(dot3(g000,0,0,0)+1)*0.5 =` **定数 0.5 を全 voxel で返していた**。
+/// 「noise 地形」は x/z に一切変化の無い高さ方向縞模様 (flat strata)
+/// だった — 設計意図 (Perlin 勾配ノイズ地形) と実装が完全に乖離。
+/// Perlin 勾配ノイズは数学的に整数格子点で恒に 0 なので、周波数
+/// スケール (PERLIN_FREQ) を導入して格子内実数座標で評価する。
 pub fn perlin3d_dense(wx: i32, wy: i32, wz: i32, seed: u32) -> f32 {
-    let x0 = wx & 255;
-    let y0 = wy & 255;
-    let z0 = wz & 255;
-    let xf = (wx as f32).fract().abs();
-    let yf = (wy as f32).fract().abs();
-    let zf = (wz as f32).fract().abs();
+    let px = wx as f32 * PERLIN_FREQ;
+    let py = wy as f32 * PERLIN_FREQ;
+    let pz = wz as f32 * PERLIN_FREQ;
+    let x0 = px.floor() as i32;
+    let y0 = py.floor() as i32;
+    let z0 = pz.floor() as i32;
+    let xf = px - x0 as f32; // [0,1) (floor 定義より負座標でも成立)
+    let yf = py - y0 as f32;
+    let zf = pz - z0 as f32;
     let u = fade(xf);
     let v = fade(yf);
     let w = fade(zf);
@@ -250,7 +268,9 @@ fn density_to_block(density: f32, surface: f32, wy: i32, cfg: &NoiseUpsampleConf
     let height_factor = (wy as f32 - cfg.base_height as f32) / 32.0;
     let threshold = surface - height_factor * 0.15;
     if density > threshold {
-        (((wy % 3) + 1) as u16).max(1)
+        // wy ≥ 0 (カラム生成のみから呼出) なので wy%3+1 ∈ {1,2,3}
+        // (旧来の .max(1) は到達不能防御、wave 62 BL-2 で撤去)。
+        ((wy % 3) + 1) as u16
     } else if wy < cfg.base_height - 12 && density > 0.25 {
         3
     } else {
@@ -312,9 +332,13 @@ pub fn benchmark_upsample(cx: i32, cz: i32, cfg: &NoiseUpsampleConfig) -> NoiseU
     let coarse_start = Instant::now();
     let _ = column_palettes_upsampled(cx, cz, cfg);
     let stride = cfg.stride.max(1) as u64;
-    let coarse_count = ((SECTION_SIZE as u64 / stride) + 1)
-        * ((SECTIONS_PER_COLUMN as u64 * SECTION_SIZE as u64 / stride) + 1)
-        * ((SECTION_SIZE as u64 / stride) + 1);
+    // wave 62 BL-3: build_coarse_grid 実装と同じ式で計数する。
+    // 実グリッドは「範囲両端を含む」ため ((span)/stride)+1 で、span は
+    // 16−1=15 / 64−1=63。旧式は (16/stride)+1 等で実グリッド 4×16×4=256
+    // に対し 5×17×5=425 を報告していた (1.66× の見せかけ過大)。
+    let coarse_count = (((SECTION_SIZE as u64 - 1) / stride) + 1)
+        * (((SECTIONS_PER_COLUMN as u64 * SECTION_SIZE as u64 - 1) / stride) + 1)
+        * (((SECTION_SIZE as u64 - 1) / stride) + 1);
     let coarse_us = coarse_start.elapsed().as_micros() as u64;
 
     let speedup = if coarse_us > 0 {
@@ -363,5 +387,89 @@ mod tests {
             .filter(|&&b| b != 0)
             .count();
         assert!(solid > 100);
+    }
+
+    /// wave 62 BL-1 (回帰): perlin3d_dense が voxel 間で実際に変化する。
+    /// 旧実装は全 voxel で定数 0.5 (整数座標の fract≡0 で勾配項全消し)
+    /// だった — x 走査で異なる値が存在することを直接ピン。
+    #[test]
+    fn perlin_varies_between_voxels() {
+        let seed = 0xC0FFEE;
+        let values: Vec<f32> = (0..16).map(|x| perlin3d_dense(x, 5, 3, seed)).collect();
+        let distinct: std::collections::BTreeSet<u32> =
+            values.iter().map(|v| v.to_bits()).collect();
+        assert!(
+            distinct.len() > 1,
+            "BL-1 回帰: noise が全 voxel で定数 0.5 ではないこと {values:?}"
+        );
+        // レンジ契約 [0,1] と決定性 (同一入力は同一ビット)
+        for &v in &values {
+            assert!((0.0..=1.0).contains(&v), "レンジ契約: {v}");
+        }
+        for (x, &v) in values.iter().enumerate() {
+            assert_eq!(
+                perlin3d_dense(x as i32, 5, 3, seed).to_bits(),
+                v.to_bits(),
+                "決定性: 同一入力同一ビット"
+            );
+        }
+    }
+
+    /// wave 62 BL-1: 格子点 (PERLIN_FREQ の整数倍 voxel) では勾配ノイズの
+    /// 数学的性質から正確に 0.5 (補間項が全て消える) ことをピンし、
+    /// 非格子点では一般に 0.5 でないことで関数の「生きている」ことを示す。
+    #[test]
+    fn perlin_lattice_points_are_exactly_half() {
+        let seed = 42;
+        for k in [0i32, 8, 16, -8] {
+            assert_eq!(
+                perlin3d_dense(k, 8, -8, seed),
+                0.5,
+                "格子点 ({k},8,-8) は正確に 0.5 (勾配項全消しの数学的性質)"
+            );
+        }
+        // 格子内実数座標に対応する非格子 voxel (1,2,3) は一般に 0.5 ではない
+        // (seed 42 で実測、to_bits で定数戻りの回帰を塞ぐ)
+        assert_ne!(perlin3d_dense(1, 2, 3, seed).to_bits(), 0.5f32.to_bits());
+    }
+
+    /// wave 62 BL-1 (回帰・カラムレベル): 生成地形が x 方向に変化を持つ
+    /// (旧来は全 x で同一の高さ縞模様 = flat strata)。
+    #[test]
+    fn upsampled_column_varies_along_x() {
+        let cfg = NoiseUpsampleConfig::for_chunk(1, 0);
+        let sections = column_palettes_upsampled(1, 0, &cfg);
+        // z=0 固定で x 各列の (y 方向ブロック列パターン) を採取し、
+        // 2 種類以上存在することをピン
+        let profiles: std::collections::BTreeSet<Vec<u16>> = (0..SECTION_SIZE)
+            .map(|x| {
+                (0..SECTIONS_PER_COLUMN * SECTION_SIZE)
+                    .map(|wy| sections[wy / SECTION_SIZE][idx(x, wy % SECTION_SIZE, 0)])
+                    .collect::<Vec<u16>>()
+            })
+            .collect();
+        assert!(
+            profiles.len() > 1,
+            "BL-1 回帰: 地形が全 x で同一縞模様ではないこと (profiles={})",
+            profiles.len()
+        );
+        // 決定性: 同一 cfg/chunk は同一ビット列のパレット
+        let again = column_palettes_upsampled(1, 0, &cfg);
+        assert_eq!(sections, again, "worldgen は決定的 (bit 一致)");
+    }
+
+    /// wave 62 BL-3: benchmark のサンプル計数が実グリッド 4×16×4 を
+    /// 厳密に報告する (旧式は 5×17×5=425 の見せかけ)。
+    #[test]
+    fn benchmark_counts_match_actual_grid() {
+        let cfg = NoiseUpsampleConfig::for_chunk(0, 0);
+        let stats = benchmark_upsample(0, 0, &cfg);
+        assert_eq!(
+            stats.dense_samples,
+            (SECTIONS_PER_COLUMN * SECTION_SIZE * SECTION_SIZE * SECTION_SIZE) as u64,
+            "dense = 4 セクション × 4096"
+        );
+        // stride=4: (15/4+1)=4, (63/4+1)=16, (15/4+1)=4 → 256
+        assert_eq!(stats.coarse_samples, 256, "実グリッド 4×16×4 と一致");
     }
 }

@@ -3208,3 +3208,54 @@ frame_reuse 内で等価比較のみに消費される閉じた語彙である�
 - **インシデント**: Rust toolchain 5 度目の消失 → restore-env.sh で復旧。
 - **備考**: 赤 2 件は私のテストバグ (encode_mesh 引数数、air move) を
   コンパイラが捕捉 — 既知の自己誤り検出パターン。
+
+## BL. noise_upsample.rs 監査 (wave 62, 2026-07-23)
+### live worldgen のゼロデイ根治: Perlin が全 voxel 定数 0.5 を返していた
+
+3D ノイズアップサンプル worldgen (粗格子 + 三線形補間)。消費:
+render_pipeline (:306: live worldstore 不在時の fallback 生成、
+profile.noise_upsampling=true — 上位 2 tier) 、frame_worldgen
+(補間形ミラーのみ参照)、benchmark_upsample (telemetry)。
+
+### BL-1 (critical — ゼロデイ): perlin3d_dense の定数化
+旧実装は格子座標 `wx & 255` + のこり座標 `(wx as f32).fract().abs()`
+で評価していたが、全呼出は**整数 voxel** のため fract ≡ 0 → fade ≡ 0
+→ 補間項が全消滅し `(dot3(g000,0,0,0)+1)·0.5` = **0.5 を全 voxel で
+返却していた**。影響: density=surface=洞窟項の全てが定数化し、
+「noise 地形」は x/z に一切変化の無い高さ方向縞模様 (flat strata)
+になっていた — モジュールの存在意義全体が偽だった。
+Perlin 勾配ノイズは数学的に整数格子点で恒に 0 となるため、周波数
+スケール (PERLIN_FREQ = 1/8 voxel⁻¹) を導入し**格子内実数座標**で
+評価する根治を実施 (px=wx·FREQ、x0=floor、xf∈[0,1))。負座標でも
+floor 定義より正しく動作。出力レンジ [0,1]・シード決定性は維持。
+なお格子点 (FREQ 整数倍) で正確に 0.5 となる数学的性質は保存され、
+回帰ピンの厳密検査点として利用した。
+
+### BL-3 (中): benchmark_upsample の粗サンプル計数が実装と不整合
+実グリッドは範囲両端含む ((span)/stride)+1、span = 15/63/15 で
+4×16×4=256。旧式は (16/stride)+1 等で **5×17×5=425 を報告**
+(1.66× の見せかけ過大 → speedup の分母分子誤飾)。実装同式に修復し
+厳密値ピン (dense=16384 / coarse=256)。
+
+### BL-2 (低): density_to_block の到達不能 `.max(1)` 撤去
+wy ≥ 0 では wy%3+1 ∈ {1,2,3} で下限防御は恒到達不能 (証明・明記)。
+
+### 判定記録: digest 非影響の検証
+wide_static_bench の "noise" パターンは独自生成器で本モジュール非消費、
+bench も当該 fallback 経路を踏まないため structural_digest
+`004c1cf5fb17bfe8` rows=357 不変 (worldgen 出力変更は bench 構造に
+波及しないことを実測確認)。
+
+### テスト (+4 純増、全て BL-1 の直接的回帰ピン)
+- perlin_varies_between_voxels: x 走査で複数 distinct 値 + レンジ +
+  同一入力同一 bit の決定性
+- perlin_lattice_points_are_exactly_half: 格子 4 点で正確に 0.5
+  (数学的性質) + 非格子点で非 0.5 (to_bits)
+- upsampled_column_varies_along_x: z 固定 16 列の y プロファイルが
+  2 種以上 (旧 flat strata 化の直接回帰) + パレット bit 決定性
+- benchmark_counts_match_actual_grid: dense=16384 / coarse=256 厳密
+
+### 検証結果 (全て実測)
+- lib **814/814** (+4)。noise_upsample 系 6 件全緑。
+- digest 上記のとおり不変。fmt: HEAD 3 → WORK 3 (HEAD 由来温存)。
+- all-targets check 通過。
