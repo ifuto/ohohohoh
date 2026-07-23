@@ -2603,3 +2603,47 @@ RGBA8 (32 bpp) 比は 8/32 = **0.25** が厳密。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - cargo check --all-targets エラー 0
   (warnings は rsift-api 側 HEAD 由来の unused import のみ)。
+
+## BA. zerocopy_cast.rs 監査 (wave 51, 2026-07-23)
+
+render_pipeline.rs:419/:712/:787/:793 で実消費 (quad バイト列の Pod 相互
+再解釈。`cast_slice_to_bytes` 2 経路 + `cast_bytes_to_slice` 1 経路)。
+
+### BA-1 (中): ZST 宛で `% 0` 剰余ゼロ除算の偶発的パニック → 明示契約化
+`cast_bytes_to_slice::<T>` は `bytes.len() % size_of::<T>()` を先に評価
+するため、**ZST 宛では任意入力でゼロ除算パニック** (メッセージは
+"attempt to calculate the remainder with a divisor of zero" = 実装事故と
+区別不能)。bytemuck 自身は ZST 宛を空入力限定で受理する設計
+(vendored internal.rs: ZST なら出力長 0 で Ok) であり、ラッパの挙動は
+bytemuck 意味論と乖離していた。GPU 転送バッファ再解釈に ZST の正当用途は
+存在しないため、入口で `size_of::<T>() > 0` を **assert 契約化**
+(fail-loud 哲学どおり、意図と検査位置を一致させる)。
+
+### BA-2 (中): 消費者ゼロの「嘘ヘッダ」API 撤去
+`GpuUploadHeader` + `zero_copy_vertex_upload` は workspace 全域で
+消費者ゼロ (grep 機械証明) に加えて、返却する static ヘッダが
+`vertex_count: 0 / index_count: 0` 固定 — **ペイロード長に関わらず
+読み手に偽の枚数を提示する**意味的誤り。doc の「Upload Heap に直接
+書き込む想定」は願望スタブ。実消費経路は `cast_slice_to_bytes(..).to_vec()`
+直で誠実。ヘッダ前置ワイヤ形式が将来必要になった場合は実カウント保持の
+所有型として再設計すべきで、嘘を返す静的実装の温存は利益がない
+(bindless Vec3/Vec4 撤去・intern_pool gen 撤去と同規律)。
+
+### BA-3 (観測・render_pipeline wave へ引継ぎ): unwrap_or_default の静寂退化
+render_pipeline.rs:787 は `cast_bytes_to_slice(..).map(..).unwrap_or_default()`
+で、万が一の非整列/ラギッド時に quad 列を**静寂に空化** → 以後
+`!is_empty()` ガードで恒久に quad 消失し得る。現行の本クレート内
+生成経路 (to_vec 由来) では実質整列保証されるため発火確率は低いが、
+fail-loud 哲学からは逸脱。render_pipeline.rs 本監査で対処する。
+
+### テスト (+2 純増 / -1 撤去 +3 新規)
+- cast_bytes_to_slice_rejects_zero_sized_target{,_nonempty} (should_panic ×2)
+- cast_bytes_to_slice_alignment_boundary_exact: align(16) 保証バッファの
+  +1/+4 オフセットで**配置の偶然に頼らない**決定的な None/Some 境界
+  (Quantized12ByteVertex が repr(C, align(4)) であることを前提確認済)
+- upload_header_wire_format は撤去 API に伴い削除
+
+### 検証結果 (全て実測)
+- lib テスト **764/764** (+2)。rustfmt hunk 3 → 0 (全面改訂に伴い正準化)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- cargo check --all-targets エラー 0 (pub API 撤去の無影響を機械検証)。
