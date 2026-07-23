@@ -2647,3 +2647,74 @@ fail-loud 哲学からは逸脱。render_pipeline.rs 本監査で対処する。
 - lib テスト **764/764** (+2)。rustfmt hunk 3 → 0 (全面改訂に伴い正準化)。
 - wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
 - cargo check --all-targets エラー 0 (pub API 撤去の無影響を機械検証)。
+
+## BB. half_vertex.rs + rsift-dx12/vertex.rs 監査 (wave 52, 2026-07-23)
+### f16 エンコーダ・クラスタの数学的根治
+
+repo 内に f32→f16 エンコーダが 3 実装あることを棚卸し:
+(1) opt-gfx `half_vertex::f32_to_f16` (実消費: frame_proof_extra example
+経由の WGSL デコード対)、(2) rsift-dx12 `vertex::f32_to_f16_bits`
+(PackedVertex UV パック)、(3) opt-gfx r10g10 `f32_to_f16_bits` (「簡易」
+自称版 → wave 53 候補、BB-3 として引継ぎ)。
+境界期待値は W-3 規律どおり **Python Fraction 厳密有理数 RNE オラクル**で
+導出 (f32/f16 いずれの候補値も f64 で厳密表現可能、tie 判定の等距離は
+丸め後も同値に潰れるため f64 比較は安全 — 全演算手続き的丸め)。
+
+### BB-1 (高): half_vertex::f32_to_f16 の「RNE」doc 嘘 → 真の RNE 根治
+旧実装は `mant >> 13` の**切捨て**で、doc の "Round-to-nearest-even" と
+乖離 (誤差最大 1 ulp、例: 1+3·2^-12 = 0.75 ulp 位置で 0x3C01 であるべきが
+0x3C00)。overflow 境界も不正 (65520 以上でも切捨てで 0x7BFF を返した)。
+→ 真の RNE を全正常レンジに実装。dropped 13bit が半分超、または半分で
+keep 奇数 (ties-to-even) なら繰上げ。mantissa 溢れは指数へ自然に桁上げ
+され **65520 → Inf が mechanism として自然実現** (65504/2^16 の tie で
+even = Inf 側)。FTZ は宣言どおり維持するが「subnormal グリッド込み RNE
+ののち flush」に厳密化 — 2^-14-2^-25 の tie 薄帯は min normal (0x0400) へ
+丸め上げ (IEEE FTZ 動作と一致)。NaN は payload 非保持の正準 qNaN
+(0x7E00、sign 保存)。decoder f16_to_f32 は全入力厳密 (dyadic 有理数の
+各項が f32 に正確表現可能) であり WGSL ビット配置デコードとも bit 一致、
+**変更なし**のまま厳密性を全テーブル機械ピン化。
+
+### BB-2 (高・実バグ): rsift-dx12 vertex::f32_to_f16_bits の subnormal RNE
+破綻 + cfg(windows) による検証封鎖
+subnormal ブランチの丸め式が `round = (keep & 1) | (sticky != 0)` —
+**round_bit ゲート欠落**。(a) ドロップ bit 非零なら半 ulp 未満でも常に
+繰上げ (2.25·2^-24 → 0x0002 であるべきが 0x0003)、(b) ドロップ 0 の
+**厳密表現可能値でも keep 奇数なら +1** (3·2^-24 = 0x0003 厳密が 0x0004 に
+化けた)。normal ブランチは正しい RNE だった (round_bit && (sticky||odd))。
+→ dropped/half 比較による正しい ties-to-even に根治 (0x3FF+1 → 0x400 の
+min normal 遷移は整数桁上げで自然実現)。
+さらにこの純粋 bit 演算モジュールは **`#[cfg(windows)]` で gate されて
+おり Linux CI/sandbox から一切検証不能だった** (winapi 非依存なのに)。
+tests が 0 件として静寂スキップされる状態だった → `pub mod vertex` を
+error/phase/win の非 cfg グループへ移動して gate 解除し、実テスト実行を
+回復 (fmt hunk は HEAD 2 (cfg 群の HEAD 由来並べ替え逸脱) → 1 に減少)。
+
+### テスト (opt-gfx +4 純増 9 件 / dx12 +3)
+- RNE tie/繰上げ厳密ピン (1+2^-11→0x3C00, 1+2^-10+2^-11→0x3C02,
+  1+3·2^-12→0x3C01, 負側対称)
+- overflow 境界ピン (65504/65519/65520→Inf, ±65520, ±Inf)
+- FTZ/subnormal 境界ピン (2^-25 tie→0, 2^-14-2^-24→flush 0,
+  2^-14-2^-25 tie→0x0400, 4095·2^-26→0x0400, ±0 符号保存)
+- NaN 正準化ピン (qNaN/負 NaN/signaling→quiet)
+- **全テーブル機械検証** (65536 全 codeword: decode 分類・単調性・
+  再エンコード則 — normal/±0/Inf は恒等、subnormal→±0、NaN→正準)
+- **LCG 2^18 サンプル全範囲オラクル突合** (テスト内独立 bisect RNE
+  オラクルと codeword 完全一致)
+- テスト过程中にテスト側の 2 バグを自己捕捉 (exp フィールド未マスク、
+  FTZ 判定を符号合成後に実施) — 実装は指定通りで赤が私のテストを矯正
+- dx12: subnormal RNE 10 ピン (★旧バグ回帰 2 件 0x0003/0x03FF 含む) +
+  normal/overflow 回帰 9 ピン
+
+### BB-3 (観測・wave 53 第1候補): r10g10 「簡易」f32_to_f16_bits
+truncation (doc は「簡易」と正直) に加えて **NaN → Inf 静寂変換**
+(exp>=31 → 0x7C00 直落ち) の欠陥あり。pack_r10g10b10a2 の clamp(NaN)
+=NaN→as u32=0 静寂着地 (AH-1 同型) など r10g10 全体の NaN 哲学と
+絡むため、同モジュール本監査として wave 53 で一体処理する。
+
+### 検証結果 (全て実測)
+- opt-gfx lib **768/768** (+4)、dx12 lib **4/4** (+3、gate 解除で実実行化)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (広範 bench は half_vertex 非消費)。
+- fmt: half_vertex.rs 0→0 (全面改訂後に正準化)、vertex.rs 0→0、
+  lib.rs は HEAD 2 → 1 (cfg 群 HEAD 由来逸脱、増分なし)。
+- cargo check -p rsift-opt-gfx -p rsift-dx12 --all-targets エラー 0。
