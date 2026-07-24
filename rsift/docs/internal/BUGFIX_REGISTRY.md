@@ -12,7 +12,7 @@
 - 深刻度 (audit 見出しの転記): **[C]** critical・**[高]**・**[中高]**・**[中]**・
   **[低]**・**[観]** = 観測・誠実性訂正・判断記録 (コード bug ではない修正)、
   **[基]** = 検証基盤の追加 (naga 突合等)。
-- 修正消費テスト数: 監査開始時 363 → wave 89 時点 **941 全緑** (実測、CM 7 件追加)。
+- 修正消費テスト数: 監査開始時 363 → wave 90 時点 **944 全緑** (実測、CN 3 件追加)。
 
 ## 統計 (数え上げ、推測なし)
 
@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-89 (BV-CM 節) | 90 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 (`Y-1/Y-2/Y-4` 等) と接尾辞行 2 (`BG-2b`/`BN-3a`) をパターン狭窄で落としていたことを検出、1行=1項目の既定規約で全期を再計測して是正 (旧正規化値は再現不能)。A 期は漢字 ID (A期-NN) も含む) | **274** |
+| E 期: 横断契約クラス期 | wave 72-90 (BV-CN 節) | 95 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **279** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -336,6 +336,11 @@
 | CM-5 | 低 | discover_shaderpacks 3 点: zip 拡張子 case-sensitive (`.ZIP` 不発)・ドット入り dir 名が file_stem で欠落・自前展開キャッシュ (.rsift_extracted) が候補混入 → case-insensitive 化/file_name 化/隠し名 skip |
 | CM-6 | 低 | dispatch_frame_passes が uniform を即破棄し下流エンコーダへ転送不能 → last_uniforms 保持 (消費者追加思想に基づく供給面確保、f32 bit 等価ピン) |
 | CM-7 | 観 | for_tier は Full を返さない (PerformanceTier 4 値網羅・Full は手動 opt-in、低スペック優先と一致) / plan 簡略 (deferred・properties・dimension 未実装) は module doc 記載 scope と一致のため設計固定 |
+| CN-1 | 重大 | KTX2 レベルデータ/インデックスの双方向逆転 (spec: データ最小 mip 先頭・index entry i=mip i の規則に対し旧実装は mip0 先頭データ+rev index で index[0] が最小 mip を参照 → 取込側で mip ピラミッド全反転の機能実害) → offsets rev 走査+index 正順+mipPadding レベル間のみへ根治 (KTX2 spec・libktx validator・glTF PR 一次照合) |
+| CN-2 | 重大 | DFD descriptorBlockSize を u32 誤直列化 (Khronos DFD ブロックヘッダは u16×4) → 宣言 28/実書込 26 (Python 再現) + BDFD 2B ずれ invalid DFD → khr_df.h 確定値の完全 BDFD (blockSize 40/DFD 44B) u16 直列化実装+宣言 vs 実バイト構造テスト恒久排除 |
+| CN-3 | 中 | DFD model=2 誤値 (YUVSDA の意味) +「2=BT709」誤コメント + srgb_hint が両分岐 2 の死コード → BC7=134/BT709=1/TRANSFER_SRGB=2・LINEAR=1/CHANNEL_BC7_DATA=0/dims N-1/plane0=16/bitLength=127 の正写像 (khr_df.h・libktx 実 dump 一次照合) |
+| CN-4 | 低 | 破損期残骸 `// ZZPROBE_MARK` + 二重空行 2 箇所 + `let _ = i;` 除去・末尾改行 (KTX2 writer 周辺清掃) |
+| CN-5 | 観 | anchor swap 厳密安全性の証明 (加重対称 w[15-i]=64-w[i]+加算可換で idx0≤7 保証)、A_WEIGHT4=round(i*64/15) 全値機械検算 (MS BC7 公式表一致)、量子化端点の最終 index 再割当は品質余地として棚卸し |
 
 ---
 

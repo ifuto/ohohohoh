@@ -417,12 +417,33 @@ fn encode_level(src: &[u8], w: u32, h: u32) -> Vec<u8> {
 
 // ---------- KTX2 container ----------
 
+const KTX2_IDENTIFIER: [u8; 12] = [
+    0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A,
+];
+
+// Khronos Data Format 1.3 (khr_df.h) の確定値。
+const KHR_DF_VERSIONNUMBER_1_3: u16 = 2;
+const KHR_DF_MODEL_BC7: u8 = 134;
+const KHR_DF_PRIMARIES_BT709: u8 = 1;
+const KHR_DF_TRANSFER_LINEAR: u8 = 1;
+const KHR_DF_TRANSFER_SRGB: u8 = 2;
+const KHR_DF_FLAG_ALPHA_STRAIGHT: u8 = 0;
+/// BC7 Basic Format Descriptor Block: block ヘッダ8 + color/dim/planes 16 +
+/// 単一サンプル 16 = 40 バイト (圧縮形式は 0,0 cosited の 1 サンプルが規約)。
+const BC7_DFD_BLOCK_SIZE: u16 = 8 + 16 + 16;
+/// DFD 全体 = totalSize フィールド(4) + 上記ブロック。
+const BC7_DFD_SIZE: u64 = 4 + BC7_DFD_BLOCK_SIZE as u64;
+
 /// KTX2 (supercompression = None) コンテナにミップ列を落とす。
-/// vkFormat は `BC7_UNORM_BLOCK` / `BC7_SRGB_BLOCK`。
+/// vkFormat は `BC7_UNORM_BLOCK` / `BC7_SRGB_BLOCK` (Vulkan 145/146)。
 ///
-/// NOTE: DFD 記述子は KTX2 必須だが、BCn は `vkFormat` 自体が形式を一意に定めるため
-/// 本実装は「vendor-無名・最小 DFD (model のみ宣言)」を書く。
-/// 実取り込み側は `vkFormat` を正規ルートで読む (KTX-Software と同等の正当性)。
+/// KTX File Format Specification v2 準拠の 3 規則:
+/// 1. Level Index の entry i は mip level i (最大 mip 先頭順)
+/// 2. levelImages データは最小 mip 先頭 (levelCount-1 → 0) で格納、各 4byte 整列
+///    (mipPadding はレベル間のみ、終端パディングなし)
+/// 3. DFD は Khronos Data Format 1.3 の完全な Basic Format Descriptor Block
+///    (model=KHR_DF_MODEL_BC7(134) / channel=KHR_DF_CHANNEL_BC7_DATA(0) 単一
+///    サンプル / descriptor block の各フィールドは u16 直列化)
 pub fn write_ktx2(
     width: u32,
     height: u32,
@@ -430,73 +451,95 @@ pub fn write_ktx2(
     vk_format: u32,
     srgb_hint: bool,
 ) -> Vec<u8> {
-    let levels = mip_blocks.len().max(1) as u32;
+    let n_index = mip_blocks.len().max(1);
+    let levels = n_index as u32;
     let header_size: u64 = 80 + levels as u64 * 24;
-    let dfd_size: u64 = 12 + 16; // header(12) + 最小BDFD(16)
     let dfd_offset = header_size;
-    let image_base = dfd_offset + dfd_size;
+    let image_base = dfd_offset + BC7_DFD_SIZE;
 
-    // level offsets (dense, 4byte-aligned)
-    let mut level_offsets = Vec::with_capacity(mip_blocks.len());
+    // level offsets: データ配置は最小 mip 先頭 (KTX2 spec §levelCount)。
+    let mut level_offsets = vec![0u64; mip_blocks.len()];
     let mut cursor = image_base;
-    for (i, b) in mip_blocks.iter().enumerate() {
-        let _ = i;
-        level_offsets.push(cursor);
+    for (j, b) in mip_blocks.iter().enumerate().rev() {
+        level_offsets[j] = cursor;
         cursor += b.len() as u64;
-        cursor = (cursor + 3) & !3;
+        cursor = (cursor + 3) & !3; // mipPadding (レベル間)
     }
-    let total = cursor;
+    // 最終レベル (mip0 = 最大) の後にはパディング不要。
+    let total = if mip_blocks.is_empty() {
+        image_base
+    } else {
+        level_offsets[0] + mip_blocks[0].len() as u64
+    };
 
     let mut out = Vec::with_capacity(total as usize);
-    out.extend_from_slice(&[0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A]);
+    out.extend_from_slice(&KTX2_IDENTIFIER);
     push_u32(&mut out, vk_format);
-    push_u32(&mut out, 1);
+    push_u32(&mut out, 1); // typeSize (block 圧縮は 1 固定)
     push_u32(&mut out, width);
     push_u32(&mut out, height);
-    push_u32(&mut out, 0); // pixelDepth
-    push_u32(&mut out, 0); // layerCount
+    push_u32(&mut out, 0); // pixelDepth (2D)
+    push_u32(&mut out, 0); // layerCount (非配列)
     push_u32(&mut out, 1); // faceCount
     push_u32(&mut out, levels);
-    push_u32(&mut out, 0); // supercompression
+    push_u32(&mut out, 0); // supercompressionScheme = None
     push_u32(&mut out, dfd_offset as u32);
-    push_u32(&mut out, dfd_size as u32);
-    push_u32(&mut out, 0); // kvd offset
-    push_u32(&mut out, 0); // kvd length
-    push_u64(&mut out, 0); // sgd offset
-    push_u64(&mut out, 0); // sgd length
+    push_u32(&mut out, BC7_DFD_SIZE as u32);
+    push_u32(&mut out, 0); // kvdByteOffset
+    push_u32(&mut out, 0); // kvdByteLength
+    push_u64(&mut out, 0); // sgdByteOffset
+    push_u64(&mut out, 0); // sgdByteLength
 
-    // level index (降順の mip_blocks を KTX2 の期待する「小→大」順位に揃える必要なし;
-    // KTX2 は index 自体が逆順参照 — level[i] = mip (levels-1-i))
-    for i in (0..mip_blocks.len()).rev() {
-        push_u64(&mut out, level_offsets[i]);
-        push_u64(&mut out, mip_blocks[i].len() as u64);
-        push_u64(&mut out, mip_blocks[i].len() as u64);
+    // Level Index: entry i = mip level i (最大 mip 先頭)。
+    for i in 0..n_index {
+        let (off, len) = if i < mip_blocks.len() {
+            (level_offsets[i], mip_blocks[i].len() as u64)
+        } else {
+            (0, 0) // 空入力は 0 エントリ 1 件 (well-formed を維持)
+        };
+        push_u64(&mut out, off);
+        push_u64(&mut out, len);
+        push_u64(&mut out, len); // uncompressedByteLength (supercompression None では等しい)
     }
 
-    // DFD (最小): vendor=0, type=0, version=2, blockSize=28
-    let dfd_model: u8 = if srgb_hint { 2 } else { 2 }; // KHR_DF_PRIMITIVE? 2 = BT709
-    let mut dfd = Vec::new();
-    push_u32(&mut dfd, dfd_size as u32); // totalSize
-    push_u16(&mut dfd, 0); // vendorId
-    push_u16(&mut dfd, 0); // descriptorType
-    push_u16(&mut dfd, 2); // versionNumber
-    push_u32(&mut dfd, 28); // descriptorBlockSize (incl. this header)
-    // minimal BDFD model block (model RGB+sda "5" 表記を避け、vkFormat 準拠で model=0)
-    dfd.extend_from_slice(&[0u8, dfd_model, 0u8, 0u8]); // model/primaries/func/flags
-    dfd.extend_from_slice(&[0u8; 8]);
-    out.extend_from_slice(&dfd);
+    // DFD (Khronos Data Format 1.3) Basic Format Descriptor Block。
+    push_u32(&mut out, BC7_DFD_SIZE as u32); // dfdTotalSize = 44
+    push_u16(&mut out, 0); // vendorId = KHR_DF_VENDORID_KHRONOS
+    push_u16(&mut out, 0); // descriptorType = KHR_DF_KHR_DESCRIPTORTYPE_BASICFORMAT
+    push_u16(&mut out, KHR_DF_VERSIONNUMBER_1_3);
+    push_u16(&mut out, BC7_DFD_BLOCK_SIZE); // descriptorBlockSize は u16 (40)
+    out.extend_from_slice(&[
+        KHR_DF_MODEL_BC7,
+        KHR_DF_PRIMARIES_BT709,
+        if srgb_hint {
+            KHR_DF_TRANSFER_SRGB
+        } else {
+            KHR_DF_TRANSFER_LINEAR
+        },
+        KHR_DF_FLAG_ALPHA_STRAIGHT,
+    ]);
+    // texelBlockDimension: 4x4x1x1 (DF spec は N-1 を格納)
+    out.extend_from_slice(&[3, 3, 0, 0]);
+    // bytesPlane: BC7 ブロック 16 バイト、残り未使用
+    out.extend_from_slice(&[16, 0, 0, 0, 0, 0, 0, 0]);
+    // 単一サンプル: channel = KHR_DF_CHANNEL_BC7_DATA(0)、ブロック全体 128bit。
+    push_u16(&mut out, 0); // bitOffset
+    out.push(127); // bitLength = 128 - 1 (DF spec は N-1 格納)
+    out.push(0); // channelType 下位 4bit = 0 / qualifiers 上位 = 0
+    out.extend_from_slice(&[0, 0, 0, 0]); // samplePosition (0,0 cosited)
+    push_u32(&mut out, 0); // sampleLower
+    push_u32(&mut out, 0xFFFF_FFFF); // sampleUpper
 
-    // image data
-    for (i, b) in mip_blocks.iter().enumerate() {
-        let off = level_offsets[i] as usize;
-        if out.len() < off {
-            out.resize(off, 0);
-        }
+    // levelImages: 最小 mip 先頭。パディングはレベル間のみ。
+    for (j, b) in mip_blocks.iter().enumerate().rev() {
         out.extend_from_slice(b);
-        while out.len() % 4 != 0 {
-            out.push(0);
+        if j > 0 {
+            while out.len() % 4 != 0 {
+                out.push(0);
+            }
         }
     }
+    debug_assert_eq!(out.len() as u64, total);
     out
 }
 
@@ -531,8 +574,6 @@ mod tests {
         assert_eq!(b[0] & 0b0111_1111, 64);
     }
 
-
-    // ZZPROBE_MARK
     #[test]
     fn roundtrip_small_error_on_gradient() {
         let mut px = [[0u8; 4]; 16];
@@ -549,19 +590,6 @@ mod tests {
         }
     }
 
-
-    #[test]
-    fn ktx2_layout_lengths_correct() {
-        let mips = vec![vec![0u8; 32], vec![0u8; 8]]; // 2 levels
-        let ktx2 = write_ktx2(8, 8, &mips, BC7_UNORM_BLOCK, false);
-        // identcheck
-        assert_eq!(&ktx2[..4], &[0xAB, 0x4B, 0x54, 0x58]);
-        // levelCount
-        assert_eq!(u32::from_le_bytes(ktx2[40..44].try_into().unwrap()), 2);
-        let total = 80 + 2 * 24 + 28 + 32 + 8 + 0;
-        assert_eq!(ktx2.len() as u64, total);
-    }
-
     #[test]
     fn full_texture_chain_creates_mips() {
         let w = 8u32;
@@ -570,5 +598,91 @@ mod tests {
         let mips = encode_texture_bc7(&rgba, w, h);
         assert_eq!(mips.len(), 4); // 8→4→2→1
         assert_eq!(mips[0].len(), 4 * 16); // 8x8 → 2x2 blocks → 4 blocks
+    }
+
+    // ---------------- CN 監査 (2026-07-24) 追加テスト ----------------
+
+    fn rd_u32(b: &[u8], off: usize) -> u32 {
+        u32::from_le_bytes(b[off..off + 4].try_into().unwrap())
+    }
+    fn rd_u16(b: &[u8], off: usize) -> u16 {
+        u16::from_le_bytes(b[off..off + 2].try_into().unwrap())
+    }
+    fn rd_u64(b: &[u8], off: usize) -> u64 {
+        u64::from_le_bytes(b[off..off + 8].try_into().unwrap())
+    }
+
+    #[test]
+    fn ktx2_layout_lengths_correct() {
+        // 2 levels (大 32B / 小 8B)。内容マーカーで配置順を直接検証する。
+        let mips = vec![vec![0xAAu8; 32], vec![0xBBu8; 8]];
+        let ktx2 = write_ktx2(8, 8, &mips, BC7_UNORM_BLOCK, false);
+        assert_eq!(&ktx2[..4], &[0xAB, 0x4B, 0x54, 0x58]);
+        assert_eq!(ktx2[..12], KTX2_IDENTIFIER);
+        assert_eq!(rd_u32(&ktx2, 12), BC7_UNORM_BLOCK); // vkFormat
+        assert_eq!(rd_u32(&ktx2, 40), 2); // levelCount
+        assert_eq!(rd_u32(&ktx2, 48), 128); // dfdByteOffset = 80+2*24
+        assert_eq!(rd_u32(&ktx2, 52), 44); // dfdByteLength
+
+        // KTX2: index entry i = mip i (最大先頭)、データは最小 mip 先頭。
+        // entry0 (mip0, 32B): offset 180 / entry1 (mip1, 8B): offset 172。
+        let (e0_off, e0_len) = (rd_u64(&ktx2, 80), rd_u64(&ktx2, 88));
+        let (e1_off, e1_len) = (rd_u64(&ktx2, 104), rd_u64(&ktx2, 112));
+        assert_eq!((e0_len, e1_len), (32, 8));
+        assert_eq!(rd_u64(&ktx2, 96), 32); // uncompressed == (None)
+        assert!(e0_off > e1_off, "最大 mip (entry0) はデータ後方配置が必須");
+        assert_eq!((e1_off, e0_off), (172, 180));
+        // データ実体: ファイル先頭側が最小 mip (0xBB*8)、後方が mip0 (0xAA*32)。
+        assert_eq!(&ktx2[172..180], &[0xBBu8; 8]);
+        assert_eq!(&ktx2[180..212], &[0xAAu8; 32]);
+        assert_eq!(ktx2.len(), 212); // 終端パディングなし
+    }
+
+    #[test]
+    fn ktx2_dfd_is_spec_valid_bc7_basic_block() {
+        let ktx2 = write_ktx2(4, 4, &[vec![0u8; 16]], BC7_UNORM_BLOCK, false);
+        let d = 80 + 24; // dfd_offset (levels=1)
+
+        // 宣言 vs 実バイトの整合 (u32/u16 直列化ずれの再発を構造で排除)。
+        assert_eq!(rd_u32(&ktx2, d), 44); // totalSize
+        assert_eq!(rd_u16(&ktx2, d + 4), 0); // vendorId = KHRONOS
+        assert_eq!(rd_u16(&ktx2, d + 6), 0); // descriptorType = BASICFORMAT
+        assert_eq!(rd_u16(&ktx2, d + 8), 2); // versionNumber = 1_3
+        assert_eq!(rd_u16(&ktx2, d + 10), 40); // descriptorBlockSize (u16)
+
+        // BDFD 本体 (オフセット d+12 起点 — blockSize 直後, ずれなし)。
+        assert_eq!(ktx2[d + 12], KHR_DF_MODEL_BC7); // model = 134
+        assert_eq!(ktx2[d + 13], KHR_DF_PRIMARIES_BT709); // primaries = 1
+        assert_eq!(ktx2[d + 14], KHR_DF_TRANSFER_LINEAR); // srgb_hint=false
+        assert_eq!(ktx2[d + 15], 0); // flags = ALPHA_STRAIGHT
+        assert_eq!(&ktx2[d + 16..d + 20], &[3, 3, 0, 0]); // dims (N-1)
+        assert_eq!(&ktx2[d + 20..d + 28], &[16, 0, 0, 0, 0, 0, 0, 0]);
+        // 単一サンプル (BC7_DATA, 127, cosited)
+        assert_eq!(rd_u16(&ktx2, d + 28), 0); // bitOffset
+        assert_eq!(ktx2[d + 30], 127); // bitLength = 128-1
+        assert_eq!(ktx2[d + 31], 0); // channel BC7_DATA / qualifiers 0
+        assert_eq!(&ktx2[d + 32..d + 36], &[0, 0, 0, 0]); // position
+        assert_eq!(rd_u32(&ktx2, d + 36), 0); // sampleLower
+        assert_eq!(rd_u32(&ktx2, d + 40), 0xFFFF_FFFF); // sampleUpper
+
+        // データ領域は DFD 直後に密接 (宣言サイズ外の隙間ゼロ)。
+        assert_eq!(rd_u64(&ktx2, 80) as usize, d + 44);
+        assert_eq!(ktx2.len(), d + 44 + 16);
+    }
+
+    #[test]
+    fn ktx2_transfer_follows_srgb_hint() {
+        let mips = vec![vec![0u8; 16]];
+        let srgb = write_ktx2(4, 4, &mips, BC7_SRGB_BLOCK, true);
+        assert_eq!(srgb[80 + 24 + 14], KHR_DF_TRANSFER_SRGB);
+        let linear = write_ktx2(4, 4, &mips, BC7_UNORM_BLOCK, false);
+        assert_eq!(linear[80 + 24 + 14], KHR_DF_TRANSFER_LINEAR);
+    }
+
+    #[test]
+    fn ktx2_vkformat_values_match_vulkan_registry() {
+        // Khronos Vulkan VkFormat: BC7_UNORM_BLOCK=145, BC7_SRGB_BLOCK=146。
+        assert_eq!(BC7_UNORM_BLOCK, 145);
+        assert_eq!(BC7_SRGB_BLOCK, 146);
     }
 }

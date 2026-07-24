@@ -5155,3 +5155,83 @@ custom textures)、dimension フォルダ (world0/-1/1)、Iris uniform 本格写
 (frameCounter 0..720719 リセット・frameTimeCounter 3600s リセット・
 eye-space sun/moon/shadowLightPosition 等)、CRC32 検証、
 gui_settings 選択 → load_shaderpack 配線。
+
+## CN. bc7_ktx2.rs (wave 90, 2026-07-24)
+
+575 → 696 行 (テスト純増分を含む)。全行照合 + Khronos 一次情報照合
+(KTX File Format Spec v2 §levelCount/§levelIndex、KTX-Software libktx
+validator「Indices must be sorted from the largest level to the smallest」、
+khr_df.h (Data Format 1.4.1)、Vulkan VkFormat registry、Microsoft BC7 仕様
+の aWeight4)。ユーザー新規指示「悩んだら Bash で正確な値」を適用:
+weight4=round(i*64/15) 全 16 値一致・加重表対称性・ビット予算 128・
+ヘッダ 80B・DFD 実書込 26B (宣言 28) を全て Python 機械検算済。
+
+- 消費者: full_graph_wiring が encode/decode_block_mode6 を実使用
+  (ブロック経路は digest 非経路、本 wave の write_ktx2 変更は消費者非影響)。
+
+### CN-1 (重大): KTX2 レベルデータ/インデックスの双方向逆転
+- spec 正規: データは**最小 mip 先頭**、Level Index entry i は **mip i**
+  (mip0=最大を先頭記述)。旧実装はデータ mip0 先頭 + index を rev で
+  書込 → index[0] が最小 mip のオフセットを指す KTX2 を排出
+  (取込側で mip ピラミッド全反転の機能実害)。テスト total 長さ一致で
+  誤検証に見えていたが配置は規格違反。
+- 根治: offsets は rev 走査で生成、index は mip0 先頭の正順、mipPadding は
+  レベル間のみ・終端パディングなし (一次情報 3 系統で相互確認)。
+  ピン: index[0].offset > index[1].offset + 内容マーカー (0xAA/0xBB) の
+  実バイト配置を直接検証。
+
+### CN-2 (重大): DFD descriptorBlockSize を u32 で誤直列化 (u16 が正)
+- Khronos DFD ブロックヘッダは vendorId/descriptorType/versionNumber/
+  descriptorBlockSize の u16×4。旧実装は blockSize を push_u32 →
+  宣言 totalSize=28 に対し実書込 26B (Python で再現確認) + DFD 内へ
+  余分ゼロ 2B が混入し BDFD 本体が 2 バイトずれ、ブロック範囲が
+  totalSize を越える invalid DFD を排出。
+- 根治: khr_df.h 確定値による完全 BDFD (blockSize 40/DFD 44B) を
+  u16 直列化で実装、宣言 vs 実バイト整合を構造テストで恒久排除。
+
+### CN-3 (中): DFD model=2 誤値 + 「2=BT709」誤コメント + srgb_hint 無意味化
+- model フィールドに 2 (=MODEL_YUVSDA の意味) を書き両分岐 2 の
+  `if srgb_hint {2} else {2}` 死コード。一次情報の確定値:
+  KHR_DF_MODEL_BC7=134、PRIMARIES_BT709=1、TRANSFER_SRGB=2/LINEAR=1、
+  CHANNEL_BC7_DATA=0、VERSIONNUMBER_1_3=2、dims は N-1 (3,3,0,0)、
+  bytesPlane0=16、単一サンプル bitLength=128-1=127、
+  sampleLower=0/sampleUpper=0xFFFFFFFF (libktx ETC1S 実 dump と整合)。
+- 根治: 上記の正写像 + srgb_hint が transferFunction を駆動する実装へ。
+
+### CN-4 (低): 破損期残骸 `// ZZPROBE_MARK` + 二重空行 + `let _ = i;` 除去
+- 無意味マーカーコメント (破損ターンの残滓)、テスト部の二重空行 2 箇所、
+  オフセットループの `let _ = i;` を除去。末尾改行追加。
+
+### CN-5 (観)
+- 量子化後端点 (7bit+P) に対する最終 index 再割当は未実施 = 品質余地
+  (正しさではない、ispc_texcomp 系でも同様の最終割当がある) を棚卸しへ。
+- anchor swap の厳密安全性: 加重表対称 w[15-i]=64-w[i] (機械検証) +
+  f32 加算の可換性により swap 後 palette は鏡像一致、tie-break が
+  idx0≤7 を保証することを証明 (テスト代替の数学的根拠)。
+- A_WEIGHT4: round(i*64/15) との全 16 値一致を Python 機械検算
+  (Microsoft BC7 公式 aWeight4 と一致)。
+
+### テスト (純増 3、944 全緑)
+ktx2_layout_lengths_correct (内容マーカーの実バイト配置ピンへ強化・継承) /
+ktx2_dfd_is_spec_valid_bc7_basic_block (BDFD 全フィールド厳密) /
+ktx2_transfer_follows_srgb_hint / ktx2_vkformat_values_match_vulkan_registry。
+
+### 検証結果 (全て実測)
+- lib **944/944** (+3)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+  all-targets エラー 0。不可視文字 0 / CRLF 0 / 末尾改行あり。
+- fmt: HEAD 起因 3 群 22 行のみ温存、**本 wave 追加分の WORK-only 偏差 0**
+  (HEAD で rustfmt-clean でないファイルのため全体 rustfmt 禁止規律を遵守、
+  個所調整: 配列分割・コメント鎖の空行断ち)。
+- アドバーサリアル 4 系統: (a) データ順復元 (rev→順) → layout テスト
+  FAILED。(b) index 順復元 (rev 注入) → 同 FAILED。(c) blockSize u32 化
+  → dfd テスト FAILED。(d) transfer 両分岐 2 化 → transfer テスト FAILED。
+  いずれも検出確認後 /tmp/cn_fixed.rs から md5 忠実復元 → 7/7 緑。
+- 環境事象: なし (HEAD=65f046d から安定)。
+- 編集誤字捕捉: 「解決必须」(中国語混入)・「隙間ゾロ」(ゼロ誤打) の
+  2 件を自分で検出・即修正 (検査規律の実績)。
+
+### 残 (次 wave 以降の棚卸し)
+最終 index 再割当 (量子化端点基準)、P-bit 非採用時の index 誤差再評価、
+BC7 他モード (0/3/5) の拡張方針、KTX2 KVD メタデータ (KTXorientation 等)、
+encode_texture_bc7 の sRGB 正規 box フィルタ (線形化平均は現在未適用、
+perceptual 補正は品質課題)。
