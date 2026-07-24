@@ -3,12 +3,35 @@
 use crate::chunk_mesh::{BuiltChunkMesh, Quantized12ByteVertex};
 use crate::section_rle::RleSection;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tracing::{debug, trace, warn};
 
 const CACHE_VERSION: u32 = 2;
 const CACHE_DIR: &str = "rsift-mesh-cache";
+
+/// 展開後サイズ上限 (wave 98 CW-1): 旧実装は `zstd::decode_all` で展開長を無制限に
+/// 受理し、破損/細工された数 KB の .rmesh が GB 級へ膨らむ展開ボム (OOM/ハング)
+/// の経路だった。正当最大は全 24 セクションを非グリーディ全クアッドで取っても
+/// ≈40.7MiB (6·4096 quads/section × 24、頂点 12B/index 4B、Python 機械検算)。
+/// 64MiB で 1.6 倍の余裕を持たせ、超過は Err → miss 計上+削除で再構築へ倒す。
+const DECOMPRESS_CAP: usize = 64 * 1024 * 1024;
+
+/// cap+1 バイトまでを上限に展開 (超過判定のため余分に 1 バイトだけ読む)。
+fn decompress_bounded(data: &[u8]) -> Result<Vec<u8>, String> {
+    let dec = zstd::Decoder::new(data).map_err(|e| e.to_string())?;
+    let mut raw = Vec::new();
+    dec.take(DECOMPRESS_CAP as u64 + 1)
+        .read_to_end(&mut raw)
+        .map_err(|e| e.to_string())?;
+    if raw.len() > DECOMPRESS_CAP {
+        return Err(format!(
+            "decompressed size exceeds {} byte cap",
+            DECOMPRESS_CAP
+        ));
+    }
+    Ok(raw)
+}
 
 #[derive(Debug)]
 pub struct MeshDiskCache {
@@ -84,20 +107,39 @@ impl MeshDiskCache {
         let path = self.key_path(mesh.chunk_x, mesh.chunk_z, section_y);
         match encode_mesh(mesh, section_rle) {
             Ok(bytes) => {
-                if let Ok(mut f) = fs::File::create(&path) {
-                    let _ = f.write_all(&bytes);
-                    debug!(
-                        "[MeshCache] stored ({}, {}) {} bytes (RLE header)",
-                        mesh.chunk_x,
-                        mesh.chunk_z,
-                        bytes.len()
-                    );
-                    return true;
+                // wave 98 CW-2: 旧実装は最終ファイル名へ直接 File::create し、
+                // write_all の結果を `let _ =` で静寂破棄 — 部分書き込みでも true
+                // を返し debug ログは「stored N bytes」を偽っていた (File::create
+                // 失敗は warn 無しの静寂 false)。さらにクロスプロセスでは他
+                // インスタンスが書込途中のファイルを read → 破損扱いで削除する
+                // 裂け読みが起き得た。tmp へ全量検証後に rename で原子置換する
+                // (POSIX/Windows とも同一 dir 内 rename は原子)。crash 残渣 .tmp
+                // は不活性で、次回 put の tmp create で上書き回収される。
+                let tmp = path.with_extension("tmp");
+                let ok = (|| -> Result<(), String> {
+                    let mut f = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+                    f.write_all(&bytes).map_err(|e| format!("write_all: {e}"))?;
+                    fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))?;
+                    Ok(())
+                })();
+                if let Err(e) = ok {
+                    warn!("[MeshCache] store failed ({}): {}", tmp.display(), e);
+                    let _ = fs::remove_file(&tmp);
+                    return false;
                 }
+                debug!(
+                    "[MeshCache] stored ({}, {}) {} bytes (RLE header)",
+                    mesh.chunk_x,
+                    mesh.chunk_z,
+                    bytes.len()
+                );
+                return true;
             }
-            Err(e) => warn!("[MeshCache] encode failed: {}", e),
+            Err(e) => {
+                warn!("[MeshCache] encode failed: {}", e);
+                false
+            }
         }
-        false
     }
 
     /// Drop cached meshes for a chunk column so live world edits remesh.
@@ -123,6 +165,16 @@ impl MeshDiskCache {
 }
 
 fn encode_mesh(mesh: &BuiltChunkMesh, section_rle: &[RleSection]) -> Result<Vec<u8>, String> {
+    // wave 98 CW-3: wire のセクション数フィールドは u16。旧実装は
+    // `(len as u16)` の静寂縮退で、len > 65535 なら書き込み側だけ縮み
+    // decode は残りを mesh バイト列として誤読する破損だった → fail-loud 拒絶。
+    // (実運用のセクション数は 1 チャンク上限 24、契約上の頭打ちは u16::MAX)
+    if section_rle.len() > u16::MAX as usize {
+        return Err(format!(
+            "section count {} exceeds u16 wire limit",
+            section_rle.len()
+        ));
+    }
     let mut raw = Vec::new();
     raw.extend_from_slice(&CACHE_VERSION.to_le_bytes());
     raw.extend_from_slice(&mesh.chunk_x.to_le_bytes());
@@ -141,7 +193,7 @@ fn encode_mesh(mesh: &BuiltChunkMesh, section_rle: &[RleSection]) -> Result<Vec<
 }
 
 fn decode_mesh(data: &[u8], expect_x: i32, expect_z: i32) -> Result<BuiltChunkMesh, String> {
-    let raw = zstd::decode_all(data).map_err(|e| e.to_string())?;
+    let raw = decompress_bounded(data)?;
     let mut off = 0usize;
     let read_u32 = |b: &[u8], o: &mut usize| -> Result<u32, String> {
         if *o + 4 > b.len() {
@@ -430,5 +482,85 @@ mod tests {
         assert_eq!(verts_bytes(&got), verts_bytes(&src));
         assert_eq!(got.indices, src.indices);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// wave 98 CW-1: 展開ボム拒否 — 65MiB のゼロを圧縮した数 KB の blob は
+    /// cap (64MiB) 超過で Err「cap」 (旧実装は無制限展開で version mismatch
+    /// とは別の Err になる = メッセージでも分岐をピン)。
+    #[test]
+    fn decompress_cap_rejects_bomb() {
+        let bomb_plain = vec![0u8; 65 * 1024 * 1024];
+        let blob = zstd::encode_all(bomb_plain.as_slice(), 1).expect("bomb encode");
+        assert!(
+            blob.len() < 1024 * 1024,
+            "前提: ボムは圧縮で 1MB 未満 ({} bytes)",
+            blob.len()
+        );
+        let err = decode_mesh(&blob, 0, 0).expect_err("cap 超過は拒否");
+        assert!(
+            err.contains("cap"),
+            "cap 由来の Err メッセージのはず: {err}"
+        );
+    }
+
+    /// wave 98 CW-2: tmp 中間ファイル経由の原子書き込み — tmp 名が使用不可
+    /// (ディレクトリとして塞がれている) とき put は fail-loud false で最終
+    /// ファイルを作らない (旧実装の「最終ファイル直接 create 成功 → true」
+    /// とは挙動が分岐 = 逆変異の捕捉点)。
+    #[test]
+    fn put_fails_loud_when_tmp_path_blocked() {
+        let root = tmp_root("tmp_blocked");
+        let mut c = MeshDiskCache::new(&root, true);
+        let blocked = c.key_path(3, 4, 0).with_extension("tmp");
+        fs::create_dir_all(&blocked).expect("block tmp path with a directory");
+        assert!(blocked.is_dir());
+        assert!(
+            !c.put(&sample_mesh(3, 4), &one_rle(), 0),
+            "tmp 作成不可なら put は false (静寂 success 禁止)"
+        );
+        assert!(
+            !c.key_path(3, 4, 0).exists(),
+            "失敗時に最終ファイルは生成しない"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// wave 98 CW-2: 成功 put の後に .tmp 残渣が無いこと (原子置換の完了。
+    /// crash 残渣は次回 put の create で上書き回収される設計の基部を固定)。
+    #[test]
+    fn put_leaves_no_tmp_residue() {
+        let root = tmp_root("no_residue");
+        let mut c = MeshDiskCache::new(&root, true);
+        assert!(c.put(&sample_mesh(5, 6), &one_rle(), 1));
+        let entries: Vec<_> = fs::read_dir(c.key_path(5, 6, 1).parent().unwrap())
+            .expect("list cache dir")
+            .flatten()
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "cache dir には最終ファイルのみ: {entries:?}"
+        );
+        assert!(
+            entries[0].file_name().to_string_lossy().ends_with(".rmesh"),
+            "拡張子は .rmesh のはず (.tmp 残渣禁止)"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// wave 98 CW-3: セクション数 u16 wire 上限超過は fail-loud Err
+    /// (旧実装は `len as u16` で静寂縮退 → decode 側が後続を mesh として誤読)。
+    #[test]
+    fn encode_rejects_section_count_overflow() {
+        let s = one_rle().into_iter().next().unwrap();
+        let sections = vec![s.clone(); u16::MAX as usize + 1]; // 65536 個 (from_elem は最終要素に値を move するため clone で供給)
+        let err = encode_mesh(&sample_mesh(0, 0), &sections).expect_err("u16 上限超過は拒否");
+        assert!(err.contains("u16"), "上限由来の Err のはず: {err}");
+        // ちょうど上限 (=65535) は受理されること (境界ピン)
+        let sections = vec![s; u16::MAX as usize];
+        assert!(
+            encode_mesh(&sample_mesh(0, 0), &sections).is_ok(),
+            "u16::MAX ちょうどは合法"
+        );
     }
 }

@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-97 (BV-CU 節) | 131 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **315** |
+| E 期: 横断契約クラス期 | wave 72-98 (BV-CW 節) | 136 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **320** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -242,7 +242,7 @@
 | BU-2 | 低 | 空メッシュ簡略化早期 passthrough ピン |
 | BU-3 | 観 | use_svo_encoding 命名乖離を真値表で確定 (リネーム見送り) |
 
-## E 期: 横断契約クラス期 (wave 72-97)
+## E 期: 横断契約クラス期 (wave 72-98)
 
 | ID | 度 | 概要 |
 | :--- | :- | :--- |
@@ -377,6 +377,11 @@
 | CU-3 | 低 | frames 未読フィールド → frames() pub accessor 消費者追加 (fps/期間算出の一次情報)+observe 毎厳密 +1 ピン |
 | CU-4 | 低 | upshift doc「最後に落としたものから」虚偽 (実=静的逆優先度 RD 先返上) → 誠実化+タンパー順序ピン (10,RD,0)(15,SH,2)(20,SH,1)(25,SH,0)、quality_score を外部 levels 改竄耐性 saturating 化 (u8 underflow panic 根絶) |
 | CU-5 | 観 | render_scale_pct l.min(5) 防御・降段無クールダウン (UE 一次情報「即座に」一致)・upshift 非 EMA リセット (good 収束済で設計通り)・cooldown 実効語彙 (抑制 F+1..F+cd-1、F+cd 再開 — 5 間隔列で実証) |
+| CW-1 | 中 | mesh_cache zstd::decode_all 展開無制限 (数 KB → GB 展開ボム経路) → 正当最大 ≈40.7MiB Python 検算の 1.6 倍余裕 64MiB cap (Decoder+take) で fail-loud |
+| CW-2 | 中 | put 直接 File::create+write_all 静寂破棄 (部分書込でも true 偽装・ログ虚偽・クロスプロセス裂け読み) → tmp 全量検証+rename 原子置換+失敗 warn/false/tmp 削除 |
+| CW-3 | 低 | encode セクション数 (len as u16) 静寂縮退 (decode 誤読) → len>u16::MAX は fail-loud Err (境界 65535 受理/65536 拒否ピン) |
+| CW-4 | 観 | trailing garbage 受理 (wire 耐性・意図保持)・v1 は RLE 検証なし (非格納=設計)・32-bit は対象外・sync_all なしは miss 治癒で許容・stats tuple 語彙消費者一致 |
+| CW-5 | 観 | key_path インジェクション非成立・invalidate prefix 衝突ピン済・put は LOD simplify 済保存+tier drift は render_pipeline 第 3 部へ・ast-grep 横断: write_all 静寂型 0 件・decode_all 残存 region_zstd.rs:107/170 起票 |
 
 ---
 

@@ -5559,3 +5559,47 @@ render_scale_pct の段表 [100,90,80,70,60,50] を steps() と単一真実源�
 
 ### 棚卸し (wave 97 時点)
 残 85 モジュール (機械再計算)。警告一掃 wave (27 件) は別途棚卸し管理。
+→ wave 98 前工程で訂正: 抽出式 `^## [A-Z0-9]*\.` は複合見出し `## CS-1/CS-2.`
+(hyphen・slash 含有) を拾えず low_spec_stack を誤って未監査扱いしていた。
+式を `^## [A-Z0-9][A-Z0-9/\-]*\. ` に修正 → done 96→97、**正値は残 84**
+(機械再計算、自己の帳簿式誤りの捕捉として記録)。
+
+## CW. mesh_cache.rs (wave 98, 2026-07-25)
+
+434 → 566 行。全行照合 + 消費者 (render_pipeline:30 use/:95 cache フィールド/
+:192 adaptive 構築/:392 get/:490 put/:986 stats/:1240 invalidate_chunk)、
+region_zstd 参照、ast-grep 構造スイープ 3 系 (DEV_ACCEL.md 導入後初適用)。
+zstd 0.13.3 API (Decoder + Read::take) 使用。全数値 Python 機械検算。
+
+| CW-1 | 中 | `zstd::decode_all` は展開長無制限 — 破損/細工 .rmesh 数 KB が GB 級へ膨らむ展開ボム経路 → 正当最大 ≈40.7MiB (6·4096 quads×24 sections、頂点 12B/index 4B 全非グリーディ、Python 機械検算) の 1.6 倍余裕で 64MiB cap を `Decoder+take(cap+1)` で強制 (超過は Err→miss 計上+削除→再構築) |
+| CW-2 | 中 | put() は最終名へ直接 `File::create` + `let _ = f.write_all(&bytes);` の静寂破棄 — 部分書き込みでも true を返し debug ログ「stored N bytes」を偽装、File::create 失敗は warn 無し静寂 false、クロスプロセスでは書込途中ファイルを他インスタンスが read → 破損扱い抹消の裂け読みリスク → tmp 全量検証書き込み + rename 原子置換 + 失敗 warn+false+tmp 削除 (crash 残渣 .tmp は不活性・次回 put で回収) |
+| CW-3 | 低 | encode 側セクション数を `(len as u16)` で静寂縮退 — len > 65535 で wire u16 フィールドがラップし decode が後続を mesh バイト列として誤読 → len > u16::MAX は fail-loud Err (実上限 24 sections/チャンク) |
+| CW-4 | 観 | decode は trailing garbage を受理 (versioned wire 耐性として意図保持)、v1 経路は RLE 非格納のため RLE 検証なし (設計通り)、32-bit usize の vlen*12 オーバーフローは MC 1.21.11 対象デスクトップ 64-bit の範囲外、sync_all なし耐久性は miss 治癒で許容、stats tuple (hits, misses) 語彙は render_pipeline:986 で対応済 |
+| CW-5 | 観 | key_path インジェクション非成立 (i32 format! は path separator を生成し得ない)、invalidate prefix の "1_2_" vs "1_20_"/"2_1_" 衝突は既存テストピン済、cache.put は LOD simplify 済 mesh を保存し get が再 simplify (tier 間 semantic drift の可能性は render_pipeline 第 3 部棚卸しへ転記)、ast-grep 横断: `let _ = write_all` 静寂破棄型は全域 0 件・無制限 decode_all の残存は region_zstd.rs:107 (test)/:170 (本番) → region_zstd wave の棚卸しへ起票 |
+
+### 検証 (wave 98)
+- 971 全緑 (+4: 展開ボム拒否、tmp 塞がれ fail-loud、.tmp 残渣なし、
+  セクション数境界 65536 拒否/65535 受理)。
+- アドバーサリアル 3 系統全検出: (a) 無制限 decode_all 逆戻し →
+  decompress_cap_rejects_bomb FAILED (「cap」メッセージ由来ピンで検出)。
+  (b) 直接 create+write_all 破棄の忠実旧形復元注入 →
+  put_fails_loud_when_tmp_path_blocked FAILED (旧形は tmp を使わず final を
+  create 成功して true → 分岐検出)。注入初回は私の旧形復元が構造未閉鎖
+  (unclosed delimiter→E0317) でコンパイル不可 — 旧形の厳密再脆弱化として
+  match 後共通 false 形に訂正してから裁定 (過程も記録)。(c) u16 guard 除去 →
+  encode_rejects_section_count_overflow FAILED。固定版は ~/bak へ
+  (md5 忠実復元→全緑)。
+- fmt: HEAD 0 / work 0 完全一致 (自分の追加 3 hunk を rustfmt 正準形へ:
+  write_all 連鎖単行化・assert_eq 複数行化 (CJK 幅考慮)・expect_err 単行化)。
+  不可視/CRLF/簡体字 none・警告 27 (14+13) 据え置き。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- 機械検算 (Bash 規律): 展開上限 ≈40.69MiB (quads 589,824・verts 2,359,296・
+  vbytes 28,311,552・ibytes 14,155,776)、cap 64MiB=1.6 倍、u16 境界 65535/65536。
+- 前工程簿記訂正: 棚卸し抽出式の複合見出し漏れ (wave 95 節) を修正 →
+  残 84 が正値 (wave 97 節に訂正記録)。
+
+### 残 (次 wave 以降の棚卸し)
+region_zstd.rs:170 の無制限 decode_all (本番経路、CW-1 類型の横断展開候補)、
+cache.put の LOD 事前 simplify → tier 間再 simplify の semantic 検討
+(render_pipeline 第 3 部)、stats の (u64,u64) tuple を名前付き構造体化、
+cache dir のディスク容量クォータ (LRU 掃除)、crash 残渣 .tmp の起動時掃除。
