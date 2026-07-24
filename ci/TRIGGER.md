@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 109
+- count: 110
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -127,3 +127,4 @@
 - 2026-07-23 (count 107): wave 73 world_column_store 監査 (非有限カメラ拒否・帳簿差分会計化・窓/行列厳密ピン) の CI 緑確認
 - 2026-07-24 (count 108): wave 74 transform_svdag 監査 (BX-1 中間ヒット誤タグの D4 群合成修復・群閉包公理ピン) の CI 緑確認
 - 2026-07-24 (count 109): wave 75 vertex_pool 監査 (oversize 拒否の stale slot 一貫化・refresh 契約ピン) の CI 緑確認
+- 2026-07-24 (count 110): wave 76 persistent_vbo_pool 監査 (BZ-1 確保リーク rollback・BZ-2 stale slot・BZ-6 配分最適化) の CI 緑確認

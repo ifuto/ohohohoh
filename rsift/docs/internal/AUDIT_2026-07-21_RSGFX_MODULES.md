@@ -3997,3 +3997,75 @@ generation_wraps_on_reset_and_floor_ratio_pin (全値手導出、初回実行で
   (WORK-only 差分行 0、HEAD 由来のみ温存)**。
 - cargo check -p rsift-opt-gfx --all-targets: エラー 0。
 - 不可視文字 0 / CRLF 0 (python 検査)。
+
+## BZ. persistent_vbo_pool.rs 監査 (wave 76, 2026-07-24)
+
+persistent_vbo_pool.rs (405→598 行)。1 本 GPU バッファ + bucket allocator +
+MDI バッチ (driver GC 排除)。live 消費: render_pipeline (:33/:97/:199 adaptive、
+:675/:749 upload 戻り破棄、:855 rebuild_mdi、:872-877 telemetry) と azdo.rs
+(:11 保持のみ、wave 45 で責務境界明文化)。GPU ラッパ (PersistentVboPoolGpu:
+flush_slot/flush_mdi/draw_all_indirect) は現状 live 未配線の既知状態。
+
+### BZ-1 (高): index 確保失敗時の vertex 領域永久リーク — rollback_alloc で根治
+- 問題の定式化: `upload_mesh` は vertex 確保 (`?` 成功) → index 確保の順。
+  index 失敗時の早期 `?` return は **vertex 側の確保 (free-list 消費または
+  high-water 前進) を巻き戻さず**、所有者不在の領域が永久に回収不能と
+  なっていた (確保ログに記録なし)。繰り返し失敗でプールが擬似枯渇する
+  リーク型ゼロデイ。
+- 修復: `rollback_alloc` 新設。high-water 先端からの確保は high-water を
+  巻き戻し (`offset+size == high_water`)、free-list 由来は free list へ
+  返却 (return_to_free_list の sort+merge で消費時 remainder と再統合
+  →元ブロックに厳密復元)。index 確保失敗路に適用。
+- 検証: 2 経路を厳密ピン (A: hw 巻戻し vhw 8→4・free 非汚染 / B: free-list
+  経路 (0,8) 消費→(4,4) 残余→失敗→(0,4) 返却→merge で (0,8) 復元)。
+  アドバーサリアル検証: 旧 `?` 注入で両テスト赤 (:477/:494) → 復元 7/7 緑。
+
+### BZ-2 (中): oversize 拒否時の stale slot 残留 (BY-1 同型、こちらは描画実消費)
+- 旧実装は oversize 拒否で旧 slot を残存。**本モジュールの slots は
+  rebuild_mdi 経由で MDI 命令に実消費される**ため、stale geometry が
+  描画され続ける実害経路あり (render_pipeline:855)。→ 「None ⇒ slot 無し」
+  に一貫化 (release + `oversize_rejects` 追加 + 既存 warn 維持)。
+- アドバーサリアル検証: 旧非 evict 注入で 2 テスト赤 (:532/:590) → 復帰緑。
+- 注入ミス実績 (誠実記録): BZ-1 注入の初稿は `?` 復元でなく match 腕を
+  破壊し E0004。アドバーサリアル注入は**元コードの忠実復元**で行う規則を
+  再確認し、注入を厳密化して再実施 (本件は試験手順の自己修正、製品コード
+  無関係)。
+
+### BZ-3 (低): utilization() の 0 容量 NaN
+new(0) で v/i capacity 0 → 0/0=NaN。NaN=観測欠測の哲学に従い容量 0 は
+0.0 に倒す guard 追加 (watermark 方式の意味論も doc 明文化: freed は
+差し引かず「過去最大占有」を見る指標)。
+
+### BZ-5 (低): rebuild_mdi が slot.mdi_index の真値を書き戻さない
+upload 時 append 位置の mdi_index は rebuild の keys sort 再配置で stale
+化するのに、旧実装は slot を未更新 (嘘のハンドル)。→ rebuild で
+`PersistentSlot { mdi_index, ..s }` 書き戻し。live 消費者ゼロ (grep 確認)
+のため安全、かつ将来の GPU 配線 (消費者追加) の事前安全化。命令列の
+全フィールド厳密ピン (append 順≠sort 順のシナリオで内容・冪等性)。
+
+### BZ-6 (低): 容量配分 3:1 → 2:1 (数学的最適化、挙動不変を機械確認)
+- 旧配分は bytes 3:1 = 要素数 v==i (両者 pool_bytes/16)。主 workload の
+  all-quad (4v/6i = 要素比 1:1.5) では index 側が 2/3 充填で枯渇し、
+  vertex 側 1/3 が恒常死蔵。数学的最適 bytes v:i=(4×12):(6×4)=2:1 へ改訂
+  (new(1): v_cap 87381→58254 / i_cap 65536→87381)。
+- 影響検証: ベンチの chunk は容量境界を踏まないため structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (実測)。厳密値ピン: v_cap 58254 /
+  i_cap 87381 / staging 699048B・349524B / utilization 0.5 (f32 厳密商)。
+- カウンタ doc 明文化 (uploads=成功数, reuses=refresh 数,
+  bucket_allocs=free-list 経由確保数 (hw 新規は非計上), oversize_rejects)。
+
+### テスト (+5 純増、875 全緑)
+index_alloc_failure_rolls_back_high_water_vertex_region /
+index_alloc_failure_restores_free_list_block_exactly /
+oversize_reject_evicts_slot_and_none_means_absent /
+rebuild_mdi_updates_slots_and_content_exact /
+capacity_rebalance_utilization_and_zero_capacity_exact
+(全値手導出、初回実行で 7/7 一致)。
+
+### 検証結果 (全て実測)
+- lib **875/875** (+5、persistent_vbo_pool 7/7)。structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (BZ-6 配分変更後に再測定)。
+- fmt: HEAD baseline 66 → 自前 7 箇所を rustfmt 正準形へ是正後
+  **66 (WORK-only 差分行 0)**。
+- cargo check -p rsift-opt-gfx --all-targets: エラー 0。
+- 不可視文字 0 / CRLF 0 (python 検査)。
