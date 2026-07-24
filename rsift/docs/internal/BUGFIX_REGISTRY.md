@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-94 (BV-CR 節) | 116 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **300** |
+| E 期: 横断契約クラス期 | wave 72-95 (BV-CS 節) | 121 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **305** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -362,6 +362,11 @@
 | CR-4 | 低 | HazardQueue::reclaimed_count 別名削除 (reclaim 直接呼出し統一) + best-fit/分割/併合正準レイアウト Python 検算ピン |
 | CR-5 | 低 | wave 92 残留の GUI_ROW_CHARS 未利用警告 → label 幅を契約から導出 (TOGGLE/SLIDER_LABEL_CHARS) で真 consumer 化・単一真実源 (警告 28→27) |
 | CR-6 | 観 | SPSC メモリ順序正準性・free 二重 merge index dance・free_by_size bucket 整合の仕様一致確認 + gpu_culling DeviceExt 警告は 3d601f4 初版由来と確定 (棚卸し管理へ) |
+| CS-1 | 中 | sort_nearest_first 距離² i32 オーバーフロー (|d|≤46341 ラップ、i64 でも越境) → i128 厳密化+巨大座標 4 点順序ピン (テスト赤 2 捕捉経由) |
+| CS-2 | 低 | FaceEmitMask 0.15 魔数 → FACE_MASK_AXIS_THRESHOLD pub const (文献照合)+軸 5 ケース厳密 bit ピン |
+| CS-3 | 低 | SectionOccupancy doc 残留語彙乖離 («layers[y] is unused» 等英語解説) → xz/y_any 実装同期 doc クリーン |
+| CS-4 | 観 | FaceEmitMask::ALL 退化 (count_ones()<3) は単位ベクトル制約で下限=3 の数学証明 → 到達不能だが防衛保持・文書化 |
+| CS-5 | 観 | solid_interior_cull 範囲 1..S-1 恰好確認 (shell=1352 ピン)・render_pipeline filter→edit 順既良・PullGenerationCache 語彙 wave 87 一致 |
 
 ---
 

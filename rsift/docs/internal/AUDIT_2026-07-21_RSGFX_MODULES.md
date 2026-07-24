@@ -5442,3 +5442,36 @@ GpuArena::alloc の O(n) Vec 分割挿入コスト (巨大アリーナ下での 
 `ChunkMeshArenas::alloc_mesh` panic 語彙 (fail-loud 意図は 2026-07-22 監査済だが
 panic→Result 化の可否一台帳論)、HazardQueue pending swap_remove の順序非保存
 現況の語彙化、SharedRingBuffer discriminative `Fully-used` len>BUFFER_SIZE 瞬間値の doc 化。
+
+## CS-1/CS-2. low_spec_stack.rs (wave 95, 2026-07-24)
+
+410 → 471 行。全行照合 + render_pipeline 実配線 (LowSpecPlan / FaceEmitMask /
+frustum_culled / flora_should_skip_detail / adaptive_mesh_interval /
+PullGenerationCache / emit_lod_box_quads / sort_nearest_first 他)、
+full_graph_wiring (ao_refine cheap_face_ao 上限注記)、packed4 語彙確認。
+一次文献: Lumien/Đorđević-系 GPU culling box-masking (~16° 鋭角盖住近似)。
+全数値 Python 機械検算 (1352 shell 値、軸 5 値表 47/61/55/59/37、Euclid² 順序)。
+
+| CS-1 | 中 | `sort_nearest_first` 距離²が i32 算術 — |d| ≤ 46341 で d·d がラップ (release 未定義級) かつキャスト後も |d| > 3030490499 で i64 でも 2^63 超 (テスト赤 2 捕捉: キャスト位置・i64 上限) → i128 厳密化で全 i32 真相で厳密順序 (2⁶⁵<<2¹²⁷) + 巨大座標 4 値順序ピン |
+| CS-2 | 低 | FaceEmitMask の 0.15 魔数が複数箇所重複 → `FACE_MASK_AXIS_THRESHOLD` pub const 化 (文献値照合)+ 軸 5 ケース厳密ビットピン (Python 47/61/55/59/37) |
+| CS-3 | 低 | SectionOccupancy doc 残留語彙 («layers[y] is unused» 等の英語解説) が実装フィールド xz/y_any と乖離 → 実装同期の日本語 doc へクリーン |
+| CS-4 | 観 | `FaceEmitMask::ALL` 退化分岐 `count_ones()<3` は単位ベクトル制約 (各軸 ≥1 ビット寄与) で下限=3 を証明 → 到達不能だが防衛保持として文書化 |
+| CS-5 | 観 | apply_solid_interior_cull 範囲 `1..S-1` は真真囲通の手部条件と厳密対応 (1352 shell ピン)、render_pipeline は filter(削除)→edit 順で冗長書き込みなし、PullGenerationCache 語彙 (Chebyshev 境界含む) wave 87 で一致済み |
+
+### 検証 (wave 95)
+- 956 全緑 (+3: interior shell=1352 ピン、軸表 5 拘束、巨大座標順序)。
+  テスト赤 2 捕捉 (合計 18 件系): i128 前の i64 キャスト位置ミス、巨大座標での順序期待値設計ミス (両者とも実装側根拠で訂正)。
+- アドバーサリアル 2 系統: (a) i128 → 旧 i32 直列退行 → huge-coords FAILED。
+  (b) T 0.15→0.20 改変 → face_mask 系 FAILED。/tmp 揮発経験を受け固定版は
+  永続領域 ~/bak へ (md5 忠実復元 OK→全緑)。
+- fmt: HEAD 17/work 17 維持 (rustfmt 正準 2-line split を検算で再現)。
+  不可視文字/CRLF/末尾改行 none・警告カウント 27 据え置き。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- 機械検算 (Bash 規律): 1352 値、Euclid² 順序 4 値、軸 5 値表、i128 上限 2⁶⁵<<2¹²⁷、shell=16³−14³。
+
+### 残 (次 wave 以降の棚卸し)
+`PullGenerationCache` prune の HashMap retain O(n) を世代インデックス化する検討、
+FaceEmitMask::ALL 防衛分岐の NaN yaw/pitch 供給経路網羅監査 (hzb_2d::CameraState
+正規化の次 wave 棚卸しに含める)、SectionOccupancy の 16×u16 → u256 圧縮による
+ビルド費削減 (branchless_block 系の統一 hw_popcount)、
+emit_lod_box_quads の origin 絶対化語彙 (origin_x/y/z の world-aligned 基点一貫性)。

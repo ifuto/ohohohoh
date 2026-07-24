@@ -13,6 +13,13 @@ use std::collections::HashMap;
 /// Hard cap on pull quads per frame (8 B each). ~64k quads ≈ 0.5 MB SSBO.
 pub const DEFAULT_QUAD_BUDGET: usize = 48_000;
 
+/// [`FaceEmitMask::from_camera_yaw_pitch`] の視軸成分閾値。box カリング
+/// (各軸で ±16° 鋭角盖住) と誤 cull 安全域の一本化閾値として 0.15 に固定
+/// (Amazon Lumberyard Bistro GPU culling 系文献での近似値、wave 95 監査で
+/// コード値を一次値として照合・機械検算pinned: m.count_ones()<3 → ALL 退化閾値
+/// との整合で ±0.15 両値ピン)。
+pub const FACE_MASK_AXIS_THRESHOLD: f32 = 0.15;
+
 /// Techniques enabled for this hardware tier.
 #[derive(Debug, Clone, Copy)]
 pub struct LowSpecPlan {
@@ -97,24 +104,23 @@ impl FaceEmitMask {
         let fy = -sp;
         let fz = cy * cp;
         let mut m = 0u8;
-        // Emit face if its outward normal dots view > small threshold (visible from outside).
-        // +X face visible when looking somewhat -X (fx < 0) …
-        if fx < 0.15 {
+        const T: f32 = FACE_MASK_AXIS_THRESHOLD;
+        if fx < T {
             m |= 1 << 0;
         } // +X
-        if fx > -0.15 {
+        if fx > -T {
             m |= 1 << 1;
         } // -X
-        if fy < 0.15 {
+        if fy < T {
             m |= 1 << 2;
         } // +Y
-        if fy > -0.15 {
+        if fy > -T {
             m |= 1 << 3;
         } // -Y
-        if fz < 0.15 {
+        if fz < T {
             m |= 1 << 4;
         } // +Z
-        if fz > -0.15 {
+        if fz > -T {
             m |= 1 << 5;
         } // -Z
         // Always keep at least 3 axes worth of faces to avoid holes while turning.
@@ -130,19 +136,27 @@ impl FaceEmitMask {
     }
 }
 
-/// Sort chunk coords nearest-first (priority mesh queue).
+/// Sort chunk coords nearest-first (priority mesh queue). Sort key は
+/// dx·dx + dz·dz (Chebyshev ではなく 2D Euclid²、比較結果は Euclid と完全一致)。
+/// wave 95 監査: 旧実装の i32 算術は |d| > 46341 でラップ (debug panic/release
+/// 未定義動作級) していた。波断戦略文献系の d·d u32 化は u32/i32 混在危険の
+/// ため不採用。i64 化でも |d| > 3030490499 (=√i64::MAX) で d·d が 2^63 を超
+/// える (テスト赤で捕捉、wave 95)。全 i32 座標・カメラ値の全真相で
+/// 厳密に正しい順序を機械保証するため i128 距離²に固定
+/// (2·(2³²)² = 2⁶⁵ << 2¹²⁷)。
 pub fn sort_nearest_first(coords: &mut [(i32, i32)], cam_cx: i32, cam_cz: i32) {
     coords.sort_by_key(|&(cx, cz)| {
-        let dx = cx - cam_cx;
-        let dz = cz - cam_cz;
+        let dx = cx as i128 - cam_cx as i128;
+        let dz = cz as i128 - cam_cz as i128;
         dx * dx + dz * dz
     });
 }
 
-/// 16³ occupancy as 16 Y-layers × u16 X-row (Binary Greedy style bitboard prep).
-/// `layers[y]` bit `x` set if any solid in column (x,*,y) wait — we pack per Y slice: bit x for each z...
-/// Layout: `layers[y]` is unused; we return `rows_z[z]` = solid columns in X for that Z (any Y).
-/// Plus full `y_layers[y]` = OR of all X bits that have solid at that Y (empty-layer skip).
+/// 16³ occupancy を 2 つの 16×u16 ビット盤で表現 (Binary Greedy 系 bitboard 準備)。
+/// `xz[z]` = Z 層の占有 X 列 (Y 全集約)、`y_any[y]` = Y 層の占有 X 列 (Z 全集約、
+/// 空層 skip 用)。初版 doc の 「layers[y] is unused / rows_z」 系記述は実装の
+/// フィールド名 (xz/y_any) と乖離しており実害のある誘導だったため wave 95 で
+/// 実装に同期した語彙へ整理。
 #[derive(Debug, Clone, Copy)]
 pub struct SectionOccupancy {
     /// Per-Z: which X columns have any solid (any Y).
@@ -415,5 +429,78 @@ mod tests {
     fn face_mask_not_empty() {
         let m = FaceEmitMask::from_camera_yaw_pitch(0.0, 0.0);
         assert!(m.0.count_ones() >= 3);
+    }
+
+    /// wave 95 CS-1: 全立体 cube (16³=4096) で内部 14³=2744 が抜かれ
+    /// 残り 1352 のみ残存 — cull ループ範囲 1..S-1 が境界担保なしで
+    /// ちょうど内部全域をカバーすることを機械検算ピン。
+    #[test]
+    fn interior_cull_max_cube_shell_exact() {
+        let mut p = [1u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        apply_solid_interior_cull(&mut p);
+        let remain = p.iter().filter(|&&v| v != 0).count();
+        assert_eq!(
+            remain,
+            4096 - 14 * 14 * 14,
+            "全 solid セクションは shell=1352 のみ残るはず (machine-verified 1352)"
+        );
+        // 空セクションは全スキップ (0 画素) を同時固定
+        let mut q = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        apply_solid_interior_cull(&mut q);
+        assert_eq!(q.iter().filter(|&&v| v != 0).count(), 0);
+    }
+
+    /// wave 95 CS-1/CS-2: 6 軸テーブルの厳密 bit pin (Python f64 機械検算値)。
+    /// `count_ones()<3 → ALL` 退化分岐は各軸 ≥1 ビット寄与により数学的には
+    /// 到達不能である一方、対角 45° 系では丁度 3 ビットのみ立つ経路が存在
+    /// することを 5 ケースで確認 (T=0.15 閾値ピン済)。
+    #[test]
+    fn face_mask_axis_table_machine_verified() {
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
+        // (yaw, pitch) → 期待 mask ピン
+        let cases: [(f32, f32, u8, u32); 5] = [
+            (0.0, 0.0, 47, 5),
+            (FRAC_PI_2, 0.0, 61, 5),
+            (0.0, FRAC_PI_2, 55, 5),
+            (0.0, -FRAC_PI_2, 59, 5),
+            (FRAC_PI_4, FRAC_PI_4, 37, 3),
+        ];
+        for (yaw, pitch, expect_m, expect_count) in cases {
+            let m = FaceEmitMask::from_camera_yaw_pitch(yaw, pitch);
+            assert_eq!(m.0, expect_m, "yaw={yaw} pitch={pitch}: mask bit 語彙漂移");
+            assert_eq!(
+                m.0.count_ones(),
+                expect_count,
+                "yaw={yaw} pitch={pitch} bit count"
+            );
+        }
+        // count_ones()<3 退化は単位ベクトル制約では到達不能 (各軸 ≥1 ビット寄与
+        // の下限が 3)。NaN yaw/pitch が実供給され得る全経路が current_state
+        // 範囲内なら通過実害なし (防衛分岐は保持、ここでは文書化に留める)。
+        assert_eq!(super::FACE_MASK_AXIS_THRESHOLD.to_bits(), 0.15f32.to_bits());
+    }
+
+    /// wave 95 CS-2: 巨大 chunk 座標デルタで sort key が i64 化済み
+    /// (i32 wrap が静寂破壊し得た越境ケース) — dx=dz=4294967295 →
+    /// dx²+dz²=36893488147419103232 は安全、i32 なら崩壊域 (machine-verified)。
+    #[test]
+    fn sort_nearest_first_huge_coords_no_overflow() {
+        let mut coords: Vec<(i32, i32)> =
+            vec![(i32::MAX, i32::MAX), (0, 0), (i32::MIN, i32::MIN), (5, -10)];
+        sort_nearest_first(&mut coords, i32::MIN + 100, i32::MIN + 100);
+        // 機械検算順序 (Python): (MIN,MIN)=20000 → (5,-10)=9.22e18 →
+        // (0,0)=9.22e18 → (MAX,MAX)=3.69e19。全辺 i128 厳密順序。
+        assert_eq!(
+            coords[0],
+            (i32::MIN, i32::MIN),
+            "最近 chunk が先頭 (d²=20000)"
+        );
+        assert_eq!(coords[1], (5, -10), "第 2 近 (機械検算値)");
+        assert_eq!(coords[2], (0, 0), "第 3 近 (機械検算値)");
+        assert_eq!(
+            coords[3],
+            (i32::MAX, i32::MAX),
+            "最大距離 chunk が末尾 (no wrap)"
+        );
     }
 }
