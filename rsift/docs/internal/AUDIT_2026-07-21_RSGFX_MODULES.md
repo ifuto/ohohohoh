@@ -4069,3 +4069,62 @@ capacity_rebalance_utilization_and_zero_capacity_exact
   **66 (WORK-only 差分行 0)**。
 - cargo check -p rsift-opt-gfx --all-targets: エラー 0。
 - 不可視文字 0 / CRLF 0 (python 検査)。
+
+## CA. svdag.rs 監査 (wave 77, 2026-07-24)
+
+svdag.rs (114→約280 行)。SVO を DAG 縮約する基底モジュール (BX で棚卸し残
+登録 → 本 wave で消化)。live 消費: full_graph_wiring:102/:861-862
+(build_from_volume、戻り root は破棄し :883 で aokana へ clone 登録)、
+aokana.rs (:45 `dag.root_id` 読取→ShallowSvdag に保持、走査未使用)、
+transform_svdag.rs (BX、insert のみ)。
+
+### CA-1 (中): build_from_volume が root_id を更新しない stale metadata 根治
+- 問題の定式化: `new()` は root_id=0 (空リーフ=「空世界の root」) に初期化
+  するが、`build_from_volume` は構築 root を返すのみで `self.root_id` を
+  更新しなかった。構築後の DAG は nodes に実木を持ちながら root_id は
+  「空世界 root」のまま = **嘘のメタデータ**。保持者 aokana
+  (ShallowSvdag.root_id:16/:51) には常に stale な入口点 id 0 が配られる
+  (現状走査未使用のため出力影響なし、将来の DAG 走査消費での踏み外し元)。
+- 修復: `self.root_id = build_octree_recursive(...)` として同値を返す。
+  doc で契約明文化。live 出力への影響は digest 実測不変で機械確認。
+- アドバーサリアル検証: 旧実装 (root_id 非更新) 注入 → 3 テスト赤
+  (:180/:198 等 root_id 期待 5 vs 0) → 復元後 11/11 緑。
+
+### CA-2 (低): コメント不一致訂正 + de-facto 契約の明文化・ピン化
+- 「Insert leaf empty/solid base nodes」のコメントに反し事前登録は**空
+  リーフのみ**。事前 solid 登録で id 1 固定化する改修は ID 絶対値の
+  消費者が現状皆無で益小、digest 影響の検証コストに見合わないため
+  **挙動は温存し文書を実態に合わせる**判定 (誠実ドキュメント規律)。
+  de-facto 契約 (id 0 = 空リーフ、初期 root_id = 0 = 空世界、初 solid
+  リーフが id 1) を doc 明文化 + テストでピン。
+- insert_node の決定性契約 (pool は lookup のみ、ID は連番、同一挿入列
+  →同一 nodes) を doc 明文化 + 2 インスタンス同一 volume で Vec 完全一致ピン。
+
+### CA-3 (低): 厳密構築ピン 3 ケース (全値手導出・初回一致)
+- 単一 voxel (0,0,0): 6 ノード鎖 {1,[MAX..]}→{1,[k,..]}、root=root_id=5。
+- 全 solid: 各レベル完全 dedup {255,[k;8]} 鎖、6 ノード、root=root_id=5。
+- 隣接 2 voxel (0,0,0),(1,0,0): 最下位が mask 3 で leaf id 1 を 2 度指す
+  {3,[1,1,MAX..]}、以降は {1,[k,..]} 鎖、6 ノード。
+- 空 volume: root=0=root_id 不変、count 1。
+
+### CA-4 (低): 不変量走査の設計修正 (テスト赤=自己誤り捕捉 8 件目)
+- 初稿不変量「mask bit ⟺ children[i]≠MAX」は**リーフ形ノードで偽**:
+  solid リーフ {1,[MAX;8]} は mask bit 0 立つがリンクなし (リーフの mask
+  は solid フラグで、中間ノードの「子孫 solid リンク」意味論と別)。
+- 精緻化: リーフ形 (children 全 MAX) ⟹ mask∈{0,1}、中間形 ⟹ bit⟺link ∧
+  link 先は有効 ID。テストが初稿の設計ミスを捕捉 (実績 8 件目、
+  BM-3/BN-3/BP-3/BX-2×2/BZ-2 注入手順 に続く)。
+
+### テスト (+5 純増、880 全緑)
+empty_volume_keeps_base_root_and_updates_root_id / single_voxel_exact_chain /
+all_solid_exact_dedup_chain / two_adjacent_voxels_share_parent_with_mask3 /
+build_is_deterministic_across_instances (ヘルパ assert_dag_invariants 新設、
+既存 test_svdag_deduplication 維持)。
+
+### 検証結果 (全て実測)
+- lib **880/880** (+5、svdag 系 11/11)。structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (CA-1 修復後に再測定)。
+- fmt: HEAD baseline 30 → 自前 13 箇所 (構造体リテラル 12+α) を rustfmt
+  正準形へ是正後 **30 (WORK-only 差分行 0)**。
+- cargo check -p rsift-opt-gfx --all-targets: エラー 0。
+- 不可視文字 0 / CRLF 0 (python 検査)。
