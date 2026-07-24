@@ -4128,3 +4128,56 @@ build_is_deterministic_across_instances (ヘルパ assert_dag_invariants 新設�
   正準形へ是正後 **30 (WORK-only 差分行 0)**。
 - cargo check -p rsift-opt-gfx --all-targets: エラー 0。
 - 不可視文字 0 / CRLF 0 (python 検査)。
+
+## CB. aokana.rs 監査 (wave 78, 2026-07-24)
+
+aokana.rs (115→約200 行)。Aokana shallow SVDAG リージョン管理。live 消費:
+full_graph_wiring (:104 保持、:242 new(1920,1080)、:883 insert_shallow_region
+(600 tick 毎 refresh)、:889 evaluate_visible_regions → **.len() のみ消費**)。
+
+### CB-1 (中): evaluate_visible_regions の HashMap 非決定反復 → sort で根治
+- 問題の定式化: `for (&coords, dag) in &self.shallow_dags` は HashMap 反復順
+  (SipHash ランダムシードでプロセス/インスタンス毎に不定)。戻り Vec の
+  現消費は .len() のため無害だが、順序消費の追加 (例: 先頭優先処理) で
+  flaky になる潜伏 (BS-2 非決定 drain と同型)。
+- 修復: keys を collect → `sort_unstable` → 順に評価。戻り Vec は
+  **(rx,ry,rz) 辞書順**の契約を doc 明文化・ピン。
+- 検証: 16 インスタンス横断完全一致テスト (乱順登録 [(1,0,0),(0,1,1),(0,0,0)]
+  → 厳密 [(0,0,0),(0,1,1),(1,0,0)])。アドバーサリアル検証: 旧 HashMap 反復
+  注入で :159 赤 → 復元後 4/4 緑。
+- 副次捕捉 (精神的コンパイル実績): 「広く許容」平面セット [-1,0,0,100] は
+  x≥128 区画を捌くため、初稿シナリオの region (2,0,1) は不可視と判明 →
+  実行前にシナリオ座標を許容包絡内へ修正 (自己検証 9 件目に準ずる記録)。
+
+### CB-2 (低): 契約ピン (境界・置換・規約)
+- 境界 `dot+d == 0` (接触) は可視: 平面 [-1,0,0,64] に対し region (1,0,0)
+  は p-vertex -64+64=0 で生存、region (2,0,0) は -64<0 で捌く厳密ピン
+  (f32 整数演算、libm 非依存)。p-vertex 選択・符号テストのため平面は
+  非正規化でも可 (doc 明記)。
+- insert_shallow_region の同一座標 = **最新で置換** (live の 600 tick
+  refresh 経路と整合) をピン: root_id/lod_level の置換と len 不変。
+- region_size_blocks = 64 規約ピン (full_graph_wiring の K-1 注記と整合)。
+
+### CB-3 (低): doc 誠実化 (Hi-Z/visibility buffer 未配線の明記)
+- 旧 doc は「evaluate region AABB against Hi-Z, emit visibility buffer
+  commands」と主張するが実装は **frustum p-vertex テストのみ**。
+  hzb_occlusion / visibility_resolver フィールドは occlusion pass 統合用に
+  確保 (消費者方針に基づき保持) しつつ、現行未配線であることを doc で
+  誠実化 (実装か文書か: 文書を選択 — Hi-Z 統合は大機能で別 wave の検証
+  が要るため)。
+- CA-1 連携ピン: build_from_volume 済み DAG (root 5、wave 77 手導出) を
+  登録すると ShallowSvdag.root_id == 5 の真値が保持される。
+
+### テスト (+3 純増、883 全緑)
+visible_regions_sorted_and_cross_instance_deterministic /
+frustum_plane_boundary_exact /
+insert_replaces_and_root_id_is_truthful_after_build
+(ヘルパ permissive_planes 新設、既存 test_aokana_shallow_svdag 維持)。
+
+### 検証結果 (全て実測)
+- lib **883/883** (+3、aokana 4/4)。structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (両修復後に再測定)。
+- fmt: HEAD baseline 2 → **2 (WORK-only 差分行 0、初稿から正準形)**。
+- cargo check -p rsift-opt-gfx --all-targets: エラー 0 (git root からの誤実行
+  による偽陽性 1 件を cwd 誤りと特定・正規 cwd で 0 確認)。
+- 不可視文字 0 / CRLF 0 (python 検査)。
