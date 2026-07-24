@@ -41,7 +41,17 @@ pub struct FrustumUniforms {
     pub _pad: [u32; 2],
 }
 
-/// Reusable GPU buffer pool — avoids per-frame allocation on the hot path
+/// プール容量の決定則 (pure): 最小 64、next-power-of-two で償還成長。
+/// exact-fit 再確保を防ぐため `chunk_count` を直接使わない。
+fn pool_capacity(chunk_count: usize) -> usize {
+    chunk_count.max(1).next_power_of_two().max(64)
+}
+
+/// Reusable GPU buffer pool — avoids per-frame allocation on the hot path.
+///
+/// 成長戦略: `pool_capacity` (next-power-of-two, min 64) の償還成長。
+/// exact-fit だと +1 チャンク増減でプール全体を毎フレーム再確保し得るため、
+/// 「hot path で確保しない」設計目的に反していた (2026-07-24 CO 監査)。
 pub struct GpuBufferPool {
     box_buffer: Option<wgpu::Buffer>,
     indirect_buffer: Option<wgpu::Buffer>,
@@ -67,20 +77,25 @@ impl GpuBufferPool {
         chunk_count: usize,
     ) -> (&wgpu::Buffer, &wgpu::Buffer, &wgpu::Buffer) {
         if self.box_capacity < chunk_count {
+            let cap = pool_capacity(chunk_count);
             self.box_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Chunk Bounding Box Pool"),
-                size: (chunk_count * std::mem::size_of::<ChunkBoundingBox>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+                size: (cap * std::mem::size_of::<ChunkBoundingBox>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             }));
             self.indirect_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Indirect Command Pool"),
-                size: (chunk_count * std::mem::size_of::<DrawIndexedIndirectArgs>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST,
+                size: (cap * std::mem::size_of::<DrawIndexedIndirectArgs>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::INDIRECT
+                    | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }));
-            self.box_capacity = chunk_count;
-            self.indirect_capacity = chunk_count;
+            self.box_capacity = cap;
+            self.indirect_capacity = cap;
         }
         if self.uniform_buffer.is_none() {
             self.uniform_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
@@ -291,6 +306,13 @@ impl GpuDrivenCullingEngine {
         frustum: &FrustumUniforms,
     ) {
         debug!("GPU culling {} chunks (HZB={})", chunk_boxes.len(), self.hzb_enabled);
+        // 契約ピン: frustum.chunk_count と実スライス長の不一致は、シェーダが
+        // プール末尾の stale データまで cull 対象化する呼出側バグ。
+        debug_assert_eq!(
+            frustum.chunk_count as usize,
+            chunk_boxes.len(),
+            "FrustumUniforms.chunk_count must equal chunk_boxes.len()"
+        );
 
         let (box_buf, indirect_buf, uniform_buf) =
             self.buffer_pool.ensure_buffers(&self.device, chunk_boxes.len().max(1));
@@ -325,10 +347,18 @@ impl GpuDrivenCullingEngine {
         }
 
         self.queue.submit(Some(encoder.finish()));
-        trace!("GPU culling dispatch complete (pooled buffers, zero alloc)");
+        // 誠実注記: bind_group 生成・コマンドエンコーダの CPU 側確保は残る。
+        // 「プール再確保なし (定常)」が上限の主張。
+        trace!("GPU culling dispatch complete (pooled buffers)");
     }
 
-    /// Build default frustum from a simple perspective matrix decomposition
+    /// デフォルト frustum を生成する。
+    ///
+    /// 誠実注記 (CF-7 同型): これは行列分解からの導出では**なく**、
+    /// 開発・テスト用の固定軸平行ボックス (view 空間で z∈[0.1,512],
+    /// |x|,|y|≤256)。`camera_pos` は planes の計算には使われず、
+    /// フィールド格納のみ (コンピュートシェーダも現状非参照)。
+    /// 実カメラ追従の frustum 配線は将来課題 (CO 棚卸し参照)。
     pub fn default_frustum(camera_pos: [f32; 3], hzb: bool, count: u32) -> FrustumUniforms {
         // 内法線ボックス視錐 (keep ⟺ dot(n, p) + w >= 0、p-vertex 判定)。
         // 回帰修正 (2026-07-22 監査): far/top/right/bottom の w が旧実装では
@@ -354,7 +384,15 @@ impl GpuDrivenCullingEngine {
     }
 }
 
-/// Tier-aware culling dispatch: GPU on capable tiers, CPU fallback on low-end
+/// Tier-aware culling dispatch: GPU on capable tiers, CPU fallback on low-end.
+///
+/// 返り値の契約 (CO 監査で明文化):
+/// - **CPU 経路**: 可視チャンク数 (`cpu_frustum_cull` の厳密集計)。
+/// - **GPU 経路**: 可視性はコンピュートシェーダが GPU バッファ上で確定し
+///   indirect path が直接消費するため CPU 側では未知。**提出チャンク総数**
+///   (= `chunk_boxes.len()`) を返す (可視数ではない)。また入力スライスの
+///   `is_visible` / `instance_count` は GPU 経路では**更新されない**
+///   (更新物は GPU バッファ)。両経路の返り値を混同しないこと。
 pub fn dispatch_adaptive_culling(
     engine: Option<&mut GpuDrivenCullingEngine>,
     chunk_boxes: &mut [ChunkBoundingBox],
@@ -526,5 +564,34 @@ mod strict_tests {
             module.entry_points.iter().any(|f| f.name == "main"),
             "@compute @workgroup_size(64) main が存在すること"
         );
+    }
+
+    // ---------------- CO 監査 (2026-07-24) 追加テスト ----------------
+
+    #[test]
+    fn pool_capacity_is_amortized_pow2_slab() {
+        // CO: exact-fit 時代は +1 チャンクで全再確保し得た。slab 粒度を厳密ピン。
+        assert_eq!(pool_capacity(0), 64);
+        assert_eq!(pool_capacity(1), 64);
+        assert_eq!(pool_capacity(63), 64);
+        assert_eq!(pool_capacity(64), 64);
+        assert_eq!(pool_capacity(65), 128);
+        assert_eq!(pool_capacity(128), 128);
+        assert_eq!(pool_capacity(129), 256);
+        assert_eq!(pool_capacity(1024), 1024);
+    }
+
+    #[test]
+    fn chunk_box_field_offsets_match_wgsl_storage_layout() {
+        use std::mem::offset_of;
+        // WGSL storage 規則 (vec3 align=16) との語彙整合を offset_of! で機械ピン
+        // (Python 検算: 0/12/16/28/32/36 → 48B)。
+        assert_eq!(offset_of!(ChunkBoundingBox, min_xyz), 0);
+        assert_eq!(offset_of!(ChunkBoundingBox, is_visible), 12);
+        assert_eq!(offset_of!(ChunkBoundingBox, max_xyz), 16);
+        assert_eq!(offset_of!(ChunkBoundingBox, chunk_index), 28);
+        assert_eq!(offset_of!(ChunkBoundingBox, bindless_texture_id), 32);
+        assert_eq!(offset_of!(ChunkBoundingBox, _pad), 36);
+        assert_eq!(std::mem::align_of::<ChunkBoundingBox>(), 4);
     }
 }

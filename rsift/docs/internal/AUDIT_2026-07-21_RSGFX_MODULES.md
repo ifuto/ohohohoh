@@ -5235,3 +5235,66 @@ ktx2_transfer_follows_srgb_hint / ktx2_vkformat_values_match_vulkan_registry。
 BC7 他モード (0/3/5) の拡張方針、KTX2 KVD メタデータ (KTXorientation 等)、
 encode_texture_bc7 の sRGB 正規 box フィルタ (線形化平均は現在未適用、
 perceptual 補正は品質課題)。
+
+## CO. gpu_culling.rs (wave 91, 2026-07-24)
+
+531 → 600 行。全行照合。消費者: cpu_occlusion / hzb_2d /
+persistent_vbo_pool / render_pipeline (型 import)、lib.rs glob。
+GPU 実行系は device 不在のため静的語彙照合 + naga parse 既存ピンに限定
+(本 wave の WGSL 変更なし)。Python 機械検算で ChunkBox WGSL storage
+オフセット (vec3 align=16 → 0/12/16/28/32/36 → 48B) と Rust repr(C) の
+完全一致を事前確認。
+
+### CO-1 (中): dispatch_adaptive_culling GPU 経路の返り値契約が曖昧
+- GPU 経路は `chunk_boxes.len()` (提出総数) を返すが CPU 経路は可視数を
+  返す非対称が無記載 + GPU 経路で入力スライスの is_visible/instance_count
+  が一切更新されないことも無記載 (可視性は GPU バッファ上で確定し
+  indirect path が直接消費する設計)。混同誘発の契約欠落。
+- 根治: 返り値契約の doc 明文化 (GPU=提出総数/スライス不変、CPU=可視数)。
+  挙動不変 (未消費 API、誠実 doc 側の解決 = CF-7 型)。
+
+### CO-2 (低): default_frustum の doc が「perspective matrix decomposition」と虚偽
+- 実体は固定軸平行ボックス (view 空間 z∈[0.1,512], |x|,|y|≤256) で
+  camera_pos は planes に未反映 (格納のみ、シェーダも非参照)。
+- 根治: 誠実注記へ訂正 (実カメラ追従配線は将来課題として棚卸し)。
+  面テーブル自体は CL 期以前の符号反転回帰修正済 (既存ピン維持)。
+
+### CO-3 (中): GpuBufferPool が exact-fit 成長で +1 増減のたび全再確保し得る
+- 「avoids per-frame allocation on the hot path」の設計目的に対し、
+  `capacity < count` の exact-fit は振動的な長変化で毎フレーム全再確保。
+- 根治: `pool_capacity` (min 64 / next_power_of_two) pure fn 抽出と
+  償還成長化 (0/1/63/64→64, 65→128, 129→256 を厳密ピン)。
+  Python で slab 表を事前検算。
+
+### CO-4 (低): chunk_count 契約ピン + trace 誠実化
+- `frustum.chunk_count != boxes.len()` の呼出誤りはシェーダがプール末尾の
+  stale データまで cull 対象化 → debug_assert 契約ピン (正規呼出は既に一致)。
+- `trace!` の「zero alloc」主張を撤回 (bind_group/encoder の CPU 確保あり)
+  → 「(pooled buffers)」へ誠実化。
+
+### CO-5 (観)
+- WGSL FrustumData の camera_pos/hzb_enabled はシェーダ非参照
+  (CPU 一元化の設計意図、WGSL コメント記載済) を設計固定として確認。
+- cpu_frustum_cull の短い commands 配列 (get_mut 安全側) は既存ピン済。
+
+### テスト (純増 2、946 全緑)
+pool_capacity_is_amortized_pow2_slab (slab 表厳密ピン) /
+chunk_box_field_offsets_match_wgsl_storage_layout (offset_of! 6 点機械ピン)。
+
+### 検証結果 (全て実測)
+- lib **946/946** (+2)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+  all-targets エラー 0。不可視文字 0 / CRLF 0 / 末尾改行あり。
+- fmt: HEAD 大偏差ファイル (171) のため全体 rustfmt 禁止遵守、編集関数内の
+  長行 usage 2 箇所を個所調整 → 偏差は **171 → 161 に減少のみ**、
+  本 wave 追加分の WORK-only 偏差 0 (残偏差は全て HEAD 起因)。
+- アドバーサリアル 1 系統: pool_capacity の exact-fit 復元注入 → slab
+  テスト FAILED → 逆編集で忠実復元 → 8/8 緑。規律メモ: co_backup を
+  HEAD で採取し注入後の復元を逆編集で行った (次回以降は wave 89/90 同様
+  「固定版バックアップ → 注入 → md5 復元」の順序を厳守)。
+- 環境事象: sandbox egress 障害 (全ツール不通 ×6 リトライ) を検出・報告、
+  自然復旧後に state 無損失を機械確認して再開。
+
+### 残 (次 wave 以降の棚卸し)
+実カメラ追従 frustum (行列分解の真実装) 配線、GPU 結果の CPU 読戻し
+需要 (stats/デバッグ用 readback)、GpuBufferPool の縮小戦略 (長期大口確保
+保持の解放)、HAB/engine の tier 配線実装 (gpu_enabled 真値源)。
