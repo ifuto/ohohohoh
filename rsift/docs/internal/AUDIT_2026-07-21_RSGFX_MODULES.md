@@ -5516,3 +5516,46 @@ worker_loop の 5ms timed wait を shutdown 専用通知で即応化するかの
 残 86 モジュール (機械再計算 all=163/done=95/todo=86、quality_governor 309、
 render_pipeline 1713 第 3 部、full_graph_wiring 2687 第 4 部等)。
 警告一掃 wave (27 件) は別途棚卸し管理。
+
+## CU. quality_governor.rs (wave 97, 2026-07-25)
+
+309 → 519 行。全行照合 + 消費者 (full_graph_wiring:163 フィールド/:301 new
+(Default)/:346 quality_score/:400·:435 observe + :436 Downshift 消費、
+rsift_bench:146-153 scenario、render_pipeline コメント契約行) 確認。
+一次情報: UE DynamicRes `r.DynamicRes.MaxConsecutiveOverbudgetGPUFrameCount`
+(module doc 出典: 連続オーバーで即降段・履歴リセット) = 降段無クールダウン
+設計の根拠。全数値 Python 機械検算 (下記)。
+
+| CU-1 | 低 | EMA「約 16 フレームで半減期」コメント誤記 — 正しくは半減期 ln(0.5)/ln(1−α)=11.20 フレーム、時定数 τ=1/α=16.67 (n=16 残存 (1−α)^16=37.16% で半減せず) → `EMA_ALPHA` pub const 化 + f64 bit 厳密ピン (n=11 bits>8333、n=12 bits<8333)、降段時 EMA リセットは最新観測 40000.0 への bit 代入ピン |
+| CU-2 | 中 | GovernorConfig 無検証 — NaN/非有限/反転帯 (good≥over) は observe 内の大小比較を両方不成立にしてガバナを静寂沈黙 (else 分岐で両カウンタ恒常リセット) させ、0 閾値は毎フレーム発火の病理 → `validate()` fail-loud + `new()` 構築強制 |
+| CU-3 | 低 | `frames` private 未読フィールド → `frames()` pub accessor で消費者追加 (bench fps/期間算出の一次情報) + observe 毎厳密 +1 単調ピン |
+| CU-4 | 低 | next_upshift コメント「最後に落としたものから戻す」は未実装履歴スタックを示唆する虚偽 (実=静的逆優先度: RenderDistance 先返上) → 誠実化 + タンパー初期値の全列 f64 ピン (10,RD,0)(15,SH,2)(20,SH,1)(25,SH,0)、quality_score を外部 levels 改竄耐性 `saturating_sub` 化 (u8 アンダーフロー → debug panic / release ラップ破壊の根絶、改竄 200 全投入でも 0..=100 契約維持) |
+| CU-5 | 観 | render_scale_pct `l.min(5)` 防御クランプは levels pub 改竄に有効、降段にクールダウンを掛けないのは UE 一次情報「即座に落とし履歴リセット」と一致 (意図的設計)、upshift 時 EMA 非リセットは good 期間の収束済みで妥当、cooldown 実効語彙 = 昇段後 F+1..F+cd−1 の cd−1 フレーム全抑制 + F+cd から再開可 (5 間隔列で実証) |
+
+### 検証 (wave 97)
+- 967 全緑 (+7: 半減期 bit、降段 EMA リセット bit、validate 反転/NaN 拒否、
+  validate 0 閾/target 拒否、frames 単調、upshift 逆優先度 4 列、
+  score saturating + 正規改竄 81 ピン)。
+- アドバーサリアル 4 系統全検出: (a) EMA_ALPHA 0.06→0.10 改変 →
+  ema_half_life_bit_exact FAILED。(b) 反転帯チェック除去 →
+  config_validate_rejects_inverted FAILED。(c) next_upshift の .rev() 除去 →
+  upshift_reverse_priority FAILED (Shadow 先返上列化で検出)。(d)
+  saturating_sub 逆戻し → quality_score_saturates FAILED
+  (attempt to subtract with overflow)。固定版は ~/bak へ (md5 忠実復元→全緑)。
+- fmt: HEAD 14 / work 14 一致 (自分の追加分 1 hunk のみ rustfmt コメント整列、
+  ベースライン 1 hunk 温存)。不可視/CRLF/簡体字 none・警告 27 (14+13) 据え置き。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- 機械検算 (Bash 規律): 半減期 11.2023・τ 16.6667・n=16 残存 37.16%・
+  f32-as-f64 閾値 over=19165.899602651596/good=13332.800198674202・
+  降段初発厳密 n=5 (over は n=2 蓄積開始)・upshift 列 10/15/20/25・
+  score 18*100/22=81・n=11/12 f64 bits 0x40c07afba3552504/0x40befbb01e95d4f3。
+
+### 残 (次 wave 以降の棚卸し)
+QualityState.levels pub 配列の検証付き setter 化 (observe 側は改竄 level>steps−1
+で next_downshift の guard により該当ノブ静寂対象外 — saturating は score のみ)、
+cooldown 語彙「cd フレーム禁止」対実効「cd−1 全抑制+F+cd 再開」の doc 明文化、
+EMA 単一指標から P95 band / GPU・CPU 別トラッキング (UE 本家準拠) への拡張検討、
+render_scale_pct の段表 [100,90,80,70,60,50] を steps() と単一真実源化。
+
+### 棚卸し (wave 97 時点)
+残 85 モジュール (機械再計算)。警告一掃 wave (27 件) は別途棚卸し管理。

@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-96 (BV-CT 節) | 126 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **310** |
+| E 期: 横断契約クラス期 | wave 72-97 (BV-CU 節) | 131 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **315** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -242,7 +242,7 @@
 | BU-2 | 低 | 空メッシュ簡略化早期 passthrough ピン |
 | BU-3 | 観 | use_svo_encoding 命名乖離を真値表で確定 (リネーム見送り) |
 
-## E 期: 横断契約クラス期 (wave 72-96)
+## E 期: 横断契約クラス期 (wave 72-97)
 
 | ID | 度 | 概要 |
 | :--- | :- | :--- |
@@ -372,6 +372,11 @@
 | CT-3 | 中 | parallel_for(count=0) が count.max(1) で f(0..1) 1 件静寂実行 (要求 0 実行の逆セマ) → count==0 early return (消費者ガード非依存の API 契約化) |
 | CT-4 | 観 | Priority 判別子 (FC=0/N=1/BG=2)↔バケット index 一対一を from_raw 内部規約化・wait_idle 排水参加+50µs ポーリング・Condvar 5ms timeout+Drop notify_all/join 終結手順 全て契約内 |
 | CT-5 | 観 | 消費者 full_graph_wiring:498/504 (quads>0 ガード付 parallel_for + wait_idle) のみ — 0 判定語彙で挙動変化なし、CT-1 で完了保証が初めて真に成立 |
+| CU-1 | 低 | EMA「約 16 フレームで半減期」誤記 (実=半減期 11.20/時定数 16.67、n=16 残存 37.16%) → EMA_ALPHA pub const+f64 bit ピン (n=11>8333, n=12<8333)・降段 EMA リセット 40000.0 bit ピン |
+| CU-2 | 中 | GovernorConfig 無検証 (NaN/反転帯/0 閾で比較全不成立→カウンタ恒常リセットのガバナ静寂沈黙 or 毎フレーム発火病理) → validate() fail-loud+new 構築強制 |
+| CU-3 | 低 | frames 未読フィールド → frames() pub accessor 消費者追加 (fps/期間算出の一次情報)+observe 毎厳密 +1 ピン |
+| CU-4 | 低 | upshift doc「最後に落としたものから」虚偽 (実=静的逆優先度 RD 先返上) → 誠実化+タンパー順序ピン (10,RD,0)(15,SH,2)(20,SH,1)(25,SH,0)、quality_score を外部 levels 改竄耐性 saturating 化 (u8 underflow panic 根絶) |
+| CU-5 | 観 | render_scale_pct l.min(5) 防御・降段無クールダウン (UE 一次情報「即座に」一致)・upshift 非 EMA リセット (good 収束済で設計通り)・cooldown 実効語彙 (抑制 F+1..F+cd-1、F+cd 再開 — 5 間隔列で実証) |
 
 ---
 
