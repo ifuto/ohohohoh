@@ -4789,3 +4789,61 @@ time_slice 180us 見積・DAG コスト係数 0.05..0.4 係数群、LEO tag
 (palettes.len 由来)、visgraph flood 半径 8、FSR3 16x16 プローブの
 depth=nearest/128 scaling、FSR2 jitter 0.002 scale、hud stats 正規化
 係数群 (/64 /16 /8)、decal_local 供給値、cluster_grid z スライス割当。
+
+## CI. full_graph_wiring.rs 監査 第 3 部 (wave 85, 2026-07-24)
+
+対象: tick_world メッシュ確保 (gigabuffer 圧迫経路) + time_slice パッチ駆動キー。
+
+### CI-1 (中): gigabuffer 圧迫時の二重虚偽 — 「最古」がハッシュ順任意要素 + 「再試行」のコード不存在
+- 旧実装の 2 虚偽:
+  (a) `self.gb_handles.keys().next()` は HashMap ハッシュ順の**任意要素**であり
+      「最古エントリ (LRU)」のコメントと無関係。被害者が実行毎に変わり得る
+      非決定的挙動。
+  (b) 「実解放して再試行」と記述しながら解放後に **allocate 再試行のコードが
+      存在せず**、当該メッシュ確保は静寂に欠落 (match で Some/None を捨てる
+      ため観測不能)。
+- 根治:
+  - `gb_order: VecDeque<(i32,i32)>` (挿入順 FIFO) を struct に追加。
+  - `gb_store`: 新規キーのみ push_back (= 置換は順位不変、1 キー 1 順位)、
+    旧ハンドル即解放。
+  - `gb_alloc_or_evict`: 1 回 allocate → None なら pop_front で**真の FIFO
+    最古** (stale は読み飛ばし) を実解放 → **単一 retry** → 失敗なら潔く
+    None (過剰退避で既存メッシュを壊滅させない bounded 挙動。
+    自然退役に委譲)。
+- 数学的正当性: retry 失敗時の被害者は高々 1 件 (oversize 要求のみが既存を
+  破壊し得るが害は 1 件に限定)。oversize は GpuArena::alloc が free_by_size
+  の `range_mut(need..).next()?` で None を返す (panic なし) ため安全に失敗。
+- 爆発半径: gigabuffer ハンドルは `_giga` で保持のみ (描画経路は未接続、
+  gpu_arena 側は別系) → digest 不変を実測確認。
+
+### CI-2 (観): patch 駆動キー `packed & 0xFFF` の誠実注記
+- cz 下位 2bit と sy 10bit の混在であり per-block 真差分ではなく時分割
+  シミュレーションの決定的駆動値。patch_for_block の契約 <4096 は構造的に
+  常時保証。動作変更なし、将来課題を明記。
+
+### テスト (純増 1、923 全緑)
+`gb_eviction_fifo_single_retry_and_stale_skip`:
+- 置換の順位不変 (`gb_order == [(0,0),(1,1)]` 厳密等値)。
+- 600MiB oversize → None + FIFO 最古のみ退避 + 次点生存 + 失敗確保未登録
+  + 被害者 1 件のみ消費 (bounded)。
+- retry 成功径路: 250+250+11=511MiB 使用で空き 1MiB に 12MiB 要求 →
+  1 回目失敗、FIFO 最古の 250MiB 解放で単一 retry 成功し (13,13) 登録
+  (= 旧実装で欠落していた径路)。250/11/12MiB はいずれも align 256 倍数で
+  厳密算術。
+
+### 検証結果 (全て実測)
+- lib **923/923**。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: full_graph_wiring WORK-only **0** (HEAD 由来 32 行は温存)。
+- 不可視文字 0 / CRLF 0 / all-targets で当該由来警告 0。
+- アドバーサリアル 2 系統:
+  (a) retry 削除注入 (旧 no-retry 再現) → gb_eviction テスト FAILED ✓検出。
+  (b) FIFO→LIFO (`pop_back`) 注入 → 同テスト FAILED ✓検出。
+  いずれも検出確認後、バックアップから忠実復元 (md5 同一) → 15/15 緑。
+
+### 残 (第 4 部 = wave 86 予定、棚卸し)
+第 3 部棚卸し残: entity_culler visible_ids 消費、time_slice 180us 見積、
+DAG コスト係数群 (0.05/0.4/0.1/0.2/0.1)、critical_ms、LEO tag
+(palettes.len 1..=7)、visgraph flood 半径 8、FSR3 16x16 プローブ
+(depth=nearest/128・motion=0.001)、FSR2 jitter 0.002 scale、HUD stats
+正規化係数群 (/64 /16 /8)、decal_local 供給値、cluster_grid z スライス割当、
+morton bump 評価。

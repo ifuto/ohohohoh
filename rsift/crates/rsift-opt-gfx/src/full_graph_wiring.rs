@@ -115,6 +115,10 @@ pub struct FullGraphWiring {
     azdo: crate::azdo::AzdoOrchestrator,
     gigabuffer: crate::gigabuffer::GigaBufferSuballocator,
     gb_handles: HashMap<(i32, i32), crate::gpu_arena::ArenaHandle>,
+    /// gigabuffer 圧迫時の FIFO 被害者選択用の挿入順キュー
+    /// (wave 85 CI-1。「最古」の真の定義 = 挿入順。stale エントリは
+    /// 置換時に重複登録しない設計で 1 キー 1 順位を保証)。
+    gb_order: VecDeque<(i32, i32)>,
     vram_cache: crate::lockfree_vram_cache::LockFreeVramMeshCache,
     paging: Option<crate::out_of_core_paging::OutOfCoreMmapPaging>,
     page_handles: HashMap<(i32, i32), crate::out_of_core_paging::PageHandle>,
@@ -256,6 +260,7 @@ impl FullGraphWiring {
             azdo: crate::azdo::AzdoOrchestrator::new(8192, 64),
             gigabuffer: crate::gigabuffer::GigaBufferSuballocator::new(512),
             gb_handles: HashMap::new(),
+            gb_order: VecDeque::new(),
             vram_cache: crate::lockfree_vram_cache::LockFreeVramMeshCache::new(1 << 16),
             paging,
             page_handles: HashMap::new(),
@@ -348,6 +353,44 @@ impl FullGraphWiring {
         } else {
             4
         }
+    }
+
+    /// gigabuffer へのハンドル登録 (FIFO 順位を維持し、旧ハンドルは即解放)。
+    fn gb_store(&mut self, k: (i32, i32), handle: crate::gpu_arena::ArenaHandle) {
+        if !self.gb_handles.contains_key(&k) {
+            self.gb_order.push_back(k);
+        }
+        if let Some(old) = self.gb_handles.insert(k, handle) {
+            self.gigabuffer.free_mesh_slice(old);
+        }
+    }
+
+    /// gigabuffer の実確保。【wave 85 CI-1】容量超過 (None) 時は
+    /// **FIFO (挿入順最古) の被害者を 1 つだけ実解放して単一 retry**。
+    /// 旧実装は `HashMap::keys().next()` (ハッシュ順の任意要素) を
+    /// 「最古エントリ」と偽り、かつ「実解放して再試行」のコメントに
+    /// **再試行コードが存在しなかった** (当該確保が静寂に欠落)。
+    /// retry も失敗した場合は潔く None (過剰退避で既存メッシュを
+    /// 壊滅させない bounded 挙動、自然退役に委譲)。
+    fn gb_alloc_or_evict(
+        &mut self,
+        k: (i32, i32),
+        bytes: u64,
+    ) -> Option<crate::gpu_arena::ArenaHandle> {
+        if let Some(h) = self.gigabuffer.allocate_mesh_slice(bytes) {
+            self.gb_store(k, h);
+            return Some(h);
+        }
+        while let Some(victim) = self.gb_order.pop_front() {
+            if let Some(h) = self.gb_handles.remove(&victim) {
+                self.gigabuffer.free_mesh_slice(h);
+                break;
+            }
+            // 置換/退避で stale 化した順序エントリは読み飛ばす。
+        }
+        let h = self.gigabuffer.allocate_mesh_slice(bytes)?;
+        self.gb_store(k, h);
+        Some(h)
     }
 
     /// 後方互換ラッパー (旧 API)。最小限の実作業: pacing + governor observe。
@@ -666,22 +709,7 @@ impl FullGraphWiring {
                 report.lockfree_cache_hits += 1;
             }
             let bytes = inputs.draw_index_counts.get(i).copied().unwrap_or(0) as u64 * 4 + 4096;
-            match self.gigabuffer.allocate_mesh_slice(bytes) {
-                Some(handle) => {
-                    if let Some(old) = self.gb_handles.insert(*k, handle) {
-                        self.gigabuffer.free_mesh_slice(old);
-                    }
-                }
-                None => {
-                    // 容量超過: 最古エントリを実解放して再試行 (LRU)。
-                    let oldest = self.gb_handles.keys().next().copied();
-                    if let Some(ok) = oldest {
-                        if let Some(h) = self.gb_handles.remove(&ok) {
-                            self.gigabuffer.free_mesh_slice(h);
-                        }
-                    }
-                }
-            }
+            let _giga = self.gb_alloc_or_evict(*k, bytes);
             if let Some(h) = self.gpu_arena.alloc(bytes) {
                 self.gpu_alloc_queue.push_back((h, arena_epoch));
             }
@@ -768,6 +796,10 @@ impl FullGraphWiring {
         }
         let mut patch_quads_removed = 0usize;
         let processed_this_frame = self.time_slice.run_frame(|packed| {
+            // 【誠実注記 wave 85 CI-2】patch 駆動キーは `packed & 0xFFF`
+            // = cz 下位 2bit と sy 10bit の混在。セクションの真の per-block
+            // 差分ではなく時分割シミュレーションの決定的駆動値
+            // (patch_for_block の契約 <4096 は構造的に常時満たされる)。
             let patch =
                 crate::temporal_mesh_diff::TemporalDiff::patch_for_block((packed & 0xFFF) as usize);
             patch_quads_removed += patch.removed_quads.len();
@@ -2587,6 +2619,48 @@ mod strict_tests {
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    /// CI-1: FIFO 被害者選択 (挿入順最古)、置換の順位不変、stale skip、
+    /// 単一 retry、retry 失敗時の潔い None + 被害者 1 件の bounded 挙動。
+    #[test]
+    fn gb_eviction_fifo_single_retry_and_stale_skip() {
+        let (dir, mut w) = unique_wiring("gb_evict");
+        assert!(w.gb_handles.is_empty() && w.gb_order.is_empty());
+        assert!(w.gb_alloc_or_evict((0, 0), 1 << 20).is_some());
+        assert!(w.gb_alloc_or_evict((1, 1), 2 << 20).is_some());
+        assert!(w.gb_alloc_or_evict((0, 0), 1 << 20).is_some(), "置換も成功");
+        let order: Vec<_> = w.gb_order.iter().copied().collect();
+        assert_eq!(order, vec![(0, 0), (1, 1)], "置換は順位不変 (重複なし)");
+        // 512MiB 容量に 600MiB oversize: 単一 retry でも不可 → None、
+        // ただし FIFO 最古 (0,0) だけが実解放される。
+        assert!(w.gb_alloc_or_evict((9, 9), 600 << 20).is_none());
+        assert!(!w.gb_handles.contains_key(&(0, 0)), "FIFO 最古が被害者");
+        assert!(w.gb_handles.contains_key(&(1, 1)), "次点は生存");
+        assert!(!w.gb_handles.contains_key(&(9, 9)), "失敗確保は未登録");
+        assert_eq!(w.gb_order.len(), 1, "被害者は 1 件のみ消費 (bounded)");
+        // 空き回復後の小確保は追加退避なしで成功 (stale なし)。
+        assert!(w.gb_alloc_or_evict((2, 2), 1 << 20).is_some());
+        assert!(w.gb_handles.contains_key(&(1, 1)));
+        assert!(w.gb_handles.contains_key(&(2, 2)));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // retry 成功径路: 250+250+11=511MiB 使用で空き 1MiB の状態に
+        // 12MiB を要求 → 1 回目失敗、FIFO 最古 (10,10) の 250MiB 解放で
+        // 単一 retry が成功 (旧実装は retry が無く静寂欠落していた径路)。
+        let (dir2, mut w) = unique_wiring("gb_retry");
+        assert!(w.gb_alloc_or_evict((10, 10), 250 << 20).is_some());
+        assert!(w.gb_alloc_or_evict((11, 11), 250 << 20).is_some());
+        assert!(w.gb_alloc_or_evict((12, 12), 11 << 20).is_some());
+        assert!(w.gb_alloc_or_evict((13, 13), 12 << 20).is_some());
+        assert!(!w.gb_handles.contains_key(&(10, 10)), "FIFO 最古を実解放");
+        assert!(w.gb_handles.contains_key(&(11, 11)));
+        assert!(w.gb_handles.contains_key(&(12, 12)));
+        assert!(
+            w.gb_handles.contains_key(&(13, 13)),
+            "retry 成功で当該確保が救済 (旧実装では欠落)"
+        );
+        let _ = std::fs::remove_dir_all(&dir2);
     }
 
     #[test]
