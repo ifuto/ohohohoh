@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 122
+- count: 123
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -140,3 +140,4 @@
 - 2026-07-24 (count 120): wave 85 CI flaky 診断の再実行 (d70e354 同等、ローカル全工程グリーン再現済)
 - 2026-07-24 (count 121): wave 86 render_pipeline 再監査第1部 (CJ-1 wiring 入力欠落併合・CJ-3 diff ダーティ帯域・CJ-2 verdict 統一・CJ-4 SVO 決定論選択・CJ-5/6 誠実化 計6項目、927 全緑+adversarial 2 系統検出) の CI 緑確認用
 - 2026-07-24 (count 122): wave 87 render_pipeline 第2部 (CK-1 派生キャッシュ prune/invalidate 追随・CK-2 HZB y 帯整合・CK-3/4/5 誠実化 + chunk_origin 語彙突合 計5項目、930 全緑+adversarial 2 系統検出、復旧手順2種完走) の CI 緑確認用
+- 2026-07-24 (count 123): wave 88 entity_culling 監査 (CL-2 moved 即再評価・CL-3 ゲート遅延適用完成・CL-5 total valid 化・CL-4 fov_cos_min 化・CL-1/7 誠実化 計7項目、934 全緑+捕捉16件目+adversarial 4 系統) + 台帳全カウンタ機械積算正規化 (256) の CI 緑確認用

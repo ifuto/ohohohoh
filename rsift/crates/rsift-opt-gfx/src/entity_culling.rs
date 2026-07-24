@@ -1,10 +1,14 @@
 //! EntityCulling (tr7zw) & Hierarchical Spatial Culling V2 — 実体/ブロックエンティティの高速オクルージョンカリング。
 //!
 //! 本式および改良 V2 アルゴリズム:
-//! - カメラ→実体AABBサンプル点への SIMD 8-Wide AVX2 / SWAR パケット DDA レイキャスト判定
+//! - カメラ→実体AABBサンプル点への DDA レイキャスト判定
+//!   (【誠実注記 wave 88 CL-1】`RayPacket8` の「8-Wide SIMD/SWAR」は命名のみで、
+//!    `ray_packet_unblocked_8wide` は各自をスカラー DDA で逐次判定する。
+//!    実 SIMD 化は本クレートに存在しない — CF-7 と同型の誠実化)
 //! - チャンク単位の二段階階層カリング (`ChunkBucketGate`): チャンク不可視時は内部全実体を O(1) で即時スキップ
 //! - ゼロアロケーション・ビットマスク高速判定 (`FastEntityCuller` / `BitMask` / Flat SoA)
-//! - 結果は 1 フレーム遅延および移動/予算分割で適用 (描画揺れを抑えるスキッピング戦略)
+//! - 結果の適用戦略: `EntityCuller` は 1 フレーム遅延/予算分割、`FastEntityCuller` は
+//!   距離/FOV 即時不可視+ゲート遅延のハイブリッド (後述 CL-3/CL-6 の誠実注記どおり)
 
 use std::collections::{HashMap, HashSet};
 
@@ -177,6 +181,7 @@ impl EntityCuller {
 // ============================================================================
 
 /// 8-Wide SIMD Ray Packet for simultaneous multi-point DDA voxel occlusion testing.
+/// (実装はスカラー逐次 — wave 88 CL-1 誠実注記参照)
 #[derive(Debug, Clone, Copy)]
 pub struct RayPacket8 {
     pub ox: [f32; 8],
@@ -254,6 +259,12 @@ pub struct FastEntityCuller {
     pub period_ticks: u64,
     pub max_distance: f32,
     pub chunk_cull_gate: bool,
+    /// FOV 判定の cos 下限 (既定 0.35 ~ half-angle 69.5°)。
+    /// 呼出側が実カメラ FOV の余弦を供給して真値化できるフィールド (CH-3 同型)。
+    /// 【wave 88 CL-4】真値配線は consumer 側の FOV 公開待ちの将来課題で
+    /// 現行既定は従来値 0.35 のまま不変。静的構成前提 (動的変更しても
+    /// 再評価は period 到達で追従 — FOV skip は評価を経ず前回値を持つ)。
+    pub fov_cos_min: f32,
     last_rays: u32,
     last_far: u32,
     last_reeval: u32,
@@ -270,6 +281,7 @@ impl FastEntityCuller {
             period_ticks: 10,
             max_distance,
             chunk_cull_gate: true,
+            fov_cos_min: 0.35,
             last_rays: 0,
             last_far: 0,
             last_reeval: 0,
@@ -298,9 +310,14 @@ impl FastEntityCuller {
                 slot.valid = true;
             } else {
                 let c = center_of(t);
+                // CL-2 (wave 88): 移動検知 (0.2 ブロック超) は last_center の
+                // 更新で消費されるだけで再評価要求が消失していた。
+                // EntityCuller の `due || moved` と同語彙で即再評価を要求
+                // (移動実体の vis ラグ最大 period_ticks=10 フレームを根治)。
                 if dist_sq(c, slot.last_center) > 0.04 {
                     slot.last_center = c;
                     slot.target = *t;
+                    slot.last_eval_tick = self.tick.saturating_sub(self.period_ticks);
                 }
             }
         }
@@ -349,7 +366,7 @@ impl FastEntityCuller {
 
             let dist = dist_sq.sqrt();
             let cos = (d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2]) / dist.max(1e-4);
-            if dist > 2.0 && cos < 0.35 {
+            if dist > 2.0 && cos < self.fov_cos_min {
                 far += 1;
                 slot.visible = false;
                 continue;
@@ -371,7 +388,20 @@ impl FastEntityCuller {
                     && !ray_unblocked(cam, [mid_x as f32, mid_y as f32, mid_z as f32], solids)
                 {
                     chunk_skipped += 1;
-                    slot.visible = false;
+                    // CL-3 (wave 88): ゲート skip は保守テストであり誤爆
+                    // (境界チャンクの false positive) を含むため、モジュール
+                    // 宣言どおりの遅延適用で visibility を保持する
+                    // (旧実装は即 false で、境界実体がフレーム毎に点滅し得た)。
+                    // 保持した visibility を bitmask にも反映 (初版修正は
+                    // continue でビット設定を飛ばし実効不可視のままだった —
+                    // テスト赤が捕捉)。
+                    if slot.visible {
+                        let w = i >> 6;
+                        let bit = 1u64 << (i & 63);
+                        if w < self.bitmask.len() {
+                            self.bitmask[w] |= bit;
+                        }
+                    }
                     continue;
                 }
             }
@@ -408,8 +438,11 @@ impl FastEntityCuller {
         self.last_reeval = evaluated as u32;
         self.last_chunk_skipped = chunk_skipped;
 
+        // CL-5 (wave 88): total は valid スロット数 (旧実装はバッファ長で、
+        // invalid 尾スロットを occluded 側に混入し統計を歪めていた)。
+        let total_valid = self.slots.iter().filter(|s| s.valid).count() as u32;
         let mut st = CullStats {
-            total: n as u32,
+            total: total_valid,
             visible: self.bitmask.iter().map(|w| w.count_ones()).sum::<u32>(),
             rays_cast: self.last_rays,
             skipped_far: self.last_far + self.last_chunk_skipped,
@@ -518,6 +551,10 @@ pub fn ray_unblocked<S: SolidQuery>(from: [f32; 3], to: [f32; 3], solids: &S) ->
         if x == tx && y == ty && z == tz {
             return true;
         }
+        // 【誠実注記 wave 88 CL-7】打切り時は「不確実 → 可視側」に着地する
+        // 保守方向 (誤 cull による可視ポップを防ぐため逆側は不可)。
+        // 256 セル超のレイは画角外遠延のみで、既定 max_distance=64 の経路では
+        // 構造的に不発 (max_distance は pub のため長距離設定時に発動する)。
         if guard > 256 {
             return true;
         }
@@ -617,5 +654,139 @@ mod tests {
         let (mask, st) = c.cull_fast_mask([0.5, 20.0, 0.5], [0.0, -1.0, 0.0], &solid);
         assert!(st.visible > 0);
         assert!(FastEntityCuller::is_visible_bit(mask, 0));
+    }
+
+    // =================================================================
+    // wave 88 CL 節
+    // =================================================================
+
+    /// CL-2: 同一 ID の移動 (0.2 ブロック超) は次回 cull で即再評価される
+    /// (period_ticks 未到達に関わらない — EntityCuller の due||moved と同語彙)。
+    #[test]
+    fn fast_moved_target_rerevaluates_next_cull() {
+        let solid = Flat(0); // 全て非不透明 → レイは常時非遮蔽
+        let mut c = FastEntityCuller::new(1, 128.0);
+        let home = EntityTarget {
+            id: 1,
+            min: [0.0, 10.0, 0.0],
+            max: [1.0, 11.0, 1.0],
+            is_block_entity: false,
+        };
+        c.replace_targets_fast(&[home]);
+        // due の真のカレンダ: last_eval=0 から period=10 で tick 10 が初回 due
+        // (新規実体は既定 visible=true を 9 tick 保持する 1 フレーム遅延設計)。
+        for i in 1..=9 {
+            let (_m, st) = c.cull_fast_mask([0.5, 20.0, 0.5], [0.0, -1.0, 0.0], &solid);
+            assert_eq!(st.reevaluated_this_tick, 0, "tick {i} は非 due");
+        }
+        let (_m10, st10) = c.cull_fast_mask([0.5, 20.0, 0.5], [0.0, -1.0, 0.0], &solid);
+        assert_eq!(st10.reevaluated_this_tick, 1, "tick 10 = 初回 due");
+        assert!(FastEntityCuller::is_visible_bit(_m10, 0));
+        // 同一 ID で 2 ブロック移動 → CL-2: period 未到達 (tick 11) でも即再評価。
+        let moved = EntityTarget {
+            id: 1,
+            min: [2.0, 10.0, 0.0],
+            max: [3.0, 11.0, 1.0],
+            is_block_entity: false,
+        };
+        c.replace_targets_fast(&[moved]);
+        let (_m11, st11) = c.cull_fast_mask([0.5, 20.0, 0.5], [0.0, -1.0, 0.0], &solid);
+        assert_eq!(
+            st11.reevaluated_this_tick, 1,
+            "移動検知は即再評価 (旧実装は 0 で最大 10 tick の vis ラグ)"
+        );
+        assert_eq!(st11.rays_cast, 5, "パケット 5 レイ再発射");
+    }
+
+    /// CL-3: ChunkBucketGate の保守 skip は visibility を保持 (遅延適用)。
+    /// 旧実装は即 false で境界実体がフレーム毎に点滅し得た。
+    #[test]
+    fn gate_skip_keeps_previous_visibility() {
+        // 全セル不透明 → ゲートの opaque 3 点と mid レイ遮蔽がともに成立。
+        let solid = |_: i32, _: i32, _: i32| true;
+        let mut c = FastEntityCuller::new(128, 128.0);
+        // ターゲット中心 (12.5,10.5,12.5): カメラから距離 ~19.4 (>16 ゲート発動域)。
+        let t = EntityTarget {
+            id: 1,
+            min: [12.0, 10.0, 12.0],
+            max: [13.0, 11.0, 13.0],
+            is_block_entity: false,
+        };
+        c.replace_targets_fast(&[t]);
+        // FOV 通過のための前進ベクトル (cos ~1.0)。
+        let fwd = [0.62, -0.49, 0.62];
+        let (mask1, st1) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+        assert_eq!(
+            st1.rays_cast, 0,
+            "ゲート skip は再評価前に発動 (レイ不発のまま)"
+        );
+        assert_eq!(st1.skipped_far, 1, "gate 1 件が skipped_far に合流");
+        assert!(
+            FastEntityCuller::is_visible_bit(mask1, 0),
+            "CL-3: ゲート skip でも前回 visibility を保持 (旧実装は即 false)"
+        );
+        // 連続呼出しでも同じ (点滅しない)。
+        let (mask2, _st2) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+        assert!(FastEntityCuller::is_visible_bit(mask2, 0));
+    }
+
+    /// CL-5: CullStats.total は valid スロット数 (invalid 尾を含めない)。
+    #[test]
+    fn total_counts_valid_slots_only() {
+        let solid = Flat(0);
+        let mut c = FastEntityCuller::new(128, 128.0);
+        let mk = |id: u64| EntityTarget {
+            id,
+            min: [id as f32, 10.0, 0.0],
+            max: [id as f32 + 1.0, 11.0, 1.0],
+            is_block_entity: false,
+        };
+        // 視線を真下に揃えて FOV 全通過。
+        let fwd = [0.0, -1.0, 0.0];
+        c.replace_targets_fast(&(0..5u64).map(mk).collect::<Vec<_>>());
+        let (_m1, st1) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+        assert_eq!(st1.total, 5);
+        // 5 → 2 へ縮小: slots バッファは 5 のまま、valid は 2。
+        c.replace_targets_fast(&[mk(0), mk(1)]);
+        let (_m2, st2) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+        assert_eq!(st2.total, 2, "invalid 尾は total に含めない (旧実装は 5)");
+        let _ = st2.occluded; // total - visible の導出破綻も解消されている
+    }
+
+    /// CL-4: fov_cos_min は FOV フィルタの閾値として実効 (後方互換既定 0.35)。
+    #[test]
+    fn fov_cos_min_field_gates_cone() {
+        let solid = Flat(0);
+        let mut c = FastEntityCuller::new(128, 128.0);
+        assert_eq!(c.fov_cos_min, 0.35, "既定は従来値不変");
+        let t = EntityTarget {
+            id: 1,
+            min: [0.0, 10.0, 0.0],
+            max: [1.0, 11.0, 1.0],
+            is_block_entity: false,
+        };
+        c.replace_targets_fast(&[t]);
+        // 真下のターゲットに水平前方 fwd → cos ~0。
+        let fwd = [0.0, 0.0, 1.0];
+        let (_m1, st1) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+        assert_eq!(st1.visible, 0, "既定 0.35 では cos~0 が不可視");
+        // 緩和 -1.0 (離心角 ≦180° 全通過)。FOV skip は評価を経ず前回値を持つ
+        // (静的構成前提) ため、可視化は due (tick 10) 到達の実評価で起きる。
+        c.fov_cos_min = -1.0;
+        for i in 2..=10u64 {
+            let (_m, st) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+            if i == 10 {
+                assert_eq!(st.reevaluated_this_tick, 1, "tick 10 で due 実評価");
+                assert_eq!(
+                    st.visible, 1,
+                    "fov_cos_min=-1.0 では cos<0.35 のはずの対象が可視 (閾値の実効証明)"
+                );
+            } else {
+                assert_eq!(
+                    st.visible, 0,
+                    "緩和直後も due 前は前回値 (不可視) を保持 — 静的構成前提"
+                );
+            }
+        }
     }
 }

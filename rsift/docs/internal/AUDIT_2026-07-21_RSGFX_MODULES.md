@@ -4998,3 +4998,71 @@ eco region の可視性語彙、fps 由来 stats 語彙、ingest invalidate と
 rebuild lazy SVO の再生成遅延 (次 far LOD まで SVO 欠落の窓)、
 cpu_occluder cull 結果の depth 活用、frame_stats.fps 語彙、
 非 live 時の wiring 入力語彙 (unit cube 系)。
+
+## CL. entity_culling.rs 監査 (wave 88, 2026-07-24)
+
+対象: 全 621 行全行照合 (EntityCuller / FastEntityCuller / RayPacket8 / DDA)。
+消費者確認済: EntityCuller = full_graph_wiring 実消費 + wide/pseudo bench
+(→ digest 敏感経路のため EntityCuller 側は挙動不変の範囲に限定)、
+FastEntityCuller = pseudo_mc_live のみ (bench digest 非経路)。発見 7 項目。
+
+### CL-1 (観): 「SIMD 8-Wide AVX2 / SWAR パケット DDA」の主張が実装と不一致 (CF-7 同型)
+- `ray_packet_unblocked_8wide` は各自をスカラー DDA (ray_unblocked) で
+  逐次判定するだけで、実 SIMD/AVX2 命令は本クレートに存在しない。
+- 冒頭 docstring および RayPacket8 doc を誠実化 (コード不変 → digest 影響ゼロ)。
+
+### CL-2 (中): FastEntityCuller の移動検知が再評価要求を消失 (最長 10 tick の vis ラグ)
+- replace_targets_fast の同一 ID 分岐は last_center を即更新するだけで
+  moved-ness を破棄 → 移動実体の visibility が period_ticks=10 回まで
+  stale のまま (EntityCuller は `due || moved` で即再評価する同語彙参照系)。
+- 根治: moved 分岐で `slot.last_eval_tick = self.tick.saturating_sub
+  (self.period_ticks)` とし次回 cull で必ず due。
+- ピン: due の真のカレンダ (新規=後述 9 tick 遅延、tick 10 = 初回 due) を
+  先に固定した上で、移動直後 tick 11 で reevaluated==1・rays==5 を厳密検証。
+
+### CL-3 (中): ChunkBucketGate の保守 skip が即 false で境界実体を点滅化
+- ゲートは保守テスト誤爆 (境界 false positive) を含むのに `slot.visible =
+  false` 即時適用 → モジュール宣言の「遅延適用スキッピング戦略」と矛盾、
+  境界実体がフレーム毎に点滅し得た。
+- 根治: visibility を保持し、保持値を bitmask にも反映。
+- **自己誤り捕捉 (16 件目)**: 初版修正は `continue` でループ末尾の
+  bitmask 設定を飛ばし「保持した visible=true が出力に反映されない」
+  実効無修正だった → 新テスト赤が実行前に捕捉 → 修正して進行。
+  (「テスト赤 = 自己誤り捕捉装置」規律の実績として台帳に記録。)
+
+### CL-4 (低): FOV フィルタ cos 0.35 ハードコード → fov_cos_min フィールド化 (CH-3 同型)
+- pseudo_mc_live の rec に FOV 公開が無く真値配線は consumer 改修待ちの
+  将来課題 (W-3 教訓: 中途半端配線はしない)。既定 0.35 不変で後方互換。
+- 静的構成前提の誠実注記付き (動的変更時は due 追従 — FOV skip は評価を
+  経ず前回値を持つ)。ピン: 既定不変 + -1.0 で cos<0.35 の対象が可視化。
+
+### CL-5 (中): CullStats.total が invalid 尾スロットを含み統計を歪曲
+- 5 → 2 縮小後も total=5 のまま invalid 3 件が occluded 側へ混入。
+- 根治: total = valid スロット数 (occluded = total - visible の導出も整合)。
+- skipped_far は far+gate 合流語彙 (既存ピン skip==1 で仕様固定、公開名は不変)。
+
+### CL-7 (観): ray_unblocked の guard >256 打切り → true は保守方向の誠実注記
+- 「不確実 → 可視側」は誤 cull (可視ポップ) を防ぐ正しい方向。
+- 既定 max_distance=64 経路では 256 セル超は構造的に不発
+  (pub max_distance の長距離設定時のみ発動) を明記。
+
+### テスト (純増 4、934 全緑)
+fast_moved_target_rerevaluates_next_cull / gate_skip_keeps_previous_visibility /
+total_counts_valid_slots_only / fov_cos_min_field_gates_cone。
+
+### 検証結果 (全て実測)
+- lib **934/934** (+4)。structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (EntityCuller 経路は一切の挙動不変、FastEntityCuller 変更は bench 非経路)。
+- fmt: WORK-only **0** (HEAD 12 行温存)。不可視文字 0 / CRLF 0 /
+  all-targets で当該由来警告 0。
+- アドバーサリアル 4 系統: (a) ゲート即 false 復元 → gate テスト FAILED
+  (旧実装のビット未設定欠陥=実効不可視も同時に実証)。(b) moved 再評価
+  要求消失 → moved テスト FAILED。(c) total=バッファ長復元 → total テスト
+  FAILED。(d) cos 0.35 ハードコード復元 → fov テスト FAILED。
+  いずれも検出確認後 md5 忠実復元 → 8/8 緑。
+- 環境事象: なし (git/Rust とも安定、HEAD=3630c11 維持)。
+
+### 残 (次 wave 以降の棚卸し)
+EntityCuller 側の新規実体 9 tick 遅延の設計注記強化、replace_targets の
+ID-POSITION ミスマッチ時の全再スキャン、fov_cos 真値配線 (consumer FOV
+公開待ち)、occludes_strict の 27 点と center_of の対称性証明。
