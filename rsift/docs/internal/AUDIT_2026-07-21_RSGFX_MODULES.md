@@ -5066,3 +5066,92 @@ total_counts_valid_slots_only / fov_cos_min_field_gates_cone。
 EntityCuller 側の新規実体 9 tick 遅延の設計注記強化、replace_targets の
 ID-POSITION ミスマッチ時の全再スキャン、fov_cos 真値配線 (consumer FOV
 公開待ち)、occludes_strict の 27 点と center_of の対称性証明。
+
+## CM. iris_pipeline.rs (wave 89, 2026-07-24)
+
+650 → 922 行 (テスト純増分を含む)。全行照合 + Iris/OptiFine 一次情報照合
+(irisshaders.org、OptiFineDoc `shaders.txt`、IrisShaders ShaderDoc、
+shaders.properties reference: programs/ordering/buffers)。
+パック構成 (shadow→gbuffers→deferred→composite1..99→final)、命名規則、
+uniform 系 (frameCounter/frameTimeCounter/eye-space 位置群) を一次確認。
+
+- 消費者: `rsift-launcher::builtin_engines` (with_tier + `load_shaderpack`
+  実呼出=zip パス実在消費、render は plan 未消費)、gui_settings は
+  discover_shaderpacks 言及のみ、lib.rs で glob re-export。digest 非経路。
+
+### CM-1 (中): pack_stem Composite(n≥3) が "composite" に潰れ Composite(0) と衝突
+- OptiFine 命名は `composite, composite1..composite99` (shaders.txt 一次)。
+  旧実装は 1,2 のみ正しく n≥3 を "composite" へ潰す (pub API の潜在欠陥)。
+- 根治: 戻り値を `Cow<'static, str>` 化し全番号で厳密合成
+  (`format!("composite{n}")`、1..=99 全値の OptiFine 命名ピン付き)。
+  呼出側 2 箇所は既に String 化前提で無改修。
+
+### CM-2 (中): resolve_pack_root が ".zip" 必須 → discover→load 往復破綻
+- discover_shaderpacks は拡張子なし stem を返すが resolve は
+  `pack_name.ends_with(".zip")` 必須 → 発見済 zip が**解決不能**となり
+  pack_root=None で静寂に全パス Eco fallback + "Ready: N passes" 誤報。
+- 根治: stem/明示の両形態を受理 (`{name}.zip` を候補探索) +
+  pack 不存在時の warn 追加 (誠実化)。builtin_engines の明示 .zip 呼出は
+  従来通り動作 (回帰ピンで両パターン固定)。
+
+### CM-3 (中): Eco fullscreen WGSL の uv 写像が上下反転 (latent)
+- wgpu/D3D 規約: NDC y=+1 (画面上端) ↔ texture v=0 (先頭行)。
+  旧 `uv = pos*0.5+0.5` は上端で v=1 をサンプル → composite/final の
+  恒等コピーが**上下反転**する潜在欠陥 (draw 消費者未配線のため潜伏)。
+- 根治: `v = 0.5 - y*0.5` へ厳密化 + 写像式の文字列回帰ピン
+  (旧式の混入を `contains` 否定でも拒否)。
+
+### CM-4 (中): zip deflate の実展開長が無制限 (zip-bomb 穴)
+- 16MiB/64MiB cap は**宣言**非圧縮長しか見ない。宣言≠実ストリームの
+  悪意エントリは len 検査で最終的に拒否されるが、その**前**に
+  read_to_end が無制限確保する (deflate 最大比 ~1032:1)。
+- 根治: `take(宣言+1)` で Reader を打ち切り、実展開長を宣言値に縛る
+  (fail-closed: 不一致エントリは一切書き出さないこともピン)。
+
+### CM-5 (低): discover_shaderpacks 3 点
+- zip 拡張子を case-sensitive で比較 (`.ZIP` 不発) → eq_ignore_ascii_case。
+- ドット入り dir 名が file_stem で欠落 ("my.pack"→"my") → dir は file_name。
+- 自前の zip 展開キャッシュ `.rsift_extracted` がパック候補に混入
+  → 隠し名 (`.` 開始) を候補外化。全て回帰ピン済。
+
+### CM-6 (低): dispatch_frame_passes が uniform を即破棄
+- `let _ = uniforms;` で下流エンコーダへ転送不可能だった。
+  「消費者ゼロ=削除理由にしない」方針に基づき**供給面を確保**:
+  `pub last_uniforms: IrisUniformBuffer` に保持 (f32 bit 等価ピン 6 点)。
+
+### CM-7 (観)
+- `for_tier` は Full を返さない: PerformanceTier は 4 値網羅済
+  (Minimal/Low→Off, Medium→Eco, High→Balanced)。Full は pub quality の
+  手動 opt-in で設計意図通り (低スペック優先方針と一致)。
+- plan の簡略 (deferred/prepare 省略、dimension フォルダ・
+  shaders.properties パース・separateEntityDraws/translucent
+  フォールバック・program.enabled 式は未実装) は module doc 記載の
+  scope 宣言と一致するため設計固定 (将来 scope として棚卸しへ)。
+- CRC32 未検証は既知簡略 (size 一致で大半を検出) として観察記録。
+
+### テスト (純増 7、941 全緑)
+pack_stem_follows_optifine_composite_numbering (1..=99 全値) /
+zip_pack_resolves_from_discovered_stem / zip_rejects_stream_inflating_
+past_declared_size / zip_deflate_roundtrip_honest_declared_size /
+discover_zip_case_insensitive_dir_full_name_and_hidden_skipped /
+dispatch_retains_uniforms_for_encoder (bit 等価) /
+fullscreen_uv_maps_ndc_top_to_texture_row_zero。
+
+### 検証結果 (全て実測)
+- lib **941/941** (+7)。structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (iris は bench 非経路)。launcher `cargo check` errors=0。
+- fmt: 当該ファイルは HEAD 側も rustfmt-clean のため全体 rustfmt 適用
+  → 再検査で **0**。不可視文字 0 / CRLF 0 / all-targets で当該由来警告 0。
+- アドバーサリアル 3 系統: (a) pack_stem を旧潰し実装へ → naming テスト
+  FAILED。(b) resolve の .zip 必須復元 → resolve テスト FAILED。
+  (c) uv 反転式復元 → uv ピン FAILED。いずれも検出確認後
+  /tmp/cm_fixed.rs から md5 忠実復元 (a80cff34…) → 9/9 緑。
+- 環境事象: なし (HEAD=fc9f9e9 から安定)。
+
+### 残 (次 wave 以降の棚卸し)
+GLSL→WGSL transpiler 実配線 (register_program の warn+Eco フォールバックを
+置換)、shaders.properties パース (program.enabled・separateEntityDraws・
+custom textures)、dimension フォルダ (world0/-1/1)、Iris uniform 本格写像
+(frameCounter 0..720719 リセット・frameTimeCounter 3600s リセット・
+eye-space sun/moon/shadowLightPosition 等)、CRC32 検証、
+gui_settings 選択 → load_shaderpack 配線。

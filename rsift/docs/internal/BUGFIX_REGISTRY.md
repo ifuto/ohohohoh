@@ -12,7 +12,7 @@
 - 深刻度 (audit 見出しの転記): **[C]** critical・**[高]**・**[中高]**・**[中]**・
   **[低]**・**[観]** = 観測・誠実性訂正・判断記録 (コード bug ではない修正)、
   **[基]** = 検証基盤の追加 (naga 突合等)。
-- 修正消費テスト数: 監査開始時 363 → wave 88 時点 **934 全緑** (実測、CL 4 件追加)。
+- 修正消費テスト数: 監査開始時 363 → wave 89 時点 **941 全緑** (実測、CM 7 件追加)。
 
 ## 統計 (数え上げ、推測なし)
 
@@ -20,10 +20,10 @@
 | :--- | :--- | ---: |
 | A 期: 初回大監査 + zero-test 消化 | 2026-07-21〜22 早段 | 20 |
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
-| C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 42 |
-| D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 76 |
-| E 期: 横断契約クラス期 | wave 72-88 (BV-CL 節) | 81 |
-| **合計** | **機械積算値** (全表の `| ID |` 行を grep 換算 — 2026-07-24 wave 88 で全カウンタを実測へ是正。A 期は漢字 ID (A期-NN) も含む) | **256** |
+| C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
+| D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
+| E 期: 横断契約クラス期 | wave 72-89 (BV-CM 節) | 90 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 (`Y-1/Y-2/Y-4` 等) と接尾辞行 2 (`BG-2b`/`BN-3a`) をパターン狭窄で落としていたことを検出、1行=1項目の既定規約で全期を再計測して是正 (旧正規化値は再現不能)。A 期は漢字 ID (A期-NN) も含む) | **274** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -329,6 +329,13 @@
 | CL-4 | 低 | FOV フィルタ cos 0.35 ハードコード → fov_cos_min フィールド化 (CH-3 同型、既定不変+静的構成前提注記、真値配線は consumer FOV 公開待ち) |
 | CL-5 | 中 | CullStats.total が invalid 尾スロット込みで統計歪曲 → valid 数へ根治 (skipped_far=far+gate 合流語彙はピンで仕様固定) |
 | CL-7 | 観 | ray_unblocked guard>256 → true は「不確実=可視側」保守方向の誠実注記 (既定 max_distance 経路では構造的不発) |
+| CM-1 | 中 | pack_stem Composite(n≥3) が "composite" に潰れ Composite(0) と衝突 (OptiFine `composite1..99` 命名と不整合の pub API 潜在欠陥) → Cow 化で全番号厳密合成・1..=99 全値ピン |
+| CM-2 | 中 | resolve_pack_root が ".zip" 必須のため discover_shaderpacks の stem 出力から zip を解決不能 (往復破綻+静寂 Eco fallback+Ready 誤報) → stem/明示の両受理化+pack 不存在 warn |
+| CM-3 | 中 | Eco fullscreen WGSL の uv 写像が上下反転 (wgpu NDC y=+1 ↔ texture v=0 に対し v=y*0.5+0.5 を使用、composite/final 恒等コピーの潜伏欠陥) → v=0.5-y*0.5 へ厳密化+写像式回帰ピン |
+| CM-4 | 中 | zip deflate の実展開長が無制限 (cap は宣言値のみ) で宣言≠実ストリームの zip-bomb が巨大確保を強制 → `take(宣言+1)` で実展開長を宣言値に縛り fail-closed 化 |
+| CM-5 | 低 | discover_shaderpacks 3 点: zip 拡張子 case-sensitive (`.ZIP` 不発)・ドット入り dir 名が file_stem で欠落・自前展開キャッシュ (.rsift_extracted) が候補混入 → case-insensitive 化/file_name 化/隠し名 skip |
+| CM-6 | 低 | dispatch_frame_passes が uniform を即破棄し下流エンコーダへ転送不能 → last_uniforms 保持 (消費者追加思想に基づく供給面確保、f32 bit 等価ピン) |
+| CM-7 | 観 | for_tier は Full を返さない (PerformanceTier 4 値網羅・Full は手動 opt-in、低スペック優先と一致) / plan 簡略 (deferred・properties・dimension 未実装) は module doc 記載 scope と一致のため設計固定 |
 
 ---
 
