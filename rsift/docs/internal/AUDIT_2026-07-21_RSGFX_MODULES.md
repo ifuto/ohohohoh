@@ -5635,3 +5635,66 @@ decode_all 横断対象。全数値 Python 機械検算。
 (現状 builder/scan のみで write/read 配線なし — pseudo_mc_live:930 参照)、
 len_field u32 (>4GiB チャンク) の契約 doc、CodecChoice::auto
 (battery_saver) の実機電源状態配線。
+
+## CY. nanite_clusters.rs (wave 100, 2026-07-25)
+
+343 → 742 行。全行照合 + 消費者照合 (full_graph_wiring.rs:1133-1161 で実配線
+= 実クアッド頂点から clusterize → should_draw の LOD スクリーン判定で
+report.nanite_meshlets / nanite_meshlets_culled を生成、lib.rs:188 re-export。
+配線経路は identity index = 三角間の頂点共有ゼロ → 全三角が孤立する
+「単一三角クラスタ」領域であり、CY-2 の影響解析の基点)。wide_static_bench
+digest 経路 (15 モジュール) に nanite_clusters 非含有を grep 照合し、
+実測でも digest 不変を確認。全数値を Python (Fraction/Decimal 80 桁の厳密
+f32 エミュレーション, RN-even 逐次再現) + 独立 Rust プローブ + rustc 実機
+の 3 系統で機械検算。
+
+| CY-1 | 中 | clusterize が `indices.len() / 3` の切り捨てで末尾の半端な 1-2 index を静寂 drop (wave 72 vertex_cache_opt と同種の静寂 drop) → assert! fail-loud + 契約 doc (空入力は従来通り受理)・panic メッセージ仕様化 |
+| CY-2 | 中 | next_seed の素数刻み走査が数学的破綻: gcd(step,len)≠1 で剰余列 {offset+i·step mod len} が全位置を巡回せず、31 (素数) 固定では len≡0 (mod 31) で訪問位置が len/31 (=全体の 3%) に縮退 → それらの確定後は残りの未確定三角を二度と seed できず走査終了 = 幾何の静寂消失。wiring 実経路 (全三角孤立) で直撃: 62 三角→2 クラスタ/93→3 (Python 厳密シムで消失再現) → step を len と互いに素な最小の奇数 (≥31) に取り直し (ユークリッド互除法)、剰余列を巡回群の完全置換化して全域 1 周を保証。gcd(31,len)=1 の既存入力 (2 の冪長 grid 全部) では走査順も旧版と完全一致 (シムで同一性立証) |
+| CY-3 | 中 | clusterize の頂点非有限無検査: NaN 1 個で centroid が NaN 化するが、radius は max-scan の `if d > r` ガード (NaN 比較は常に false) で 0.0 へ、merge error は `(NaN-…).max(0.0)` の NaN 非伝播で +0.0 へ静寂潰れ、should_draw 側も dist が 1.0 マスクされて「常時描画」へ静寂誤分類 (rustc -O 実機で全連鎖を実測: NaN.max(1.0)=1.0, (NaN-1).max(0.0)=0.0) → 入口 assert! 遮断 (wave 71 BU-1 / wave 73 と同哲学)。併せて vertex_offset 死に計算 (`let _=`) 除去、vertex_offset/vertex_count の scaffold 意味論 (常 0/コーナー数=3×tri 複製込み) を doc 誠実化 |
+| CY-4 | 中 | 親鎖が実際には一度も構築されない構造嘘: 局所 parent_of を計算して `let _=` で破棄していたため NanoMeshlet::parent は恒に u32::MAX、モジュール doc の「誤差ツリーまで作る」は不成立 → meshlets[root].parent = partner 実配線 (深さ 1 の親鎖を materialize)、stride/parent_of 死にコード除去、奇数個の末尾は単独根 (parent=MAX/error=+0.0 厳密)、level は多段化 scaffold 注記で誠実化 |
+| CY-5 | 中 | cluster_should_draw: doc が proj_factor を式から省略 +「誤差う」誤記 + clamp 2 箇所 (dist≥1.0, ε≥1.0) 未記載 + 厳密不等号の境界意味論未記載。更に f32::max の NaN 非伝播仕様により NaN カメラが d=1.0、NaN ε が ε=1.0 へ**通常値マスク**され静寂誤カリング (実機検証済) → 有限性 assert! (cam 各成分/proj_factor>0/error_px/error/sphere_center/sphere_radius) で入口遮断 + doc 完全書換 (式・clamp・境界等号不採用・error=0 常時採用の 4 契約を明記) |
+| CY-6 | 低 | テスト error_metric_nonzero_for_parents が `m.error >= 0.0` assert の恒真テスト (error は定義上 `(…).max(0.0)` ≥ 0 で何も検査せず、名のみ nonzero) → `meshlets[0].error > 0.0` + any(>0) の実質 assert に置換 (grid16 先頭ペアは中心相異 128 三角クラスタ同士で error>0 をシム立証) |
+| CY-7 | 低 | `max3(a, b)` が 2 引数 max (命名嘘: 3 項を取らない) → ラッパ除去して呼出側で f32::max 二項直接化 |
+
+### 検証 (wave 100)
+- 983 全緑 (+9: len%3 fail-loud+空/1 三角受理、31/62/93 孤立メッシュ全
+  カバレッジ、grid16 分割の厳密マルチセット 119 (110×1+4×2+4+6+3×128,
+  Python 生成配列をファイルから再抽出照合)、親鎖 59 ペア+単独根 error
+  bit ピン、meshlet0 sphere bit ピン、非有限頂点 NaN/inf 遮断、
+  should_draw dyadic 判定表 (境界等号 5.0<5.0 不採用含む)、should_draw
+  非有限 7 系統遮断、gcd 基本形 9 値)。既存 3 テストも強化 (grid8
+  メッシュレット数 1 ピン追加・恒真 assert 実質化)。
+- アドバーサリアル 3 系統全検出: (a) CY-2 coprime 選択除去 →
+  next_seed_full_coverage FAILED (孤立 62/93 で消失再現)・grid16 系ピンは
+  数学通り緑維持 (gcd=1 で走査順不変の相補確認)、(b) CY-4 親配線除去 →
+  parent_chain FAILED、(c) CY-1 assert 除去 → indices_len FAILED。
+  固定版は ~/bak + rsift/bak へ (md5 57834e4d… 忠実復元→全緑)。
+- fmt: HEAD 0 / work 0 完全一致 (ベースライン 0 のため全体 rustfmt 安全適用、
+  EXPECTED ピン配列は #[rustfmt::skip]+Python 再照合で保護)。
+- 警告: opt-gfx lib 14 / lib-test 17 / api 13 = HEAD stash 対照で完全一致
+  (増分ゼロ)。不可視文字/CRLF/簡体字/末尾改行 全検査パス。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (grep での経路非含有照合 + 実測の二重確認)。
+- 機械検算 (Bash 規律): gcd 周期解析 (len≡0 mod 31 → カバレッジ 3%)、
+  消失再現 62→2/93→3、grid16=119 meshlets 分布立証、59 ペア+根 118、
+  meshlet0 centroid/radius bit (0x40d09555, 0x0, 0x41478aab, 0x415a33d2)
+  = Python RN-even 逐次厳密値 = 独立 rustc プローブ bit 一致 (argmax
+  コーナー (1,0,0))、NaN マスク連鎖 4 値実機測定、should_draw dyadic
+  全値厳密、gcd 9 値。
+- テスト赤=自己誤り捕捉装置 20 件目相当の作動 2 回: (i) Python f32
+  エミュレーションが負の差分を丸め関数の非負前提で 0 に折り畳む自力バグ →
+  プローブ bit 乖離 (radius 0x4121df91 vs 0x415a33d2) で検出 → 符号付き
+  修正後に完全一致 → ピン採用 (プローブ併用が無ければ誤ピンを埋め込む
+  ところだった)。(ii) EXPECTED ピン配列の初回記述が 103 ones/総数 112 で
+  あり機械照合で検出 → 110/119 に訂正。
+
+### 残 (次 wave 以降の棚卸し)
+- 多段 LOD DAG: 実運用 Nanite の 4-stage 再クラスタ化は未実装 (NOTE 通り
+  深さ 1 固定)、誤差ツリーの上段構築は将来課題。
+- vertex_offset/vertex_count の通常頂点領域の実構築 + streaming 側配線
+  (現行 scaffold: 常 0 / コーナー数)。
+- merge 相手選択が隣接 index 固定のヒューリスティック (NOTE 記載通り)、
+  本格化時は共有エッジ最大スコア + 境界ロック化。
+- clustered_indices のユニーク頂点コンパクション (頂点キャッシュ効率)。
+- full_graph_wiring 側の三角構築が identity index (実 topology 配線は同
+  ファイルの将来課題コメント参照) — render_pipeline 第 3 部監査に同梱。

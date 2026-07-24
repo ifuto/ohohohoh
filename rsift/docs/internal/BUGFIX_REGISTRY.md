@@ -387,6 +387,13 @@
 | CX-3 | 低 | get_chunk/stats 無制限 decode_all (CW-5 起票) → private 自己生成データ限定で CW-1 disk 経路と危険度相違・cap 不導入+provenance doc 明文化 (誠実格下げ) |
 | CX-4 | 観 | build_file 冪等・offset 24-bit/len u32 非到達コメント照合・auto() 出典 (ZFS 系) 一致 |
 | CX-5 | 観 | timestamps epoch scaffold doc 済・Location default=absent 一貫・put 二重書き leak なし |
+| CY-1 | 中 | nanite_clusters clusterize indices.len()/3 切捨てで末尾 1-2 index 静寂 drop (wave 72 と同種) → assert! fail-loud (契約 doc・空/1 三角受理ピン) |
+| CY-2 | 中 | next_seed 素数刻み走査の数学的破綻: gcd(31,len)≠1 (len≡0 mod 31) で剰余列が len/31 位置 (3%) のみ巡回 → 残り三角が静寂消失 (wiring 実経路 identity index で直撃 62→2 クラスタ、Python 厳密シム検証) → step を len と互いに素な最小奇数へ (完全置換化)、gcd=1 の既存入力で走査順完全一致立証 |
+| CY-3 | 中 | clusterize 非有限頂点無検査: radius が max-scan ガードで 0.0 へ・error が .max(0.0) 非伝播で +0.0 へ静寂潰れ should_draw 常時描画へ誤分類 (実機検証) → 入口 assert! 遮断 + vertex_offset 死に計算除去・scaffold doc 誠実化 |
+| CY-4 | 中 | 親鎖未配線の構造嘘: parent_of 計算後 `let _=` 破棄で parent 恒 u32::MAX (doc の誤差ツリー不成立) → parent=partner 実配線 (深さ 1)・stride/parent_of 死にコード除去・level scaffold 注記 |
+| CY-5 | 中 | cluster_should_draw doc 式に proj_factor 省略+「誤差う」誤記+clamp 未記載・f32::max NaN 非伝播で NaN cam→d=1.0 マスクの静寂誤カリング → 有限性 assert! (cam/proj>0/eps/error/sphere)+doc 完全書換 (厳密不等号・clamp 2 所・error=0 常時採用明記) |
+| CY-6 | 低 | error_metric_nonzero_for_parents が error>=0.0 恒真 assert (nonzero を何も検査せず) → meshlets[0].error>0+any(>0) 実質化 |
+| CY-7 | 低 | max3(a,b) が 2 引数 max (命名嘘) → 除去し f32::max 二項直接化 |
 
 ---
 
