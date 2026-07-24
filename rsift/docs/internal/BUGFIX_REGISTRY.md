@@ -12,7 +12,7 @@
 - 深刻度 (audit 見出しの転記): **[C]** critical・**[高]**・**[中高]**・**[中]**・
   **[低]**・**[観]** = 観測・誠実性訂正・判断記録 (コード bug ではない修正)、
   **[基]** = 検証基盤の追加 (naga 突合等)。
-- 修正消費テスト数: 監査開始時 363 → wave 86 時点 **927 全緑** (実測、CJ 4 件追加)。
+- 修正消費テスト数: 監査開始時 363 → wave 87 時点 **930 全緑** (実測、CK 3 件追加)。
 
 ## 統計 (数え上げ、推測なし)
 
@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 26 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 58 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 86 |
-| E 期: 横断契約クラス期 | wave 72-86 (BV-CJ 節) | 72 |
-| **合計** | | **262** |
+| E 期: 横断契約クラス期 | wave 72-87 (BV-CK 節) | 77 |
+| **合計** | | **267** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -318,6 +318,11 @@
 | CJ-4 | 低 | wiring 供給 SVO が `svo_cache.values().next()` (HashMap 反復順任意要素、CI-1 同型の潜在非決定性) → 最小キー決定論選択 svo_for_wiring + 借用衝突回避の所有クローン移譲 (ptr::eq ピン) |
 | CJ-5 | 観 | build_chunk の debug_assert は chunk_mesh 型レベル const assert に完全包含される定数比較 (頂数 O(n) 無駄) → 除去 (保証一元化) |
 | CJ-6 | 観 | build 予算 (cache ヒットも 1 消費) と chunks_built (ヒット非計上) の語彙非対称はフレーム時間経済として意図的 → 誠実注記で現挙動固定 |
+| CK-1 | 中 | 派生キャッシュがワールド prune/再インジェストに追随せず: svo_cache の stale SVO が除去列・旧地形として最小キー選択 (CJ-4) 経由で VCT プローブへ供給され続ける + pull_gen_cache 滞留 → prune_derived_caches (world prune と同語彙 Chebyshev・境界含む) + invalidate_derived_for_column 抽出と pub wrapper 配線、PullGenerationCache.prune_outside 追加 |
+| CK-2 | 低 | HZB/CPU occluder AABB が固定 y 0..64 で live メッシュ帯 (origin.y 基点) と 48 ブロックずれ、HZB 統計が誤帯域で系統計測 → hzb_boxes_for 抽出 + mesh_origin 整合帯 (厳密ピン [16,48,32]-[32,112,48]) |
+| CK-3 | 観 | verts_per は先頭メッシュのみ代表値 (eco 近似) 誠実注記 |
+| CK-4 | 観 | live→デモ切替の 1 フレーム速度スパイク (min(40) 有界) 現挙動固定の明記 (BR-1) |
+| CK-5 | 観 | pull モード時 greedy メッシュのプール二重構築・供給 (DX12 未消費) 設計明記 |
 
 ---
 

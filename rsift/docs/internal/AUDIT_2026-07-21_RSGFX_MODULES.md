@@ -4939,3 +4939,62 @@ frame() 後段の eco region 可視性・verts_per 先頭依存、cpu_occluder b
 メモリ運用、ingest の cache.invalidate と pull_gen_cache.invalidate の関係、
 shader/WGSL 側との FrameCB 語彙 (chunk_origin) 突合、meshes pool upload の
 pull モード二重供給、camera 非 live トグル時の速度スパイク。
+
+## CK. render_pipeline.rs 再監査 第 2 部 (wave 87, 2026-07-24)
+
+対象: frame() 後段の残棚卸し (HZB/eco/prune/二重供給) + FrameCB/WGSL 語彙突合。
+発見 5 項目 (CK-1 [中]、CK-2 [低]、CK-3/4/5 [観]) + 語彙突合 1 件。
+
+### CK-1 (中): 派生キャッシュがワールド prune/invalidate に追随しない
+- **svo_cache の stale 供給**: `prune_world_columns` は world 列のみ prune
+  し、svo_cache は無制限残存 → 除去済み列の stale SVO が `svo_for_wiring`
+  (最小キー選択) 経由で VCT プローブへ**永久に供給され続ける**。
+  さらに ingest による列内容置換でも svo_cache は無効化されず、次の SVO
+  再ビルド (far LOD 到達) まで VCT が**旧地形を参照し続ける**。
+- **pull_gen_cache の滞留**: 世代整合で到達不能になるのみで bytes は残存。
+- 根治: `prune_derived_caches` (world_column_store::prune_outside と同語彙の
+  Chebyshev 半径・境界含む) + `invalidate_derived_for_column` を抽出し、
+  pub wrapper (prune_world_columns / ingest_world_column) に配線。
+  PullGenerationCache に prune_outside を追加 (従来 get/put/invalidate のみ)。
+- ピン: 境界含む半径語彙 (3,0)→prune・(2,2)→残留・gen 7 参照、
+  置換列退避/無関係列保持。
+
+### CK-2 (低): HZB/CPU occluder AABB の y 帯が固定 0..64 でメッシュ帯と 48 ズレ
+- live ワールドの実ウィンドウは mesh_origin[1] 基点 (例: origin.y=48 の
+  48..112) なのに、HZB ボックスは世界原点 0..64 固定 → visible_chunks/
+  cpu_culled の HZB 統計が系統的に誤帯域で計測 (メトリクスのみ実害)。
+- 根治: `hzb_boxes_for` 抽出 + mesh_origin[1] 整合帯。厳密ピン:
+  (1,2),y0=48 → [16,48,32]-[32,112,48]。
+
+### CK-3 (観): verts_per は先頭メッシュのみの代表値 (eco 近似) 誠実注記
+### CK-4 (観): live→デモ切替時の 1 フレーム速度スパイク (min(40) 有界) を現挙動固定で明記 (BR-1 判断)
+### CK-5 (観): pull モードでも greedy メッシュは構築・プール二重供給 (DX12 では未消費、ベンチ実演) の設計明記
+
+### 語彙突合 (変更なし): FrameCB chunk_origin
+WGSL terrain_vertex_pull.wgsl (:11 chunk_origin vec4<f32>, :128 world =
+local + frame.chunk_origin.xyz) と Rust TerrainFrameConstants.chunk_origin
+(production テストが [-16,48,-48,0] に厳密ピン) は同一語彙で整合確認。
+
+### テスト (純増 3、930 全緑)
+derived_cache_prune_matches_world_radius_vocabulary /
+invalidate_derived_for_column_evicts_stale_svo /
+hzb_boxes_use_mesh_origin_band。
+
+### 検証結果 (全て実測)
+- lib **930/930** (+3)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: render_pipeline/low_spec_stack 両ファイル WORK-only **0**。
+- 不可視文字 0 / CRLF 0 (両ファイル) / all-targets で当該由来警告 0。
+- アドバーサリアル 2 系統: (a) CK-1 no-op 化 (旧挙動厳密再現=派生キャッシュ
+  不操作) → CK-1 両テスト FAILED。(b) CK-2 固定 0..64 帯復元 → hzb テスト
+  FAILED。いずれも検出確認後 md5 忠実復元 → 14/14 緑。
+- **環境事象**: Rust 消失 (11 回目)→ restore-env.sh で復旧 (~36 秒)。
+  **git 破損 (13 回目)**: worktree 再建時に HEAD が base (64294c6) 巻戻り、
+  worktree は新時代のまま残存 → fetch + reset --mixed FETCH_HEAD で HEAD を
+  fd9b1ad へ復旧、status は wave 87 の 2 ファイル差分のみで整合確認
+  (md5 同一)。fmt HEAD 比較は復旧後の正しい base で再測定。
+
+### 残 (第 3 部 = wave 88 予定、棚卸し)
+eco region の可視性語彙、fps 由来 stats 語彙、ingest invalidate と
+rebuild lazy SVO の再生成遅延 (次 far LOD まで SVO 欠落の窓)、
+cpu_occluder cull 結果の depth 活用、frame_stats.fps 語彙、
+非 live 時の wiring 入力語彙 (unit cube 系)。

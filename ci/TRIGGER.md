@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 121
+- count: 122
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -139,3 +139,4 @@
 - 2026-07-24 (count 119): wave 85 full_graph_wiring 第3部監査 (CI-1 gigabuffer 二重虚偽根治 FIFO+単一retry 化・CI-2 patch キー誠実注記 計2項目、923 全緑) の CI 緑確認用
 - 2026-07-24 (count 120): wave 85 CI flaky 診断の再実行 (d70e354 同等、ローカル全工程グリーン再現済)
 - 2026-07-24 (count 121): wave 86 render_pipeline 再監査第1部 (CJ-1 wiring 入力欠落併合・CJ-3 diff ダーティ帯域・CJ-2 verdict 統一・CJ-4 SVO 決定論選択・CJ-5/6 誠実化 計6項目、927 全緑+adversarial 2 系統検出) の CI 緑確認用
+- 2026-07-24 (count 122): wave 87 render_pipeline 第2部 (CK-1 派生キャッシュ prune/invalidate 追随・CK-2 HZB y 帯整合・CK-3/4/5 誠実化 + chunk_origin 語彙突合 計5項目、930 全緑+adversarial 2 系統検出、復旧手順2種完走) の CI 緑確認用

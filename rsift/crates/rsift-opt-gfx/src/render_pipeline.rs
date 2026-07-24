@@ -296,6 +296,26 @@ impl RsiftRenderPipeline {
         }
     }
 
+    /// CK-1 (wave 87): ワールド列 prune に追随する派生キャッシュ整合。
+    /// 語彙は world_column_store::prune_outside と同一 (Chebyshev 半径、
+    /// 境界含む)。旧実装は svo_cache が未 prune で、除去済み列の stale SVO
+    /// が VCT プローブへ永久に供給され続け、世代キャッシュも滞留していた。
+    fn prune_derived_caches(&mut self, center_cx: i32, center_cz: i32, radius: i32) {
+        self.svo_cache.retain(|(cx, cz), _| {
+            (*cx - center_cx).abs() <= radius && (*cz - center_cz).abs() <= radius
+        });
+        self.pull_gen_cache
+            .prune_outside(center_cx, center_cz, radius);
+    }
+
+    /// CK-1 (wave 87): 列内容の再インジェスト置換に伴う派生無効化。
+    /// 旧実装は disk cache/pull gen のみ無効化で、SVO キャッシュは stale
+    /// のまま VCT プローブへ供給され続けた (次の SVO 再ビルドまで旧地形を
+    /// 参照し続ける)。
+    fn invalidate_derived_for_column(&mut self, cx: i32, cz: i32) {
+        self.svo_cache.remove(&(cx, cz));
+    }
+
     /// wiring へ供給する SVO を決定論的に 1 つ選択 (wave 86 CJ-4)。
     /// `HashMap::values().next()` は RandomState のプロセス毎ランダム順であり
     /// 「意味のある選択を任意要素に委ねる」CI-1 と同型の潜在非決定性だった
@@ -550,6 +570,10 @@ impl RsiftRenderPipeline {
         if self.world.has_live_data {
             self.camera = self.world.camera;
         } else {
+            // 【誠実注記 wave 87 CK-4】live→デモのモード切替ではカメラが
+            // 原点へ跳び、1 フレームだけ実速度スパイクが出る (min(40) クランプ
+            // で有界、motion adaptive shading の品質が 1 フレーム低下)。
+            // 現挙動を固定 (補正の可否は実機検証待ち — BR-1 判断)。
             self.camera.x = 0.0;
             self.camera.y = 32.0;
             self.camera.z = 0.0;
@@ -822,6 +846,10 @@ impl RsiftRenderPipeline {
                     artifacts.encoding,
                 );
             }
+            // 【誠実注記 wave 87 CK-5】pull モードでも greedy メッシュは
+            // 構築・プール供給される (wgpu/ネイティブ後方互換の二重経路設計)。
+            // DX12 実経路の描画実体は gpu_quad_bytes (SSBO) 側であり、
+            // この pool 供給は DX12 では消費されない (ベンチ経路の実演)。
             if !mesh.is_empty() {
                 if let Some(pool) = self.persistent_pool.as_mut() {
                     pool.upload_mesh(&mesh);
@@ -869,6 +897,8 @@ impl RsiftRenderPipeline {
         }
 
         // Continue with eco / HZB stats using built meshes (legacy path).
+        // 【誠実注記 wave 87 CK-3】verts_per は先頭メッシュのみの代表値
+        // (eco 地域比較メトリクスの近似であり、全メッシュ加重ではない)。
         let verts_per = meshes.first().map(|m| m.vertices.len() as u64).unwrap_or(0);
         let cmp = self
             .eco
@@ -882,22 +912,9 @@ impl RsiftRenderPipeline {
                 self.cpu_occluder = Some(CpuMaskedOccluder::adaptive(screen_w, screen_h));
             }
             if let Some(occ) = self.cpu_occluder.as_mut() {
-                let boxes: Vec<ChunkBoundingBox> = meshes
-                    .iter()
-                    .enumerate()
-                    .map(|(i, m)| ChunkBoundingBox {
-                        min_xyz: [m.chunk_x as f32 * 16.0, 0.0, m.chunk_z as f32 * 16.0],
-                        is_visible: 1,
-                        max_xyz: [
-                            m.chunk_x as f32 * 16.0 + 16.0,
-                            64.0,
-                            m.chunk_z as f32 * 16.0 + 16.0,
-                        ],
-                        chunk_index: i as u32,
-                        bindless_texture_id: 0,
-                        _pad: [0; 3],
-                    })
-                    .collect();
+                // CK-2 (wave 87): y 帯をメッシュウィンドウ (origin.y..+64) に整合
+                // (旧固定 0..64 は live 帯と 48 ブロックずれ、HZB 統計の系統誤り)。
+                let boxes = hzb_boxes_for(&meshes, self.world.mesh_origin[1] as f32);
                 let vis = occ.cull_boxes_with_camera(&boxes, self.camera);
                 self.frame_stats.visible_chunks = vis.len() as u32;
                 self.frame_stats.cpu_culled = occ.stats().0;
@@ -1113,6 +1130,29 @@ impl RsiftRenderPipeline {
     }
 }
 
+/// CK-2 (wave 87): HZB/CPU occluder AABB — y 帯をメッシュウィンドウ
+/// (mesh_origin[1] 基点の 64 ブロック帯) に整合させる。旧実装の固定 0..64 は
+/// live ワールド帯 (例: origin.y=48) と 48 ブロックずれで、HZB 統計
+/// (visible_chunks/cpu_culled) が系統的に誤帯域で計測されていた。
+fn hzb_boxes_for(meshes: &[BuiltChunkMesh], y0: f32) -> Vec<ChunkBoundingBox> {
+    meshes
+        .iter()
+        .enumerate()
+        .map(|(i, m)| ChunkBoundingBox {
+            min_xyz: [m.chunk_x as f32 * 16.0, y0, m.chunk_z as f32 * 16.0],
+            is_visible: 1,
+            max_xyz: [
+                m.chunk_x as f32 * 16.0 + 16.0,
+                y0 + 64.0,
+                m.chunk_z as f32 * 16.0 + 16.0,
+            ],
+            chunk_index: i as u32,
+            bindless_texture_id: 0,
+            _pad: [0; 3],
+        })
+        .collect()
+}
+
 pub fn global_pipeline() -> &'static Mutex<RsiftRenderPipeline> {
     PIPELINE.get_or_init(|| {
         let dir = std::env::var("APPDATA")
@@ -1199,6 +1239,8 @@ pub fn ingest_world_column(
             .ingest(cx, cz, base_section_y, blocks, section_count);
         pipe.cache.invalidate_chunk(cx, cz);
         pipe.pull_gen_cache.invalidate(cx, cz);
+        // CK-1: stale SVO 退避 (再ビルドまで VCT が旧地形を見続ける実害)。
+        pipe.invalidate_derived_for_column(cx, cz);
         // インジェスト帯域をダーティ登録 (旧: カメラ帯誤り — 実装は
         // note_ingested_sections 側のコメント参照、wave 86 CJ-3)。
         pipe.note_ingested_sections(cx, cz, base_section_y, section_count);
@@ -1237,6 +1279,8 @@ pub fn world_camera() -> (f32, f32, f32, f32, f32) {
 pub fn prune_world_columns(center_cx: i32, center_cz: i32, radius: i32) {
     if let Ok(mut pipe) = global_pipeline().lock() {
         pipe.world.prune_outside(center_cx, center_cz, radius);
+        // CK-1: 派生キャッシュも等語彙で追随 (stale SVO 供給・世代滞留の根絶)。
+        pipe.prune_derived_caches(center_cx, center_cz, radius);
     }
 }
 
@@ -1597,5 +1641,73 @@ mod tests {
             "Occluded でないこと (= CJ-2 統一腕は現行非到達のまま安全的に封印)"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // =================================================================
+    // wave 87 CK 節 (render_pipeline 第 2 部)
+    // =================================================================
+
+    /// CK-1: 派生キャッシュの prune はワールド列 prune と同語彙
+    /// (Chebyshev 半径、境界含む — world_column_store::prune_outside の
+    ///  `<= radius` 述語と厳密一致)。
+    #[test]
+    fn derived_cache_prune_matches_world_radius_vocabulary() {
+        let (dir, mut p) = unique_pipeline("cache_prune");
+        let empty = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        let svo = SparseVoxelOctree::from_column(&[empty]);
+        p.svo_cache.insert((0, 0), svo.clone());
+        p.svo_cache.insert((3, 0), svo.clone());
+        p.pull_gen_cache.put(0, 0, 7, vec![1, 2, 3]);
+        p.pull_gen_cache.put(0, 3, 7, vec![4, 5, 6]);
+        p.prune_derived_caches(0, 0, 2);
+        assert!(p.svo_cache.contains_key(&(0, 0)), "半径内は残留");
+        assert!(
+            !p.svo_cache.contains_key(&(3, 0)),
+            "Chebyshev 半径外 (3) は prune"
+        );
+        assert!(p.pull_gen_cache.get(0, 0, 7).is_some(), "gen 7 で残留");
+        assert!(
+            p.pull_gen_cache.get(0, 3, 7).is_none(),
+            "世代キャッシュも同語彙 prune"
+        );
+        // 境界含む: 半径ちょうど (2,2) は残る (= world prune の <= と一致)。
+        p.svo_cache.insert((2, 2), svo);
+        p.prune_derived_caches(0, 0, 2);
+        assert!(p.svo_cache.contains_key(&(2, 2)), "半径ちょうどは境界含む");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// CK-1: 列再インジェストで stale SVO が退避される
+    /// (VCT プローブへの旧地形供給を断つ)。
+    #[test]
+    fn invalidate_derived_for_column_evicts_stale_svo() {
+        let (dir, mut p) = unique_pipeline("svo_evict");
+        let empty = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        let svo = SparseVoxelOctree::from_column(&[empty]);
+        p.svo_cache.insert((0, 0), svo.clone());
+        p.svo_cache.insert((5, 5), svo);
+        p.invalidate_derived_for_column(0, 0);
+        assert!(
+            !p.svo_cache.contains_key(&(0, 0)),
+            "置換列の SVO は退避 (旧実装は残存)"
+        );
+        assert!(p.svo_cache.contains_key(&(5, 5)), "無関係列は保持");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// CK-2: HZB AABB の y 帯はメッシュウィンドウ (origin.y, +64)。
+    #[test]
+    fn hzb_boxes_use_mesh_origin_band() {
+        let meshes = vec![BuiltChunkMesh {
+            chunk_x: 1,
+            chunk_z: 2,
+            vertices: vec![],
+            indices: vec![],
+        }];
+        let boxes = hzb_boxes_for(&meshes, 48.0);
+        assert_eq!(boxes.len(), 1);
+        assert_eq!(boxes[0].min_xyz, [16.0, 48.0, 32.0]);
+        assert_eq!(boxes[0].max_xyz, [32.0, 112.0, 48.0]);
+        assert_eq!(boxes[0].chunk_index, 0);
     }
 }

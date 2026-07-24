@@ -353,6 +353,15 @@ impl PullGenerationCache {
         self.entries.remove(&(cx, cz));
     }
 
+    /// world_column_store::prune_outside と同語彙 (Chebyshev 半径、境界含む)
+    /// の prune。prune 済み列の世代キャッシュは世代整合で到達不能となり
+    /// 滞留するのみだった (wave 87 CK-1)。
+    pub fn prune_outside(&mut self, center_cx: i32, center_cz: i32, radius: i32) {
+        self.entries.retain(|(cx, cz), _| {
+            (*cx - center_cx).abs() <= radius && (*cz - center_cz).abs() <= radius
+        });
+    }
+
     pub fn stats(&self) -> (u64, u64) {
         (self.hits, self.misses)
     }
