@@ -5603,3 +5603,35 @@ region_zstd.rs:170 の無制限 decode_all (本番経路、CW-1 類型の横断�
 cache.put の LOD 事前 simplify → tier 間再 simplify の semantic 検討
 (render_pipeline 第 3 部)、stats の (u64,u64) tuple を名前付き構造体化、
 cache dir のディスク容量クォータ (LRU 掃除)、crash 残渣 .tmp の起動時掃除。
+
+## CX. region_zstd.rs (wave 99, 2026-07-25)
+
+301 → 410 行。全行照合 + 消費者 (pseudo_mc_bench:2171/2177・pseudo_mc_live:
+671/860/930・rsift_bench:157-163・full_graph_wiring:156/770/776 put+stats、
+digest 経路は 64KiB チャンクで本変更不発を確認)。wave 98 CW-5 起票の
+decode_all 横断対象。全数値 Python 機械検算。
+
+| CX-1 | 中 | build_file の location セクタ数を `sectors & 0xFF` で静寂ラップ — Stored 選択で >1MiB 生チャンクが到達可能 (1 チャンク 256 セクタ超) → reader から読めない破損ファイルを静寂返却 → `build_file_checked() -> Result` fail-loud 化 + build_file は expect ラップ (API 互換)・境界 Python 検算: body=255·4096−5=1,044,475 で sectors=255 受理・+1 で 256 Err/panic |
+| CX-2 | 中 | scan_file は location スパン無検証 (破損/細工ファイルで offset=ヘッダ内・span end>file.len でも「正常」報告) → 各エントリ offset ≥ HEADER_BYTES/SECTOR (=2) かつ (offset+sectors)·SECTOR ≤ file.len() の InvalidData fail-loud 検査 |
+| CX-3 | 低 | get_chunk/stats の無制限 decode_all (CW-5 起票分) を再評価: 対象は private メモリ内部の自己生成バイト列限定で CW-1 の外部由来 disk 経路とは危険度が異なる → cap 導入は行わず provenance の相違を doc 明文化 (誠実格下げ記録)、:107 expect も不到達で loud のまま |
+| CX-4 | 観 | build_file は冪等 (locations 全再計算)、offset 24-bit (≈64GiB)/len u32 ラップは非到達コメント照合、auto() の zstd-3 推奨は ZFS 界隈実測の doc 出典と一致 |
+| CX-5 | 観 | timestamps all-zero は epoch scaffold として doc 済、Location::default = absent チャンク意味論は build/scan で一貫、put_chunk の二重書きは上書きのみで leak なし |
+
+### 検証 (wave 99)
+- 974 全緑 (+3: 255 丁度ピン (offset=2・sectors=255・used=257)、256 Err+
+  fail-loud panic、strict scan: ヘッダ重複/境界超過 InvalidData + 正規受理)。
+- アドバーサリアル 3 系統全検出: (a) sectors guard 除去 → sector_256 FAILED、
+  (b) strict 検査ブロック除去 → scan_file_rejects FAILED、(c) 境界 0xFF→0xFE
+  改竄 → sector_255_boundary FAILED (255 丁度誤拒否で検出)。固定版は
+  ~/bak へ (md5 忠実復元→全緑)。
+- fmt: HEAD 22 / work 22 完全一致 (追加分は記述時に正準形、MINE hunk ゼロ)。
+  不可視/CRLF/簡体字 none・警告 27 (14+13) 据え置き。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- 機械検算 (Bash 規律): 境界 body 1,044,475/1,044,476、span end (2+255)·4096
+  =1,052,672、offset 24-bit 上限 ≈64GiB。
+
+### 残 (次 wave 以降の棚卸し)
+タイムスタンプの実 epoch 供給配線、region ファイルの実 disk I/O 層
+(現状 builder/scan のみで write/read 配線なし — pseudo_mc_live:930 参照)、
+len_field u32 (>4GiB チャンク) の契約 doc、CodecChoice::auto
+(battery_saver) の実機電源状態配線。

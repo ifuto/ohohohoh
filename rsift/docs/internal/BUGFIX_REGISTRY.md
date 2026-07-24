@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-98 (BV-CW 節) | 136 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **320** |
+| E 期: 横断契約クラス期 | wave 72-99 (BV-CX 節) | 141 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **325** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -242,7 +242,7 @@
 | BU-2 | 低 | 空メッシュ簡略化早期 passthrough ピン |
 | BU-3 | 観 | use_svo_encoding 命名乖離を真値表で確定 (リネーム見送り) |
 
-## E 期: 横断契約クラス期 (wave 72-98)
+## E 期: 横断契約クラス期 (wave 72-99)
 
 | ID | 度 | 概要 |
 | :--- | :- | :--- |
@@ -382,6 +382,11 @@
 | CW-3 | 低 | encode セクション数 (len as u16) 静寂縮退 (decode 誤読) → len>u16::MAX は fail-loud Err (境界 65535 受理/65536 拒否ピン) |
 | CW-4 | 観 | trailing garbage 受理 (wire 耐性・意図保持)・v1 は RLE 検証なし (非格納=設計)・32-bit は対象外・sync_all なしは miss 治癒で許容・stats tuple 語彙消費者一致 |
 | CW-5 | 観 | key_path インジェクション非成立・invalidate prefix 衝突ピン済・put は LOD simplify 済保存+tier drift は render_pipeline 第 3 部へ・ast-grep 横断: write_all 静寂型 0 件・decode_all 残存 region_zstd.rs:107/170 起票 |
+| CX-1 | 中 | region_zstd build_file セクタ数 `& 0xFF` 静寂ラップ (256 超で読不能ファイル返却、Stored >1MiB で到達可) → build_file_checked Result+build_file expect (境界 1,044,475/1,044,476 ピン) |
+| CX-2 | 中 | scan_file location スパン無検証 (ヘッダ重複・file 境界超過を正常受理) → offset≥2 かつ span≤file.len の InvalidData fail-loud 検査 |
+| CX-3 | 低 | get_chunk/stats 無制限 decode_all (CW-5 起票) → private 自己生成データ限定で CW-1 disk 経路と危険度相違・cap 不導入+provenance doc 明文化 (誠実格下げ) |
+| CX-4 | 観 | build_file 冪等・offset 24-bit/len u32 非到達コメント照合・auto() 出典 (ZFS 系) 一致 |
+| CX-5 | 観 | timestamps epoch scaffold doc 済・Location default=absent 一貫・put 二重書き leak なし |
 
 ---
 
