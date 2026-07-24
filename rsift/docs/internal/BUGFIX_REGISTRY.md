@@ -12,7 +12,7 @@
 - 深刻度 (audit 見出しの転記): **[C]** critical・**[高]**・**[中高]**・**[中]**・
   **[低]**・**[観]** = 観測・誠実性訂正・判断記録 (コード bug ではない修正)、
   **[基]** = 検証基盤の追加 (naga 突合等)。
-- 修正消費テスト数: 監査開始時 363 → wave 91 時点 **946 全緑** (実測、CO 2 件追加)。
+- 修正消費テスト数: 監査開始時 363 → wave 92 時点 **949 全緑** (実測、CP 3 件追加)。
 
 ## 統計 (数え上げ、推測なし)
 
@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-91 (BV-CO 節) | 100 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **284** |
+| E 期: 横断契約クラス期 | wave 72-92 (BV-CP 節) | 104 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **288** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -346,6 +346,10 @@
 | CO-3 | 中 | GpuBufferPool exact-fit 成長が +1 増減で全再確保し得る設計目的違反 → pool_capacity pure fn 抽出 (min 64/next_power_of_two) 償還成長化+slab 表厳密ピン |
 | CO-4 | 低 | frustum.chunk_count≠boxes.len の呼出誤りが stale tail cull を誘発 → debug_assert 契約ピン / trace「zero alloc」虚偽 →(pooled buffers) 誠実化 |
 | CO-5 | 観 | ChunkBox WGSL storage オフセット (0/12/16/28/32/36→48B) と Rust repr(C) の完全一致を Python 検算+offset_of! 6 点機械ピン / FrustumData camera_pos・hzb_enabled のシェーダ非参照は CPU 一元化の設計固定 |
+| CP-1 | 低 | GUI 行 char 幅の三重非整合 (枠線 76 に対し toggle 75・slider 64 で右壁ずれの視認実害、旧 slider パニックとは別欠陥) → GUI_ROW_CHARS 契約 const+行ビルダ pure 抽出 (label 43/42)+枠線一致機械ピン |
+| CP-2 | 低 | biome blend UI 下限 1 が vanilla OFF (0) を選択不能に (低スペ最重視で最軽量 OFF 欠落の語彙欠陥) → BIOME_BLEND_MIN/MAX (0,7) pub const 化+OFF=左端・pos16 幾何ピン |
+| CP-3 | 低 | open_global_settings が poisoned mutex を静寂無視 (BW-1 系 fail-loud 文化に反) → debug! 通知+into_inner() 復元で開き切る慣用句へ |
+| CP-4 | 観 | shader_profile 4 値表は PerformanceTier 4 値と整合 (High 時 speed_first 2 択)、probe_and_cache/hardware 混在は OnceLock 共有で実害なし、slider 退化語彙は既ピンと設計確認 |
 
 ---
 

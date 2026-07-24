@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 126
+- count: 127
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -144,3 +144,4 @@
 - 2026-07-24 (count 124): wave 89 iris_pipeline 監査 (CM-1 composite 命名根治・CM-2 discover→resolve 往復破綻根治・CM-3 fullscreen v 反転根治・CM-4 zip-bomb 実展開長遮断・CM-5 discover 3 点・CM-6 last_uniforms 保持・CM-7 観察 計7項目、941 全緑+adversarial 3 系統+台帳再計測 274) の CI 緑確認用
 - 2026-07-24 (count 125): wave 90 bc7_ktx2 監査 (CN-1 KTX2 mip 順序根治・CN-2 DFD u32 直列化根治・CN-3 BC7 DFD 定数正写像・CN-4 残骸除去・CN-5 証明/検算 計5項目、944 全緑+adversarial 4 系統、Bash 機械検算規律初適用) の CI 緑確認用
 - 2026-07-24 (count 126): wave 91 gpu_culling 監査 (CO-1 GPU 返り値契約明文化・CO-2 frustum doc 誠実化・CO-3 バッファプール償還成長化・CO-4 chunk_count 契約ピン+trace 誠実化・CO-5 オフセット機械ピン 計5項目、946 全緑+adversarial 1 系統) の CI 緑確認用
+- 2026-07-24 (count 127): wave 92 gui_settings 監査 (CP-1 行幅 76 契約・CP-2 biome OFF 下限・CP-3 poison 復元・CP-4 観察 計4項目、949 全緑+adversarial 3 系統+fmt 偏差 251 維持) の CI 緑確認用

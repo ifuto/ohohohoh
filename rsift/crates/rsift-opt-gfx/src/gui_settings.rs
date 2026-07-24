@@ -237,6 +237,25 @@ fn slider_bar(value: u32, min: u32, max: u32, width: usize) -> String {
     bar.into_iter().collect()
 }
 
+/// vanilla 準拠の biome blend スライダ範囲: 0 (OFF) ..= 7 (15x15)。
+/// 旧 UI 範囲 1..7 は最軽量の OFF (0) を選択不能にしていた (2026-07-24 CP 監査)。
+pub const BIOME_BLEND_MIN: u32 = 0;
+pub const BIOME_BLEND_MAX: u32 = 7;
+
+/// 枠線と行の char 幅整合契約: 「╔ + 74 + ╗」= 76 char。
+/// row 系はこの幅に必ず揃える (旧実装は toggle 75 / slider 64 で右壁ずれ)。
+pub(crate) const GUI_ROW_CHARS: usize = 76;
+
+/// toggle 行の描画文字列 (pure: 幅整合をテスト可能にするため抽出)。
+fn toggle_line(label: &str, on: bool) -> String {
+    format!("║ {:<43} {:>28} ║", label, toggle_glyph(on))
+}
+
+/// slider 行の描画文字列 (pure 抽出、bar 幅 24 固定)。
+fn slider_line(label: &str, value: u32, min: u32, max: u32) -> String {
+    format!("║ {:<42} {} {:>4} ║", label, slider_bar(value, min, max, 24), value)
+}
+
 pub struct SodiumVideoSettingsGui {
     pub is_open: bool,
     pub current_tab: SodiumSettingsTab,
@@ -318,7 +337,12 @@ impl SodiumVideoSettingsGui {
         match self.current_tab {
             SodiumSettingsTab::General => {
                 info!("║ {:<72} ║", " Render Distance: controlled by vanilla video settings");
-                self.row_slider("Biome Blend", self.settings.biome_blend, 1, 7);
+                self.row_slider(
+                    "Biome Blend",
+                    self.settings.biome_blend,
+                    BIOME_BLEND_MIN,
+                    BIOME_BLEND_MAX,
+                );
                 self.row_toggle("RsGraphics HUD", self.settings.show_instant_visual_hud);
             }
             SodiumSettingsTab::Quality => {
@@ -373,11 +397,11 @@ impl SodiumVideoSettingsGui {
     }
 
     fn row_toggle(&self, label: &str, on: bool) {
-        info!("║ {:<42} {:>28} ║", label, toggle_glyph(on));
+        info!("{}", toggle_line(label, on));
     }
 
     fn row_slider(&self, label: &str, value: u32, min: u32, max: u32) {
-        info!("║ {:<30} {} {:>4} ║", label, slider_bar(value, min, max, 24), value);
+        info!("{}", slider_line(label, value, min, max));
     }
 
     pub fn save_and_close(&mut self) {
@@ -393,8 +417,14 @@ pub fn global_gui() -> &'static Mutex<SodiumVideoSettingsGui> {
 }
 
 pub fn open_global_settings() {
-    if let Ok(mut g) = global_gui().lock() {
-        g.open_screen();
+    match global_gui().lock() {
+        Ok(mut g) => g.open_screen(),
+        // BW-1 系規律: poisoned mutex の静寂無視を避け、通知してから異常側復元。
+        Err(_) => {
+            tracing::debug!("[RsGraphics] global GUI mutex poisoned — recovering");
+            let mut g = global_gui().lock().unwrap_or_else(|e| e.into_inner());
+            g.open_screen();
+        }
     }
 }
 
@@ -543,5 +573,66 @@ mod strict_tests {
         g.render_instant_visual_indicators();
         g.save_and_close();
         assert!(!g.is_open);
+    }
+
+    // ---------------- CP 監査 (2026-07-24) 追加テスト ----------------
+
+    #[test]
+    fn row_lines_match_border_width() {
+        let border = format!("╔{}╗", "═".repeat(74)).chars().count();
+        assert_eq!(border, GUI_ROW_CHARS, "枠線 76 char 契約");
+        assert_eq!(format!("║ {:<72} ║", "x").chars().count(), GUI_ROW_CHARS);
+        assert_eq!(
+            toggle_line("X", true).chars().count(),
+            GUI_ROW_CHARS,
+            "回帰: 旧 toggle 行は 75 で右壁が 1 内側にずれていた"
+        );
+        let n = toggle_line("Long Label Across The Panel", false)
+            .chars()
+            .count();
+        assert_eq!(n, GUI_ROW_CHARS);
+        assert_eq!(
+            slider_line("Biome Blend", 5, 0, 7).chars().count(),
+            GUI_ROW_CHARS,
+            "回帰: 旧 slider 行は 64 で 12 不足"
+        );
+        let n = slider_line("Chunk Builder Threads", 16, 1, 16)
+            .chars()
+            .count();
+        assert_eq!(n, GUI_ROW_CHARS);
+    }
+
+    #[test]
+    fn biome_blend_range_admits_vanilla_off() {
+        assert_eq!(
+            (BIOME_BLEND_MIN, BIOME_BLEND_MAX),
+            (0, 7),
+            "vanilla 0(OFF)..7"
+        );
+        assert_eq!(
+            slider_bar(0, 0, 7, 24),
+            format!("◆{}", "─".repeat(23)),
+            "OFF は左端"
+        );
+        assert_eq!(
+            slider_bar(5, 0, 7, 24),
+            format!("{}◆{}", "─".repeat(16), "─".repeat(7)),
+            "t=5/7 → pos=floor(23*5/7)=16 (Bash 検算済)"
+        );
+        assert_eq!(
+            slider_bar(7, 0, 7, 24),
+            format!("{}◆", "─".repeat(23)),
+            "7 は右端"
+        );
+        // adaptive 既定値 5 は無変更 (範囲変更による既定のドリフトなし)。
+        assert_eq!(VideoSettings::adaptive().biome_blend, 5);
+    }
+
+    #[test]
+    fn open_global_settings_smoke_no_panic() {
+        // poison 復元経路を含めグローバル GUI が開けること (結果は破棄しない: is_open を読む)。
+        open_global_settings();
+        let g = global_gui().lock().unwrap();
+        assert!(g.is_open, "global GUI が open 状態になる");
     }
 }

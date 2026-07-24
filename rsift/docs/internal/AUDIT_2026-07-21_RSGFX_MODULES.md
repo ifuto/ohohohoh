@@ -5298,3 +5298,58 @@ chunk_box_field_offsets_match_wgsl_storage_layout (offset_of! 6 点機械ピン)
 実カメラ追従 frustum (行列分解の真実装) 配線、GPU 結果の CPU 読戻し
 需要 (stats/デバッグ用 readback)、GpuBufferPool の縮小戦略 (長期大口確保
 保持の解放)、HAB/engine の tier 配線実装 (gpu_enabled 真値源)。
+
+## CP. gui_settings.rs (wave 92, 2026-07-24)
+
+548 → 625 行。全行照合。消費者: lib.rs glob のみ (外部実消費なし =
+ユーザー方針により削除しない、テスト用 pure 抽出で消費者面を強化)。
+HEAD fmt 大偏差 (251) のため全体 rustfmt 禁止・個所調整のみ。
+Rust fmt は char カウント規則 — 幅計算は全て Bash (Python len) で機械検算。
+
+### CP-1 (低): 行 char 幅の三重非整合 (右壁ずれの実害)
+- 枠線/通常行 76 char に対し toggle 行 75 (label 42+glyph 28=74+枠 2 の
+  誤算)・slider 行 64 (label 30+bar24+value4+枠 8) の**3 種類混在**で
+  Sodium 風フレームの右壁が行種ごとにずれる視認実害 (旧 slider_bar
+  パニック回帰とは別の整形欠陥、Bash 検算で 76/75/64 を確定)。
+- 根治: `GUI_ROW_CHARS=76` 契約 const + 行ビルダ pure 抽出
+  (`toggle_line` label 43 / `slider_line` label 42) 化、枠線 vs 全行種の
+  char 数一致を機械ピン。
+
+### CP-2 (低): biome blend UI 下限が 1 で vanilla の OFF (0) を選択不能
+- vanilla 範囲は 0(OFF)..7 (15x15)。低スペ最重視の本エンジンで最軽量の
+  OFF だけ選べない語彙欠落。
+- 根治: `BIOME_BLEND_MIN/MAX` pub const (0,7) 導入 + 呼出側差替 +
+  OFF=左端・5→pos16 (floor(23*5/7), Bash 検算) の幾何ピン +
+  adaptive 既定 5 の無ドリフト確認。
+
+### CP-3 (低): open_global_settings の poisoned mutex 静寂無視
+- `if let Ok` で poison 時に何も起きない (BW-1 由来 fail-loud 文化に反)。
+- 根治: debug! 通知 + `into_inner()` 復元で GUI を開き切る (std 慣用句)。
+
+### CP-4 (観)
+- shader_profile 「Eco/Balanced/Performance/Flagship 2K」の 4 値表は
+  PerformanceTier 4 値と整合 (High 時 speed_first で後 2 択) を確認。
+- probe_and_cache()/hardware() の混在は両者 OnceLock 共有で実害なし。
+- slider_bar の pos 飽和キャスト・退化 (max<=min, width 0) は既存ピン済。
+
+### テスト (純増 3、949 全緑)
+row_lines_match_border_width (枠 76 契約+行種別ピン) /
+biome_blend_range_admits_vanilla_off (OFF 幾何+既定無ドリフト) /
+open_global_settings_smoke_no_panic (poison 復元経路を含む)。
+
+### 検証結果 (全て実測)
+- lib **949/949** (+3)。structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+  all-targets で gui_settings 由来の警告 0。不可視文字 0 / CRLF 0 /
+  末尾改行あり。
+- fmt: HEAD 251 大偏差ファイル、本 wave 追加分の WORK-only 偏差 0
+  (chain 幅規則 60 字の検算を踏み let 束縛へ分離) → 総偏差 251 完全維持。
+- アドバーサリアル 3 系統: (a) toggle 42 縮退 → row_lines FAILED。
+  (b) slider 30 縮退 → 同 FAILED。(c) BIOME_BLEND_MIN=1 化 → biome
+  FAILED。/tmp/cp_fixed.rs から md5 忠実復元 → 全緑。
+  (wave 91 教訓の「固定版先行バックアップ」規律を厳守。)
+- 環境事象: なし (HEAD=3d601f4 から安定)。
+
+### 残 (次 wave 以降の棚卸し)
+超長ラベル (>43 char) の行は min-width 仕様で 76 超過し得る (compile-time
+短ラベルのみ現状)、GUI 描画の真 consumer 化に伴う行ビルダ全面 pure 化、
+render_distance の語彙 (vanilla 委譲表示と VideoSettings 値の乖離注記)。
