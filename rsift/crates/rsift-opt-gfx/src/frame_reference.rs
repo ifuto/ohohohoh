@@ -333,16 +333,17 @@ pub fn fsr1_reference(
         }
     }
 
-    // --- fsr_rcas (OOB textureLoad = 0、WGSL 準拠) ---
+    // --- fsr_rcas (外周は端画素 clamp — 不定値読み出し禁止の 3連鎖規約) ---
     // 符号規約: `c - lap * sharpness` (中心を近傍平均から遠ざける = 鮮鋭化)。
     // `+` は「ぼかし」であり fsr1.rs::rcas / cas.rs::cas_sample と矛盾する
     // (wave 17 で WGSL 側と同時に修正、3連鎖は常に同符号)。
+    // 範囲外 textureLoad は WGSL 規格上「不定値」 (ゼロ規則ではない) のため
+    // 外の1タップを端画素へ clamp する (shaders/fsr1.wgsl::fsr_rcas の
+    // maxc clamp と同一規約、wave 93 CQ-1)。
     let load = |x: i64, y: i64| -> [f32; 3] {
-        if x < 0 || y < 0 || x >= full_w as i64 || y >= full_h as i64 {
-            [0.0; 3]
-        } else {
-            inter[(y as u32 * full_w + x as u32) as usize]
-        }
+        let cx = x.clamp(0, full_w as i64 - 1) as usize;
+        let cy = y.clamp(0, full_h as i64 - 1) as usize;
+        inter[cy * full_w as usize + cx]
     };
     let mut out = Vec::with_capacity((full_w * full_h * 4) as usize);
     for gy in 0..full_h as i64 {
@@ -579,29 +580,24 @@ mod tests {
 
     #[test]
     fn fsr1_flat_region_is_identity() {
-        // 全面同一色の低解像度入力 → 内部は EASU+RCAS を通っても完全同一色
+        // 全面同一色の低解像度入力 → EASU+RCAS を通っても全域で完全同一色
         // (勾配ゼロ、lap=0)。
-        // 外周は WGSL の OOB textureLoad=0 規則により近傍ゼロが混入する。
-        // RCAS は鮮鋭化 (中心を近傍平均から遠ざける: out = c - lap·s) なので、
-        // 近傍平均がゼロ混入で低い → lap<0 → 境界画素は規則的に「明転」する。
-        //   辺   : 平均 = 3c/4 → lap = -c/4 → c·(1 + s/4)  = 120·1.05 = 126
-        //   角   : 平均 = c/2  → lap = -c/2 → c·(1 + s/2)  = 120·1.10 = 132
-        // (旧ぼかし符号では暗転方向に振れていた — wave 17 RCAS 符号修正の回帰固定。
-        //  GPU も WGSL 経由でこの同一規則に従う)
+        // 旧実装は外周で「OOB textureLoad=0」を規則とし近傍ゼロ混入のハロー
+        // (辺 126 / 角 132) を固定していたが、WGSL 規格 §textureLoad 上の
+        // 範囲外読み出しは不定値 (ゼロ規則ではない) であり、ベンダ間で
+        // ハローが再現しない規格非携帯挙動だった (wave 93 CQ-1)。
+        // 端画素 clamp への根治により、平坦領域は内部・外周とも f32 演算
+        // レベルで厳密恒等 (lap = (4c)·0.25 − c = ±0.0 → v = c、u8 往復 120、
+        // Python 単精度機械検算済)。
         let lo = vec![120u8; 4 * 4 * 4];
         let out = fsr1_reference(&lo, 4, 4, 8, 8, 0.2);
         assert_eq!(out.len(), 8 * 8 * 4);
-        for y in 0..8usize {
-            for x in 0..8usize {
-                let v = out[(y * 8 + x) * 4];
-                let border_x = x == 0 || x == 7;
-                let border_y = y == 0 || y == 7;
-                match (border_x, border_y) {
-                    (false, false) => assert_eq!(v, 120, "interior must stay flat"),
-                    (true, true) => assert_eq!(v, 132, "corner: 2 OOB taps → ×1.10 halo"),
-                    _ => assert_eq!(v, 126, "edge: 1 OOB tap → ×1.05 halo"),
-                }
-            }
+        for (i, px) in out.chunks_exact(4).enumerate() {
+            assert_eq!(
+                px[0], 120,
+                "flat 120: clamp border must stay identical (px {i})"
+            );
+            assert_eq!(px[3], 255, "alpha (px {i})");
         }
     }
 

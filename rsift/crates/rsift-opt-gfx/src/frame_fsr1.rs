@@ -15,6 +15,10 @@
 //!
 //! WGSL は `fsr1.rs` の CPU 参照と同一数学 (EASU 勾配・位置寄せ・RCAS ラプラシアン)。
 //! CPU 側ミラーは `frame_reference::fsr1_reference` — GPU/CPU 突合検証に使う。
+//!
+//! wave 93 CQ-1: RCAS の外周は端画素 clamp (範囲外 textureLoad の「不定値」
+//! 読み出しを規格上根絶) — WGSL / ミラー / EASU サンプラ ClampToEdge で
+//! 3連鎖が同一規約に揃っている。
 
 use crate::frame_pipeline::{read_rgba8, FrameImage};
 use tracing::debug;
@@ -22,12 +26,19 @@ use tracing::debug;
 /// 既定シャープネス (`full_graph_wiring` の `Fsr1 { sharpness: 0.2 }` と同値)。
 pub const DEFAULT_SHARPNESS: f32 = 0.2;
 
+/// readback 行サイズ (`(full_w * 4).div_ceil(256) * 256`) が u32 に収まる
+/// 真の安全上界 = 2^30 − 64。機械検算 (Python):
+/// - 上界: `ceil(1073741760·4/256)·256 = 4294967040 = 0xFFFFFF00 ≤ u32::MAX`
+/// - 上界+1: `4294967296 = 2^32` → u32 ラップ (旧 2^30 ガードは
+///   `full_w * 4 = 2^32` がラップする 2^30 も通過しており 1 オフだった)
+pub const MAX_ROW_SAFE_FULL_W: u32 = 1_073_741_760;
+
 /// 次元契約の純粋検査 (wgpu デバイス不要 — GPU 無し環境でも全契約が検証可能)。
 ///
 /// - 全次元 ≥ 1 (0 幅テクスチャは wgpu 検証エラー / WGSL で inputSize 除算が不定)
 /// - low ≤ full (FSR1 はアップスケーラ。縮小は EASU の想定外)
-/// - full_w ≤ 2^30 (`full_w * 4` の u32 オーバーフローで readback 行サイズ計算が
-///   panic するのを未然防止)
+/// - full_w ≤ [`MAX_ROW_SAFE_FULL_W`] (readback 行サイズの u32 オーバーフロー
+///   で `copy_texture_to_buffer` / map が崩壊するのを未然防止)
 pub fn validate_dims(low_w: u32, low_h: u32, full_w: u32, full_h: u32) -> Result<(), String> {
     if low_w == 0 || low_h == 0 || full_w == 0 || full_h == 0 {
         return Err(format!(
@@ -39,9 +50,9 @@ pub fn validate_dims(low_w: u32, low_h: u32, full_w: u32, full_h: u32) -> Result
             "FSR1 is an upscaler: low ({low_w}x{low_h}) must not exceed full ({full_w}x{full_h})"
         ));
     }
-    if full_w > (1 << 30) {
+    if full_w > MAX_ROW_SAFE_FULL_W {
         return Err(format!(
-            "full_w {full_w} exceeds 2^30 (row-bytes u32 overflow guard)"
+            "full_w {full_w} exceeds {MAX_ROW_SAFE_FULL_W} (row-bytes u32 overflow guard)"
         ));
     }
     Ok(())
@@ -133,6 +144,12 @@ impl GpuFsr1Pass {
             // (線形でも中心位置では同一値だが、規約を明示する)
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
+            // 外周で base=-1 / base+1=low_w となり uv が範囲外になり得る —
+            // 端画素 ClampToEdge は既定値だが、EASU の外周規約
+            // (frame_reference の px() clamp と整合) として明示固定。
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
         });
 
@@ -437,8 +454,37 @@ mod tests {
         // 縮小 (幅 / 高さ それぞれ)
         assert!(super::validate_dims(641, 240, 640, 480).is_err());
         assert!(super::validate_dims(320, 481, 640, 480).is_err());
-        // u32 overflow ガード
-        assert!(super::validate_dims(1, 1, (1 << 30) + 1, 1).is_err());
-        assert!(super::validate_dims(1, 1, 1 << 30, 1).is_ok());
+        // u32 overflow ガード (真の安全上界 2^30 − 64 — 旧 2^30 ガードは
+        // full_w·4 = 2^32 がラップする境界を通過させていた 1 オフ、wave 93)
+        assert!(super::validate_dims(1, 1, super::MAX_ROW_SAFE_FULL_W, 1).is_ok());
+        assert!(super::validate_dims(1, 1, super::MAX_ROW_SAFE_FULL_W + 1, 1).is_err());
+    }
+
+    /// 上界定数の厳密性: readback 行サイズ計算が丁度 u32 に収まる境界で、
+    /// +1 が 2^32 に触れること (Python 機械検算済値のピン)。
+    #[test]
+    fn readback_row_bytes_bound_is_machine_exact() {
+        let padded = (super::MAX_ROW_SAFE_FULL_W * 4).div_ceil(256) * 256;
+        assert_eq!(padded, 4_294_967_040, "padded at bound = 0xFFFFFF00");
+        let over = (super::MAX_ROW_SAFE_FULL_W as u64 + 1) * 4;
+        assert_eq!(over.div_ceil(256) * 256, 1u64 << 32, "bound+1 hits 2^32");
+    }
+
+    /// WGSL fsr_rcas の 4 近傍 load が全て端画素 clamp であること
+    /// (wave 93 CQ-1: 範囲外 textureLoad の「不定値」読み出し — wgsl
+    /// §textureLoad — を規格上根絶する契約。clamp が 1 つでも剥がれたら
+    /// 規格非携帯の外周ハローが復活する)。
+    #[test]
+    fn rcas_wgsl_border_loads_are_clamped() {
+        let wgsl = crate::fsr1::FSR1_WGSL;
+        assert!(
+            wgsl.contains("let maxc = vec2<i32>(dim) - vec2<i32>(1, 1);"),
+            "rcas border clamp bound (maxc) missing"
+        );
+        assert_eq!(
+            wgsl.matches("clamp(coord + vec2<i32>").count(),
+            4,
+            "rcas 4-neighbor border loads must all be clamped"
+        );
     }
 }

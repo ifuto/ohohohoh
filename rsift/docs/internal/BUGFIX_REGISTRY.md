@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-92 (BV-CP 節) | 104 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **288** |
+| E 期: 横断契約クラス期 | wave 72-93 (BV-CQ 節) | 110 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **294** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -350,6 +350,12 @@
 | CP-2 | 低 | biome blend UI 下限 1 が vanilla OFF (0) を選択不能に (低スペ最重視で最軽量 OFF 欠落の語彙欠陥) → BIOME_BLEND_MIN/MAX (0,7) pub const 化+OFF=左端・pos16 幾何ピン |
 | CP-3 | 低 | open_global_settings が poisoned mutex を静寂無視 (BW-1 系 fail-loud 文化に反) → debug! 通知+into_inner() 復元で開き切る慣用句へ |
 | CP-4 | 観 | shader_profile 4 値表は PerformanceTier 4 値と整合 (High 時 speed_first 2 択)、probe_and_cache/hardware 混在は OnceLock 共有で実害なし、slider 退化語彙は既ピンと設計確認 |
+| CQ-1 | 中 | fsr_rcas 外周 4 近傍の範囲外 textureLoad が WGSL 規格上「不定値」(ゼロ保証なし、一次: wgsl/index.bs §textureLoad 17,925 行) でベンダ非決定的 → WGSL を端画素 clamp へ根治 + CPU ミラーの「OOB=0」規約を clamp 3連鎖へ同時根治 (平坦領域を厳密恒等化、ハロー値 126/132 を機械再導出で廃止) |
+| CQ-2 | 中 | validate_dims ガード 1 オフ (full_w=2^30 で full_w·4=2^32 が u32 ラップする境界を受理+ceil 上げ幅未考慮) → MAX_ROW_SAFE_FULL_W=2^30−64 const 厳密化 (Python: padded=0xFFFFFF00/+1 で 2^32、境界 ±1 テスト反転+行バイト厳密ピン) |
+| CQ-3 | 低 | FSR1 サンプラ address_mode が Default 暗黙 (EASU 外周端画素規約が既定値依存) → ClampToEdge を u/v/w 明示固定 (ミラー px() clamp と規約整合露出) |
+| CQ-4 | 低 | frame_reference「OOB textureLoad=0、WGSL 準拠」コメントが規格文言に反する虚偽 → clamp 規約の正確な記述へ訂正 (仕様誤読の伝播遮断) |
+| CQ-5 | 観 | Params uniform (24B @0/8/16/20) の vec2 16B アライン懸念は RequiredAlignOf 表照合で誤検出確定 (16 化強制は array stride/struct 間隔のみ) — 変更なし |
+| CQ-6 | 観 | EASU/RCAS バインド群分割・inter view 寿命・dispatch ガード・readback 256B アライン・draw_calls=2・DEFAULT_SHARPNESS 双方向ピンを仕様通り確認 — 変更なし |
 
 ---
 

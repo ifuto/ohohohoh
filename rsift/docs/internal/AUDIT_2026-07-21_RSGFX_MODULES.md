@@ -5353,3 +5353,52 @@ open_global_settings_smoke_no_panic (poison 復元経路を含む)。
 超長ラベル (>43 char) の行は min-width 仕様で 76 超過し得る (compile-time
 短ラベルのみ現状)、GUI 描画の真 consumer 化に伴う行ビルダ全面 pure 化、
 render_distance の語彙 (vanilla 委譲表示と VideoSettings 値の乖離注記)。
+
+## CQ. frame_fsr1.rs (wave 93, 2026-07-24)
+
+444 → 490 行。全行照合 + fsr1.rs (341 行 BM/BN 期監査済) / shaders/fsr1.wgsl
+(66 → 72 行) / frame_reference.rs ミラー rcas 部との 4 連鎖整合監査。
+消費者: `examples/frame_proof.rs` (GpuFsr1Pass::new/render_full、実 GPU 専用)、
+`frame_pipeline::read_rgba8` 共有、`fsr1.rs` 既定値双方向ピン (BN-3a)、
+`full_graph_wiring` の `Fsr1 { sharpness: 0.2 }` 由来 doc 整合、lib.rs。
+一次情報: WGSL spec 本体 (github gpuweb/gpuweb `wgsl/index.bs` 20,738 行
+現行エディタドラフト = W3C CRD 2026-07-16 と同規則) から §textureLoad
+(17,925 行) と RequiredAlignOf 表 (11,329-11,400 行) を本文該当行で照合。
+全数値を Python (struct 往復 f32 単精度エミュレーション) で機械検算。
+
+| CQ-1 | 中 | fsr_rcas の外周 4 近傍 `textureLoad(casTex, coord±1, 0)` が画像 1px 外周で範囲外読み出し → WGSL 規格上「不定値」(§textureLoad:「不定論理テクセルアドレスは範囲内テクセルのデータか (0,0,0,0)/(0,0,0,1) のいずれかを返す」) でありゼロ保証なし、ベンダ間で外周 1px が非決定的 → WGSL を `clamp(coord±1, 0, maxc)` 端画素クランプへ根治。CPU ミラー (`frame_reference` load クロージャ) の「OOB=0、WGSL 準拠」2 規則を同じ clamp 規約へ同時根治 (3 連鎖整合)。数学帰結: 平坦領域は外周込みで `lap=(4c)·0.25−c=±0.0` の厳密恒等となり、旧 OOB=0 由来ハロー値 (辺 126/角 132) は Python 機械再導出で廃止 → テスト境界を `120 全画素厳密恒等` へ置換 (旧値は機械再現も確認して廃止根拠を記録) |
+| CQ-2 | 中 | `validate_dims` の overflow ガードが 1 オフ — `full_w > 1<<30` 拒否は `full_w = 2^30` を受理し、その `full_w*4 = 2^32` は u32 ラップ (doc 主張の保護対象そのもの)。さらに `(full_w*4).div_ceil(256)*256` の ceil 上げ幅で真の安全境界は `2^30−64` → `MAX_ROW_SAFE_FULL_W = 1_073_741_760` const 化。機械検算: 上界で `padded = 4_294_967_040 = 0xFFFFFF00 ≤ u32::MAX`、上界+1 で `2^32` に触れる。境界 ±1 テスト反転 + readback 行バイト厳密ピン 2 テスト追加 |
+| CQ-3 | 低 | FSR1 サンプラの address_mode が `Default` 暗黙 → EASU 外周 (base=-1 / base+1=low_w) の端画素規約は ClampToEdge 既定値に依存していたため `ClampToEdge` を u/v/w 明示固定 (ミラー px() clamp との規約整合を露出) |
+| CQ-4 | 低 | `frame_reference` の「OOB textureLoad = 0、WGSL 準拠」コメントが規格文言に反する虚偽 (CQ-1 一次照合で確定) → 正確な clamp 規約記述へ訂正 (コメント虚偽は仕様誤読を将来の実装者に伝播させるため修正対象) |
+| CQ-5 | 観 | `Params { inputSize: vec2, outputSize: vec2, sharpness, _pad }` (24B, offsets 0/8/16/20) の「uniform アドレス空間で vec2 は必須 16B アラインでは?」懸念は一次照合で**誤検出と確定** — RequiredAlignOf 表で vecN は uniform でも `AlignOf(S)` のみ要求 (16 化が強制されるのは array stride roundUp16 と struct 型メンバ間隔 ≥ roundUp(16,SizeOf) のみ)。24B wire は規格完全合法、naga span 24 ピンと一致。変更なし |
+| CQ-6 | 観 | バインド群分割 (EASU 0-3 / RCAS 0,4,5 と WGSL binding index の整合)、inter view 寿命 (wgpu 内部参照)、dispatch 各軸ガード (`gid >= outDim` 早期 return)、readback 256B アライン・draw_calls=2 の誠実性、DEFAULT_SHARPNESS 双方向ピン — 全て仕様通り確認 (変更なし) |
+
+### 検証 (wave 93)
+- `cargo test -p rsift-opt-gfx --lib`: **951 全緑** (+2: readback 行バイト
+  厳密ピン / rcas WGSL clamp 4 箇所ピン。境界反転・ハロー廃止値置換は
+  既存テスト内改訂)。fsr1_flat_region_is_identity が全画素 120 の
+  clamp 規約へ機械再導出値で置き換わり、混同色 bleeding なしを確認。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- fmt: frame_fsr1.rs 偏差 0、frame_reference.rs 偏差 0 (HEAD 0 を維持、
+  rustfmt 出力と一致させた multiline assert 形式を採用)、不可視文字/CRLF なし。
+- アドバーサリアル 3 系統 (全検出 → /tmp/cq_fixed から md5 忠実復元):
+  (a) rcas clamp 1 tap 剥がし → rcas_wgsl_border_loads_are_clamped FAILED
+  (clamp 4→3)。(b) ガードを旧 `1<<30` へ逆戻し →
+  validate_dims_rejects_violations FAILED (上界受理の反転)。(c) ミラー
+  clamp → ゼロロード逆戻し → fsr1_flat_region_is_identity FAILED
+  (外周ハロー 126/132 復活)。復元後対象テスト全緑。
+- 機械検算 (ユーザー指示「悩んだら Bash」): 上界 2^30−64 の導出、
+  padded 端点 2 値、平坦 120 の lap=±0.0 到達、旧ハロー値 126/132 の
+  再現 (廃止根拠として併記)、全て Python 単精度往復で実施。
+- 環境事象 (正直記録): セッション中盤のツール出力が破損系出力混入
+  (存在しない compute_runtime.rs 等の幻内容を含む) に汚染され wave 93
+  を一度全廃棄 — 実リポジトリ・リモート (0e5b9f0) 無傷を機械確認
+  (git status クリーン / remote HEAD 一致) 後、本一連をクリーン再実施。
+  破損出力由来の一切の数値・結果は採用していない。
+
+### 残 (次 wave 以降の棚卸し)
+frame_pipeline::read_rgba8 の map_async 失敗時 fail 語彙、FSR1 の実 GPU
+frame_proof 突合の CI 不可能性 (アダプタ無し環境) に対する CPU ミラー
+厳密一致証明のドキュメント面強化、EASU サンプラー Nearest vs 線形の
+規約注記 (現行 Nearest は規約正誤ではなく規約選択)、raw 画素 0.7x/0.5x
+プリセット語彙。

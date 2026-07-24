@@ -52,10 +52,17 @@ fn fsr_rcas(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (gid.x >= dim.x || gid.y >= dim.y) { return; }
     let coord = vec2<i32>(i32(gid.x), i32(gid.y));
     let c = textureLoad(casTex, coord, 0).rgb;
-    let n = textureLoad(casTex, coord + vec2<i32>(0, 1), 0).rgb;
-    let s = textureLoad(casTex, coord + vec2<i32>(0, -1), 0).rgb;
-    let e = textureLoad(casTex, coord + vec2<i32>(1, 0), 0).rgb;
-    let w = textureLoad(casTex, coord + vec2<i32>(-1, 0), 0).rgb;
+    // 外周の範囲外 textureLoad は WGSL 規格上「不定値」 (wgsl/index.bs
+    // §textureLoad 17925 行:「不定論理テクセルアドレスは範囲内テクセルの
+    // データか (0,0,0,0)/(0,0,0,1) のいずれかを返す」) であり、ゼロ仮定の
+    // ハローはベンダ間で再現しない規格非携帯挙動だった (wave 93 CQ-1)。
+    // 端画素 clamp (frame_reference::fsr1_reference の load と整合の
+    // 3連鎖規約) で完全に決定的な外周にする。
+    let maxc = vec2<i32>(dim) - vec2<i32>(1, 1);
+    let n = textureLoad(casTex, clamp(coord + vec2<i32>(0, 1), vec2<i32>(0, 0), maxc), 0).rgb;
+    let s = textureLoad(casTex, clamp(coord + vec2<i32>(0, -1), vec2<i32>(0, 0), maxc), 0).rgb;
+    let e = textureLoad(casTex, clamp(coord + vec2<i32>(1, 0), vec2<i32>(0, 0), maxc), 0).rgb;
+    let w = textureLoad(casTex, clamp(coord + vec2<i32>(-1, 0), vec2<i32>(0, 0), maxc), 0).rgb;
     let lap = (n + s + e + w) * 0.25 - c;
     let sharp = vec3<f32>(params.sharpness);
     // 鮮鋭化は中心を近傍平均から「遠ざける」方向: c - lap*sharp
