@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 128
+- count: 129
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -146,3 +146,4 @@
 - 2026-07-24 (count 126): wave 91 gpu_culling 監査 (CO-1 GPU 返り値契約明文化・CO-2 frustum doc 誠実化・CO-3 バッファプール償還成長化・CO-4 chunk_count 契約ピン+trace 誠実化・CO-5 オフセット機械ピン 計5項目、946 全緑+adversarial 1 系統) の CI 緑確認用
 - 2026-07-24 (count 127): wave 92 gui_settings 監査 (CP-1 行幅 76 契約・CP-2 biome OFF 下限・CP-3 poison 復元・CP-4 観察 計4項目、949 全緑+adversarial 3 系統+fmt 偏差 251 維持) の CI 緑確認用
 - 2026-07-24 (count 128): wave 93 frame_fsr1 監査 (CQ-1 fsr_rcas 外周の範囲外 textureLoad 不定値読み出し根治 = 端画素 clamp 3連鎖統一・CQ-2 validate_dims ガード 1 オフ → 2^30-64 厳密化・CQ-3 サンプラ ClampToEdge 明示・CQ-4 コメント虚偽訂正・CQ-5/CQ-6 観察 = vec2 uniform 16B 懸念は一次照合で誤検出確定 計6項目、951 全緑+adversarial 3 系統+digest 不変) の CI 緑確認用
+- 2026-07-24 (count 129): wave 94 gpu_arena 監査 (CR-1 alloc u64 オーバーフロー checked_add 化・CR-2 free size debug_assert・CR-3 generation() 消費者配線・CR-4 reclaimed_count 削除+正準レイアウト Python ピン・CR-5 GUI_ROW_CHARS 導出 consumer 化 (警告 28→27)・CR-6 観察 計6項目、953 全緑+adversarial 4 系統+fmt/digest 維持) の CI 緑確認用

@@ -5402,3 +5402,43 @@ frame_proof 突合の CI 不可能性 (アダプタ無し環境) に対する CP
 厳密一致証明のドキュメント面強化、EASU サンプラー Nearest vs 線形の
 規約注記 (現行 Nearest は規約正誤ではなく規約選択)、raw 画素 0.7x/0.5x
 プリセット語彙。
+
+## CR. gpu_arena.rs (wave 94, 2026-07-24)
+
+411 → 471 行。全行照合 (`GpuArena` best-fit+併合副割当器 / `SharedRingBuffer`
+SPSC / `HazardQueue` エポック回収の 3 部構成)。
+消費者: `full_graph_wiring` (`GpuArena::new(512<<20, 256)` チャンク byte で
+alloc→エポック退役、`HazardQueue::advance_epoch/defer_free/reclaim`、
+`SharedRingBuffer<u64,1024>`)、`gigabuffer.rs` (arena: Mutex<GpuArena> align 256)。
+数値経路は全て Python で機械検算 (need 表・最終レイアウト used/free、
+flat 併合後フラグメント)。本 wave は「丁寧な振り返り→クリーン」指示に基づき
+直近 wave の残件 (wave 92 GUI_ROW_CHARS 非利用警告) も同時処理。
+
+| CR-1 | 中 | `alloc` のアライン繰上げ `size + align - 1` が u64 端でオーバーフロー→ラップし、巨大 size が小さい need に化けて実在セグメントを誤認割当 → `checked_add` で None (確保不能)。u64::MAX / MAX-3 / capacity 丁度 successful / +1 拒否の境界 4 点機械ピン |
+| CR-2 | 低 | `free` が handle の size を無検証で `used_bytes` から減算 — 不正ハンドル (size 改竄) で会計が静寂破壊される呼出バグ窓 → `debug_assert!(segs[idx].size == h.size)` 追加 (double free assert と並置) |
+| CR-3 | 低 | `gen` 変更回数カウンタが私有死に状態 → `generation()` pub accessor を消費者配線 (外部キャッシュ無効化トリガの true 単一源、テストで +1/回 厳密追従ピン) |
+| CR-4 | 低 | `HazardQueue::reclaimed_count` がテストのためだけの `reclaim` 別名 → 削除・直呼出し統一。併せて best-fit+分割+併合の正準レイアウト (need 100→112/200→208/64→64/48→48、used=320/free=704、完全併合→1024) を Python 検算値で厳密ピン |
+| CR-5 | 低 | wave 92 (CP) 残留: `GUI_ROW_CHARS` が非 test コードで未利用の警告 (28 warnings 中 1 件が自己由来) → `TOGGLE_LABEL_CHARS = GUI_ROW_CHARS−33` / `SLIDER_LABEL_CHARS = GUI_ROW_CHARS−34` の導出に置換し builder を単一真実源化 (値 43/42 不変、機械検算済)。警告 28→27 |
+| CR-6 | 観 | `SharedRingBuffer` SPSC のメモリ順序 (producer Relaxed+Release / consumer Acquire+Release、wrapping 全容量利用、align(128) アライン契約) は正準パターンと厳密一致。`free` の二重 merge は index dance (idx−1 先読み→bounds 検査→cur 再判定) を全分岐走査し境界安全を確認。`free_by_size` bucket 整合 (分割で idx+1 insert→全エントリ +1 shift、merge で逆 shift) も仕様通り。gpu_culling の `DeviceExt` 未使用警告は `git show 3d601f4` 照合で wave-91 初版からの既存欠落 (CR-5 の追加で起票) の棚卸し管理対象へ分離 |
+
+### 検証 (wave 94)
+- `cargo test -p rsift-opt-gfx --lib` 953 全緑 (+2: alloc オーバーフロー/境界、正準レイアウト厳密ピン)。
+- アドバーサリアル 3+1 系統: (a) CR-1 ガード除去 (unchecked 化) → alloc_overflow FAILED。
+  (b) best-fit `range_mut(need..)` → `need+1` 破壊 → gpu_arena 系 FAILED。
+  (c) merge 右隣 `cur+1` → `cur+2` 破壊 → gpu_arena 系 FAILED。(a') sed-textue 破損版でもコンパイル不能が直ちに検出。
+  全復元は ~/bak (固定版先取得) から md5 忠実復元 (OK) → 復元後対象テスト緑。
+- fmt: gpu_arena HEAD(18)/work(18) 維持、gui_settings 305==305 維持。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+  警告カウント 28→27 (新規ゼロ、既存 27 は由来別棚卸し管理)。
+- 機械検算 (ユーザー Bash 指示): alloc 境界 4 値、need/used/free 表、ラベル幅定数 33/34 の整合、div-mul round-up の py 一致。
+- 環境事象 (正直記録): git HEAD を base 64294c6 へ巻き戻す破損を検出 (14 回目型)
+  → fetch+reset --hard FETCH_HEAD で f74a5ec へ復旧、wave-94 未コミット編集は
+  /tmp 掃除のバックアップ消失で一度喪失 → 設計確定済の同内容をクリーン再適用、
+  以降の固定バックアップは永続領域 ~/bak へ移動 (規律強化)。
+
+### 残 (次 wave 以降の棚卸し)
+既存 27 warnings (gpu_culling DeviceExt 由来、adaptive_perf×3 他) の一掃 wave、
+GpuArena::alloc の O(n) Vec 分割挿入コスト (巨大アリーナ下での amortized 検討)、
+`ChunkMeshArenas::alloc_mesh` panic 語彙 (fail-loud 意図は 2026-07-22 監査済だが
+panic→Result 化の可否一台帳論)、HazardQueue pending swap_remove の順序非保存
+現況の語彙化、SharedRingBuffer discriminative `Fully-used` len>BUFFER_SIZE 瞬間値の doc 化。

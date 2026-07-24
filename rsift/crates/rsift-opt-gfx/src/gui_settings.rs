@@ -246,14 +246,28 @@ pub const BIOME_BLEND_MAX: u32 = 7;
 /// row 系はこの幅に必ず揃える (旧実装は toggle 75 / slider 64 で右壁ずれ)。
 pub(crate) const GUI_ROW_CHARS: usize = 76;
 
+/// toggle 行の label 幅 = GUI_ROW_CHARS − (枠線 2 + spacing 3 + glyph 28)。
+/// 契約からの導出により単一真実源を維持する (wave 94 警告クリーン: CP-1 では
+/// const のみで builder 側へ配線されていなかった)。
+const TOGGLE_LABEL_CHARS: usize = GUI_ROW_CHARS - 33;
+
+/// slider 行の label 幅 = GUI_ROW_CHARS − (枠線 2 + spacing 4 + bar 24 + value 4)。
+const SLIDER_LABEL_CHARS: usize = GUI_ROW_CHARS - 34;
+
 /// toggle 行の描画文字列 (pure: 幅整合をテスト可能にするため抽出)。
 fn toggle_line(label: &str, on: bool) -> String {
-    format!("║ {:<43} {:>28} ║", label, toggle_glyph(on))
+    format!("║ {:<w$} {:>28} ║", label, toggle_glyph(on), w = TOGGLE_LABEL_CHARS)
 }
 
 /// slider 行の描画文字列 (pure 抽出、bar 幅 24 固定)。
 fn slider_line(label: &str, value: u32, min: u32, max: u32) -> String {
-    format!("║ {:<42} {} {:>4} ║", label, slider_bar(value, min, max, 24), value)
+    format!(
+        "║ {:<w$} {} {:>4} ║",
+        label,
+        slider_bar(value, min, max, 24),
+        value,
+        w = SLIDER_LABEL_CHARS
+    )
 }
 
 pub struct SodiumVideoSettingsGui {

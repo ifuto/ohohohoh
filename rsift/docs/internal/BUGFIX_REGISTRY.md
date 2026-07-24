@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-93 (BV-CQ 節) | 110 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **294** |
+| E 期: 横断契約クラス期 | wave 72-94 (BV-CR 節) | 116 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **300** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -356,6 +356,12 @@
 | CQ-4 | 低 | frame_reference「OOB textureLoad=0、WGSL 準拠」コメントが規格文言に反する虚偽 → clamp 規約の正確な記述へ訂正 (仕様誤読の伝播遮断) |
 | CQ-5 | 観 | Params uniform (24B @0/8/16/20) の vec2 16B アライン懸念は RequiredAlignOf 表照合で誤検出確定 (16 化強制は array stride/struct 間隔のみ) — 変更なし |
 | CQ-6 | 観 | EASU/RCAS バインド群分割・inter view 寿命・dispatch ガード・readback 256B アライン・draw_calls=2・DEFAULT_SHARPNESS 双方向ピンを仕様通り確認 — 変更なし |
+| CR-1 | 中 | GpuArena::alloc のアライン繰上げ u64 オーバーフロー (巨大 size がラップ→小 need 化→誤認割当) → checked_add で確保不能 None 化 (境界 4 点ピン) |
+| CR-2 | 低 | GpuArena::free の size 不一致で used_bytes 会計静寂破壊の窓 → debug_assert(seg.size == h.size) 追加 |
+| CR-3 | 低 | gen カウンタの死に状態 → generation() pub accessor 消費者配線 + 追従ピン |
+| CR-4 | 低 | HazardQueue::reclaimed_count 別名削除 (reclaim 直接呼出し統一) + best-fit/分割/併合正準レイアウト Python 検算ピン |
+| CR-5 | 低 | wave 92 残留の GUI_ROW_CHARS 未利用警告 → label 幅を契約から導出 (TOGGLE/SLIDER_LABEL_CHARS) で真 consumer 化・単一真実源 (警告 28→27) |
+| CR-6 | 観 | SPSC メモリ順序正準性・free 二重 merge index dance・free_by_size bucket 整合の仕様一致確認 + gpu_culling DeviceExt 警告は 3d601f4 初版由来と確定 (棚卸し管理へ) |
 
 ---
 

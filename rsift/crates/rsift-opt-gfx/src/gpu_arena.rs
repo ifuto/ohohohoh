@@ -165,6 +165,13 @@ impl GpuArena {
         self.used_bytes
     }
 
+    /// 世代カウンタ (alloc/free の構造化変更ごとに +1)。
+    /// 外部キャッシュの無効化トリガ等の消費者に公開する
+    /// (消費者配線方針: 死に状態として私有で抱え込まない、wave 94 CR-B)。
+    pub fn generation(&self) -> u64 {
+        self.gen
+    }
+
     pub fn capacity(&self) -> u64 {
         self.capacity
     }
@@ -203,7 +210,13 @@ impl GpuArena {
         if size == 0 {
             return Some(ArenaHandle { offset: 0, size: 0 });
         }
-        let need = (size + self.align - 1) / self.align * self.align;
+        // アライン繰上げのオーバーフローは確保不能 (None) — 生の加算だと
+        // u64 端でラップして小さい need に化け、実在セグメントを
+        // 誤認割当する (wave 94 CR-A: 境界機械ピンで検出)。
+        let need = match size.checked_add(self.align - 1) {
+            Some(s) => s / self.align * self.align,
+            None => return None,
+        };
         let (&bucket_size, bucket) = self
             .free_by_size
             .range_mut(need..)
@@ -266,6 +279,12 @@ impl GpuArena {
             None => return,
         };
         debug_assert!(!self.segs[idx].free, "double free");
+        debug_assert!(
+            self.segs[idx].size == h.size,
+            "free size mismatch: handle={} seg={} (used_bytes 会計が破壊される呼び出しバグ)",
+            h.size,
+            self.segs[idx].size
+        );
         self.segs[idx].free = true;
         self.used_bytes = self.used_bytes.saturating_sub(h.size);
         self.free_insert(idx, self.segs[idx].size);
@@ -398,14 +417,69 @@ mod tests {
         let epoch = hq.advance_epoch();
         hq.defer_free(handle, epoch);
         assert_eq!(arena.used_bytes(), 128);
-        assert_eq!(hq.reclaimed_count(epoch - 1, &mut arena), 0);
+        assert_eq!(hq.reclaim(epoch - 1, &mut arena), 0);
         assert_eq!(hq.reclaim(epoch, &mut arena), 1);
         assert_eq!(arena.used_bytes(), 0);
     }
-}
 
-impl HazardQueue {
-    pub fn reclaimed_count(&mut self, completed_epoch: u64, arena: &mut GpuArena) -> usize {
-        self.reclaim(completed_epoch, arena)
+    /// wave 94: アライン繰上げの u64 オーバーフローは確保不能 (None) — 旧実装は
+    /// ラップして小さい need に化け実在セグメントを誤認割当した (CR-A)。
+    /// 契約境界 (capacity 丁度成功 / +1 拒否) も併せて機械固定。
+    #[test]
+    fn alloc_overflow_and_capacity_bounds() {
+        let mut a = GpuArena::new(1024, 16);
+        assert!(a.alloc(u64::MAX).is_none(), "no wrap to small need");
+        assert!(a.alloc(u64::MAX - 3).is_none(), "checked_add guard");
+        assert!(a.alloc(0).is_some(), "0 割当は従前通り受理 (退化契約)");
+        let mut b = GpuArena::new(1024, 16);
+        assert!(
+            b.alloc(1024)
+                .is_some_and(|h| h.offset == 0 && h.size == 1024),
+            "capacity 丁度は成功"
+        );
+        assert!(b.alloc(1).is_none(), "exhausted");
+        let mut c = GpuArena::new(1024, 16);
+        assert!(c.alloc(1025).is_none(), "need 1040 > capacity");
+    }
+
+    /// wave 94: best-fit + 分割 + 併合の正準レイアウトを Python 機械検算値で
+    /// 厳密ピン (need 100→112/200→208/64→64/48→48、free 後 used=320/free=704、
+    /// 全解放後は単一 1024B セグメントへ完全併合)。世代カウンタ経由の
+    /// generation() 消費者面も同時固定 (CR-B)。
+    #[test]
+    fn alloc_free_exact_layout_machine_verified() {
+        let mut a = GpuArena::new(1024, 16);
+        let a1 = a.alloc(100).unwrap();
+        let a2 = a.alloc(200).unwrap();
+        assert_eq!((a1.offset, a1.size), (0, 112));
+        assert_eq!((a2.offset, a2.size), (112, 208));
+        a.free(a1);
+        let a3 = a.alloc(64).unwrap();
+        let a4 = a.alloc(48).unwrap();
+        assert_eq!(
+            (a3.offset, a3.size),
+            (0, 64),
+            "best-fit: 112B 穴を先頭から分割再利用"
+        );
+        assert_eq!((a4.offset, a4.size), (64, 48), "分割残余 48B の丁度再利用");
+        assert_eq!(a.used_bytes(), 320);
+        assert_eq!(a.free_bytes(), 704);
+        assert_eq!(
+            a.fragmentation().to_bits(),
+            0.0f32.to_bits(),
+            "残 free が単一 704B"
+        );
+        assert_eq!(a.generation(), 5, "4 alloc + 1 free");
+        a.free(a2);
+        a.free(a4);
+        a.free(a3);
+        assert_eq!(a.used_bytes(), 0);
+        assert_eq!(a.free_bytes(), 1024);
+        assert_eq!(
+            a.fragmentation().to_bits(),
+            0.0f32.to_bits(),
+            "全解放で完全併合"
+        );
+        assert_eq!(a.generation(), 8, "generation は構造化変更数に厳密追従");
     }
 }
