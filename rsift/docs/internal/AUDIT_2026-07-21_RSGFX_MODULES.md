@@ -4245,3 +4245,164 @@ generated_wgsl_is_naga_valid_and_vocabulary_pinned
   **2 (WORK-only 差分行 0)**。
 - cargo check -p rsift-opt-gfx --all-targets: エラー 0。
 - 不可視文字 0 / CRLF 0 (python 検査)。
+## CD. hzb_2d.rs 監査 (wave 80, 2026-07-24)
+
+hzb_2d.rs (389→約1040 行)。保守的 CPU Hi-Z オクルージョン (テンポラル
+ヒステリシスつき)。live 消費: render_pipeline.rs:801-830 が本流
+(列 16x64x16 ボックスで cpu_occlusion 経由 cull_boxes_with_camera 呼出)、
+cpu_occlusion.rs は固定/任意カメラの薄いラッパ (bitexact 委譲テスト済)、
+aokana.rs は Hzb2D フィールド保持のみ (CB-3 で未配線明記済)、
+world_column_store/low_spec_stack は CameraState の型借用のみ。
+moved_significantly の外部使用ゼロ (実測)。2026-07-22 の軽監査で
+skip_frame 永久無効化バグ (A 期、台帳 A 期節) を修復済の経緯があり、
+本 wave が初の全行照合 + 数学的再定式化。
+
+### CD-1 (高): temporal streak の i8 アンダーフロー → clamp 化
+- 問題の定式化: `*streak -= 1` は 129 フレーム連続遮蔽 (60fps で 2.2 秒、
+  洞窟内静止等で容易に到達) で i8::MIN を割り **debug panic /
+  release wrap=127** (描画スレッド致命傷)。判定 <= -4 に対し値域を
+  [-REQUIRED, 1] に制限する clamp は数学的に無影響。
+- 修復: `(*streak - 1).max(-OCCLUDED_FRAMES_REQUIRED)`。
+- アドバーサリアル検証: 旧 `*streak -= 1` 忠実注入 →
+  `attempt to subtract with overflow` panic でテスト赤 → 復元後緑。
+
+### CD-2 (高): temporal キーの列衝突 → min 3 成分 to_bits 厳密恒等キー
+- 問題の定式化: 旧 `(min_x as i32, min_z as i32)` は (a) 同一 (x,z) 列の
+  異断面 (min_y 違い、1.21 系の自然な 24 断面 API 用法) を**全て同一キー化**
+  → 1 フレームに断面数だけストリークが進み OCCLUDED_FRAMES_REQUIRED=4 の
+  意味論が k 分周 (2 断面で 2 フレーム発火 = フリッカー穴方向)、
+  (b) 負座標の `as i32` 切捨てで (-0.9,+0.9) → (0,0) 衝突。
+- 修復: `(min.to_bits() x 3)` = bit 完全一致 = 数学的恒等。現行
+  render_pipeline (列マージ 1 ボックス/列) ではキー一意のまま挙動不変。
+- アドバーサリアル検証: y 潰し (旧 2D キー同型) 注入 → 統合テストが
+  frame2 での早期発火を捕捉 (赤) → 復元後緑。キー導出関数は
+  実ボックスからの導出で直接ピン (単体テスト強化)。
+
+### CD-3 (高・根幹): Hi-Z 深度値の近/遠逆転 → 厳密最遠 raster/最近 test
+- 問題の定式化: モジュール doc 自身「farthest occluder depth per tile」と
+  謳うのに、rasterize は occluder の**最近**値 1/dist_center を書いていた。
+  各 texel 値は「texel 全域が少なくとも v 以上で覆われる」保証でなければ
+  ならないところ、box の rect 内ピクセル深度値は 1/dist_max .. 1/dist_min
+  に分布し最小保証は 1/dist_max — 最近値を書くと保証が**偽**となり
+  occludee の最近点が occluder 最近フロンティアを僅差で超えるだけで
+  誤遮蔽 (false hole)。ヒステリシス (4 フレーム) が隠蔽していた構造。
+- 修復 (厳密): raster=1/dist_max (8 隅最大ユークリッド、凸体の外部点からの
+  最遠点は頂点で達するため厳密)、test=1/dist_min (clamp 点 = 解析的厳密
+  最近距離)。単調性不変量 v_raster<=v_test (dist_min<=dist_max と同一
+  clamp から帰結) を assert! で fail-loud 保持 → **自己遮蔽は数学的に不可能**
+  を不変量として証明 (統合テストで 8 フレーム実証)。
+- アドバーサリアル検証: raster 値の v_test 注入 (旧同型) →
+  near_frontier/rasterize_writes_farthest/hull_rasterize の 3 テスト赤 →
+  復元後緑。
+
+### CD-4 (高・根幹): 射影の fov/aspect 因子欠落 + 回転無視 → 8 角厳密射影
++ 凸包 scanline
+- 問題の定式化: 旧 half_w は /(tan·aspect) が無い (fov=1.0,16:9 で
+  tan(0.5)×1.78≈0.972 の**偶然補正**で見た目だけ成立; zoom で 2.2 倍過大
+  = 穴方向、広角で 2.8 倍過小)。さらに world-x 幅をそのまま view 幅とする
+  軸並行仮定で yaw/pitch 回転を無視 (45° で最大 41% 乖離)。
+  bbox raster は silhouette 外の部分被覆 texel にも保証値を書いていた
+  (凸体射影は一般に 6 角形等で bbox に満たない)。
+- 修復 (厳密): 8 隅を厳密 view 変換→透视除算 (凸体の射影 = 隅射影の凸包、
+  z>0 半空間で凸性保存により厳密 silhouette)。test 用 bbox は厳密外接
+  (過大方向のみで保守)。raster は monotone chain 凸包 (f64、全非有限で
+  プラットフォーム一意) の scanline フィルで**完全内包 texel のみ**に書く
+  (帯 [y,y+1] 上下端交差区間の狭い側、ceil(xa)<=x かつ x+1<=xb)。
+  near 跨ぎは全隅 min_view_z<=NEAR_PLANE で厳密 None (旧は中心点のみで
+  背後角の箱が破綻矩形を生成しえた)。
+- 検算: Python f32 往復厳密化スクリプト (/tmp/cd_verify*.py) で全期待値を
+  独立導出 → f32 bit ピン (1/√116=0x3DBE26EB、1/√184=0x3D96FB06、
+  1/√804=0x3D10746C 等)。45° yaw で bbox 角 texel 非記述 (77 列) をピン。
+- アドバーサリアル検証: bbox 全域フィル (旧動作) 注入 →
+  hull_rasterize テストのみピンポイント赤 (他 17 緑 = 判別特異性) → 復元。
+
+### CD-5 (中): mip 奇数幅の floor 除算で最終列/行死亡 → ceil 除算
+- 問題の定式化: 旧 w1=(w0/2).max(1) では w0 奇数 (画面幅 64..512 で頻出、
+  479 等) の最終 texel 列 w0-1 が (x*2+dx).min(w0-1) に現れず mip1 に
+  伝播しない (raster したのにピラミッドに現れない = 遮蔽過小 = cull 損)。
+- 修復: div_ceil(2) (Hi-Z 標準、Intel 67,65…例と同型)。chain 厳密ピン:
+  65→[33,17,9,5,3,2,1]、最終列 64 のみ記述で mip1 列 32 への伝播を実証。
+- アドバーサリアル検証: floor 注入 → chain ピン赤 → 復元後緑。
+
+### CD-6 (中): moved_significantly の y/fov/aspect 無視 → 3D 距離 + Δ射影
+- 問題の定式化: 旧 XZ 距離のみ。鉛直テレポート (コマンド/リスポーン) や
+  ズーム (fov 変化) でピラミッドと temporal が stale のまま使われる
+  (hole 方向)。doc「Camera move (blocks)」は 3D が意図。
+- 修復: 3D 距離 √(dx²+dy²+dz²) > 2.0、|Δyaw|/|Δpitch| > 0.08 (踏襲)、
+  |Δfov_y|/|Δaspect| > 1e-3 (新設 PROJECTION_CHANGE_EPS)。ジャンプ
+  1.25・通常落下 (~1.3/frame)・エリトラ (~0.5/frame) は閾値内で
+  skip 増なし (消費者実測組合せ: render_pipeline は毎フレーム実カメラ)。
+  外部使用ゼロ (実測) のため意味論変更は hzb_2d 内部に閉じる。
+- 影響テスト訂正: teleport_skip 回帰テストは初回 default→y64 も武装する
+  新仕様に合わせカウンタ系列を訂正 (n,n,2n,3n,3n,4n)。
+
+### CD-7 (中): 非有限カメラ/非正規ボックスの NaN 伝播偶然頼み → 明示 drop 拒否
+- 問題の定式化: 旧実装は NaN カメラで f32::max/min の NaN 伝播規則経由の
+  副産物として「偶然全可視」になっていた (仕様ではない)。文化 (BW-1 他)
+  「非有限 = 観測欠測は drop/拒否」。
+- 修復: cull_boxes 冒頭で camera.is_finite 検査 → 非有限なら last_camera・
+  temporal・ピラミッド・帳簿を一切更新せず保守全可視を返却 (FFI 長命
+  ループのため panic ではなく drop 拒否 = BW-1 確立形)。ボックス側は
+  非有限 or min>max 逆転を wellformed 検査で個別 drop (可視パススルー、
+  raster/temporal 非登録、バッファ無汚染をテストでピン)。
+
+### CD-8 (低): build_pyramid 全段 src.clone() → split_at_mut 借用分割
+- 段ごとに mip 全面を clone していた O(画素) アロケーションを
+  split_at_mut(level+1) の借用分割に置換。逐語演算は同一で出力 bit 不変
+  (ceil chain ピンで機械確認)。
+
+### CD-9 (低): temporal HashMap 無制限成長 → 16384 上限
+- 訪問チャンク断面数だけ単調増加していた (3D キー化でさらに増える意図的
+  設計のため上限必須)。16384 エントリ (≒682 列×24 断面) で entry 前に
+  len>=MAX なら全クリア (ストリークリセットのみの保守方向) → メモリ定数
+  上界化。上限・クリア後 len==1 をピン。
+
+### 誠実化 (観)
+- 深度値定義・保守性の根拠・AABB ソリッド近似の適用範囲・残存誤差への
+  ヒステリシス位置づけをモジュール doc に再定式化して明記
+  (「farthest occluder depth」が実装とようやく一致)。
+- VERTEX_BYTES (Hi-Z 本体と無関係の歴史的公開定数) の所在理由を doc 誠実化
+  (公開 API + テストピンあり、消費者方針により維持)。
+- dist_sq を 3D 化 (front-to-back ヒューリスティックの正確性向上、
+  max 更新の可換性から mip0 出力 bit 不変)。
+- hzb<0.001 fast path は「hzb=0 なら不等式が構造的不成立」で数学的冗長と
+  判明 → 走査省略の高速経路として doc 誠実化して温存。
+
+### 自己誤り捕捉 (10, 11 件目)
+- hull_len: unit box の凸包頂点数を 4 と思い込み設計 → Python 検算で
+  オフアクシス遠近 2 矩形の凸包は 6 と実行前捕捉・訂正。
+- column_sections フレームカウント: skip-arm+空ピラミッドの frame0 で
+  streak=1 が立つ系列を見落とし 4 呼出で発火を期待 → テスト赤が捕捉、
+  5 呼出系列 (frame1..4 で -1..-4) へ訂正。旧 2D キー注入下では frame2
+  早期発火の捕捉力を維持することも確認。
+
+### テスト (hzb_2d 3→18 件、lib 904 全緑)
+temporal_streak_saturates_never_underflows /
+temporal_keys_distinguish_column_sections /
+project_aabb_exact_unit_box / project_aabb_respects_fov_and_aspect_exactly /
+near_plane_straddle_is_conservative_none /
+ceil_mip_chain_and_last_column_propagates /
+rasterize_writes_farthest_depth_guarantee /
+hull_rasterize_skips_partially_covered_texels /
+moved_significantly_3d_and_projection_changes /
+non_finite_camera_is_rejected_without_recording /
+malformed_boxes_pass_through_without_recording /
+temporal_map_is_capped / self_occlusion_is_impossible /
+near_frontier_does_not_falsely_occlude /
+column_sections_cull_after_exactly_four_frames (以上新規 15) +
+vertex_stride_is_12 / temporal_requires_multiple_frames 維持 +
+teleport_skip_is_consumed_and_recovers (新仕様へカウンタ訂正)。
+
+### 検証結果 (全て実測)
+- lib **904/904** (+15、hzb_2d 18/18、cpu_occlusion 委譲 bitexact 2/2 緑)。
+  structural_digest `004c1cf5fb17bfe8` rows=357 不変 (hzb は bench 非
+  経路、機械確認)。
+- fmt: WORK-only 差分行 **0** (全面再実装につき全行 rustfmt 正準形、
+  HEAD 由来 38 行は旧ファイル温存分)。
+- cargo check -p rsift-opt-gfx --all-targets: エラー 0、hzb_2d 由来警告 0。
+- 不可視文字 0 / CRLF 0 / tab 0 (python 検査)。
+- アドバーサリアル 5 系統 (CD-1 overflow panic / CD-2 frame2 早期発火 /
+  CD-3 3 テスト赤 / CD-4 bbox フィルで判別テストのみ赤 / CD-5 chain 赤)、
+  全て忠実復元で最終 904 緑。
+- 環境: git 破損 12 回目 (HEAD 64294c6 巻戻り、fetch+reset で無損失復旧)、
+  Rust 消失 10 回目 (restore-env.sh で復旧 36 秒)。
