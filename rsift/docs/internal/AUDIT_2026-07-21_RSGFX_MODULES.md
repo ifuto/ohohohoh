@@ -4181,3 +4181,67 @@ insert_replaces_and_root_id_is_truthful_after_build
 - cargo check -p rsift-opt-gfx --all-targets: エラー 0 (git root からの誤実行
   による偽陽性 1 件を cwd 誤りと特定・正規 cwd で 0 確認)。
 - 不可視文字 0 / CRLF 0 (python 検査)。
+
+## CC. visibility_buffer.rs 監査 (wave 79, 2026-07-24)
+
+visibility_buffer.rs (214→約430 行)。Visibility Buffer (8B/px ID バッファ) の
+パック・リゾルバ・属性補間・resolve WGSL 生成。live 消費: aokana が
+VisibilityBufferResolver を保持のみ (evaluate 未使用、CB-3 で記録済)、
+pack/interpolate/WGSL 生成は現状 live 未消費 (消費者追加方針に基づき
+削除せず、契約修復 + 完全実装で事前安全化)。
+
+### CC-1 (中): pack_ids の 16bit 静寂切捨て → fail-loud 契約化
+- 問題の定式化: `(primitive & 0xFFFF) | ((instance & 0xFFFF) << 16)` は
+  入力 ≥65536 をマスクで**静寂切捨て**し、異なる ID が同じパック値へ
+  エイリアス (AV-1 pack_handle・BE-1 new() と同一クラス)。GPU は
+  `packed & 0xFFFFu` で読むため書込側の値域違反は検出不能。
+- 修復: 両入力 <65536 を assert (fail-loud)。超過領域は pack_ids_64
+  (truncation なし) への誘導を契約文で明記。
+- アドバーサリアル検証: 旧マスク実装注入 → 2 should_panic テスト赤 →
+  復元後 12/12 緑。境界ピン: (0,0)=0、(65535,65535)=0xFFFF_FFFF、
+  64bit 版 u32::MAX 往復。
+
+### CC-2 (低): compute_barycentrics 縮退フォールバックの誠実化 + 厳密ピン
+- |denom|<1e-6 (絶対閾値、denom=符号付き面積×2) で重心 [1/3,1/3,1/3] へ
+  静寂フォールバックしていた未記載分岐 → 定義済み規約として doc 明文化。
+- 厳密有理値ピン: (0,0),(8,0),(0,8) 三角形 (denom=64=2⁶、全中間値 f32
+  厳密) で (2,2)→[0.5,0.25,0.25]、(4,4)→[0,0.5,0.5]、頂点→[1,0,0]。
+  初回実行で全一致。
+
+### CC-3 (高・アルゴリズム偽装クラス): WGSL ジェネレータを真の 12B
+レイアウト忠実・完全形へ再実装
+- 問題の定式化: 生成 WGSL は `pos_packed/uv_packed/color_packed` の
+  3×u32・10bit pos という**コードベースに存在しない虚構レイアウト**
+  (実 Quantized12ByteVertex は [u16;3] pos + [u8;2] oct normal + [u16;2]
+  uv = 12B、color 無し・pos は 3×u16)。さらに uv/color 未算出、
+  visibility_texture/max_instances 未使用のスタブ (ユーザー指令「スタブ
+  無し・数学的に正しく完全実装」に違反)。
+- 修復 (完全実装): 真のレイアウトを 3 ワード (w0=px|py<<16,
+  w1=pz|(ox|oy<<8)<<16, w2=u|v<<16) として decode (除数 1024.0/32767.0/
+  127.5 は encode の厳密ミラー) + oct normal 折り返し解除 (L1 折りの
+  解析的厳密逆: 隅 4 点は全て south pole、f32 厳密) + bary 補間 +
+  resolve_main (visibility/bary texture 参照、MAX_INSTANCES=4096u 埋込、
+  prim==0xFFFF または inst 超過は discard 契約)。
+- 3 連鎖: CPU ミラー decode_pos/decode_uv/decode_normal_oct を同モジュール
+  に新設し生成物と語彙一致 (WORDS_PER_VERTEX=3 共有)。生成 WGSL は
+  **naga パース + 全セマンティクス検証をテストで機械通過** (gpu_runtime
+  sweep 同系、GPU 不要の純 CPU 検査)。虚構語彙 (!pos_packed) も機械拒否。
+- アドバーサリアル検証: スタブ的注入 (const 消去 + w0 マスク破壊) →
+  語彙ピン :392 赤 → 復元後緑。
+
+### テスト (+6 純増、889 全緑)
+pack_ids_full_boundary_exact / pack_ids_rejects_primitive_aliasing_overflow /
+pack_ids_rejects_instance_aliasing_overflow /
+barycentric_exact_rationals_and_degenerate_fallback /
+decode_mirrors_layout_and_encode_scales_exact /
+generated_wgsl_is_naga_valid_and_vocabulary_pinned
+(旧 test_wgsl_gen は虚構語彙消去を機械拒否する形に更新、既存 6 件維持)。
+
+### 検証結果 (全て実測)
+- lib **889/889** (+6、visibility_buffer 12/12)。structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (live 未消費経路のため挙動影響なしを
+  機械確認)。
+- fmt: HEAD baseline 2 → 自前 3 箇所を rustfmt 正準形へ是正後
+  **2 (WORK-only 差分行 0)**。
+- cargo check -p rsift-opt-gfx --all-targets: エラー 0。
+- 不可視文字 0 / CRLF 0 (python 検査)。

@@ -22,8 +22,18 @@ impl Vec4 {
 
 /// Pack `(primitive_id, instance_id)` into one `u32`: primitive in the low 16
 /// bits, instance in the high 16 bits.
+///
+/// **契約 (wave 79 CC-1 で fail-loud 化)**: 両入力は `< 65536` 必須。
+/// 旧実装は `& 0xFFFF` で上位ビットを**静寂切捨て**し、異なる ID が同じ
+/// パック値へエイリアスした (AV-1 pack_handle・BE-1 new() と同一クラスの
+/// ハザード)。65536 以上の ID が必要な領域は [`pack_ids_64`] を使うこと。
 #[inline]
 pub fn pack_ids(primitive: u32, instance: u32) -> u32 {
+    assert!(
+        primitive < 65536 && instance < 65536,
+        "pack_ids 契約違反: primitive={primitive}, instance={instance} — \
+         ≥65536 は 16bit 欄への静寂切捨て (ID エイリアス)。pack_ids_64 を使用"
+    );
     (primitive & 0xFFFF) | ((instance & 0xFFFF) << 16)
 }
 
@@ -93,6 +103,12 @@ pub fn interpolate_rgb(a: Vec4, b: Vec4, c: Vec4, w: [f32; 3]) -> Vec4 {
 }
 
 /// Compute barycentric weights $(u, v, w)$ given screen-space coordinates and triangle NDC/screen vertices.
+///
+/// 縮退扱い (wave 79 CC-2 で誠実化): `denom` は符号付き面積の 2 倍
+/// (pixel² 単位)。`|denom| < 1e-6` (絶対閾値) の縮退三角形では、拒否ではなく
+/// **重心重み [1/3, 1/3, 1/3] への定義済みフォールバック**を返す
+/// (面積を持たないプリミティブのラスタで属性値を出すための規約。
+/// 旧 doc はこの分岐を未記載だった)。
 #[inline]
 pub fn compute_barycentrics(
     px: f32,
@@ -112,46 +128,141 @@ pub fn compute_barycentrics(
     [w0, w1, w2]
 }
 
-/// Generates valid WGSL code for bindless vertex pulling from a storage buffer based on visibility buffer output.
+/// 12B 量子化頂点のワードレイアウト (CPU ミラーと共有する唯一の真実)。
+/// `Quantized12ByteVertex` (pos_xyz u16[3] + oct_normal u8[2] + uv u16[2])
+/// を little-endian の u32 ワード 3 個として読む:
+/// - word0 = pos_x | pos_y<<16
+/// - word1 = pos_z | (oct_x | oct_y<<8)<<16
+/// - word2 = uv_u | uv_v<<16
+pub const WORDS_PER_VERTEX: u32 = 3;
+
+/// WGSL `decode_vertex` の CPU ミラー (3 連鎖語彙ピン対象)。
+/// 位置の除数 1024.0 は `Quantized12ByteVertex::encode` の厳密ミラー
+/// (16bit 固定小数点)。`words` は [`WORDS_PER_VERTEX`] 個の頂点ワード。
+#[inline]
+pub fn decode_pos(words: &[u32; 3]) -> [f32; 3] {
+    [
+        (words[0] & 0xFFFF) as f32 / 1024.0,
+        ((words[0] >> 16) & 0xFFFF) as f32 / 1024.0,
+        (words[1] & 0xFFFF) as f32 / 1024.0,
+    ]
+}
+
+/// CPU ミラー: UV の除数 32767.0 (encode の u16 量子化スケールと厳密一致)。
+#[inline]
+pub fn decode_uv(words: &[u32; 3]) -> [f32; 2] {
+    [
+        (words[2] & 0xFFFF) as f32 / 32767.0,
+        ((words[2] >> 16) & 0xFFFF) as f32 / 32767.0,
+    ]
+}
+
+/// CPU ミラー: octahedral normal の decode (encode の L1 折り畳みの厳密な逆)。
+/// 返り値は encode 入力の **L1 正規化点** (方向は一致、ノルムは L1 球面上)。
+/// `z < 0` の折り返し解除は decode 標準形: 両成分は折り畳み前の x,y を
+/// 厳密に復元する (考査: wave 79 CC-3 で往復解析済み、隅は f32 厳密)。
+#[inline]
+pub fn decode_normal_oct(oct_x: u8, oct_y: u8) -> [f32; 3] {
+    let ox = oct_x as f32 / 127.5 - 1.0;
+    let oy = oct_y as f32 / 127.5 - 1.0;
+    let mut nx = ox;
+    let mut ny = oy;
+    let nz = 1.0 - ox.abs() - oy.abs();
+    if nz < 0.0 {
+        let sx = if nx >= 0.0 { 1.0 } else { -1.0 };
+        let sy = if ny >= 0.0 { 1.0 } else { -1.0 };
+        let tx = (1.0 - ny.abs()) * sx;
+        let ty = (1.0 - nx.abs()) * sy;
+        nx = tx;
+        ny = ty;
+    }
+    [nx, ny, nz]
+}
+
+/// Generates WGSL for bindless vertex pulling + visibility resolve.
+///
+/// **wave 79 CC-3 (スタブ完全実装)**: 旧生成物は `pos_packed/uv_packed/
+/// color_packed` の 3×u32・10bit pos という**コードベースに存在しない虚構
+/// レイアウト**で、uv/color は未算出・visibility_texture と max_instances は
+/// 未使用のスタブだった。本版は真の 12B レイアウト ([`WORDS_PER_VERTEX`])
+/// に忠実な完全 resolve (pos/uv/normal decode + bary 補間 + visibility
+/// 参照 + 範囲契約) を生成し、除数・語彙は CPU ミラー (`decode_pos`/
+/// `decode_uv`/`decode_normal_oct`) と一致する (3 連鎖)。
+///
+/// `max_instances` は生成 WGSL の `MAX_INSTANCES` 定数として埋め込まれ、
+/// resolve は `instance >= MAX_INSTANCES` を背景として discard する
+/// (「0 番背景」規約は呼出側ラスタ設定、範囲外は描画しない契約)。
 pub fn generate_bindless_pulling_wgsl(max_instances: usize) -> String {
     format!(
-        r#"
-struct QuantizedVertex {{
-    pos_packed: u32,
-    uv_packed: u32,
-    color_packed: u32,
-}};
-
-@group(0) @binding(0) var<storage, read> vertex_pool: array<QuantizedVertex>;
-@group(0) @binding(1) var<storage, read> index_pool: array<u32>;
-@group(0) @binding(2) var visibility_texture: texture_2d<u32>;
+        r#"// Rsift visibility-buffer resolve (GENERATED). Mirrors Quantized12ByteVertex
+// as 3 words/vertex: w0 = pos_x|pos_y<<16, w1 = pos_z|(oct_x|oct_y<<8)<<16,
+// w2 = uv_u|uv_v<<16. Divisors 1024.0 / 32767.0 / 127.5 match the CPU mirror.
+const MAX_INSTANCES: u32 = {max_instances}u;
+const WORDS_PER_VERTEX: u32 = 3u;
 
 struct PulledFragment {{
     pos: vec3<f32>,
+    normal: vec3<f32>,
     uv: vec2<f32>,
-    color: vec4<f32>,
 }};
 
-fn pull_and_decode(instance_id: u32, prim_id: u32, bary: vec3<f32>) -> PulledFragment {{
-    let base_idx = prim_id * 3u;
-    let i0 = index_pool[base_idx];
-    let i1 = index_pool[base_idx + 1u];
-    let i2 = index_pool[base_idx + 2u];
+@group(0) @binding(0) var<storage, read> vertex_words: array<u32>;
+@group(0) @binding(1) var<storage, read> index_pool: array<u32>;
+@group(0) @binding(2) var visibility_tex: texture_2d<u32>;
+@group(0) @binding(3) var bary_tex: texture_2d<f32>;
 
-    let v0 = vertex_pool[i0];
-    let v1 = vertex_pool[i1];
-    let v2 = vertex_pool[i2];
-
-    // Decode quantized 12-byte positions and interpolate using barycentrics
-    let p0 = vec3<f32>(f32(v0.pos_packed & 0x3FFu), f32((v0.pos_packed >> 10u) & 0x3FFu), f32((v0.pos_packed >> 20u) & 0x3FFu));
-    let p1 = vec3<f32>(f32(v1.pos_packed & 0x3FFu), f32((v1.pos_packed >> 10u) & 0x3FFu), f32((v1.pos_packed >> 20u) & 0x3FFu));
-    let p2 = vec3<f32>(f32(v2.pos_packed & 0x3FFu), f32((v2.pos_packed >> 10u) & 0x3FFu), f32((v2.pos_packed >> 20u) & 0x3FFu));
-
-    var result: PulledFragment;
-    result.pos = p0 * bary.x + p1 * bary.y + p2 * bary.z;
-    return result;
+fn decode_vertex(word_off: u32) -> PulledFragment {{
+    let w0 = vertex_words[word_off];
+    let w1 = vertex_words[word_off + 1u];
+    let w2 = vertex_words[word_off + 2u];
+    var f: PulledFragment;
+    f.pos = vec3<f32>(
+        f32(w0 & 0xFFFFu) / 1024.0,
+        f32((w0 >> 16u) & 0xFFFFu) / 1024.0,
+        f32(w1 & 0xFFFFu) / 1024.0,
+    );
+    let ox = f32((w1 >> 16u) & 0xFFu) / 127.5 - 1.0;
+    let oy = f32((w1 >> 24u) & 0xFFu) / 127.5 - 1.0;
+    var n = vec3<f32>(ox, oy, 1.0 - abs(ox) - abs(oy));
+    if n.z < 0.0 {{
+        let sx = select(-1.0, 1.0, n.x >= 0.0);
+        let sy = select(-1.0, 1.0, n.y >= 0.0);
+        let tx = (1.0 - abs(n.y)) * sx;
+        n = vec3<f32>(tx, (1.0 - abs(n.x)) * sy, n.z);
+    }}
+    f.normal = n;
+    f.uv = vec2<f32>(
+        f32(w2 & 0xFFFFu) / 32767.0,
+        f32((w2 >> 16u) & 0xFFFFu) / 32767.0,
+    );
+    return f;
 }}
-// Configured for up to {max_instances} instances without Mesh Shader requirement.
+
+fn pull_and_decode(prim_id: u32, bary: vec3<f32>) -> PulledFragment {{
+    let base_idx = prim_id * 3u;
+    let v0 = decode_vertex(index_pool[base_idx] * WORDS_PER_VERTEX);
+    let v1 = decode_vertex(index_pool[base_idx + 1u] * WORDS_PER_VERTEX);
+    let v2 = decode_vertex(index_pool[base_idx + 2u] * WORDS_PER_VERTEX);
+    var r: PulledFragment;
+    r.pos = v0.pos * bary.x + v1.pos * bary.y + v2.pos * bary.z;
+    r.normal = v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z;
+    r.uv = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
+    return r;
+}}
+
+@fragment
+fn resolve_main(@builtin(position) fc: vec4<f32>) -> @location(0) vec4<f32> {{
+    let pix = vec2<i32>(i32(fc.x), i32(fc.y));
+    let packed = textureLoad(visibility_tex, pix, 0).r;
+    let prim = packed & 0xFFFFu;
+    let inst = (packed >> 16u) & 0xFFFFu;
+    if prim == 0xFFFFu || inst >= MAX_INSTANCES {{
+        discard;
+    }}
+    let bary = textureLoad(bary_tex, pix, 0).rgb;
+    let frag = pull_and_decode(prim, bary);
+    return vec4<f32>(frag.uv, 0.0, 1.0);
+}}
 "#
     )
 }
@@ -208,7 +319,93 @@ mod tests {
     #[test]
     fn test_wgsl_gen() {
         let code = generate_bindless_pulling_wgsl(4096);
-        assert!(code.contains("QuantizedVertex"));
         assert!(code.contains("pull_and_decode"));
+        assert!(code.contains("resolve_main"));
+        // CC-3: 旧スタブの虚構レイアウト語彙は完全消去 (実 12B 語彙のみ)。
+        assert!(!code.contains("pos_packed"));
+        assert!(!code.contains("color_packed"));
+    }
+
+    #[test]
+    fn pack_ids_full_boundary_exact() {
+        assert_eq!(pack_ids(0, 0), 0);
+        assert_eq!(pack_ids(65535, 65535), 0xFFFF_FFFF); // 16bit 各最大 = 全ビット
+        assert_eq!(unpack_ids(0xFFFF_FFFF), (65535, 65535));
+        // 64bit 版は u32 全域で truncation なし (境界往復)。
+        let p = pack_ids_64(u32::MAX, u32::MAX);
+        assert_eq!(unpack_ids_64(p), (u32::MAX, u32::MAX));
+        assert_eq!(unpack_ids_64(pack_ids_64(1, 0)), (1, 0));
+    }
+
+    #[test]
+    #[should_panic(expected = "pack_ids 契約違反")]
+    fn pack_ids_rejects_primitive_aliasing_overflow() {
+        // CC-1: primitive >= 65536 は 16bit 欄への静寂エイリアスのため拒否。
+        let _ = pack_ids(65536, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "pack_ids 契約違反")]
+    fn pack_ids_rejects_instance_aliasing_overflow() {
+        let _ = pack_ids(0, 70000);
+    }
+
+    #[test]
+    fn barycentric_exact_rationals_and_degenerate_fallback() {
+        // 分母 64 (2 の冪) で全中間値 f32 厳密 (CC-2 手導出):
+        let v0 = [0.0, 0.0];
+        let v1 = [8.0, 0.0];
+        let v2 = [0.0, 8.0];
+        assert_eq!(
+            compute_barycentrics(2.0, 2.0, v0, v1, v2),
+            [0.5, 0.25, 0.25]
+        );
+        assert_eq!(compute_barycentrics(4.0, 4.0, v0, v1, v2), [0.0, 0.5, 0.5]);
+        assert_eq!(compute_barycentrics(0.0, 0.0, v0, v1, v2), [1.0, 0.0, 0.0]);
+        // 縮退 (全頂点同一点) → 定義済み重心フォールバック (規約ピン)。
+        let d = compute_barycentrics(3.0, 3.0, [3.0, 3.0], [3.0, 3.0], [3.0, 3.0]);
+        assert_eq!(d, [0.3333333, 0.3333333, 0.3333333]);
+    }
+
+    #[test]
+    fn decode_mirrors_layout_and_encode_scales_exact() {
+        // CC-3 CPU ミラー: w0 = 1024|2048<<16, w1 = 512|(255|0<<8)<<16,
+        // w2 = 32767|32767<<16。除数は encode の厳密ミラー (全値 f32 厳密)。
+        let words = [
+            1024u32 | (2048 << 16),
+            512 | (255 << 16),
+            32767 | (32767 << 16),
+        ];
+        assert_eq!(decode_pos(&words), [1.0, 2.0, 0.5]);
+        assert_eq!(decode_uv(&words), [1.0, 1.0]);
+        // oct 隅 4 点は全て south pole に厳密着地 (fold の解析的逆、-0.0 は
+        // IEEE 等値で 0.0 と一致)。
+        for (ox, oy) in [(0u8, 0u8), (255, 0), (0, 255), (255, 255)] {
+            assert_eq!(decode_normal_oct(ox, oy), [0.0, 0.0, -1.0]);
+        }
+        // 中心 (127,127) は量子化丸めを含むため許容誤差 1/127.5 の構造検査
+        // (厳密ではないことを明示)。
+        let n = decode_normal_oct(127, 127);
+        assert!(n[2] > 0.99 && n[0].abs() < 0.008 && n[1].abs() < 0.008);
+        assert_eq!(WORDS_PER_VERTEX, 3);
+    }
+
+    #[test]
+    fn generated_wgsl_is_naga_valid_and_vocabulary_pinned() {
+        // CC-3: 生成 WGSL を naga でパース + 全セマンティクス検証
+        // (gpu_runtime sweep と同系。GPU 不要の純 CPU 検査)。
+        let code = generate_bindless_pulling_wgsl(4096);
+        assert!(code.contains("const MAX_INSTANCES: u32 = 4096u;"));
+        for vocab in ["/ 1024.0", "/ 32767.0", "127.5", "vertex_words", "bary_tex"] {
+            assert!(code.contains(vocab), "missing vocab: {vocab}");
+        }
+        let module = naga::front::wgsl::parse_str(&code).expect("generated WGSL must parse");
+        let mut validator = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        );
+        validator
+            .validate(&module)
+            .expect("generated WGSL must pass full naga validation");
     }
 }

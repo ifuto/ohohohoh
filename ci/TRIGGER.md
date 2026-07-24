@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 112
+- count: 113
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -130,3 +130,4 @@
 - 2026-07-24 (count 110): wave 76 persistent_vbo_pool 監査 (BZ-1 確保リーク rollback・BZ-2 stale slot・BZ-6 配分最適化) の CI 緑確認
 - 2026-07-24 (count 111): wave 77 svdag 監査 (CA-1 root_id stale メタデータ根治・厳密構築ピン・不変量精緻化) の CI 緑確認
 - 2026-07-24 (count 112): wave 78 aokana 監査 (CB-1 非決定反復の sort 根治・境界/置換ピン・doc 誠実化) の CI 緑確認
+- 2026-07-24 (count 113): wave 79 visibility_buffer 監査 (CC-1 pack fail-loud・CC-3 虚構 WGSL ジェネレータ完全実装) の CI 緑確認

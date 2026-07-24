@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 26 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 58 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 86 |
-| E 期: 横断契約クラス期 | wave 72-78 (BV-CB 節) | 24 |
-| **合計** | | **214** |
+| E 期: 横断契約クラス期 | wave 72-79 (BV-CC 節) | 27 |
+| **合計** | | **217** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -270,6 +270,9 @@
 | CB-1 | 中 | aokana: evaluate_visible_regions の HashMap 非決定反復 → sort 根治 (BS-2 型) |
 | CB-2 | 低 | frustum 境界 (接触=可視)・insert 置換・region_size 64 規約の厳密ピン |
 | CB-3 | 観 | doc 誠実化: Hi-Z/visibility buffer は現行未配線 (frustum のみ) と明記 |
+| CC-1 | 中 | visibility_buffer: pack_ids 16bit 静寂切捨て → fail-loud 契約化 (AV-1/BE-1 同型) |
+| CC-2 | 低 | compute_barycentrics 縮退重心フォールバックの誠実化 + 分母 2 冪の厳密有理ピン |
+| CC-3 | 高 | WGSL ジェネレータが虚構レイアウトのスタブ → 真の 12B 完全 resolve + CPU ミラー 3 連鎖 + naga 検証 |
 
 ---
 
