@@ -50,6 +50,10 @@ pub struct FrameWiringInputs<'a> {
     pub quad_bytes: usize,
     /// カメラ速度 (blocks/frame — pipeline の motion adaptive 値)。
     pub camera_speed: f32,
+    /// カメラ垂直 FOV (radian)。nanite proj_factor / more_culling の
+    /// fov_tan_half で使用 (wave 84 CH-3: 旧 70° ハードコード近似から
+    /// render_pipeline の実カメラ値への配線)。
+    pub camera_fov_y: f32,
     /// SVO エンコードされた列があれば借用 (VCT が実走査する)。
     pub svo: Option<&'a SparseVoxelOctree>,
 }
@@ -899,6 +903,9 @@ impl FullGraphWiring {
         report.aokana_visible_regions = visible_regions.len() as u32;
 
         // -- Voxel Cone Tracing (実 SVO があるフレームで実走査)。
+        // 【誠実注記 wave 84 CH-5】dir.y = |camera_dir.y| の絶対値化は
+        // 天頂方向 sky-visibility プローブの近似で、GI 遮蔽の真の方向性
+        // ではない。出力は現行読み捨て (メトリクス実演)。
         let mut vct_occlusion = 1.0f32;
         if let Some(svo) = inputs.svo {
             let cone = crate::voxel_cone_tracing::ConeRay {
@@ -1103,7 +1110,10 @@ impl FullGraphWiring {
             let tri_n = verts.len() / 3 * 3;
             let indices: Vec<u32> = (0..tri_n as u32).collect();
             let clusters = crate::nanite_clusters::clusterize(&verts, &indices);
-            let proj_factor = inputs.screen_h as f32 / (2.0 * (70.0f32.to_radians() * 0.5).tan());
+            // proj_factor は実カメラ FOV 由来 (wave 84 CH-3: 旧 70° ハード
+            // コード近似は inputs に fov 経路が無かったためのゲス値だった)。
+            let proj_factor =
+                inputs.screen_h as f32 / (2.0 * (inputs.camera_fov_y.max(0.1) * 0.5).tan());
             let mut culled = 0u32;
             for m in &clusters.meshlets {
                 if !crate::nanite_clusters::cluster_should_draw(
@@ -1281,7 +1291,8 @@ impl FullGraphWiring {
             .visible_ids(inputs.camera_pos, &solid_query);
 
         // more_culling: 実投影面積・実法線背面・実雨段差の追加分岐群を実評価。
-        let fov_tan_half = (70.0f32.to_radians() * 0.5).tan();
+        // fov_tan_half も実カメラ FOV 由来 (wave 84 CH-3: nanite と同根)。
+        let fov_tan_half = (inputs.camera_fov_y.max(0.1) * 0.5).tan();
         let mut tiny_culled = 0u32;
         for l in &emissive_lights {
             let dx = l.pos[0] - inputs.camera_pos[0];
@@ -1585,6 +1596,10 @@ impl FullGraphWiring {
         let _ = oit;
 
         // IBL: 実スカイから SH アンビエントを抽出 → 実効還元。
+        // 【誠実注記 wave 84 CH-4】32 方向サンプルは y=max(0.05) のほぼ
+        // 水平リング (「ドーム」でなく地平環)。重み 0.03 は 4π/N の SH
+        // 求積でなく ad-hoc 減衰係数 (ambient_light は現行メトリクス消費
+        // のみで実描画へは未還元)。
         let mut sh = [crate::ibl_sh::Vec3::new(0.0, 0.0, 0.0); 9];
         for (i, d) in dome.iter().enumerate().take(9) {
             let basis = crate::ibl_sh::sh_basis(crate::ibl_sh::Vec3::new(d.x, d.y, d.z));
@@ -1628,20 +1643,26 @@ impl FullGraphWiring {
             ),
             0.08,
         );
+        // CAS/FXAA: 近傍は本来同一ステージの隣接テクセルが必要 (将来課題)。
+        // 旧実装は中心=bloomed/近傍=mapped、中心=sharpened/近傍=bloomed と
+        // **異なるポスト段を近傍と偽って混在**させていた (wave 84 CH-2)。
+        // 現行は同一ステージ定数近傍の実演形: CAS は定数近傍で lap≈0
+        // (≈恒等、1 ulp 級)、FXAA は輝度等一で untouched 経路の bit コピー
+        // (wave 81 CE-4 契約、厳密恒等)。
         let sharpened = crate::cas::cas_sample(
             crate::cas::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
-            crate::cas::Vec3::new(mapped.r, mapped.g, mapped.b),
-            crate::cas::Vec3::new(mapped.r, mapped.g, mapped.b),
-            crate::cas::Vec3::new(mapped.r, mapped.g, mapped.b),
-            crate::cas::Vec3::new(mapped.r, mapped.g, mapped.b),
+            crate::cas::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
+            crate::cas::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
+            crate::cas::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
+            crate::cas::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
             0.4,
         );
         let aa = self.fxaa_inst.shade(
             crate::fxaa::Vec3::new(sharpened.x, sharpened.y, sharpened.z),
-            crate::fxaa::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
-            crate::fxaa::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
-            crate::fxaa::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
-            crate::fxaa::Vec3::new(bloomed.x, bloomed.y, bloomed.z),
+            crate::fxaa::Vec3::new(sharpened.x, sharpened.y, sharpened.z),
+            crate::fxaa::Vec3::new(sharpened.x, sharpened.y, sharpened.z),
+            crate::fxaa::Vec3::new(sharpened.x, sharpened.y, sharpened.z),
+            crate::fxaa::Vec3::new(sharpened.x, sharpened.y, sharpened.z),
         );
         let (edge_len, is_edge, local_max) = self.smaa_inst.edge(
             crate::smaa::Vec3::new(aa.r, aa.g, aa.b),
@@ -1652,12 +1673,17 @@ impl FullGraphWiring {
         );
         let smaa_w = self.smaa_inst.blend(edge_len, local_max.max(1e-3));
         let _ = (is_edge, smaa_w);
-        let prev = self.prev_frame_color;
+        // FSR1 (EASU): 4 近傍は本来フレームバッファの実テクセルが必要
+        // (将来課題)。旧実装は前フレーム/現フレームの**チャンネルを混ぜた
+        // フランケン色** (例 `[prev.R, cur.G, cur.B]`) を近傍の「実入力」と
+        // 偽って供給していた (wave 84 CH-1)。現行は定数色不変性の実演:
+        // 4 入力同一色 ⟹ 勾配 0 ⟹ 双線形は厳密恒等 (±0 吸収で bit 一致、
+        // fsr1.rs 側にも厳密 bit ピンで財産化) という検証可能な形に根治。
         let fsr_color = self.fsr1_inst.reconstruct(
-            [prev[0], aa.r, aa.b],
-            [aa.r, prev[1], aa.b],
-            [aa.r, aa.g, prev[2]],
-            [prev[0], prev[1], prev[2]],
+            [aa.r, aa.g, aa.b],
+            [aa.r, aa.g, aa.b],
+            [aa.r, aa.g, aa.b],
+            [aa.r, aa.g, aa.b],
             0.5,
             0.5,
         );
@@ -2075,6 +2101,7 @@ mod strict_tests {
             quad_materials: Vec::new(),
             quad_bytes: 0,
             camera_speed: 0.0,
+            camera_fov_y: 1.0, // 本番既定 (from_camera と一致する安定ピン用)
             svo: None,
         }
     }

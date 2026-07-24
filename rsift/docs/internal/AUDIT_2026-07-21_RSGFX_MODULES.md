@@ -4710,3 +4710,82 @@ VCT cone の `camera_dir[1].abs()` ヒューリスティクス、WBOIT/SSR/SSS �
 IBL ドーム 0.03 重み、TAA variance clip γ=1.25、exposure adapt 速度 1.6、
 checkerboard 再構成、FSR1/2 入力組成、LEO tag 丸め、time_slice コスト
 見積 180us、DAG コスト係数 0.05/0.4/0.1/0.2/0.1。
+
+## CH. full_graph_wiring.rs 監査 第 2 部 (wave 84, 2026-07-24)
+
+tick_world 本体 (355-1830) のポストプロセス/近似チェーン検証。
+発見 6 項目 (CH-1 [中]、CH-2/3 [低]、CH-4/5/6 [観])。
+
+### CH-1 (中): FSR1 EASU へのフランケン 4 近傍 (前/現フレームのチャンネル混在)
+- EASU `reconstruct(nw, ne, sw, se, fx, fy)` は同一次元の 4 隣接テクセル
+  色を要求 (fsr1.rs 契約)。旧実装は `[prev.R, cur.G, cur.B]` 等の
+  チャンネル混在色を 3 脚に供給 — 時系列混在で全くの造語色。
+- 根治: 定数色不変性の実演 (4 入力 = 現フレーム色) に変更。不変量の
+  数学証明: 勾配 g=0 ⟹ エッジ強度 0 ⟹ 双線形は ±0 吸収で厳密恒等
+  (c+(c-c)*f = c、f 任意で成立)。fsr1.rs の `flat_region_returns_input`
+  を許容誤差 1e-5 から **厳密 bit ピン**へ強化し財産化 (加えて
+  `easu_exact_bits_canonical` が wave 64 より存在し多層防御)。
+  真の 4 近傍テクセル (フレームバッファ供給) は将来課題と明記。
+- 検出器誠実注記: wiring 側のフランケン注入は determinism 比較では
+  原理的に不感 (a/b 同コード) — 防衛はサブシステム側ピン群 (EASU 厳密
+  不変量/CAS フラット恒等/FXAA 輝度等一 untouched = CE-4 契約) と
+  コードレビューが担う。サブシステム数学の退化はピンが即検出
+  (下記アドバーサリアル実証)。
+
+### CH-2 (低): CAS/FXAA の異ステージ近傍混在
+- CAS: 中心=bloomed・近傍=mapped、FXAA shade: 中心=sharpened・近傍=
+  bloomed と、異なるポスト段を「近傍テクセル」と偽って混在。
+- 根治: 同一ステージ定数近傍に統一。CAS は定数近傍で lap≈0 (mean 計算
+  の 3c 丸めで 1 ulp 級の実質恒等 — 厳密と書くには 3c が丸めうるため
+  表現を限定)、FXAA は輝度等一で untouched 経路の bit 完全コピー
+  (CE-4 契約の厳密恒等)。波及的に `aa ≡ sharpened ≡ bloomed` (bit) で
+  以後の段の意味論が単純化される。
+
+### CH-3 (低): nanite/more_culling の FOV 70° ハードコード → 真値配線
+- inputs に FOV 経路がなく 70° のゲス値使用 (本番既定は fov_y=1.0 rad
+  ≈ 57.3°)。FrameWiringInputs に `camera_fov_y` を追加し
+  render_pipeline の実カメラから配線 (opt-gfx 内完結の API 追加、
+  消費者優先方針どおり「消費者 (真値) 追加」で解消)。テスト側は
+  empty_inputs で 1.0 (from_camera 既定と一致) に固定。
+- 検出器誠実注記: culled 数のゴールデンは nanite 意味論に深く依存し
+  脆弱設計となるため不採用 — 防衛はフィールド配線の型検査 + サブ
+  システム (more_culling/nanite) 側ピン + レビュー。
+
+### CH-4 (観): IBL「ドーム」は水平リング + SH 重み 0.03 は ad-hoc
+- 32 方向は y=max(0.05) のほぼ水平リング (y=0.05 固定で天頂側なし)。
+  重み 0.03 は 4π/N の SH 求積 (≈0.393) とは無関係の減衰係数。
+  ambient_light は現行メトリクス消費のみ — コメントで誠実化 (変更は
+  将来の真ドーム配線に委譲)。
+
+### CH-5 (観): VCT cone の dir.y=|camera_dir.y| ヒューリスティクス
+- 視線の上下を問わず天頂方向へ abs 強制 = sky-visibility プローブ近似
+  (GI 遮蔽の真の方向性ではない)。出力は現行読み捨て。コメント誠実化。
+
+### CH-6 (観): exposure histogram 境界 (1e-4〜0.4, percentile 10/95) 判断記録
+- 地平環スカイ輝度 ≈0.2-0.6 の percentiles 10/95 に妥当な動作域
+  (constant_scene_gives_stable_exposure が相互検証済)。変更なし判断を
+  記録 (過剰な厳密化はしない)。
+
+### テスト (純増 0、ただし 1 件厳格化、922 全緑)
+fsr1 `flat_region_returns_input` を厳密 bit 一致へ強化 (fx,fy 3 組)。
+
+### 検証結果 (全て実測)
+- lib **922/922** (増減なし、1 件厳格化)。structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (render_pipeline 1 行配線を含むが
+  bench 経路の出力は不変)。
+- fmt: 3 ファイル (full_graph_wiring/fsr1/render_pipeline) WORK-only **0**
+  (HEAD 由来 156/12/21 行は温存)。
+- 不可視文字 0 / CRLF 0 (3 ファイル) / all-targets で当該由来警告 0。
+- 編集事故 x2 (VCT `let mut vct_occlusion` 脱落・IBL `let mut sh` 脱落)
+  はいずれも直後の参照確認で捕捉し即修復 — コンパイル到達前に解消。
+- アドバーサリアル 1 系統: EASU 双線形の符号反転注入 → fsr1 の 4 テスト
+  赤 (canonical 厳密 bit 系が捕捉。flat 不変量テストは c±(c-c)f=c の
+  構造上不感であることも確認 = 検出範囲の誠実な把握) → 忠実復元 (md5
+  同一) → 20/20 緑。
+
+### 残 (第 3 部 = wave 85 予定、棚卸し)
+tick_world の後段セクション: entity_culler visible_ids 消費、
+time_slice 180us 見積・DAG コスト係数 0.05..0.4 係数群、LEO tag
+(palettes.len 由来)、visgraph flood 半径 8、FSR3 16x16 プローブの
+depth=nearest/128 scaling、FSR2 jitter 0.002 scale、hud stats 正規化
+係数群 (/64 /16 /8)、decal_local 供給値、cluster_grid z スライス割当。

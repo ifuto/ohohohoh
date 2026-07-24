@@ -994,6 +994,7 @@ impl RsiftRenderPipeline {
                 quad_materials,
                 quad_bytes: self.gpu_quad_bytes.len(),
                 camera_speed: self.last_camera_speed,
+                camera_fov_y: self.camera.fov_y,
                 svo: self.svo_cache.values().next(),
             };
             let report = self.full_wiring.tick_world(&inputs);

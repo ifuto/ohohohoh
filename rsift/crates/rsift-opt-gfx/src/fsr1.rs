@@ -141,10 +141,20 @@ mod tests {
 
     #[test]
     fn flat_region_returns_input() {
+        // 定数 4 近傍は勾配 g=0 → エッジ強度 0 → 双線形は構造的に厳密恒等
+        // (c+(c-c)*f = c+0.0*c = c、±0 吸収で bit 一致)。wave 84 CH-1 で
+        // full_graph_wiring 側がこの不変量に依存するため許容誤差から厳密
+        // bit ピンへ強化。
         let same = [0.5; 3];
-        let out = easu_reconstruct(same, same, same, same, 0.3, 0.7);
-        for i in 0..3 {
-            assert!((out[i] - 0.5).abs() < 1e-5, "channel {}", i);
+        for (fx, fy) in [(0.5f32, 0.5f32), (0.3, 0.7), (0.0, 1.0)] {
+            let out = easu_reconstruct(same, same, same, same, fx, fy);
+            for (i, o) in out.iter().enumerate() {
+                assert_eq!(
+                    o.to_bits(),
+                    0.5f32.to_bits(),
+                    "channel {i}: 定数近傍の EASU は厳密に入力色 (fx={fx} fy={fy})"
+                );
+            }
         }
     }
 
