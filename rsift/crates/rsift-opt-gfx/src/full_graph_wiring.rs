@@ -74,7 +74,10 @@ pub struct FrameWiringReport {
     pub ambient_light: f32,
     /// GPU 光伝搬の実ディスパッチ結果: 16³ セクション内の点灯ボクセル割合 (0.0〜1.0)。
     pub clp_lit_fraction: f32,
-    /// FRB ボクセルビルボード GPU 入力への実変換数。
+    /// FRB ビルボードの本数計測 (実クアッドを (center, half, color) タプルの
+    /// 形状へ組立てた個数)。【誠実注記 wave 83 CG-6】組立物は
+    /// FragmentRayBoxIntersect に CPU 側入力 API が存在しないため送達されず
+    /// 破棄される。「GPU 入力への実変換数」ではない (旧 doc を訂正)。
     pub frb_billboards: u32,
     /// 旧 vanilla render バイトコードフック (transpiler HEAD 挿入) の今フレーム実デルタ。
     /// 【非決定】プロセス全域の共有カウンタ由来のため、テスト並行実行では他テストの
@@ -83,6 +86,9 @@ pub struct FrameWiringReport {
     /// 【非決定】電源モード判定が壁時計 (`init_time.elapsed()`) を要求する仕様のため
     /// フレーム間・実行間で揺らぐ。決定性検証の比較対象からは除外する (監査 K-4)。
     pub power_skip_extra: bool,
+    /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
+    /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
+    /// 実計数ではなく、決定性ピンのために定数で供給する。
     pub subsystems_active: u32,
 }
 
@@ -436,7 +442,9 @@ impl FullGraphWiring {
         order_morton.sort_by_key(|&i| codes.get(i).copied().unwrap_or(0));
         let _ = order_morton;
 
-        // JobSystem: 実クアッドの軽量メトリクスをワーカーで集計。
+        // JobSystem: 実クアッド数に比例したチャンク化でワーカーへ負荷を
+        // 実分散する実演 (wave 83 CG-5: クロージャは no-op で、メトリクスの
+        // 集計は行わない — 旧コメントの「軽量メトリクスを集計」は虚偽)。
         {
             let quads = inputs.quad_positions.len();
             if quads > 0 {
@@ -825,8 +833,10 @@ impl FullGraphWiring {
                 }
             }
         }
-        // -- FRB: 実クアッドを完全動的ボクセルビルボード GPU 入力へ実変換
-        //    (破壊対応ビルボード列は事前構造なしで毎フレーム再生成する段の実処理)。
+        // -- FRB: 実クアッドのビルボード形状組立 (center, half, color) の実演
+        //    と本数計測 (wave 83 CG-6: FragmentRayBoxIntersect に CPU 入力 API
+        //    はなく、組立タプルは GPU へ送達されず破棄される。旧コメントの
+        //    「GPU 入力へ実変換」は虚偽だったため訂正。count 自体は実測)。
         let mut frb_count = 0u32;
         let mut frb_above = 0u32;
         for (i, pos) in inputs
@@ -1044,7 +1054,13 @@ impl FullGraphWiring {
         // ============================================================
         // 4. LOD / 未来帳システム: micro/nanite/distant (実クアッド・実 index)
         // ============================================================
-        // 実 draw indices を vertex-cache 最適化し ACMR 改善時のみ採用 (実効果)。
+        // vertex-cache 最適化の不動点計測。【誠実注記 wave 83 CG-2】ここに
+        // 供給するのは実 mesh の draw indices ではなく連番 (0..n) で、頂点
+        // 共有を持たないため ACMR はオーダー不変 (常に 1.0) かつ optimize は
+        // 不動点。計測値 (before, after) は読み捨てで、「ACMR 改善時のみ
+        // 採用」する経路はコード上に存在しない (旧コメントは「実 draw
+        // indices」「実効果」と虚偽の主張をしていた。実 topology 付き index
+        // 列の配線は render_pipeline 側の本番 index 供給が必要で将来課題)。
         let flat_indices: Vec<u32> = (0..(inputs.quad_positions.len() / 3 * 3) as u32).collect();
         if flat_indices.len() >= 96 {
             let before = crate::vertex_cache_opt::VertexCacheOptimizer::acmr(&flat_indices, 16);
@@ -1178,21 +1194,21 @@ impl FullGraphWiring {
         let batched_barriers = self.barriers.flush();
 
         // PSO library: 実プロファイル由来キーのミス/ヒット実測 + 実ディスクキャッシュ。
+        // PSO library: 実プロファイル由来キーのミス/ヒット実測 + 実ディスクキャッシュ。
+        // 【wave 83 CG-7】旧実装は問合せキーに `^ self.tick % 7` を混ぜ、挿入は
+        // 別キー (ps_hash=0xBEEF) で行っていたため get は数学的に常にミス
+        // (「実測」と称しつつ miss rate が常時 100% のでたらめ計器だった)。
+        // 問合せと挿入を同一キーに統一し、初フレーム miss→登録・以後 hit の
+        // 真のキャッシュ挙動に根治。
         let pso_key = crate::pso_library_cache::PsoKey {
             vs_hash: 0xA11CE5,
-            ps_hash: (inputs.material_independent_hash() as u64) ^ self.tick % 7,
+            ps_hash: inputs.material_independent_hash() as u64,
             blend: 0,
             raster: 1,
             depth: 1,
         };
         if self.pso_lib.get(&pso_key).is_none() {
-            self.pso_lib.insert(
-                crate::pso_library_cache::PsoKey {
-                    ps_hash: 0xBEEF,
-                    ..pso_key
-                },
-                vec![0u8; 64],
-            );
+            self.pso_lib.insert(pso_key, vec![0u8; 64]);
         }
         if self.tick % 600 == 0 {
             let _ = self.pso_lib.save();
@@ -1664,11 +1680,24 @@ impl FullGraphWiring {
         let vrs_sel = self.vrs_inst.select(shim, (sg.x + sg.y + sg.z) / 3.0);
         let _vrs_code = vrs_sel.as_code();
         let _vrs_area = vrs_sel.pixel_area();
-        // GTAO: 実オクルージョン・スライス標本 (近傍不透明率由来)。
+        // GTAO: 実パレットの不透明ボクセル率由来のオクルージョン標本。
+        // 【wave 83 CG-8】旧実装は `(0..len).filter(|_| true).count()` (素直に
+        // len) を「近傍不透明率由来」と偽って供給していた。実セクション
+        // パレットの不透明率を直接計算する真の実測に根治 (出力値 gtao_occ は
+        // 現行読み捨てのため挙動影響ゼロの誠実化+実質化)。
+        let opaque_ratio = inputs
+            .section_palettes
+            .first()
+            .map(|p| {
+                p.iter()
+                    .filter(|&&b| self.block_lut.is_opaque_branchless(b))
+                    .count() as f32
+                    / (p.len().max(1) as f32)
+            })
+            .unwrap_or(0.0);
         let mut slice = Vec::with_capacity(8);
         for i in 0..8 {
-            let occ_sample = (0..inputs.chunk_aabbs.len()).filter(|_| true).count() as f32;
-            slice.push((i as f32 * 0.125, (occ_sample * 0.001).min(1.0)));
+            slice.push((i as f32 * 0.125, opaque_ratio.min(1.0)));
         }
         let gtao_occ = self.gtao_inst.occlusion(1.0, &[slice]);
         let _ = gtao_occ;
@@ -1790,7 +1819,9 @@ impl FullGraphWiring {
         report
     }
 
-    /// パイプライン側の後始末 (次フレーム用の実効果参照)。
+    /// フレーム終了処理フック。【誠実注記 wave 83 CG-4】現行は no-op。
+    /// 旧 doc の「次フレーム用の実効果参照」は存在しない処理を示唆する
+    /// 虚偽だったため訂正 (将来の終了処理用の結合点として維持)。
     fn done(&mut self, _inputs: &FrameWiringInputs<'_>) {}
 
     /// **実効果**: 実パレット近傍のコーナー AO を計算し、PackedPullQuad の
@@ -1843,41 +1874,29 @@ fn num_cpus_or(def: usize) -> usize {
         .unwrap_or(def)
 }
 
-/// view_proj (row-major [[f32;4];4]) から 6 平面を Gribb-Hartmann で抽出。
+/// view_proj ([[f32;4];4]、本番規約は**行ベクトル p x M**: clip_j = Σ_i
+/// p_i·M[i][j]、平行移動は row 3) から 6 平面を Gribb-Hartmann で抽出。
+/// p x M 規約では clip_j = p · (列 j) なので、平面は**列** c(j) =
+/// [M[0][j], M[1][j], M[2][j], M[3][j]] の結合として組む:
+/// left = c(3)+c(0)、right = c(3)-c(0)、bottom = c(1)+c(3)、
+/// top = c(3)-c(1)、near = c(2) (DX12 式 z∈[0,w])、far = c(3)-c(2)。
+/// 戻り値は `a*x + b*y + c*z + d >= 0` が「内」の規約
+/// (simd_frustum::Plane / lbvh::Plane / aokana と同一)。
+/// 【監査 wave 83 CG-1】旧実装は**行** r(i) の結合 (clip = M·p 規約の
+/// 抽出式) で読んでおり、本番の非対称行列 (from_camera 生成) では 6 面の
+/// うち 5 面が破壊されていた (yaw=0 の正面点ですら 4 面で dist < 0 =
+/// 全棄却。恒等行列は対称で行=列のため既存テストでは顕在化しなかった
+/// CF-1 同型の転置バグ)。
 fn extract_frustum_planes(m: &[[f32; 4]; 4]) -> [[f32; 4]; 6] {
-    let r = |i: usize| m[i];
+    let c = |j: usize| [m[0][j], m[1][j], m[2][j], m[3][j]];
+    let (c0, c1, c2, c3) = (c(0), c(1), c(2), c(3));
     let mut p = [
-        [
-            r(3)[0] + r(0)[0],
-            r(3)[1] + r(0)[1],
-            r(3)[2] + r(0)[2],
-            r(3)[3] + r(0)[3],
-        ],
-        [
-            r(3)[0] - r(0)[0],
-            r(3)[1] - r(0)[1],
-            r(3)[2] - r(0)[2],
-            r(3)[3] - r(0)[3],
-        ],
-        [
-            r(3)[0] + r(1)[0],
-            r(3)[1] + r(1)[1],
-            r(3)[2] + r(1)[2],
-            r(3)[3] + r(1)[3],
-        ],
-        [
-            r(3)[0] - r(1)[0],
-            r(3)[1] - r(1)[1],
-            r(3)[2] - r(1)[2],
-            r(3)[3] - r(1)[3],
-        ],
-        [r(2)[0], r(2)[1], r(2)[2], r(2)[3]],
-        [
-            r(3)[0] - r(2)[0],
-            r(3)[1] - r(2)[1],
-            r(3)[2] - r(2)[2],
-            r(3)[3] - r(2)[3],
-        ],
+        [c3[0] + c0[0], c3[1] + c0[1], c3[2] + c0[2], c3[3] + c0[3]],
+        [c3[0] - c0[0], c3[1] - c0[1], c3[2] - c0[2], c3[3] - c0[3]],
+        [c1[0] + c3[0], c1[1] + c3[1], c1[2] + c3[2], c1[3] + c3[3]],
+        [c3[0] - c1[0], c3[1] - c1[1], c3[2] - c1[2], c3[3] - c1[3]],
+        [c2[0], c2[1], c2[2], c2[3]],
+        [c3[0] - c2[0], c3[1] - c2[1], c3[2] - c2[2], c3[3] - c2[3]],
     ];
     for pl in p.iter_mut() {
         let len = (pl[0] * pl[0] + pl[1] * pl[1] + pl[2] * pl[2])
@@ -2095,12 +2114,19 @@ mod strict_tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         let p = extract_frustum_planes(&id);
-        assert_eq!(p[0], [1.0, 0.0, 0.0, 1.0], "left = row3+row0");
-        assert_eq!(p[1], [-1.0, 0.0, 0.0, 1.0], "right = row3-row0");
-        assert_eq!(p[2], [0.0, 1.0, 0.0, 1.0], "bottom = row3+row1");
-        assert_eq!(p[3], [0.0, -1.0, 0.0, 1.0], "top = row3-row1");
-        assert_eq!(p[4], [0.0, 0.0, 1.0, 0.0], "near = row2 (D3D 0..w 型)");
-        assert_eq!(p[5], [0.0, 0.0, -1.0, 1.0], "far = row3-row2");
+        // 恒等行列は対称 (行 i == 列 i) で新旧どちらの規約でも同一テーブル —
+        // だからこそ本テストでは CG-1 転置を検出**できない**。検出器は
+        // 下の production 系 2 テスト (非対称行列) が担う。
+        assert_eq!(
+            p[0],
+            [1.0, 0.0, 0.0, 1.0],
+            "left = c3+c0 (恒等では row 同値)"
+        );
+        assert_eq!(p[1], [-1.0, 0.0, 0.0, 1.0], "right = c3-c0");
+        assert_eq!(p[2], [0.0, 1.0, 0.0, 1.0], "bottom = c1+c3");
+        assert_eq!(p[3], [0.0, -1.0, 0.0, 1.0], "top = c3-c1");
+        assert_eq!(p[4], [0.0, 0.0, 1.0, 0.0], "near = c2 (D3D 0..w 型)");
+        assert_eq!(p[5], [0.0, 0.0, -1.0, 1.0], "far = c3-c2");
         // 再正規化チェック: 行を 5 倍しても単位法線化で同一テーブル
         let mut scaled = id;
         for r in scaled.iter_mut() {
@@ -2116,6 +2142,151 @@ mod strict_tests {
         let zero = [[0.0f32; 4]; 4];
         let p = extract_frustum_planes(&zero);
         assert_eq!(p, [[0.0f32; 4]; 6], "len.max(1e-6) ガードで NaN を出さない");
+    }
+
+    /// CG-1: 本番行列 (from_camera 生成、p x M 規約・非対称) に対する厳密
+    /// 平面テーブル (f32 bits)。値は検算ミラー (struct 往復、列ベースの
+    /// Rust 演算順逐語再現) 確定。旧行ベース規約では left が
+    /// (-0.0156, -0.9999, ...) に化けていたため即座に検出できる。
+    #[test]
+    fn extract_frustum_planes_production_exact_table() {
+        let cam = crate::hzb_2d::CameraState {
+            x: 0.0,
+            y: 64.0,
+            z: 0.0,
+            yaw: 0.0,
+            pitch: 0.0,
+            fov_y: 1.0,
+            aspect: 1.0,
+        };
+        let vp = crate::world_column_store::TerrainFrameConstants::from_camera(&cam, [0, 0, 0])
+            .view_proj;
+        let p = extract_frustum_planes(&vp);
+        let expect: [[u32; 4]; 6] = [
+            [0xBF60A941, 0x00000000, 0x3EF57745, 0x00000000], // left
+            [0x3F60A941, 0x00000000, 0x3EF57745, 0x00000000], // right
+            [0x00000000, 0x3F60A941, 0x3EF57745, 0xC260A941], // bottom
+            [0x00000000, 0xBF60A941, 0x3EF57745, 0x4260A941], // top
+            [0x00000000, 0x00000000, 0x3F800000, 0xBD4CCCCE], // near (D3D 0..w)
+            [0x00000000, 0x00000000, 0xBF800000, 0x44000B34], // far
+        ];
+        for (i, e) in expect.iter().enumerate() {
+            let got = [
+                p[i][0].to_bits(),
+                p[i][1].to_bits(),
+                p[i][2].to_bits(),
+                p[i][3].to_bits(),
+            ];
+            assert_eq!(&got, e, "plane {i} bits (列ベース Gribb-Hartmann 厳密値)");
+        }
+        // 鏡像対称性 (本カメラでは解析的に成立: left/right は x 反転のみ、
+        // bottom/top は y,d 反転のみ) も構造的にピン。
+        assert_eq!(p[0][0], -p[1][0], "left/right x 鏡像");
+        assert_eq!(p[0][2], p[1][2], "left/right z 一致");
+        assert_eq!(p[2][3], -p[3][3], "bottom/top d 鏡像");
+        assert_eq!(p[2][1], -p[3][1], "bottom/top y 鏡像");
+    }
+
+    /// CG-1: 抽出平面の内外判定と厳密射影 (p x M) の内外判定の全点一致。
+    /// 検算ミラーで 14 点 (yaw=0 12 点 + 回転カメラ 2 点) 全一致を確認済。
+    /// 旧行ベース規約では yaw=0 の正面点 (0,64,16) すら 4 面で dist<0 に
+    /// なる全棄却だった (検算距離実測: [-64.0, -64.0, -64.0, -64.0, +17.0,
+    /// -64.1])。
+    #[test]
+    fn extract_frustum_planes_matches_projection_semantics() {
+        let proj4 = |p: [f32; 3], vp: &[[f32; 4]; 4]| -> [f32; 4] {
+            let mut o = [0.0f32; 4];
+            for (j, oj) in o.iter_mut().enumerate() {
+                *oj = vp[0][j] * p[0] + vp[1][j] * p[1] + vp[2][j] * p[2] + vp[3][j];
+            }
+            o
+        };
+        let frustum_inside = |p: [f32; 3], vp: &[[f32; 4]; 4]| -> bool {
+            let c = proj4(p, vp);
+            c[3] > 0.0
+                && c[0] >= -c[3]
+                && c[0] <= c[3]
+                && c[1] >= -c[3]
+                && c[1] <= c[3]
+                && c[2] >= 0.0
+                && c[2] <= c[3]
+        };
+        let planes_inside = |p: [f32; 3], planes: &[[f32; 4]; 6]| -> bool {
+            planes
+                .iter()
+                .all(|pl| pl[0] * p[0] + pl[1] * p[1] + pl[2] * p[2] + pl[3] >= 0.0)
+        };
+        let cam = crate::hzb_2d::CameraState {
+            x: 0.0,
+            y: 64.0,
+            z: 0.0,
+            yaw: 0.0,
+            pitch: 0.0,
+            fov_y: 1.0,
+            aspect: 1.0,
+        };
+        let vp = crate::world_column_store::TerrainFrameConstants::from_camera(&cam, [0, 0, 0])
+            .view_proj;
+        let planes = extract_frustum_planes(&vp);
+        let cases: [([f32; 3], bool); 12] = [
+            ([0.0, 64.0, 16.0], true),
+            ([8.0, 68.0, 24.0], true),
+            ([0.0, 64.0, 0.06], true),  // near 境界のすぐ内側 (0.05 超)
+            ([-8.0, 60.0, 8.0], false), // |ndc_x|=1.83 で視錐台外 (画面に見えない)
+            ([40.0, 70.0, 60.0], false),
+            ([0.0, 64.0, -10.0], false), // 背面
+            ([2000.0, 64.0, 16.0], false),
+            ([0.0, 400.0, 16.0], false),
+            ([0.0, 64.0, 600.0], false), // far 超過
+            ([300.0, 64.0, 100.0], false),
+            ([0.0, -200.0, 50.0], false),
+            ([1.5, 63.5, 1.0], false),
+        ];
+        for (pt, expect) in cases {
+            let fr = frustum_inside(pt, &vp);
+            assert_eq!(fr, expect, "射影の内外 (前提の検算照合) {pt:?}");
+            assert_eq!(
+                planes_inside(pt, &planes),
+                fr,
+                "抽出平面の内外は厳密射影と一致 {pt:?}"
+            );
+        }
+        // 回転カメラ (yaw=0.7, pitch=0.15、転置規約との乖離が最大の形)。
+        // 前方点の構成は from_camera の fw と同一演算子列 (sin_cos ペア)。
+        let (sy, cy) = 0.7f32.sin_cos();
+        let (sp, cp) = 0.15f32.sin_cos();
+        let fw = [-sy * cp, -sp, cy * cp];
+        let cam2 = crate::hzb_2d::CameraState {
+            x: 10.0,
+            y: 70.0,
+            z: -5.0,
+            yaw: 0.7,
+            pitch: 0.15,
+            fov_y: 1.0,
+            aspect: 1.0,
+        };
+        let vp2 = crate::world_column_store::TerrainFrameConstants::from_camera(&cam2, [0, 0, 0])
+            .view_proj;
+        let planes2 = extract_frustum_planes(&vp2);
+        let fwd = [
+            10.0 + fw[0] * 20.0,
+            70.0 + fw[1] * 20.0,
+            -5.0 + fw[2] * 20.0,
+        ];
+        let back = [
+            10.0 - fw[0] * 20.0,
+            70.0 - fw[1] * 20.0,
+            -5.0 - fw[2] * 20.0,
+        ];
+        for (pt, expect) in [(fwd, true), (back, false)] {
+            let fr = frustum_inside(pt, &vp2);
+            assert_eq!(fr, expect, "回転カメラ射影の内外 {pt:?}");
+            assert_eq!(
+                planes_inside(pt, &planes2),
+                fr,
+                "回転カメラ抽出平面の一致 {pt:?}"
+            );
+        }
     }
 
     #[test]

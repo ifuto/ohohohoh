@@ -4620,3 +4620,93 @@ hysteresis_collision_delays_never_accelerates (+ 既存 2)。
   z_max→z_min → farthest テスト赤 (strict シナリオ不変は粗 mip の
   65535 支配で偽陰性となる経路を解析済、運搬は厳密値ピンが担う)。
   (c) 旧 dead 判定 (w2=1-w0-w1 + トレランス) → winding/strict 両赤。
+
+## CG. full_graph_wiring.rs 監査 第 1 部 (wave 83, 2026-07-24)
+
+全モジュール実実行オーケストレータ (2416 行) 監査の第 1 部:
+helper 関数群・誠実性検査・射影系。第 2 部 (wave 84 予定) で tick_world
+1445 行のセクション別数学チェーンを検証する。発見 8 項目 (CG-1 [高]
+転置規約の実害、CG-2 [中]、CG-3〜6 [観] 誠実化、CG-7/8 [低])。
+
+### CG-1 (高): extract_frustum_planes の転置規約 (CF-1 同型、メトリクス全滅)
+- 本番規約 p x M (wave 82 で WGSL/HLSL/dx12 コメント/from_camera の
+  4 層整合確定) では clip_j = p · 列 j。**平面抽出は列 c(j) の結合**が
+  必要なのに、旧実装は行 r(i) 結合 (clip = M·p 規約の Gribb-Hartmann)。
+- 消費者: lbvh_planes / simd_planes (→ candidates.visible_prev /
+  vis_mask → azdo draw_command_count / HUD バー) / aokana
+  evaluate_visible_regions。LBVH と SIMD の「相互検証」は**同一の誤
+  平面を共有するコモンモード**で検出不能。
+- 定量化 (f32 検算ミラー確定): yaw=0 本番行列で旧 left plane =
+  (-0.0156, -0.9999, -0.0004, 0)。正面の点 (0,64,16) ですら 6 面中
+  **4 面が dist < 0** (実測 [-64.0,-64.0,-64.0,-64.0,+17.0,-64.1]) =
+  事実上全棄却。y>0 の地形はほぼ全件カリング扱い → draw_command_count
+  / lbvh_culled / aokana_visible_regions が恒常無効値。
+- 爆発半径の検証: report の pipeline 還元は render_pipeline :1001-1009
+  の grep 実測で next_build_budget / power_skip_extra / overdraw_order
+  (→wiring_priority) / subsystems_active のみで、3 つの汚染メトリクスは
+  HUD バー・デバッグログの内部消費に留まる (実描画のカリングは
+  render_pipeline 本流 + occlusion_complete が別系統で実施)。よって
+  [C] でなく実害虚偽メトリクスとして [高]。
+- 不発機構: 恒等行列は対称 (行 i = 列 i) で新旧規約が恒等的に一致 →
+  既存テスト 2 件 (identity_table・chunked_inputs の IDENTITY_VP) では
+  原理的に不可視だった。アドバーサリアル復元注入で実証: production 2
+  テストのみ赤、identity/degenerate は緑のまま。
+- 根治: 列結合。検算 14 点 (yaw=0 12 点 + yaw=0.7/pitch=0.15 回転 2 点)
+  で抽出平面の内外 ⟺ 厳密射影の内外が全一致。厳密 bit テーブルもピン
+  (例 left = [0xBF60A941, 0, 0x3EF57745, 0])。
+
+### CG-2 (中): 「実 draw indices」注記vs連番の虚偽 (BV 引継ぎ項目を解決)
+- 供給は (0..n) 連番のみ。頂点共有ゼロで ACMR はオーダー不変 (常 1.0)、
+  optimize は不動点。(before, after) は読み捨てで「改善時のみ採用」の
+  経路はコード上不存在。コメントを誠実化 (実 topology 付き index 供給は
+  render_pipeline 側が必要な将来課題と明記。消費者追加の真の配線は実機
+  挙動変更を伴うため BR-1 先例で doc 訂正側を採用)。
+
+### CG-3〜CG-6 (観): 誠実化 4 件
+- CG-3: report.subsystems_active = 60 は実数え上げでなく仕様定数と doc
+  明文化 (テストも従来「仕様値」と呼称)。
+- CG-4: done() は現行 no-op (旧 doc「次フレーム用の実効果参照」は虚偽)。
+- CG-5: JobSystem ブロックは no-op クロージャの負荷分散実演のみ
+  (旧コメントの「軽量メトリクスを集計」は虚偽)。
+- CG-6: FRB ブロックは形状組立実演 + 本数計測のみ (旧コメント
+  「GPU 入力へ実変換」は虚偽。FragmentRayBoxIntersect に CPU 入力 API
+  が無いことを grep で実測確認)。frb_billboards フィールド doc も訂正。
+
+### CG-7 (低): PSO キャッシュの問合せ/挿入キー不一致 (常時ミスのでたらめ計器)
+- 問合せ `material_hash ^ tick%7`・挿入は `ps_hash: 0xBEEF` 上書きの
+  別キー → get は数学的に常時ミス。「実測」と称する hit/miss 計器が
+  miss 率 100% 固定だった。同一キー統一で初フレーム miss→登録・以後
+  hit の真の挙動へ根治 (キャッシュ内容変化だが消費は統計ログのみ)。
+
+### CG-8 (低): GTAO 標本が「不透明率由来」を偽った len 直読み
+- `(0..chunk_aabbs.len()).filter(|_| true).count()` (= len) を供給。
+  実パレットの不透明ボクセル率を直接計算する真の実測へ根治
+  (gtao_occ は現行読み捨てで挙動影響ゼロの誠実化+実質化)。
+
+### 自己誤り捕捉 (15 件目)
+- identity テストのコメント編集時にエスケープ `\n` をリテラル混入
+  (コメント内のためコンパイル可・無害だが非正規) — cat -A 検査が捕捉、
+  正規 3 行へ修正。
+
+### テスト (+2 純増、922 全緑)
+extract_frustum_planes_production_exact_table /
+extract_frustum_planes_matches_projection_semantics。
+
+### 検証結果 (全て実測)
+- lib **922/922** (+2: CG-1 の 2 検出器)。structural_digest
+  `004c1cf5fb17bfe8` rows=357 不変 (tick_world は bench 非経路)。
+- fmt: HEAD 由来 156 行の既存偏差は温存、当 wave 新規分は WORK-only
+  **0** (assert 分割・トレーリングコメント位置の 2 箇所を rustfmt 正準形
+  へ手調整、全体 rustfmt は HEAD 温存のため非実施)。
+- 不可視文字 0 / CRLF 0 / cargo check --all-targets で当該由来警告 0。
+- アドバーサリアル 1 系統: 旧行ベース規約の厳密復元注入 → production
+  2 テスト赤・identity/degenerate 2 テスト緑 (恒等対称による不可視機構
+  の実証) → 忠実復元 (md5 同一) → 14/14 緑。
+
+### 残 (第 2 部 = wave 84 予定、第 1 部で棚卸し)
+tick_world 本体 (355-1830) のセクション別数学チェーン:
+VCT cone の `camera_dir[1].abs()` ヒューリスティクス、WBOIT/SSR/SSS の
+供給値、nanite proj_factor 70° 仮定、cluster light 割当、ddgi probe、
+IBL ドーム 0.03 重み、TAA variance clip γ=1.25、exposure adapt 速度 1.6、
+checkerboard 再構成、FSR1/2 入力組成、LEO tag 丸め、time_slice コスト
+見積 180us、DAG コスト係数 0.05/0.4/0.1/0.2/0.1。
