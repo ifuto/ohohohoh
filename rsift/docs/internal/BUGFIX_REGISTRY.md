@@ -1,0 +1,298 @@
+# 修正台帳 (Bugfix & Inappropriate-Fix Registry)
+
+**制定: 2026-07-24 / 根拠指示 (原文): 「mdに今まで直したすべてのバグや不適切な
+何かを全部記載していって」(2026-07-24)**
+**運用 (エージェント義務): 新たな修正・根治をコミットする際は、必ず本台帳へ
+同セッション内に追記すること。詳細な問題定式化・検証手順は
+`internal/AUDIT_2026-07-21_RSGFX_MODULES.md` の各節を参照 (本台帳は全項目の
+索引 + 一行要約)。**
+
+## 凡例
+
+- 深刻度 (audit 見出しの転記): **[C]** critical・**[高]**・**[中高]**・**[中]**・
+  **[低]**・**[観]** = 観測・誠実性訂正・判断記録 (コード bug ではない修正)、
+  **[基]** = 検証基盤の追加 (naga 突合等)。
+- 修正消費テスト数: 監査開始時 363 → wave 78 時点 **883 全緑** (実測)。
+
+## 統計 (数え上げ、推測なし)
+
+| 期 | 範囲 | 項目数 |
+| :--- | :--- | ---: |
+| A 期: 初回大監査 + zero-test 消化 | 2026-07-21〜22 早段 | 20 |
+| B 期: 全通読監査 | wave 9-21 (K-W 節) | 26 |
+| C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 58 |
+| D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 86 |
+| E 期: 横断契約クラス期 | wave 72-78 (BV-CB 節) | 24 |
+| **合計** | | **214** |
+
+(「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
+訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
+するが、根拠が重いもの (一次情報照合による維持判断) は [観] として収録。)
+
+---
+
+## A 期: 初回大監査・ゼロテスト消化期 (2026-07-21〜22)
+
+| ID | 度 | 概要 |
+| :--- | :- | :--- |
+| A期-01 | C | アルゴリズム偽装の根絶 (初回監査・検出全 10 件の中核、詳細は監査方法節) |
+| A期-02 | 高 | 出荷済み WGSL の検証失敗 3 件 (実デバイスでシェーダコンパイル失敗) |
+| A期-03 | 中 | コンパイラ警告が示す死骸・API ハザード 6 件の処理 |
+| A期-04 | 中 | デッドフィールド/見せかけペイロード撤去 (rsift-opt-gfx 11 ファイル) |
+| A期-05 | 観 | 見せかけ UI データ撤去 (1 ファイル) |
+| A期-06 | 中 | デッドコード除去 (他クレート 7 ファイル、全て参照ゼロ証明つき) |
+| A期-07 | 高 | rsift-jvm モジュール二重ロード根絶 (構造欠陥・実害あり) |
+| A期-08 | 高 | 既存テストが露呈した実バグ 2 件修正 (HEAD 再現確認済) |
+| A期-09 | 観 | ドキュメント主張と実装の乖離訂正 (2 ファイル) |
+| A期-10 | 観 | 資産削除 (不要 WGSL 1 ファイル、修正一覧計 21 ファイル+1) |
+| A期-11 | 観 | ベンチ方法論の自己修正: フェイク計測の排除 (誠実計測の確立) |
+| A期-12 | 中 | 実測駆動の改善群 (digest 不変 / fuzz で出力 bit 同一性を証明) |
+| A期-13 | 高 | zero-test 第 6 波: 横断潜伏バグ 3 件修正 (+簿記/環境構築系 8 モジュール消化) |
+| A期-14 | 高 | 起動クラッシュ級バグ 2 件修正 (zero-test 第 7 波、eco_render/gpu_culling/gui_settings 消化) |
+| A期-15 | 基 | naga 0.20 拒否の二分探索確定 + 最終 zero-test モジュール消化 |
+| A期-16 | 中 | caves merge 断片化コスト (47ns/voxel) の解決 |
+| A期-17 | 観 | 描画バックエンドラダー (ユーザー方針のコード化、コミット e76248b) |
+| A期-18 | 基 | 広域静的ベンチ wide_static_bench 整備 (digest 運用の基盤) |
+| A期-19 | 観 | Mod Menu の Fabric 参考再設計 / データ変換層厳密テスト (+31) / 文書乖離訂正 |
+| A期-20 | 中 | tick_world 全通読監査の指摘対応 (K 節・wave 9 系の事前処理含む) |
+| — | — | (以降、項目は wave 節と同一 ID 体系で記載) |
+
+## B 期: 全通読監査 (wave 9-21)
+
+| ID | 度 | 概要 |
+| :--- | :- | :--- |
+| K系 | 中 | tick_world 全通読監査 (wave 9) — 各指摘の処置は K 節参照 |
+| L系 | 中 | ページング/リージョンコーデック監査 (wave 10) — 各指摘は L 節参照 |
+| M-4 | 高 | render_pipeline: 空バイト列の bytemuck アライメントパニック (zero-day 確定) 根治 |
+| N-1 | 高 | bobby_cache: rebuild_index の time_ms=0 埋め → 再起動後 LRU 非決定堕落を根治 |
+| N-2 | 低 | parse_chunk_name が 3 セグメントを受理 (防御契約化) |
+| N-4 | 低 | store の index 更新で poison 黙殺を解消 |
+| N-5 | 観 | doc 圧縮レベル 19 宣言 vs 実装 13 の誠実化 |
+| N-6 | 中 | 次元ディレクトリ名 parse 失敗の `.unwrap_or(0)` → dim=0 汚染を根治 |
+| O-16 | 中 | binary_greedy_meshing: 未接続 unsafe SIMD に等価性テスト不足 → 配線・証明 |
+| O-24 | 観 | `face_culling` パラメータ命名と実体の乖離を誠実化 |
+| P-5 | 中 | frame_worldgen: `coarse_dims` stride=0 除算パニックを契約化 |
+| P-6 | 観 | CPU ミラー planes 全件走査の「完全一致」主張を誠実化 |
+| Q-1 | 高 | frame_postfx: GpuExposure apply 経路未完 (宣言と実体の乖離) 根治 |
+| Q-5 | 中 | vrs tile=0 の 0 除算パニック契約化 |
+| Q-6 | 中 | cas/checker CPU ミラーの src 長さ未検査を契約化 |
+| R-3 | 中 | frame_ddgi: sky>0 が CPU 直構築経路で未強制 → validate() 一元化 |
+| R-4 | 中 | march の 129 開始値上限を契約化 |
+| R-7 | 中 | oct_w=0 で sample_visibility が u32 アンダーフロー → OOB を根治 |
+| R-8 | 高 | GPU rays_buf 64 スロット固定設計を公開 API で強制 (validate() 一元化) |
+| R-10 | 低 | read_f32 読み戻し 3 重複の集約 |
+| S-1 | C | FSR1 RCAS が「ぼかし」だったアルゴリズム偽装を根治 (wave 1 A1 同種) |
+| S-2 | C | frame_reference 深度が透視補正補間だった GPU 乖離を根治 |
+| S-3 | 高 | FramePacer::next_present_time 逐次加算ループの実質ハング根治 |
+| S-4 | 中 | EASU 勾配チャンネル不統一 (3 連鎖ドリフト) 根治 |
+| S-5 | 中 | GpuFsr1Pass 次元チェック不在を契約化 |
+| S-6 | 基 | naga による WGSL↔Rust ワイヤ形式自動突合の新設 |
+
+## C 期: 契約 fail-loud 期 (wave 22-41)
+
+| ID | 度 | 概要 |
+| :--- | :- | :--- |
+| T-1 | C | frame_reuse: render_pipeline record_miss 併呼の二重計上根治 |
+| T-2 | 高 | full_mesh.absent の無計上早期 return (サイレントミス) 根治 |
+| T-3 | 高 | enforce_capacity タイブレーク不在の非決定性根治 |
+| T-4 | 中 | memory_bytes 幻影計上と欠損 (帳簿虚偽) 根治 |
+| T-5 | 低 | stale 境界の厳密固定 |
+| T-6 | 観 | rle_fingerprint デッドコード除去 |
+| U-1 | 観 | frame_vct: new_normalized ゼロ方向 doc 訂正 |
+| U-2 | 低 | 空コーン列の純 Rust 早期 return (防御) |
+| U-3 | 基 | naga offset レベル突合へ格上げ |
+| V-1 | 低 | frame_hiz: 画面寸法 0 契約不在 (fail-silent 防止) |
+| V-2 | 基 | naga offset 突合 3 例目 |
+| W-1 | 高 | frame_pipeline: fs_pull Lambert 欠落 (GPU/CPU 乖離) 根治 |
+| W-2 | 中 | SUN_DIR 非単位光ベクトル + doc 偽の厳密再導出 |
+| X-1 | 中高 | occlusion_query: near-plane ストラドル面全スキップ (描画抜け) 根治 |
+| X-2 | 観 | 深度タイブレーク ε バイアスを契約として正直化 |
+| Y-3 | 中 | drs::push_frame_ms の NaN 永久汚染根治 |
+| Y-1/Y-2/Y-4 | 観 | reproject_uv 符号・blend clamp 非対称の誠実化 + EMA/resolve ビットピン |
+| Z-1 | 中 | taa_ycocg: gamma 契約の panic DX を明示 fail-loud 化 |
+| Z-2 | 観 | YCoCg 往復は bit 厳密でない旨の誠実化 |
+| AA-1 | 中 | texture_atlas: 次元契約の fail-loud 化 3 箇所 (fail-silent 経路閉塞) |
+| AA-2 | 低 | シェルフ配置・UV・mip 内容の厳密ピン |
+| AB-1 | 高 | triple_buffer: 単一バッファ退化 (並行バグ) 根治 |
+| AB-2 | 中 | spatial_hash: 非有限/逆転の契約化 |
+| AC-1 | 中 | simd_kernels: near 平面の GL 式体積 (規約逸脱) 根治 |
+| AC-2 | 観 | doc 偽 2 件訂正 |
+| AD-1 | 中 | mesh_compactor: from_view_proj near GL 式体積根治 |
+| AD-2 | 観 | COMPACT_WGSL 契約注記の確定等 3 点正直化 |
+| AE-1 | 高 | simd_frustum: SoaAabbs 等長契約未強制 → fail-loud 化で UB 根絶 |
+| AE-2 | 観 | ディスパッチ判定の機械依存性を契約化 |
+| AE-3 | 観 | doc 過剰主張の訂正 |
+| AF-1 | 低 | azdo: overhead_saved の count==0 過小計上根治 |
+| AF-2/AF-3 | 観 | doc 過剰主張訂正 + mask 等長の入口強制 |
+| AG-1/AG-2 | 観 | diff_mesh: 水平隣接伝播は呼出側責務 / MeshPatch 非検証の明文化 |
+| AH-1 | 中 | tick_render_split: consume_ticks の NaN dt 凍結根治 |
+| AI-1 | 高 | soa_layout: alloc_aligned_64 が一度もアライン達成していなかった (ゼロデイ) → Aligned64 根治 |
+| AI-2 | 中 | xzy_index 範囲外 z ≥ sx 静寂衝突 → fail-loud 化 |
+| AI-3 | 中 | EntitySoa 7 配列等長の強制 |
+| AJ-1 | 中 | entity_tick_lod: 非有限 dist の RenderOnly 静寂飢餓 → fail-loud 根治 |
+| AJ-2 | 観 | hashed 経路の hash ⊇ positions 前提明文化 |
+| AK-1 | 中 | execute_indirect: IndirectBatcher::push 上限静寂 drop → fail-loud 根治 |
+| AK-2 | 中 | DrawCompactor capacity 使い捨て → 契約保持+強制 |
+| AK-3 | 観 | sort 二系統の使い分け明文化 |
+| AL-1 | 中 | billboard_lod: NaN dist/帯 NaN の全 Culled 静寂着地 → fail-loud 根治 |
+| AL-2 | 観 | make_billboard 単位直交基底前提明文化 |
+| AM-1 | 中 | texture_atlas_virtual: evict_lru は LRU ですらなく非決定 → 根治 (wave 40 AP-1 で真の LRU 化) |
+| AM-2 | 低 | capacity_pages=0 の 0 除算 → 契約拒否 |
+| AM-3 | 中 | request_tiles タイル座標無検査 → fail-loud 化 |
+| AN-1 | 中 | gl33_compat: InstanceBuffer::from_pod の ZST 受理 → fail-loud 化 |
+| AN-2 | 低 | TimerQueryCompat::end の 0.0 観測混入根治 |
+| AN-3 | 低 | samples 上限維持 Vec::remove(0) O(n) → VecDeque 化 |
+| AN-4 | 観 | total_triangles 端数切捨て明記 |
+| AO-1 | 高 | simd_frustum.wgsl 実カーネル化 (1 box=1 thread、CPU 参照と数学的等価) |
+| AO-2 | 観 | bit 厳密性の限界を一次情報調査+実証で正直化 |
+| AP-1 | 高 | evict_lru を真の LRU (アクセス論理時刻) に根治 (AM-1 の closing) |
+| AP-2 | 観 | 消費者影響分析 (full_graph_wiring) |
+| AQ-1 | 中 | lbvh: build 契約の fail-loud 化 ×3 |
+| AQ-2 | 観 | 暗黙定数 2 件の存在理由明文化 |
+| AQ-3 | 中 | 単位法線契約明文化 + run 包含球の丸め収縮根治 |
+
+## D 期: 厳密ピン/closing 期 (wave 42-71)
+
+| ID | 度 | 概要 |
+| :--- | :- | :--- |
+| AR-1 | 高 | sparse_texture: request_with_eviction 追加 (退避キー通知欠落根治) |
+| AR-2 | 観 | dense-slot 帰納不変条件明文化 + 死フィールド削除 |
+| AR-3 | 高 | mip_for_distance NaN 静寂着地根治 + 式意味論正直化 |
+| AR-4 | 基 | sparse_texture.wgsl 実カーネル化 (closing) |
+| AS-1 | 高 | mip_streaming: 単一テクスチャ超過の静寂予算破壊 → fail-loud 化 |
+| AS-2 | 高 | hysteresis 無検証 pub フィールドの静寂キャスト破壊根治 |
+| AS-3 | 中 | set_size 常駐中サイズ不更新の帳簿ドリフト根治 |
+| AS-4 | 中 | 未登録 id request の静寂 no-op → fail-loud 化 |
+| AS-5 | 中 | 真の O(1) 侵入型 LRU 化 (毎要求 O(n) 根治) |
+| AS-6 | 観 | mip_streaming.wgsl「シェーダ不要」正当マーカー誠実化 |
+| AT-1 | 基 | mesh_compactor CandidateWire 48B — WGSL 配置規則の厳密再現 |
+| AT-2 | 基 | ParamsWire 128B + policy.z の f32 輸送契約 |
+| AU-1 | 高 | azdo: batcher 実配線 (MDI コマンドリスト準備 closing) |
+| AU-2 | 観 | vbo_pool 未配線は責務分離として明文化 |
+| AV-1 | 高 | bindless: pack_handle 静寂切捨てマスク → fail-loud 化 |
+| AV-2 | 観 | 死コード Vec3/Vec4 削除 |
+| AW-1 | 観 | meshlet_cone 可視判定の数学的正当性検証・明文化 |
+| AW-2 | 高 | NaN 法線の静寂な永久カリング根治 |
+| AW-3 | 高 | roundoff による sqrt(負) NaN → 永久カリング根治 |
+| AX-1 | 高 | intern_pool: 二重 release の release build 無防備 (ゼロデイ級) 根治 |
+| AX-2 | 高 | quantize の i32 飽和誤共有根治 |
+| AY-1 | 高 | string_intern: InlineStr from_utf8_unchecked 前提を pub 経路で強制 |
+| AY-2 | 低 | CompactSymbolTable 決定性の機械ピン |
+| AZ-1 | 中 | texture_budget: mipmap_bias 非有限の静寂許容 → fail-loud 化 |
+| AZ-3 | 中 | Astc4x4 bandwidth_factor 0.2→0.25 (事実誤り訂正) |
+| BA-1 | 中 | zerocopy_cast: ZST 宛 `% 0` 偶発パニック → 明示契約化 |
+| BA-2 | 観 | 消費者ゼロの「嘘ヘッダ」API 撤去 |
+| BA-3 | 観 | unwrap_or_default 静寂退化の観測記録 (render_pipeline wave 引継ぎ) |
+| BB-1 | 高 | half_vertex: f32_to_f16「RNE」doc 嘘 → 真の RNE 根治 |
+| BB-2 | 高 | rsift-dx12 f32_to_f16_bits subnormal RNE 実バグ根治 |
+| BB-3 | 観 | r10g10「簡易」f32_to_f16_bits の観測 (wave 53 引継ぎ) |
+| BC-1 | 高 | 第 3 の f16 実装 (「簡易」版) 撤去・proven 実装へ一元化 |
+| BC-2 | 中 | UNORM pack 切捨てバイアス → round-to-nearest |
+| BC-3 | 中 | compress_vertex_stream zip 静寂打切り → 等長 assert |
+| BC-4 | 高 | normal_oct 常時 0 スタブ → octahedral 完全実装 |
+| BD-1 | 中 | 「分割バリアでオーバーラップ」doc 嘘 → 全パラメータ API 化 |
+| BD-2 | 中 | TextureBarrier::validate を全構築経路に強制 (一次情報適合) |
+| BD-3 | 低 | uav_barrier subresource 暗黙 0 → 明示引数化 |
+| BE-1 | 高 | packed4: pack 契約 debug_assert 限定 → 実データ入口 new() assert 化 |
+| BE-2 | 中 | face_index `_ => 5` 静寂誤分類 → 軸一意 assert |
+| BE-3 | 低 | WGSL ミラー語彙表記一致ピン + 誤誘導定数 PULL_CHUNK_VOXELS=32 撤去 |
+| BF-1 | 高 | pull_mesh: pub is_empty フィールド → is_empty() 導出メソッド化 (第二真実源根絶) |
+| BF-2 | 中 | pull_vertex_count `as u32 * 6` 静寂 wrap → assert 化 |
+| BG-1 | C | svo::trace が意味論スタブだった → 厳密最近接走査の実装に根治 |
+| BG-2 | 中 | 到達不能 dominant 葉 (+ id≥16 静寂消失ハザード) 構造根絶 |
+| BG-2b | 低 | from_column 静寂切捨て → fail-loud 化 + WGSL 走査語彙ピン (BG-3) |
+| BH-1 | 高 | gpu_vertex_pull: PullSsboPool write-only 帳簿 (+潜伏バグ 2 件) 撤去 |
+| BH-2 | 高 | GpuVertexPullEngine/PullEngineHandle 構築ゼロ複製実装撤去 |
+| BH-3 | 観 | 生存側確認記録 |
+| BI-A | 高 | chunk_mesh: is_empty 第二真実源根絶 (BF-1 統一) |
+| BI-B | 中 | encode() NaN→0 静寂テレポート遮断 |
+| BI-C | 中 | demo フォールバック表現範囲違反修復 |
+| BI-D | 観 | ドキュメント誠実化 + TOTAL_CHUNKS/TOTAL_VERTICES 判断記録 |
+| BJ-1 | 高 | voxel_cone_tracing: ConeRay 非有限で発散/静寂黒出力 → validate_contract 化 |
+| BJ-2 | 低 | WGSL ミラー語彙ピン + alpha ガード副次記録 |
+| BK-1 | 高 | section_rle: 破損 RLE の静寂 air 注入 → count 総和検査 fail-loud 化 |
+| BK-2 | 高 | from_bytes 厳格契約 (長さ完全一致 + Σcount 検査) |
+| BK-3 | 観 | 消費ゼロ語彙 2 件撤去 + required_section_indices ×8 記録 (BK-4) |
+| BL-1 | C | noise_upsample: perlin3d_dense が全 voxel 定数 0.5 (live worldgen ゼロデイ) 根治 |
+| BL-2 | 低 | density_to_block 到達不能 `.max(1)` 撤去 |
+| BL-3 | 中 | benchmark_upsample 粗サンプル計数の不整合修復 |
+| BM-1 | 中高 | frame_reference: covered_px/avg_lum doc 二重乖離の根源修正 |
+| BM-2/BM-3/BM-4 | 低 | ACES+sRGB/fsr1 三連鎖 WGSL 表記ピン・write_bmp 全バイト厳密ピン新設 |
+| BN-2 | 中 | fsr1: easu_reconstruct 死引数 `_c` 撤去 (API 正直化) |
+| BN-3a | 観 | Fsr1::sharpen 消費者追加 (消費者問題方針の初適用) |
+| BN-3 | 低 | RCAS 入力 f64 放置の検算捕捉実績含む厳密ビットピン強化 |
+| BN-4 | 観 | WGSL mix 演算順ドリフトを一次情報 (W3C CRD) で確定・doc 誠実化 |
+| BO-1 | 中 | cas.wgsl 加算順 1 ulp 分岐 → 3 連鎖演算順の真の統一 |
+| BO-2/BO-3 | 低 | 厳密ピン強化 |
+| BO-4 | 観 | 公式 ffx_cas.h 全項目一致を一次情報確認 (変更なし判定) |
+| BP-1 | 低 | aces_tonemap 厳密ビットピン新設 |
+| BP-2 | 観 | Narkowicz 原著と完全一致を一次情報確認 (変更なし) |
+| BP-3 | 観 | 負入力は saturate せず wrap の数学的性格を doc 誠実化 + 3連鎖点検 |
+| BQ-1 | 低 | checkerboard: is_rendered wrapping_add 化 (debug panic 経路根絶) |
+| BQ-2/BQ-3 | 低 | 厳密ビットピン + WGSL 語彙ピン新設 |
+| BR-1 | 観 | wboit 簡約単一ターゲット形の明記 (挙動変更は BR 先例で見送り) |
+| BR-2 | 中 | NaN depth 静寂最近接化ハザード → 入口 assert 遮断 |
+| BR-3 | 低 | 厳密ビットピン新設 |
+| BS-1 | 高 | temporal_mesh_diff: 責務外主張の撤回 (doc 嘘の誠実化) + diff_section 配線候補記録 |
+| BS-2 | 中 | take_dirty のソート決定的化 (latent 非決定性遮断) |
+| BS-3 | 低 | patch_for_block 契約厳格化 |
+| BT-2 | 低 | vrs: build_mask tile=0 素朴 0 除算 panic 契約化 |
+| BT-1/BT-3 | 低 | 厳密大なり境界固定 + WGSL 語彙ピン |
+| BU-1 | 中 | lod_hybrid: NaN 距離の静寂最低詳細 (Far) 化ハズード遮断 |
+| BU-2 | 低 | 空メッシュ簡略化早期 passthrough ピン |
+| BU-3 | 観 | use_svo_encoding 命名乖離を真値表で確定 (リネーム見送り) |
+
+## E 期: 横断契約クラス期 (wave 72-78)
+
+| ID | 度 | 概要 |
+| :--- | :- | :--- |
+| BV-1 | 中 | vertex_cache_opt: 半端末尾 index 静寂 drop → fail-loud 契約化 (live 呼出も明示化) |
+| BV-2 | 低 | cache_size=0 usize underflow → 入口契約明示 |
+| BV-3 | 中 | heap tie-break 規則の厳密出力シーケンス 2 ピン |
+| BV-4 | 観 | WGSL CacheScore 例示式を Rust 逐語ミラーへ改修 |
+| BW-1 | 中 | world_column_store: 非有限カメラの静寂受理 → FFI 安全形 (panic 回避) の drop 拒否 |
+| BW-2 | 観 | ingest 短配列 air 充填は契約外防御との判断記録 (両 FFI 呼出の長さ保証を一次確認) |
+| BW-3 | 低 | 帳簿カウンタ差分会計化 (bulk ingest O(n²) 解消) + reconcile 公開 API 化 (消費者方針) |
+| BW-4/BW-5 | 低 | mesh_origin 窓・look_at_rh/perspective_rh/mul4 厳密ピン |
+| BX-1 | 中 | transform_svdag: 中間 pool ヒット誤タグ (入力→非 canonical) → D4 群合成 compose_tags で根治 |
+| BX-2 | 低 | 列挙順決定性ピン (検算で自己誤り 2 件捕捉: octant シナリオ・R90² 表現) |
+| BY-1 | 中 | vertex_pool: oversize 拒否時 stale slot → 「None ⇒ slot 無し」一貫化 + oversize_rejects |
+| BY-2/BY-3 | 低 | refresh 契約・境界 (cap==fit)/floor ratio/generation wrapping 厳密ピン |
+| BZ-1 | 高 | persistent_vbo_pool: index 確保失敗時の vertex 領域永久リーク → rollback_alloc 根治 |
+| BZ-2 | 中 | oversize 拒否の stale slot (BY-1 同型・MDI 描画実消費) 一貫化 |
+| BZ-3 | 低 | utilization() 0 容量 NaN → 0.0 guard (NaN=欠測哲学) |
+| BZ-5 | 低 | rebuild_mdi が slot.mdi_index の真値を書き戻すよう修復 |
+| BZ-6 | 低 | 容量配分 3:1 → 2:1 (all-quad 数学的最適、digest 不変を機械確認) |
+| CA-1 | 中 | svdag: build_from_volume が root_id を更新しない stale metadata 根治 |
+| CA-2 | 観 | 「empty/solid 基底」コメント不一致訂正 + de-facto 契約 (id 0 = 空リーフ) 明文化 |
+| CA-3 | 低 | 厳密構築ピン 3 ケース (単一/全 solid/隣接 2 voxel) |
+| CA-4 | 観 | 不変量設計の自己誤り捕捉 8 件目記録 (リーフ形分岐へ精緻化) |
+| CB-1 | 中 | aokana: evaluate_visible_regions の HashMap 非決定反復 → sort 根治 (BS-2 型) |
+| CB-2 | 低 | frustum 境界 (接触=可視)・insert 置換・region_size 64 規約の厳密ピン |
+| CB-3 | 観 | doc 誠実化: Hi-Z/visibility buffer は現行未配線 (frustum のみ) と明記 |
+
+---
+
+## 特記事項
+
+1. **ゼロデイ級 (本プロジェクトで初めて発見された潜伏実害) の代表例**:
+   M-4 (bytemuck アライメントパニック)、S-1 (RCAS ぼかし偽装)、S-2 (深度
+   透視補正)、AI-1 (アライン未達成)、AX-1 (二重 release 無防備)、
+   BG-1 (SVO trace 意味論スタブ)、BL-1 (Perlin 全定数化)、
+   BZ-1 (確保失敗リーク)、BX-1 (中間ヒット誤タグ)。
+2. **自己誤り捕捉実績** (テスト赤/検算が設計ミスを検出した記録):
+   BM-3 bfSize、BN-3 RCAS 入力 f64、BP-3 負入力 wrap、BX-2 ×2
+   (octant シナリオ・R90² 表現)、CA-4 不変量設計、BZ 注入手順修正、
+   CB シナリオ包絡 (合計 9 件。いずれも「テスト赤=自己誤り捕捉装置」
+   規律の実績として台帳に残す)。
+3. **一次情報照合で「変更なし」判定** (誤修正抑止の記録):
+   BO-4 (GPUOpen ffx_cas.h)、BP-2 (Narkowicz ACES)、BN-4 (W3C WGSL CRD)、
+   BD (Microsoft D3D12EnhancedBarriers.md)、AZ-3 (Khronos ASTC)。
+4. **引継ぎ棚卸し** (未消化・将来 wave の対象):
+   BA-3 render_pipeline:787 unwrap_or_default 静寂空化、
+   temporal_mesh_diff::diff_section 将来配線候補、
+   binary_greedy_meshing::greedy_merge_2d_pull dead fn、
+   full_graph_wiring「実 draw indices」注記 vs 連番の意味論差異 (BV 発)、
+   aokana Hi-Z/visibility buffer 統合 (CB-3 で未配線明示)、
+   render_pipeline.rs (1389 行) / full_graph_wiring.rs (2415 行) の本監査
+   (2 wave ずつ想定)。

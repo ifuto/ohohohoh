@@ -44,7 +44,8 @@
   `USER_FRIENDLY_DISTRIBUTION_GUIDE.md` / `INSTANT_VISUAL_INDICATORS.md`
 - `ops/` : `GITHUB_PAGES_V1.0.0_READY.md` / `WINDOWS_BINARIES_READY.md`
 - `internal/` : 監査レポート (`AUDIT_2026-07-21_RSGFX_MODULES.md`)、
-  ユーザー指示書 (`USER_DIRECTIVES.md`)、アーキテクチャ・設計・検証証跡 16 件
+  ユーザー指示書 (`USER_DIRECTIVES.md`)、修正台帳 (`BUGFIX_REGISTRY.md`、
+  2026-07-24 制定・全修正項目の索引)、アーキテクチャ・設計・検証証跡 16 件
 
 (リポジトリルート直下の `UserSystemPrompt.md`・参考資料 2 件・`README.md` は
 ユーザーが配置したものであり、本ポリシーの移動対象外として維持する。)
