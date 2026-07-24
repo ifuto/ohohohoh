@@ -277,6 +277,42 @@ impl RsiftRenderPipeline {
         }
     }
 
+    /// ingest された実セクション帯域を diff 追跡へダーティ登録 (wave 86 CJ-3)。
+    /// 旧実装はカメラ帯 `mid_y-16..=mid_y+16` をマークしており、カメラと異なる
+    /// 帯域のインジェスト更新が diff 追跡から抜け落ち (変更列が再メッシュ
+    /// されない)、代わりに不要なカメラ帯が誤ダーティ化されていた。
+    /// セクション中心ブロック (sy*16+8) で正確に 1 セクションのみをマーク
+    /// (端ブロックでは mark_block_dirty の境界伝播が隣へ及ぶため)。
+    fn note_ingested_sections(
+        &mut self,
+        cx: i32,
+        cz: i32,
+        base_section_y: i32,
+        section_count: usize,
+    ) {
+        for s in 0..section_count {
+            let sy = base_section_y + s as i32;
+            self.diff_mesh.mark_block_dirty(cx, cz, sy * 16 + 8);
+        }
+    }
+
+    /// wiring へ供給する SVO を決定論的に 1 つ選択 (wave 86 CJ-4)。
+    /// `HashMap::values().next()` は RandomState のプロセス毎ランダム順であり
+    /// 「意味のある選択を任意要素に委ねる」CI-1 と同型の潜在非決定性だった
+    /// (現行消費は VCT メトリクスで読み捨てのため実害は未発生)。最小キー固定。
+    fn svo_for_wiring(&self) -> Option<&SparseVoxelOctree> {
+        self.svo_cache
+            .iter()
+            .min_by_key(|(k, _)| **k)
+            .map(|(_, v)| v)
+    }
+
+    /// CJ-4 の借用移譲版: 選択と同時に所有クローン。
+    /// (frame() 後段の inputs ライフタイムと svo_cache 借用を切るため)
+    fn svo_for_wiring_owned(&self) -> Option<SparseVoxelOctree> {
+        self.svo_for_wiring().cloned()
+    }
+
     fn prepare_column(&self, cx: i32, cz: i32) -> (Vec<SectionPalette>, Vec<RleSection>, u64, i32) {
         if let Some((mut sections, section_y0)) = self.world.column_for_mesh(cx, cz) {
             for palette in &mut sections {
@@ -420,13 +456,9 @@ impl RsiftRenderPipeline {
             }
             self.pull_meshes.push(pull);
         }
-        debug_assert!(
-            mesh.vertices
-                .iter()
-                .all(|_| std::mem::size_of_val(&mesh.vertices[0])
-                    == crate::chunk_mesh::VERTEX_STRIDE_BYTES)
-                || mesh.vertices.is_empty()
-        );
+        // (wave 86 CJ-5: 旧 debug_assert は型レベル const assert
+        //  chunk_mesh.rs の `size_of::<Quantized12ByteVertex>() == VERTEX_STRIDE_BYTES`
+        //  により完全に包含され、頂点数 O(n) の定数比較だったため除去。)
         let full_mesh = mesh.clone();
         let mesh = self.lod.simplify_mesh(mesh, tier);
         self.last_build = Some(ChunkBuildArtifacts {
@@ -595,6 +627,10 @@ impl RsiftRenderPipeline {
         let mut meshes = Vec::new();
         let mut occupied_per_chunk: Vec<(i32, i32, Vec<u32>)> = Vec::new();
         // 実効果: QualityGovernor の連続フレームオーバー検知が build 予算を実縮小。
+        // 【誠実注記 wave 86 CJ-6】予算は「処理列数」で pull キャッシュヒットも
+        // 1 消費する (バイト展開+draw コストのフレーム時間経済として意図的)。
+        // 一方 chunks_built は build_chunk 到達のみカウント (ヒットは含まない) —
+        // この語彙の非対称は仕様 (wave 86 で現挙動を固定)。
         let base_builds = if self.profile.speed_first {
             4
         } else if self.feather.enabled {
@@ -608,6 +644,13 @@ impl RsiftRenderPipeline {
             .min(base_builds);
         // wiring へ渡す実パレット (描画可視と判定された列のみ、上限 4)。
         let mut wired_palettes: Vec<SectionPalette> = Vec::new();
+        // 【wave 86 CJ-1】wiring 入力専用の「描画したがメッシュ再構築しない」列。
+        // pull キャッシュヒット / flora LOD box 経路は meshes/pull_meshes に
+        // 到達せず、旧実装ではフレーム末端の wiring 入力 (chunk_keys/overdraw
+        // 順位づけ → 次フレーム build 順フィードバック) から抜け落ちていた
+        // (cache-warm な近接列が unwrap_or(usize::MAX) で常時最劣後化)。
+        // (key, dist, aabb, draw_index_count)。
+        let mut wiring_only: Vec<((i32, i32), f32, ([f32; 3], [f32; 3]), u32)> = Vec::new();
         let mut builds_this_frame = 0u32;
         let pull_live = self.profile.vertex_pull_4byte
             || self.world.has_live_data
@@ -655,6 +698,18 @@ impl RsiftRenderPipeline {
                         self.frame_stats.pull_cache_hits += 1;
                         self.gpu_quad_bytes.extend_from_slice(&bytes);
                         builds_this_frame += 1;
+                        // CJ-1: キャッシュヒット列も実描画対象として wiring へ。
+                        // 1 クアッド = 8B 固定 (packed4.rs 型レベル assert)。
+                        let y0 = self.world.mesh_origin[1] as f32;
+                        wiring_only.push((
+                            (cx, cz),
+                            dist,
+                            (
+                                [cx as f32 * 16.0, y0, cz as f32 * 16.0],
+                                [(cx + 1) as f32 * 16.0, y0 + 64.0, (cz + 1) as f32 * 16.0],
+                            ),
+                            (bytes.len() / 8 * 6) as u32,
+                        ));
                         if self.low_spec.pre_mesh_occlusion {
                             let y0 = self.world.mesh_origin[1] as f32;
                             occluder_aabbs.push((
@@ -704,6 +759,19 @@ impl RsiftRenderPipeline {
                 self.frame_stats.lod_boxes += 1;
                 self.frame_stats.pull_quads_built += box_quads.len() as u32;
                 builds_this_frame += 1;
+                // CJ-1: LOD box 列も実描画対象として wiring へ。
+                {
+                    let y0 = origin[1] as f32;
+                    wiring_only.push((
+                        (cx, cz),
+                        dist,
+                        (
+                            [cx as f32 * 16.0, y0, cz as f32 * 16.0],
+                            [(cx + 1) as f32 * 16.0, y0 + 64.0, (cz + 1) as f32 * 16.0],
+                        ),
+                        (box_quads.len() * 6) as u32,
+                    ));
+                }
                 continue;
             }
 
@@ -724,12 +792,22 @@ impl RsiftRenderPipeline {
                     self.frame_stats.range_culled += 1;
                     continue;
                 }
-                CullVerdict::Visible | CullVerdict::Occluded => {}
+                // 【wave 86 CJ-2】build_chunk_if_visible と整合: 現行
+                // verdict_column は Occluded を送出しない (wave 61 BK 設計 —
+                // 隣接データ無しの全列 occluded 判定は透過ホール障害を招く) が、
+                // 旧実装はここで Visible|Occluded を同一視しており、仮に将来
+                // producer が現れた場合に frame 路と build_chunk_if_visible 路で
+                // 真逆の挙動となる潜在乖離があった → skip 側に統一 (現挙動不変)。
+                CullVerdict::Occluded => {
+                    self.frame_stats.visgraph_culled += 1;
+                    continue;
+                }
+                CullVerdict::Visible => {}
             }
             occupied_per_chunk.push((cx, cz, occupied.clone()));
             if wired_palettes.len() < 4 {
                 if let Some(p0) = sections.first() {
-                    wired_palettes.push(*p0);
+                    wired_palettes.push(p0.clone());
                 }
             }
             let mesh = self.build_chunk(cx, cz, 0, dist, Some(&sections), Some(&rle));
@@ -947,6 +1025,18 @@ impl RsiftRenderPipeline {
                 ));
                 draw_index_counts.push((p.quads.len() * 6) as u32);
             }
+            // 【wave 86 CJ-1】cache ヒット / LOD box 経路の列も併合
+            // (構造上 meshes/pull_meshes とキーは衝突しない — それらの経路は
+            //  当該フレームでメッシュ未構築の列 — だが安全側で重複ガード)。
+            for (key, d, aabb, icount) in wiring_only {
+                if chunk_keys.contains(&key) {
+                    continue;
+                }
+                chunk_keys.push(key);
+                chunk_dists.push(d);
+                chunk_aabbs.push(aabb);
+                draw_index_counts.push(icount);
+            }
             let chunk_materials: Vec<u32> = chunk_keys
                 .iter()
                 .map(|k| {
@@ -975,6 +1065,11 @@ impl RsiftRenderPipeline {
                     quad_materials.push(crate::packed4::PackedPullQuad::unpack_tex(q.word0));
                 }
             }
+            // 【wave 86 CJ-4 借用移譲】svo 参照は svo_cache (&self) を借用する。
+            // フレーム末尾の inputs 消費 (chunk_keys クロージャ) まで生かすと
+            // tick_world (&mut self) と衝突するため、所有クローンで借用を即終了
+            // させる (旧実装の values().next() も参照保持が故に借用が長命だった)。
+            let wiring_svo = self.svo_for_wiring_owned();
             let inputs = FrameWiringInputs {
                 delta_ms: delta_time * 1000.0,
                 frame_us_measured: (delta_time * 1_000_000.0) as u32,
@@ -995,7 +1090,7 @@ impl RsiftRenderPipeline {
                 quad_bytes: self.gpu_quad_bytes.len(),
                 camera_speed: self.last_camera_speed,
                 camera_fov_y: self.camera.fov_y,
-                svo: self.svo_cache.values().next(),
+                svo: wiring_svo.as_ref(),
             };
             let report = self.full_wiring.tick_world(&inputs);
             // 実効果の適用: wiring レポートが次フレームの実入力へフィードバック。
@@ -1104,11 +1199,9 @@ pub fn ingest_world_column(
             .ingest(cx, cz, base_section_y, blocks, section_count);
         pipe.cache.invalidate_chunk(cx, cz);
         pipe.pull_gen_cache.invalidate(cx, cz);
-        // Mark mid-height sections dirty for section-level diff tracking.
-        let mid_y = pipe.world.camera.y as i32;
-        pipe.diff_mesh.mark_block_dirty(cx, cz, mid_y);
-        pipe.diff_mesh.mark_block_dirty(cx, cz, mid_y + 16);
-        pipe.diff_mesh.mark_block_dirty(cx, cz, mid_y - 16);
+        // インジェスト帯域をダーティ登録 (旧: カメラ帯誤り — 実装は
+        // note_ingested_sections 側のコメント参照、wave 86 CJ-3)。
+        pipe.note_ingested_sections(cx, cz, base_section_y, section_count);
         // Light cache: dirty ingested sections (BFS only runs when queried).
         for s in 0..section_count {
             let sy = base_section_y + s as i32;
@@ -1386,5 +1479,123 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    // =================================================================
+    // wave 86 CJ 節
+    // =================================================================
+
+    /// CJ-1: pull キャッシュヒット / flora LOD box 経路の列も wiring 入力
+    /// (overdraw 順位づけ → wiring_priority) に含まれる。
+    /// 旧実装では cache-warm 列が wiring_priority から抜け落ち、
+    /// `unwrap_or(usize::MAX)` により常時最劣後ソートされていた。
+    #[test]
+    fn wiring_priority_covers_cache_hit_and_flora_lod_columns() {
+        let (dir, mut p) = unique_pipeline("wiring_cov");
+        // HW プロファイル不確定性の排除: 該当経路のみ決定的に強制。
+        p.profile.vertex_pull_4byte = true;
+        p.shading = None;
+        p.feather.enabled = false;
+        p.low_spec.pull_generation_cache = true;
+        p.low_spec.frustum_cull = false;
+        p.low_spec.pre_mesh_occlusion = false;
+        p.low_spec.flora_lod = true;
+        p.low_spec.nearest_first = false;
+        // dist(20,0)=320 > 288 (=192*1.5) で flora 帯は tier 不問で Culled。
+        p.flora_lod = BillboardLodSelector::for_tier_scale(1.5);
+        // live 列 (0,0) を生成 (pull 経路と generation の実体化)。
+        p.world.ingest(0, 0, 0, &[1u16; 4096], 1);
+        p.world.set_camera(8.0, 72.0, 8.0, 0.0, 0.0);
+        let coords = [(0, 0), (20, 0)];
+        // フレーム 1: (0,0) は pull 構築、(20,0) は flora LOD box。
+        let s1 = p.frame(&coords, 640, 360, 0.016);
+        assert_eq!(s1.lod_boxes, 1, "flora LOD box 経路に入った証跡");
+        assert!(
+            p.wiring_priority.contains_key(&(0, 0)),
+            "構築列は wiring_priority に存在"
+        );
+        assert!(
+            p.wiring_priority.contains_key(&(20, 0)),
+            "CJ-1: flora LOD box 列も wiring_priority に存在 (旧実装は欠落)"
+        );
+        // フレーム 2: generation 不変で (0,0) はキャッシュヒット径路。
+        let s2 = p.frame(&coords, 640, 360, 0.016);
+        assert_eq!(s2.pull_cache_hits, 1, "cache ヒット径路に入った証跡");
+        assert_eq!(s2.lod_boxes, 1);
+        assert!(
+            p.wiring_priority.contains_key(&(0, 0)),
+            "CJ-1: cache ヒット列も wiring_priority に存在 (旧実装は欠落)"
+        );
+        assert!(p.wiring_priority.contains_key(&(20, 0)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// CJ-3: diff 追跡のダーティ帯域はインジェスト帯域 (旧実装はカメラ帯)。
+    /// セクション中心ブロック mark で正確に 1 セクション/回。
+    #[test]
+    fn ingest_dirty_band_tracks_ingested_sections_not_camera_band() {
+        let (dir, mut p) = unique_pipeline("dirty_band");
+        // カメラ帯 (y=72 → セクション index 8) と全く異なる帯域 base=0,2 枚
+        // (ワールドセクション 0,1 → diff index 4,5: block_to_section_y は +64 基準)。
+        p.world.set_camera(8.0, 72.0, 8.0, 0.0, 0.0);
+        p.note_ingested_sections(0, 0, 0, 2);
+        assert_eq!(
+            p.diff_mesh.dirty_sections(0, 0),
+            vec![4, 5],
+            "インジェスト帯域ちょうど 2 セクション (旧実装は 7,8,9 付近)"
+        );
+        // 端セクション (world y=-64 = index 0) も正確 (境界伝播なし)。
+        p.note_ingested_sections(1, 1, -4, 1);
+        assert_eq!(p.diff_mesh.dirty_sections(1, 1), vec![0]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// CJ-4: wiring へ供給する SVO は最小キー決定論選択
+    /// (HashMap 反復順の任意要素ではない)。
+    #[test]
+    fn svo_for_wiring_selects_min_key_deterministically() {
+        let (dir, mut p) = unique_pipeline("svo_minkey");
+        let mut block_palette = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        block_palette[0] = 7u16;
+        let empty = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        let svo_a = SparseVoxelOctree::from_column(&[block_palette]);
+        let svo_b = SparseVoxelOctree::from_column(&[empty]);
+        p.svo_cache.insert((3, 3), svo_a);
+        p.svo_cache.insert((-5, 2), svo_b);
+        let sel = p.svo_for_wiring().expect("2 件挿入済");
+        assert!(
+            std::ptr::eq(sel, p.svo_cache.get(&(-5, 2)).unwrap()),
+            "最小キー (-5,2) の SVO が選ばれる"
+        );
+        // キー 1 件のみの場合もその値。
+        p.svo_cache.remove(&(-5, 2));
+        let sel = p.svo_for_wiring().expect("1 件残存");
+        assert!(std::ptr::eq(sel, p.svo_cache.get(&(3, 3)).unwrap()));
+        // 空なら None。
+        p.svo_cache.clear();
+        assert!(p.svo_for_wiring().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// CJ-2 の前提固定: 現行 verdict_column は Occluded を送出しない
+    /// (wave 61 BK 設計: 隣接データ無しの全列 occluded 判定は透過ホール
+    /// 障害を招くため)。全空 → EmptyColumn、occupied あり近距離 → Visible。
+    #[test]
+    fn cull_pass_currently_has_no_occluded_producer() {
+        let (dir, p) = unique_pipeline("no_occluded");
+        let mut palette = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
+        let rle_empty: Vec<RleSection> = vec![RleSection::encode(&palette)];
+        // 列中心 (8,8) から判定 → dist 0 (view_radius 不問)。
+        let v = p.cull_pass.verdict_column(0, 0, 8.0, 8.0, &rle_empty);
+        assert_eq!(v, CullVerdict::EmptyColumn);
+        palette[0] = 1u16;
+        let rle_occ: Vec<RleSection> = vec![RleSection::encode(&palette)];
+        let v = p.cull_pass.verdict_column(0, 0, 8.0, 8.0, &rle_occ);
+        assert_eq!(
+            v,
+            CullVerdict::Visible,
+            "Occluded でないこと (= CJ-2 統一腕は現行非到達のまま安全的に封印)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -4847,3 +4847,95 @@ DAG コスト係数群 (0.05/0.4/0.1/0.2/0.1)、critical_ms、LEO tag
 (depth=nearest/128・motion=0.001)、FSR2 jitter 0.002 scale、HUD stats
 正規化係数群 (/64 /16 /8)、decal_local 供給値、cluster_grid z スライス割当、
 morton bump 評価。
+
+## CJ. render_pipeline.rs 再監査 第 1 部 (wave 86, 2026-07-24)
+
+対象: 現行 1389 行の全行再読 (wave M 時点 1265 行から増大、引継ぎ最優先①)。
+frame() 主流ロジック全通読 + 関連契約 (chunk_cull BK 設計・diff_mesh・
+billboard_lod 帯域・packed4 8B 固定・OnceLock ハードウェアキャッシュ) との照合。
+発見 6 項目 (CJ-1 [中]、CJ-3 [中]、CJ-2 [低]、CJ-4 [低]、CJ-5/CJ-6 [観])。
+
+### CJ-1 (中): pull キャッシュヒット / flora LOD box 経路の wiring 入力欠落
+- 旧実装: 両経路は `continue` するため meshes/pull_meshes に到達せず、
+  フレーム末端の wiring 入力 (chunk_keys/chunk_aabbs/chunk_dists/
+  draw_index_counts) から当該列が抜け落ちていた。
+- 実害チェーン: OverdrawSorter の overdraw_order → `wiring_priority.get(c)
+  .unwrap_or(usize::MAX)` により**欠落列は常時最劣後ソート** — cache-warm
+  な近接列 (描画効率が最も良い列) が次フレームの build 順で系統的に
+  不当降格。flora LOD box 列は gpu_quad_bytes に実描画バイトを供給
+  しているのに wiring の描画対象集合に現れない二重基準。
+- 根治: 両経路で (key, dist, aabb, draw_index_count) を側車ベクトル
+  wiring_only に記録し、フレーム末端で meshes/pull_meshes 由来と併合
+  (重複ガード付き)。draw_index_count は 1 クアッド 8B 固定 (packed4.rs
+  型レベル assert) から `len/8*6` で厳密導出。
+- 波及: wiring_priority が全実描画列を rank 化 → ソートフィードバックの
+  系統的不正を解消。GPU 描画バイトは不変 (digest に非経路)。
+
+### CJ-2 (低): verdict Occluded 腕の潜在的分岐不整合 → build_chunk_if_visible と統一
+- 旧実装: frame() は `Visible | Occluded => {}` (通過)、build_chunk_if_visible
+  は `Occluded => skip` — 全く逆の扱い。現行 verdict_column は Occluded を
+  送出しない (wave 61 BK 設計: 隣接データ無しの全列 occluded 判定は透過
+  ホール障害を招く) ため現挙動差は非発現だが、将来 producer が現れた
+  瞬間に 2 経路で真逆となる潜在乖離だった。
+- 統一: frame() も Occluded → skip + visgraph_culled 計上 (現挙動不変)。
+- ピン: `cull_pass_currently_has_no_occluded_producer` で「全空 → EmptyColumn、
+  occupied 近距離 → Visible」を固定 (Occluded 非送出の設計前提)。
+
+### CJ-3 (中): ingest_world_column の diff_mesh ダーティ帯域誤り
+- 旧実装: `mid_y = camera.y` でカメラ帯 mid_y±16 をマーク — カメラと異なる
+  帯域のインジェスト更新 (サーバーが別 Y 帯の列を送る通常ケース) が diff
+  追跡から**完全に抜け落ち** (変更列がセクション差分再メッシュされない)、
+  代わりに不要なカメラ帯を誤ダーティ化していた。
+- 根治: `note_ingested_sections` 抽出 — インジェストされた各セクションの
+  中心ブロック (sy*16+8) をマーク。mark_block_dirty の境界伝播 (端 y だと
+  隣接にも及ぶ) に干渉しない中心点で正確に 1 セクション/回。
+- 厳密値ピン: base=0,2 枚 (カメラ帯 section 8 と無関係) → dirty == [4,5]、
+  端 base=-4 → [0] (旧実装なら [7,8,9+伝播])。
+
+### CJ-4 (低): wiring へ供給する SVO が HashMap 反復順の任意要素 (CI-1 同型)
+- `self.svo_cache.values().next()` は RandomState のプロセス毎ランダム順
+  (CI-1 の gb_handles.keys().next() と同型の「意味ある選択を任意要素に
+  委ねる」反パターン)。現行消費は VCT cone で出力読み捨て (CH-5 誠実注記
+  済) のため観測不能だったが、将来配線で非決定性が実害化する布石。
+- 根治: `svo_for_wiring` — 最小チャンクキー決定論選択 + 所有クローン移譲
+  (`svo_for_wiring_owned`)。軸ピン: (-5,2) < (3,3) で ptr::eq 厳密確認、
+  空 → None。
+- 借用設計の記録: 参照保持では tick_world (&mut self) と借用衝突するため
+  Option<SparseVoxelOctree> のクローンに移譲 (inputs は Option<&T> のまま
+  `.as_ref()` で再借用 — API 型不変の最小侵入解)。
+
+### CJ-5 (観): 冗長 debug_assert 除去
+- build_chunk の `size_of_val(&mesh.vertices[0]) == VERTEX_STRIDE_BYTES` は
+  chunk_mesh.rs の型レベル const assert が完全に包含する定数比較であり、
+  頂点数 O(n) の無駄回しだった (意味的に常時真)。除去 (保証は型側に一元化)。
+
+### CJ-6 (観): build 予算の cache ヒット計上 + chunks_built 非対称の誠実注記
+- 予算 (max_builds) は「処理列数」でヒットも 1 消費 (bytes 展開+draw の
+  フレーム時間経済として意図的) だが、chunks_built は build_chunk 到達のみ。
+  語彙の非対称は仕様として現挙動を固定 (コード不変)。
+
+### テスト (純増 4、927 全緑)
+wiring_priority_covers_cache_hit_and_flora_lod_columns /
+ingest_dirty_band_tracks_ingested_sections_not_camera_band /
+svo_for_wiring_selects_min_key_deterministically /
+cull_pass_currently_has_no_occluded_producer。
+
+### 検証結果 (全て実測)
+- lib **927/927** (+4)。structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (bench は render_pipeline 非経路、gd quad bytes も不変)。
+- fmt: WORK-only **0** (HEAD 由来 4 行温存、新規分は全て正準形)。
+- 不可視文字 0 / CRLF 0 / all-targets で当該由来警告 0。
+- アドバーサリアル 2 系統: (a) CJ-1 併合マージ削除 (旧挙動厳密再現)
+  → wiring_priority テスト FAILED (flora 列 assert で即時検出)。
+  (b) CJ-3 カメラ帯マーク復元 → dirty band テスト FAILED。
+  いずれも検出確認後、バックアップから忠実復元 (md5 同一) → 11/11 緑。
+- 環境事象: edit_file が 1 回 stale 世代へ適用 (成功返り値だが内容未反映)
+  — 直後の grep 存在検査で捕捉し python 直書きで再適用 (wave 85 に続く
+  ツール世代ずれ注意事項として記録)。
+
+### 残 (第 2 部 = wave 87 予定、棚卸し)
+frame() 後段の eco region 可視性・verts_per 先頭依存、cpu_occluder boxes の
+固定 y 帯 (0..64)、fps 由来 stats の語彙、build_chunk 二重経路 (greedy+pull) の
+メモリ運用、ingest の cache.invalidate と pull_gen_cache.invalidate の関係、
+shader/WGSL 側との FrameCB 語彙 (chunk_origin) 突合、meshes pool upload の
+pull モード二重供給、camera 非 live トグル時の速度スパイク。

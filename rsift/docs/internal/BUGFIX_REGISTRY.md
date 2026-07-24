@@ -12,7 +12,7 @@
 - 深刻度 (audit 見出しの転記): **[C]** critical・**[高]**・**[中高]**・**[中]**・
   **[低]**・**[観]** = 観測・誠実性訂正・判断記録 (コード bug ではない修正)、
   **[基]** = 検証基盤の追加 (naga 突合等)。
-- 修正消費テスト数: 監査開始時 363 → wave 85 時点 **923 全緑** (実測、CI-1 gb_eviction 追加)。
+- 修正消費テスト数: 監査開始時 363 → wave 86 時点 **927 全緑** (実測、CJ 4 件追加)。
 
 ## 統計 (数え上げ、推測なし)
 
@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 26 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 58 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 86 |
-| E 期: 横断契約クラス期 | wave 72-85 (BV-CI 節) | 66 |
-| **合計** | | **256** |
+| E 期: 横断契約クラス期 | wave 72-86 (BV-CJ 節) | 72 |
+| **合計** | | **262** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -312,6 +312,12 @@
 | CH-6 | 観 | exposure histogram 境界 (1e-4〜0.4, p10/95) の変更なし判断記録 |
 | CI-1 | 中 | gigabuffer 圧迫時の二重虚偽: 「最古 (LRU)」が `HashMap::keys().next()` (ハッシュ順任意要素・非決定的) + 「実解放して再試行」の再試行コード不存在 (当該確保の静寂欠落) → gb_order FIFO 挿入順キュー + gb_store/gb_alloc_or_evict 抽出 (真 FIFO 最古の実解放 + 単一 retry + 失敗は潔く None の bounded 挙動) + gb_eviction テスト (置換順位不変/oversize 被害者 1 件/retry 成功径路) + adversarial 2 系統 (no-retry/LIFO いずれも検出) |
 | CI-2 | 観 | time_slice の patch 駆動キー `packed & 0xFFF` (cz 下位 2bit+sy 10bit 混在) は per-block 真差分でなく決定的駆動値 — 誠実注記 (契約 <4096 は構造的常時保証) |
+| CJ-1 | 中 | render_pipeline frame() の pull キャッシュヒット/flora LOD box 経路が wiring 入力 (chunk_keys等) から欠落 → overdraw_order 由来 wiring_priority で欠落列が unwrap_or(usize::MAX) 常時最劣後ソート (cache-warm 近接列の系統的不当降格 + 実描画列と wiring 対象の二重基準) → wiring_only 側車ベクトルで併合 (draw_index_count は 8B 固定から厳密導出) |
+| CJ-2 | 低 | verdict Occluded 腕が frame() (通過) と build_chunk_if_visible (skip) で真逆の潜在乖離 (現行 producer 非送出=BK 設計のため非発現) → frame() も skip 側に統一 (現挙動不変) + Occluded 非送出ピン追加 |
+| CJ-3 | 中 | ingest_world_column が diff_mesh にカメラ帯 mid_y±16 をマークし、別帯域インジェストの diff 追跡が完全欠落 + カメラ帯誤ダーティ化 → note_ingested_sections 抽出でインジェスト帯域の各セクション中心ブロック (sy*16+8) を正確に 1 セクション/回マーク |
+| CJ-4 | 低 | wiring 供給 SVO が `svo_cache.values().next()` (HashMap 反復順任意要素、CI-1 同型の潜在非決定性) → 最小キー決定論選択 svo_for_wiring + 借用衝突回避の所有クローン移譲 (ptr::eq ピン) |
+| CJ-5 | 観 | build_chunk の debug_assert は chunk_mesh 型レベル const assert に完全包含される定数比較 (頂数 O(n) 無駄) → 除去 (保証一元化) |
+| CJ-6 | 観 | build 予算 (cache ヒットも 1 消費) と chunks_built (ヒット非計上) の語彙非対称はフレーム時間経済として意図的 → 誠実注記で現挙動固定 |
 
 ---
 
