@@ -2700,7 +2700,7 @@ error/phase/win の非 cfg グループへ移動して gate 解除し、実テ�
   再エンコード則 — normal/±0/Inf は恒等、subnormal→±0、NaN→正準)
 - **LCG 2^18 サンプル全範囲オラクル突合** (テスト内独立 bisect RNE
   オラクルと codeword 完全一致)
-- テスト过程中にテスト側の 2 バグを自己捕捉 (exp フィールド未マスク、
+- テスト過程中にテスト側の 2 バグを自己捕捉 (exp フィールド未マスク、
   FTZ 判定を符号合成後に実施) — 実装は指定通りで赤が私のテストを矯正
 - dx12: subnormal RNE 10 ピン (★旧バグ回帰 2 件 0x0003/0x03FF 含む) +
   normal/overflow 回帰 9 ピン
@@ -5475,3 +5475,44 @@ FaceEmitMask::ALL 防衛分岐の NaN yaw/pitch 供給経路網羅監査 (hzb_2d
 正規化の次 wave 棚卸しに含める)、SectionOccupancy の 16×u16 → u256 圧縮による
 ビルド費削減 (branchless_block 系の統一 hw_popcount)、
 emit_lod_box_quads の origin 絶対化語彙 (origin_x/y/z の world-aligned 基点一貫性)。
+
+## CT. job_system.rs (wave 96, 2026-07-25)
+
+342 → 492 行。全行照合 + 消費者 full_graph_wiring 実配線 (job_sys フィールド:151 /
+new(2):289 / parallel_for:498 + wait_idle:504、quads>0 ガード) 確認。
+全数値 Python/Bash 機械検算 (steal 列、fmt 交差判定)。
+
+| CT-1 | 中 | `pending` を POP 時 (実行開始) に減算 → 最終ジョブ実行中に `wait_idle` が 0 判定で早期復帰し得て完了保証を破壊 → `worker_loop`/`drain_one` 双方で実行完了後減算へ移動。pending 語彙は「in-flight + queued の未終了件数」に確定 |
+| CT-2 | 中 | スティール横取り後にワーカー側で一括 `Priority::Background` 強制化 → FrameCritical 静寂背景化 (優先度契約破壊) → `Priority::from_raw` (判別子↔バケット index 対応) + `steal_half() -> Vec<(Priority, Job)>` + `requeue_stolen` pure 分離で優先度をジョブ属性として転送時保持 |
+| CT-3 | 中 | `parallel_for(count=0)` が `count.max(1)` で `f(0..1)` を 1 件静寂実行 (要求は「0 実行」の逆セマ) → `count == 0` early return (消費者側 quads>0 ガードに依存しない API 契約化) |
+| CT-4 | 観 | Priority 判別子 (FC=0/N=1/BG=2) と PrioQueue バケット index の一対一対応を `from_raw` で内部規約化。wait_idle は排水参加 + 50µs ポーリング、ワーカ Condvar 5ms timeout、Drop は shutdown+notify_all+join で終結確実 — 全て契約内 |
+| CT-5 | 観 | 消費者は full_graph_wiring のみ (quads>0 ガード付 parallel_for + wait_idle)。待ち条件は pending==0 判定のため語彙厳密化 (queued+in-flight) で消費者挙動変化なし。CT-1 修正で wait_idle の完了保証が初めて真に成立 |
+
+### 検証 (wave 96)
+- 960 全緑 (+4: wait_idle 完了保証 8job×10ms、steal 優先度+件数列、
+  requeue FIFO+優先度保存、count=0 厳密 no-op)。
+- アドバーサリアル 3 系統: (a) pending を POP 減算へ逆戻し →
+  wait_idle_waits_for_actual_completion FAILED。(b) requeue 内の強制 Background 化
+  逆戻し → requeue_stolen_preserves_fifo_and_priority FAILED (初回注入は
+  PrioQueue レベルで検出不能と判明 → requeue_stolen 分離 + dst に Background
+  marker(99) 事前共存の強化で検出可能に — marker 列「1→2」期待に対し注入時は
+  99 が返る)。(c) `count.max(1)` 逆戻し → parallel_for_zero_count_is_strict_noop
+  FAILED。固定版は永続領域 ~/bak へ (md5 忠実復元→全緑)。
+- テスト赤=自己誤り捕捉 19 件目: steal_half 半切捨て (n=1/2=0 で fall-through)
+  の期待値設計誤り → 正しい列 [BG×1]→[FC×2]→[FC×1] へ訂正 (機械検算で確定)。
+- fmt: HEAD 93 / work 93 一致 (自分の追加行 157 行と rustfmt 14 hunk を Python
+  交差判定 → 交差 5 hunk のみ rustfmt 正準形へ整列、ベースライン 9 hunk 不変)。
+  不可視文字/CRLF/末尾改行 none・警告カウント 27 据え置き。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+
+### 残 (次 wave 以降の棚卸し)
+submit 最短キュー選択の O(workers) 線形走査 (workers≈物理コア−1 で実害なし、
+大規模化なら Chase-Lev work-stealing deque 化を検討)、wait_idle 50µs ポーリングの
+完了 Condvar 化 (現行は drain 参加で CPU 無駄なし・起票のみ)、Priority 3 段の
+BG 長期滞留 aging (現行は steal が最低優先から横取りで緩和済)、
+worker_loop の 5ms timed wait を shutdown 専用通知で即応化するかの検討。
+
+### 棚卸し (wave 96 時点)
+残 86 モジュール (機械再計算 all=163/done=95/todo=86、quality_governor 309、
+render_pipeline 1713 第 3 部、full_graph_wiring 2687 第 4 部等)。
+警告一掃 wave (27 件) は別途棚卸し管理。

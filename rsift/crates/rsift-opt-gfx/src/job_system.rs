@@ -22,6 +22,17 @@ pub enum Priority {
     Background = 2,
 }
 
+impl Priority {
+    /// バケット index → enum への一対一写像 (steal 側で保存に使う内部規約)。
+    fn from_raw(bucket: usize) -> Self {
+        match bucket {
+            0 => Self::FrameCritical,
+            1 => Self::Normal,
+            _ => Self::Background,
+        }
+    }
+}
+
 /// 1 ジョブ（'static + Send なクロージャ）。
 pub type Job = Box<dyn FnOnce(&JobContext) + Send + 'static>;
 
@@ -46,15 +57,18 @@ impl PrioQueue {
         }
         None
     }
-    fn steal_half(&mut self) -> Vec<Job> {
-        // スティールは優先度低い方から半分横取り
+    /// wave 96 CT-2: 旧実装は横取りしたジョブをワーカー側で強制
+    /// `Priority::Background` として再投入し、FrameCritical が静寂背景化
+    /// していた (優先度契約の破壊)。優先度はジョブ自身の属性であり、
+    /// 位置由来で書き換えない — 転送時に優先度を必ず保持する。
+    fn steal_half(&mut self) -> Vec<(Priority, Job)> {
         let mut taken = Vec::new();
         for qi in (0..3).rev() {
             let q = &mut self.q[qi];
             let n = q.len() / 2;
             for _ in 0..n {
                 if let Some(j) = q.pop_back() {
-                    taken.push(j);
+                    taken.push((Priority::from_raw(qi), j));
                 }
             }
             if !taken.is_empty() {
@@ -150,12 +164,16 @@ impl JobSystem {
     where
         F: Fn(usize, usize) + Send + Sync + 'static,
     {
+        // wave 96 CT-3: 旧 `count.max(1)` は 0 件要求を f(0..1) の 1 件実行
+        // という逆セマンティクスにしていた (要求は「0 実行」)。early return で根治。
+        if count == 0 {
+            return;
+        }
         let f = Arc::new(f);
         let chunk = chunk.max(1);
         let mut n_jobs = 0;
         let done = Arc::new(AtomicUsize::new(0));
         let mut start = 0;
-        let count = count.max(1);
         while start < count {
             let end = (start + chunk).min(count);
             let f2 = Arc::clone(&f);
@@ -183,12 +201,14 @@ impl JobSystem {
                 q.pop()
             };
             if let Some(j) = job {
-                self.inner.pending.fetch_sub(1, Ordering::SeqCst);
                 let ctx = JobContext {
                     sys: Arc::clone(&self.inner),
                     worker: usize::MAX,
                 };
                 j(&ctx);
+                // CT-1: ワーカー側と同一契約 (実行完了時に減算)。self.inner.pending は
+                // submit 完了後の未終了件数 (in-flight + queued) を表す now 語彙に同期。
+                self.inner.pending.fetch_sub(1, Ordering::SeqCst);
                 return true;
             }
         }
@@ -221,6 +241,19 @@ impl Drop for JobSystem {
     }
 }
 
+/// スティール品を自キューへ優先度保存で再投入 (worker_loop から分離の pure 口)。
+/// 複数同時 steal 時に優先度書き換えが混入しないことを単体テストで機械固定する
+/// (wave 96 CT-2: 旧実装は一括 Background 化 — 直写経路に分離して厳密検査可に)。
+fn requeue_stolen(own: &Mutex<PrioQueue>, stolen: Vec<(Priority, Job)>) -> Option<Job> {
+    let mut q = own.lock().unwrap();
+    let mut it = stolen.into_iter();
+    let first = it.next().map(|(_, j)| j);
+    for (p, j) in it {
+        q.push(p, j);
+    }
+    first
+}
+
 fn worker_loop(inner: Arc<JobSystemInner>, idx: usize) {
     let n = inner.workers.len();
     loop {
@@ -238,25 +271,22 @@ fn worker_loop(inner: Arc<JobSystemInner>, idx: usize) {
                     q.steal_half()
                 };
                 if !stolen.is_empty() {
-                    let mut own = inner.workers[idx].queue.lock().unwrap();
-                    let mut it = stolen.into_iter();
-                    let first = it.next();
-                    for j in it {
-                        own.push(Priority::Background, j);
-                    }
-                    return first;
+                    return requeue_stolen(&inner.workers[idx].queue, stolen);
                 }
             }
             None
         });
         match job {
             Some(j) => {
-                inner.pending.fetch_sub(1, Ordering::SeqCst);
                 let ctx = JobContext {
                     sys: Arc::clone(&inner),
                     worker: idx,
                 };
                 j(&ctx);
+                // wave 96 CT-1: pending は実行完了時に減算 — POP 時点 (実行開始)
+                // で減らすと最終ジョブの実行中に wait_idle が 0 判定で早期戻り
+                // 得て完了保証を満たさない (旧契約破綻)。
+                inner.pending.fetch_sub(1, Ordering::SeqCst);
             }
             None => {
                 if *inner.shutdown.lock().unwrap() {
@@ -338,5 +368,125 @@ mod tests {
         }
         sys.wait_idle();
         assert_eq!(sum.load(Ordering::SeqCst), 5050);
+    }
+
+    /// wave 96 CT-1: pending は実行完了後にのみ 0 になる契約。
+    /// 8 ジョブ × 10 ms sleep → 単一ワーカーでも wait_idle 直後の
+    /// 全件完了を保証する (旧実装は POP 減算で最終 sleep 中に
+    /// 早期復帰し得た → 直接の確率は低いが本体契約の破綻)。
+    #[test]
+    fn wait_idle_waits_for_actual_completion() {
+        let sys = JobSystem::new(1);
+        let n = Arc::new(AtomicUsize::new(0));
+        for _ in 0..8 {
+            let c = Arc::clone(&n);
+            sys.submit(
+                Priority::Normal,
+                Box::new(move |_| {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    c.fetch_add(1, Ordering::SeqCst);
+                }),
+            );
+        }
+        sys.wait_idle();
+        assert_eq!(
+            n.load(Ordering::SeqCst),
+            8,
+            "wait_idle は実行完了後にのみ戻るはず (CT-1 root 契約)"
+        );
+    }
+
+    /// wave 96 CT-2: スティールは優先度を属性のまま保持する
+    /// (旧実装は Background への一括書き換えで FC が静寂背景化)。
+    /// PrioQueue レベルで pure に固定 + thief 再投入側の再順序確保も
+    /// 改修後のワーカー経路へ同期の責任で担保 (UI テストなしでも成立する
+    /// 厳密な属性固定のみ)。
+    #[test]
+    fn steal_half_preserves_priority_and_amount() {
+        let mut pq = PrioQueue::new();
+        for _ in 0..4 {
+            pq.push(Priority::FrameCritical, Box::new(|_| {}));
+        }
+        for _ in 0..2 {
+            pq.push(Priority::Background, Box::new(|_| {}));
+        }
+        let stolen = pq.steal_half();
+        assert_eq!(
+            stolen.len(),
+            1,
+            "最低優先度 BG 半分 (2 件の半分=1) を先に横取り"
+        );
+        assert_eq!(stolen[0].0, Priority::Background, "優先度が属性のまま");
+        // 半分切捨てで残 1 件の BG は n=1/2=0 → fall-through → FC 4 件の半分=2
+        // (機械検算値、テスト赤=自己誤り捕捉 19 件目で訂正記録)。
+        let stolen2 = pq.steal_half();
+        assert_eq!(
+            stolen2.len(),
+            2,
+            "BG 半切捨て 0 は fall-through → FC から 2"
+        );
+        assert!(stolen2.iter().all(|(p, _)| *p == Priority::FrameCritical));
+        let stolen3 = pq.steal_half();
+        assert_eq!(stolen3.len(), 1, "残 FC 2 件の半分=1");
+        assert_eq!(stolen3[0].0, Priority::FrameCritical);
+    }
+
+    /// wave 96 CT-2: thief 側再投入も優先度属性のまま (自キュー to push 経路を
+    /// requeue_stolen 分離して機械検査可に — 旧提出巡回が優先度を書き換える
+    /// 逆変異がこのテストで検出可能となる)。
+    #[test]
+    fn requeue_stolen_preserves_fifo_and_priority() {
+        let dst = Mutex::new(PrioQueue::new());
+        let marker = Arc::new(AtomicUsize::new(0));
+        let make = |m: usize| {
+            let c = Arc::clone(&marker);
+            Box::new(move |_: &JobContext| {
+                c.store(m, Ordering::SeqCst);
+            }) as Job
+        };
+        let anchor = JobSystem::new(1);
+        let ctx_of = |_: &JobSystem| JobContext {
+            sys: Arc::clone(&anchor.inner),
+            worker: usize::MAX,
+        };
+        {
+            let mut q0 = dst.lock().unwrap();
+            q0.push(Priority::Background, make(99));
+        }
+        let first = requeue_stolen(
+            &dst,
+            vec![
+                (Priority::FrameCritical, make(1)),
+                (Priority::Normal, make(2)),
+                (Priority::Background, make(3)),
+            ],
+        );
+        first.expect("return first job")(&ctx_of(&anchor));
+        assert_eq!(marker.load(Ordering::SeqCst), 1, "先頭は FC=1");
+        let mut q = dst.lock().unwrap();
+        let nj = q.pop().expect("normal");
+        nj(&ctx_of(&anchor));
+        assert_eq!(
+            marker.load(Ordering::SeqCst),
+            2,
+            "次は Normal=2 (優先度書き換えゼロ)"
+        );
+    }
+
+    /// wave 96 CT-3: count=0 の parallel_for は厳密に no-op
+    /// (旧実装は `count.max(1)` で 1 件の f(0..1) 呼出を静寂実行)。
+    #[test]
+    fn parallel_for_zero_count_is_strict_noop() {
+        let sys = JobSystem::new(2);
+        let n = Arc::new(AtomicUsize::new(0));
+        let n2 = Arc::clone(&n);
+        sys.parallel_for(0, 32, Priority::Normal, move |_, _| {
+            n2.fetch_add(1, Ordering::SeqCst);
+        });
+        assert_eq!(
+            n.load(Ordering::SeqCst),
+            0,
+            "count=0 は 1 件も実行しないはず"
+        );
     }
 }

@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 37 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 45 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 82 |
-| E 期: 横断契約クラス期 | wave 72-95 (BV-CS 節) | 121 |
-| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **305** |
+| E 期: 横断契約クラス期 | wave 72-96 (BV-CT 節) | 126 |
+| **合計** | **機械積算値** (計測: `grep -cE '^\| (A期\|[A-Z]{1,3})-[0-9]+'` — 全表の ID 行数。2026-07-24 wave 89: wave 88 計測 (256) が複合 ID 行 9 + 接尾辞行 2 をパターン狭窄で落としていたことを検出・全期再計測で訂正。A 期は漢字 ID (A期-NN) も含む) | **310** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -242,7 +242,7 @@
 | BU-2 | 低 | 空メッシュ簡略化早期 passthrough ピン |
 | BU-3 | 観 | use_svo_encoding 命名乖離を真値表で確定 (リネーム見送り) |
 
-## E 期: 横断契約クラス期 (wave 72-81)
+## E 期: 横断契約クラス期 (wave 72-96)
 
 | ID | 度 | 概要 |
 | :--- | :- | :--- |
@@ -367,6 +367,11 @@
 | CS-3 | 低 | SectionOccupancy doc 残留語彙乖離 («layers[y] is unused» 等英語解説) → xz/y_any 実装同期 doc クリーン |
 | CS-4 | 観 | FaceEmitMask::ALL 退化 (count_ones()<3) は単位ベクトル制約で下限=3 の数学証明 → 到達不能だが防衛保持・文書化 |
 | CS-5 | 観 | solid_interior_cull 範囲 1..S-1 恰好確認 (shell=1352 ピン)・render_pipeline filter→edit 順既良・PullGenerationCache 語彙 wave 87 一致 |
+| CT-1 | 中 | job_system pending を POP 時 (実行開始) 減算 → wait_idle 早期復帰で完了保証破綻 → worker_loop/drain_one 双経路で実行完了後減算へ (語彙=in-flight+queued 未終了件数に確定) |
+| CT-2 | 中 | steal 横取り後の一括 Background 強制化 → FrameCritical 静寂背景化 → Priority::from_raw+Vec<(Priority,Job)> 転送・requeue_stolen pure 分離で優先度属性保持 (テスト赤=自己誤り捕捉 19 件目: 半切捨て fall-through 期待設計) |
+| CT-3 | 中 | parallel_for(count=0) が count.max(1) で f(0..1) 1 件静寂実行 (要求 0 実行の逆セマ) → count==0 early return (消費者ガード非依存の API 契約化) |
+| CT-4 | 観 | Priority 判別子 (FC=0/N=1/BG=2)↔バケット index 一対一を from_raw 内部規約化・wait_idle 排水参加+50µs ポーリング・Condvar 5ms timeout+Drop notify_all/join 終結手順 全て契約内 |
+| CT-5 | 観 | 消費者 full_graph_wiring:498/504 (quads>0 ガード付 parallel_for + wait_idle) のみ — 0 判定語彙で挙動変化なし、CT-1 で完了保証が初めて真に成立 |
 
 ---
 
