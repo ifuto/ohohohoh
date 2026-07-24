@@ -4482,3 +4482,141 @@ untouched_path_is_bitexact_copy / wgsl_threshold_constants_match_rust_default_bi
 - 不可視文字 0 / CRLF 0 / tab 0 (3 ファイル python 検査)。
 - アドバーサリアル 2 系統 (luma 係数 → 2 赤、WGSL 定数 → 語彙ピン赤)、
   全て忠実復元で最終 909 緑。
+
+## CF. occlusion_complete.rs 監査 (wave 82, 2026-07-24)
+
+SoftwareOcclusion: CPU Hi-Z ピラミッド (u16、0=近 / 65535=遠) による
+pre-mesh チャンク遮蔽。本番消費は render_pipeline.rs (:32 use、:119
+`pub soft_occlusion`、:244 プロファイル条件付き構築、:587-590
+view_proj 構築、:639 `is_occluded_hysteresis((cx,cz), aabb_min, aabb_max,
+&view_proj)` で列あたり判定、:766-774 `clear_far` → occluder 全列
+`rasterize_aabb` → `build_pyramid`、前フレームピラミッドでテストする
+1 フレーム遅延設計)。rsift-api 側は adaptive_perf.rs (:291/:332
+tier 条件) / low_spec_stack.rs (:47 pre_mesh_occlusion) で配線。
+388 → 875 行へ全面再実装。発見 8 (CF-1 [C]、CF-2/3/4 [高]、CF-5/6 [中]、
+CF-7/8 [観] 系)。テスト 2 → 13。
+
+### CF-1 (C): project の行列規約が本番と転置不一致 (射影空間の破壊)
+- 本番 view_proj (`world_column_store::TerrainFrameConstants::from_camera`)
+  は**行ベクトル規約 p x M** (平行移動は row 3、mul4 は標準積で BW-5
+  ピン済)。WGSL terrain_vertex_pull.wgsl:131 は `frame.view_proj *
+  vec4(world,1)` (column-major 解釈で実質 p x M)、HLSL terrain_vs.hlsl:52
+  は `mul(float4(world,1), view_proj)` — 3 層 + dx12 gpu_graph.rs:1061
+  コメントで 4 重に一致。旧 occlusion project は `vp[row] . p_col`
+  (M x p) を読み、平行移動成分 vp[3][i] が w 語へ化け、w が視点 z 距離
+  ですらなかった (= 遮蔽空間全体が意味を成さない)。
+- 根治: clip_i = Σ_j p_j * vp[j][i] の p x M 規約へ。加えて
+  (a) w 検査を |w| から `w > 1e-6` 必須へ (背面角の鏡写し混入を根絶)、
+  (b) ndc_z は本番行列の DX12 式 [0,1] を**そのまま**返す (旧実装の
+  `*0.5+0.5` 再マップ = OpenGL [-1,1] 前提の二重変換を撤廃)。
+- ピン: 正面点 (0,64,16) → (sx,sy)=(32,32)、w=16、nz bits
+  **0x3F7F3994** (0.99697232、Python f32 往復検算)。背面点は拒否、
+  z=600 は nz=1.0000143 > 1 で far 超過が検出可能 (クランプしない)。
+
+### CF-2 (高): rasterize 深度の近/遠逆転 (被覆保証が偽 = false hole)
+- texel 値 T は「その texel 全域が深度 ≤ T の幾何で覆われる」の保証。
+  occluder が**最近**depth を書くと保証が偽 (潜在 false hole、CD-3 同型)。
+- 根治: rasterize は 8 隅/3 頂点の**最遠** nz (max)、test は**最近** nz
+  (min) で tile max (子の max = 4 子の最弱保証) と strict な大なり比較。
+  等値境界は不成立 → 自己遮蔽は数学的に不可能。
+- f32 検算確定値: 本番 box O [(-8,60,8),(8,68,24)] → T=**65404**
+  (nz(24)=0.99801403、0x3F7F7DD9)。occludee 等値境界 (min_z=24) は
+  test_depth 65404 == T で strict 不成立を 4 フレーム連続ピン。F box
+  (min_z=30、test_depth 65432 > 65404) のみ遮蔽成立 → hysteresis 3
+  フレーム目で発火。旧最近値 (65131 相当) はどの texel にも存在しない
+  ことも全走査ピン。
+
+### CF-3 (高): 三角形ラスタ判定が complete-dead 級 (採用領域 = v2 角の
+相対幅 1e-4 の楔のみ)
+- 旧実装の w_i は真の barycentric の符号反転 (w_i ≡ -λ_i、分母
+  cross(v2-v0, v1-v0) = -Ω の符号解析で証明)。さらに
+  `w2 = 1 - w0 - w1` (= 1+λ0+λ1) と「w_i >= -1e-4 ∀i」を要求すると
+  採用条件は **λ0 <= 1e-4 かつ λ1 <= 1e-4 に帰着** (w2 の条件はほぼ恒真)。
+  即ち v2 角の相対幅 1e-4 の楔にしか書けず、通常サイズの三角形では
+  texel 中心が楔に入らず**書込みゼロ**、巨大三角形でも角の楔のみの
+  誤記述。呼出し側ゼロ + テスト不在で潜在していた。
+- 根治: 3 辺関数を全て**直接**計算し、内側判定は**同符号性**
+  (全て >= 0 または全て <= 0) — barycentric 内側 ⟺ λ_i >= 0 ∀i の
+  必要十分条件で**巻き向き不変**。退化 (|area| < 1e-4) と全頂点 far
+  超過は棄却 (書き損ね = 保守方向)、いずれか頂点が w <= 1e-6 なら
+  全沉默して棄却 (背面跨ぎ)。
+- 両巻き向きで mip が**全 texel 同一** (順=逆=870 texel、検算ミラーも
+  Python で同一性証明)。inside/outside セル 12 箇所を両巻きでピン。
+  strict テスト: 恒等 vp、上辺 sy_e = 0.5012016296386719 (ny_e bits
+  0x3F7BFD8A 由来) からわずか外 (中心 (32.5,0.5)、w0<0, w1<0,
+  w2=+1.9074e-05 bits 0x37A000C8) のセル (32,0) は 65535 のまま、
+  内側 (32,1)(32,30) は T=32767 (=(0.5*65535) as u16) を厳密ピン。
+
+### CF-4 (高): rasterize_rect の画面外 clamp 誤記述
+- 旧実装は clamp **後**に描画したため、完全画面外の rect (例 x1<0) が
+  端列/端行に誤記述され、見えない occluder が辺縁の遮蔽を偽装しえた
+  (非保守方向)。根治: clamp **前**に交差判定 early-out
+  (`x1<0 || y1<0 || x0>=w || y0>=h`)、一部交差は交差部のみ、深度は
+  min 合成 (最強保証を保持) をそれぞれピン。
+
+### CF-5 (中): band 検査の raster 適用は非保守 → project / project_screen 分割
++ 凸包完全内包 scanline
+- test 用ガードバンド |ndc|<=1.2 を raster にも掛けると、画面一杯に
+  写る眼前の壁級 occluder (本番 box の隅 (-8,60,8) は ndc_x=1.83) が
+  全沉默してピラミッドが欠落する = 非保守。そのため射影を
+  **project (test 専用: band 付き、遠く画面外の occludee は遮蔽不可 =
+  保守的に可視扱い)** と **project_screen (raster 専用: band 無し)**
+  に分割。raster 側の座標爆発は凸包 scanline の ±4 画面防御 clamp と
+  書込み範囲の切詰めで処理 (画面外成分は自然に消える、捨てるのは保守)。
+- AABB raster は 8 隅厳密射影 (p x M) → monotone chain 凸包 (f64、
+  透视射影は w>0 半空間で凸性保存) → scanline で**完全内包 texel のみ**
+  に T を書く (部分被覆に保証を与えない = 書き損ねは遮蔽過小 = 保守)。
+  背面跨ぎ (いずれか隅 w <= 1e-6) と全隅 far 超過 (min nz > 1) は棄却。
+- 検算確定: 本番 box O の凸包 (矩形 [(-26.576,2.712),(90.576,61.288)])
+  から 58 行 x 64 列 = **3712** texel 完全一致 (行 2/61 は境界除外を
+  span None → skip でピン)。背面/跨ぎ/far の 3 box はバッファ無汚染。
+
+### CF-6 (中): hysteresis 契約の明文化 (&& 合成・cap・max(1))
+- update_hysteresis は正確 HashMap カウントと衝突許容フラットテーブル
+  (4096 スロット) の AND: HashMap 側が厳密なので**過早発火は数学的に
+  不可能**、ハッシュ衝突はストリーク共有リセットで発火が遅れる方向
+  のみ (保守)。衝突ペアを実ハッシュ関数で機械探索し、k2 可視挿入後の
+  k1 発火が正確に +2 フレーム遅れることをピン。
+- hysteresis_frames=0 は max(1) 即時発火に丸め (負ループのシュリンク
+  なし) をピン。HashMap は MAX_HYSTERESIS_ENTRIES=16384 で定数上界、
+  超過で全クリア (全体を遅らせる保守方向) をピン。
+
+### CF-7 (観): doc 誠実化 (SWAR 命名・lock-free 表現・jitter 未適用)
+- 「SWAR」は歴史的命名で実装はスカラー (SIMD なし)、旧ヘッダの
+  lock-free 表現は単一スレッド前提フラットテーブルのため撤回、
+  Halton(2,3) 生成器 + 8 フレーム周期 jitter_index は実在するが射影へ
+  現行未適用 (保守性証明未整備の設計予備) と明記。Halton 先頭 4 項を
+  f32 bits ピン (radical inverse 理論値 1/2,1/4,3/4,1/8 系と
+  1/3,2/3,1/9,4/9 系に一致)。
+
+### 自己誤り捕捉 (13・14 件目)
+- 13 件目: 引継ぎ検算の w2 恒等式ミラーが全セル False を出力 → 必要経路
+  の符号解析を強制し、CF-3 の「採用領域 = v2 楔」定式化へ精緻化。
+- 14 件目: CF-3 doc 初稿の「w_i >= -1e-4 は Σλ=1 より常に偽」は過剰
+  主張 — 符号代数で λ0,λ1 <= 1e-4 の楔が厳密に生存することが判明し、
+  「相対幅 1e-4 の v2 角楔のみ (通常三角形ではゼロ)」表現へ訂正。
+
+### テスト (+11 純増、920 全緑)
+halton_first_four_exact / project_matches_production_matrix_convention /
+rect_early_out_never_writes_offscreen /
+rasterize_aabb_farthest_depth_fully_inside_texels_only /
+rasterize_aabb_rejects_behind_straddling_and_beyond_far /
+occlusion_requires_strictly_farthest_nearest_depth /
+triangle_rasterize_winding_invariant_exact_cells /
+triangle_strict_center_rule_rejects_barely_outside_center /
+hysteresis_threshold_semantics / hysteresis_map_is_capped /
+hysteresis_collision_delays_never_accelerates (+ 既存 2)。
+
+### 検証結果 (全て実測)
+- lib **920/920** (+11)。structural_digest `004c1cf5fb17bfe8` rows=357
+  不変 (wide_static_bench は SoftwareOcclusion/RenderPipeline を参照
+  しないことを grep=0 で事前確認どおり機械確認)。
+- fmt: HEAD 由来 2 箇所は全面再実装で自然消滅 (継承行ゼロ) → 全体を
+  rustfmt 正準形に統一、post-fmt WORK diff **0**。
+- 不可視文字 0 / CRLF 0、cargo check --all-targets で当該由来警告 0。
+- アドバーサリアル 3 系統 (全て注入→赤→忠実復元→ファイル同一性 diff
+  確認): (a) project 転置規約 → project_matches_production_matrix
+  _convention + occlusion_requires_strictly の 2 赤。(b) rasterize
+  z_max→z_min → farthest テスト赤 (strict シナリオ不変は粗 mip の
+  65535 支配で偽陰性となる経路を解析済、運搬は厳密値ピンが担う)。
+  (c) 旧 dead 判定 (w2=1-w0-w1 + トレランス) → winding/strict 両赤。

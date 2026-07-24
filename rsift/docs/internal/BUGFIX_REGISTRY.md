@@ -12,7 +12,7 @@
 - 深刻度 (audit 見出しの転記): **[C]** critical・**[高]**・**[中高]**・**[中]**・
   **[低]**・**[観]** = 観測・誠実性訂正・判断記録 (コード bug ではない修正)、
   **[基]** = 検証基盤の追加 (naga 突合等)。
-- 修正消費テスト数: 監査開始時 363 → wave 81 時点 **909 全緑** (実測)。
+- 修正消費テスト数: 監査開始時 363 → wave 82 時点 **920 全緑** (実測)。
 
 ## 統計 (数え上げ、推測なし)
 
@@ -22,8 +22,8 @@
 | B 期: 全通読監査 | wave 9-21 (K-W 節) | 26 |
 | C 期: 契約 fail-loud 期 | wave 22-41 (X-AQ 節) | 58 |
 | D 期: 厳密ピン/closing 期 | wave 42-71 (AR-BU 節) | 86 |
-| E 期: 横断契約クラス期 | wave 72-81 (BV-CE 節) | 42 |
-| **合計** | | **232** |
+| E 期: 横断契約クラス期 | wave 72-82 (BV-CF 節) | 50 |
+| **合計** | | **240** |
 
 (「項目数」は下表の行数 = 台帳作成時に機械計測。1 行 = 1 つの修正/根治/
 訂正判断。陰性確認・判定記録 (変更なし判断) は修正ではないため原則除外
@@ -288,6 +288,14 @@
 | CE-4 | 低 | shade 厳密 bit ピン 3 件 (t=0.5/(1+1/6)=3/7 級 0x3EDB6DB3、untouched は入力 bit 完全コピー) + luma 誤係数注入への検出力確認 |
 | CE-5 | 観 | WGSL n/s ラベル逆転は abs 比較のみ使用で振る舞い等価との判断記録 + コメント誠実化 |
 | CE-6 | 観 | shade 非有限画素の扱いを未規定と doc 明記 (f32::min/max の NaN 脱落・WGSL indeterminate・全面停止回避方針) |
+| CF-1 | C | occlusion_complete: project の行列規約が本番と転置不一致 (平行移動が w 語に化けた破壊的射影、p x M 規約 + w>1e-6 必須 + ndc_z 直接返却で根治) |
+| CF-2 | 高 | rasterize 深度の近/遠逆転 (texel 被覆保証が偽 = potential false hole、CD-3 同型) → 最遠 raster + 厳密最近 test + strict 大なり (等値境界で自己遮蔽不可能) |
+| CF-3 | 高 | 三角形判定が complete-dead 級 (w_i ≡ -λ_i へのトレランス判定で採用領域 = v2 角相対幅 1e-4 の楔のみ) → 3 直接辺関数 + 同符号性で巻き向き不変化 |
+| CF-4 | 高 | rasterize_rect が完全画面外 rect を clamp で端列/端行に誤記述 (辺縁遮蔽の偽装作り得) → clamp 前 early-out |
+| CF-5 | 中 | band 検査の raster 適用は眼前壁級 occluder を全沉默 (非保守) → project (test 用 band 付) / project_screen (raster 用) 分割 + 8 角凸包完全内包 scanline + 背面/far 棄却 |
+| CF-6 | 中 | hysteresis: && 合成の非過早性証明 (衝突は遅延のみ)・HashMap 16384 cap・frames=0 の max(1) 丸めをピン |
+| CF-7 | 観 | doc 誠実化: 「SWAR」命名はスカラー実装・lock-free 表現撤回・Halton ジッター現行未適用 (設計予備) の明記 |
+| CF-8 | 低 | 厳密ピン体系 (Halton f32 bits・本番行列 nz bits 0x3F7F3994 系・凸包 3712 texel・衝突遅延 +2 フレーム証明) |
 
 ---
 
@@ -297,14 +305,18 @@
    M-4 (bytemuck アライメントパニック)、S-1 (RCAS ぼかし偽装)、S-2 (深度
    透視補正)、AI-1 (アライン未達成)、AX-1 (二重 release 無防備)、
    BG-1 (SVO trace 意味論スタブ)、BL-1 (Perlin 全定数化)、
-   BZ-1 (確保失敗リーク)、BX-1 (中間ヒット誤タグ)。
+   BZ-1 (確保失敗リーク)、BX-1 (中間ヒット誤タグ)、
+   CF-1 (転置射影)、CF-3 (complete-dead 三角形判定)。
 2. **自己誤り捕捉実績** (テスト赤/検算が設計ミスを検出した記録):
    BM-3 bfSize、BN-3 RCAS 入力 f64、BP-3 負入力 wrap、BX-2 ×2
    (octant シナリオ・R90² 表現)、CA-4 不変量設計、BZ 注入手順修正、
    CB シナリオ包絡、CD hull_len 頂点数 (Python 検算が実行前捕捉)、
    CD フレームカウント off-by-one (テスト赤が捕捉)、
    CE fxaa untouched シナリオ (contrast 0.0897 > 0.0833 で発動する
-   設計ミスをテスト赤が捕捉、等輝度 pure red 設計へ訂正) (合計 12 件。
+   設計ミスをテスト赤が捕捉、等輝度 pure red 設計へ訂正)、
+   CF w2 恒等式引継ぎミラー (前セッション検算の全 False 出力が符号
+   解析を強制、楔定式化へ精緻化)、CF doc 過剰主張「常に偽」(符号代数が
+   楔生存を捕捉、「相対幅 1e-4 の v2 角楔」表現へ訂正) (合計 14 件。
    いずれも「テスト赤=自己誤り捕捉装置」規律の実績として台帳に残す)。
 3. **一次情報照合で「変更なし」判定** (誤修正抑止の記録):
    BO-4 (GPUOpen ffx_cas.h)、BP-2 (Narkowicz ACES)、BN-4 (W3C WGSL CRD)、
