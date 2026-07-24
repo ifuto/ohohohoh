@@ -17,6 +17,9 @@ fn luma(c : vec3<f32>) -> f32 {
 fn main(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
     let uv = pos.xy * u.invRes;
     let c = textureSampleLevel(tex, samp, uv, 0.0).rgb;
+    // 注: WGSL テクスチャ座標は +y が下向きのため、ここで "n" と名付けた
+    // サンプルは視覚的には下 (south) 側。gx/gy は abs 比較のみに使うので
+    // ラベルの符号反転は振る舞いに無影響 (Rust reference 側と等価)。
     let n = textureSampleLevel(tex, samp, uv + vec2<f32>(0.0,  u.invRes.y), 0.0).rgb;
     let s = textureSampleLevel(tex, samp, uv + vec2<f32>(0.0, -u.invRes.y), 0.0).rgb;
     let e = textureSampleLevel(tex, samp, uv + vec2<f32>( u.invRes.x, 0.0), 0.0).rgb;

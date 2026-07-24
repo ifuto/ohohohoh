@@ -22,6 +22,16 @@ impl CpuMaskedOccluder {
         }
     }
 
+    /// 固定カメラ注入の簡易呼出し。**フォールバック診断経路**: カメラを
+    /// 受け取れない旧来の呼出側向けで、描画本流は
+    /// [`Self::cull_boxes_with_camera`] を使うこと。固定カメラは次の近似を
+    /// 含む: aspect は画面実値ではなく 16:9 決め打ち、fov は 70deg 固定、
+    /// pitch は -0.2 (軽い見下ろしの経験値)。このカメラ定数は公開仕様で、
+    /// 変えると描画結果が変わる (strict_tests::wrapper_default_camera が
+    /// 逐語ピン)。消費者実測 (2026-07-24): 現行の直接消費者は
+    /// render_pipeline の with_camera 経路のみで、本メソッドの呼出側は
+    /// コードベースに存在しない (削除理由にはしない — 診断・検証用の
+    /// 再現経路として契約を固定する)。
     pub fn cull_boxes(&mut self, boxes: &[ChunkBoundingBox]) -> Vec<usize> {
         let cam = CameraState {
             x: 0.0,
@@ -96,6 +106,24 @@ mod strict_tests {
             assert_eq!(via_wrapper, via_direct, "round {round}: 委譲パスは結果 Vec が完全一致");
         }
         assert_eq!(wrapper.stats(), direct.stats(), "(culled, tested) 帳簿も透過一致");
+    }
+
+    /// CE 追加 (2026-07-24): enabled=false 経路も薄い委譲であること。
+    /// 両者とも「全 index 返却・帳簿 (0,0) 不変」が bitexact で、
+    /// かつ帳簿が進まない (= 内部状態に一切触れていない) ことをピン。
+    #[test]
+    fn disabled_passthrough_delegates_bitexact_and_records_nothing() {
+        let boxes = sample_boxes();
+        let mut wrapper = CpuMaskedOccluder::new(512, 512, false);
+        let mut direct = Hzb2D::new(512, 512, false);
+        for _ in 0..3 {
+            let via_wrapper = wrapper.cull_boxes(&boxes);
+            let via_direct = direct.cull_boxes(&boxes, wrapper_default_camera());
+            assert_eq!(via_wrapper, via_direct);
+            assert_eq!(via_wrapper, (0..boxes.len()).collect::<Vec<_>>());
+        }
+        assert_eq!(wrapper.stats(), (0, 0), "disabled は帳簿不変契約");
+        assert_eq!(wrapper.stats(), direct.stats());
     }
 
     #[test]

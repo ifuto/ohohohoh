@@ -4406,3 +4406,79 @@ teleport_skip_is_consumed_and_recovers (新仕様へカウンタ訂正)。
   全て忠実復元で最終 904 緑。
 - 環境: git 破損 12 回目 (HEAD 64294c6 巻戻り、fetch+reset で無損失復旧)、
   Rust 消失 10 回目 (restore-env.sh で復旧 36 秒)。
+## CE. cpu_occlusion.rs + fxaa.rs 監査 (wave 81, 2026-07-24)
+
+小粒 2 モジュール束ね (Y/AB 型)。cpu_occlusion.rs (119→約150 行) は
+Hzb2D の薄い委譲ラッパ (wave 80 で全行精読済、本節で閉じる)。
+fxaa.rs (133→約200 行) + shaders/fxaa.wgsl。live 消費 (実測):
+cpu_occlusion は render_pipeline:11/99/803-806 が with_camera 経路で
+使用 (固定カメラ版 cull_boxes は消費者ゼロ)、fxaa は full_graph_wiring
+:161/:306/:1623-1628 (CPU shade を sharpened/bloomed ミキサーとして
+実消費) + gpu_runtime:103 の WGSL sweep (naga 検証済)。
+
+### CE-1 (低): 固定カメラ版 cull_boxes の契約明文化
+- 消費者実測で直接呼出側ゼロ。ユーザー方針「消費者ゼロを削除理由にしない」
+  に基づき温存し、近似 (aspect 16:9 決め打ち・fov 70deg 固定・pitch -0.2)
+  と「診断・再現経路、本流は with_camera」契約を doc 明文化。
+  カメラ定数は従来通り strictly pinned (公開仕様)。
+
+### CE-2 (低): enabled=false 経路の委譲透過 + 帳簿不変ピン
+- 既存テストは enabled=true/adaptive のみ。disabled 経路で wrapper==
+  direct が bitexact かつ帳簿 (0,0) 不変 (= 内部状態非接触) を新規ピン。
+
+### CE-3 (低): fxaa のフィールド非伝播罠の明文化 + WGSL 語彙ピン
+- 問題の定式化: Fxaa 構造体の公開フィールド (contrast_base/
+  relative_threshold) は CPU reference のみに効き、GPU pass (fxaa.wgsl)
+  は 1.0/256.0・0.166667 をハードコード (uniform は invRes のみ)。
+  「Rust 側で閾値を変えても GPU 表示が変わらない」静寂罠。
+- 修復: フィールド doc に非伝播を明記 + WGSL ソース文字列から
+  "0.166667"/"1.0 / 256.0" を機械抽出→f32 parse→Default と bit 一致ピン
+  (0x3E2AAAC1/0x3B800000。文字列同一なら両パーサとも最近 binary32 で
+  一意) = 乖離はテストが機械拒否。
+- アドバーサリアル検証: WGSL 側 0.166667→0.166669 注入 →
+  語彙ピンのみ赤 → 復元後緑 (初期は行コメントで ) が潰れる破壊注入に
+  なりかけ、BZ-1 教訓に基づき忠実な定数置換で再実施)。
+
+### CE-4 (低): shade 厳密 bit ピン 3 件 + luma 注入検出力
+- 既存テストは方向/1e-6 近似のみ。厳密化: 鉛直エッジ (E/W blend)
+  out=0x3F492493 (=11/14 級: t=0.5/(1+1/6)=3/7=0x3EDB6DB3、
+  全中間値 f32 検算)、水平エッジ (N/S blend) out=0x3F1D41D4、
+  untouched 経路は `return center` の **入力 bit 完全コピー**。
+  luma(1,1,1) は f32 項和が 1.0 に丸まる (0x3F800000) ことも確定。
+- アドバーサリアル検証: luma 係数 0.587→0.5785 注入 → 2 テスト赤 →
+  復元後緑 (水平ケースは luma 等比不変性で偶然同一 bits、理論と整合)。
+- 悪い点のみ直す実装評価: shade の数式 (本家 Lottes 簡略系と同型の
+  min/max contrast・max(床, 相対) 閾値) は数学的に健全で変更不要と判断。
+
+### CE-5 (観): WGSL n/s ラベル逆転の判断記録
+- WGSL テクスチャ座標 +y は下向きで、"n" サンプルは視覚的 south。
+  gx/gy は abs 比較のみに使うため符号反転は振る舞いに無影響 (等価)。
+  誤記ではないので WGSL は触らず、誤読防止のコメント誠実化のみ
+  (BR-1 先例: 実機検証なしの挙動系変更を避ける判断はここでは不要、
+  コメントのみ)。
+
+### CE-6 (観): shade 非有限画素の扱いを未規定として明記
+- f32::min/max は NaN を脱落させ他値で進み、center 側 NaN は出力へ伝播
+  (ポストプロセス画素欠測で全画面停止を避ける方針)。WGSL min/max(NaN)
+  は spec indeterminate で Rust との NaN 一致は保証対象外 —
+  いずれも選択せず「未規定」と doc 明記 (過剰な厳密化はしない判断記録)。
+
+### 自己誤り捕捉 (12 件目)
+- untouched シナリオ初稿 (0.5,0.25,1.0): luma 0.41025 で contrast
+  0.0897 > threshold 0.0833 となり AA が発動 → テスト赤が捕捉。
+  luma(1,0,0) ≡ luma(gray 0.299) ≡ f32(0.299) の等輝度設計に訂正し
+  根拠自体もピン。
+
+### テスト (+5 純増、909 全緑)
+cpu_occlusion: disabled_passthrough_delegates_bitexact_and_records_nothing。
+fxaa: shade_vertical_edge_exact_bit_pin / shade_horizontal_edge_exact_bit_pin /
+untouched_path_is_bitexact_copy / wgsl_threshold_constants_match_rust_default_bits。
+
+### 検証結果 (全て実測)
+- lib **909/909** (+5)。structural_digest `004c1cf5fb17bfe8` rows=357 不変
+  (WGSL コメントのみ変更・CPU 参照実装は挙動不変で機械確認)。
+- fmt: 両ファイル WORK-only 差分行 **0**。
+- cargo check --all-targets: エラー 0、両ファイル由来警告 0。
+- 不可視文字 0 / CRLF 0 / tab 0 (3 ファイル python 検査)。
+- アドバーサリアル 2 系統 (luma 係数 → 2 赤、WGSL 定数 → 語彙ピン赤)、
+  全て忠実復元で最終 909 緑。
