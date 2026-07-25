@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 139
+- count: 140
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -157,3 +157,4 @@
 - 2026-07-25 (count 137): wave 102 palette_pack 監査 (DB-1 fallback 未実装虚偽訂正・DB-2 worst 1.80 倍膨張誠実化・DB-3 rev 非計上明記・DB-4 set 同値 no-op 化・DB-5/6/7 観察 計7項目、994 全緑+adversarial 3 系統+fmt 規律+ワイヤ語/メモリモデル厳密ピン+digest 不変) の CI 緑確認用
 - 2026-07-25 (count 138): wave 103 render_graph 監査 (DC-1 高: RAW-only 全順序依存で Feather 実グラフ真サイクル (translucent ↔ taa RMW) → Kahn 2 パス静寂脱落を forward-hazard 化で根治+完全ピン・DC-2 assert fail-loud・DC-3 barrier_count ×2 虚構正直化・DC-4..7 計7項目、1000 全緑+adversarial 3 系統全検出+fmt fmdiff PASS (自己 0)+警告 14/17/13 据え置き+digest 不変) と速度革命 (tools/rspeed.rs 統合 (expr/san/fmdiff/test/bench 等 9 機能・単一バイナリ ~3ms)+dev profile hybrid (deps opt0+gfx opt1+debug=0: フルビルド 38s/全テスト 150s)・mold/nextest asset host 遮断で見送り実測記録) の CI 緑確認用
 - 2026-07-25 (count 139): rspeed v2 大拡張 (9→115 機能: 厳密数値 27/スキャナ 24/リポジトリ 28/統計・グラフィクス 27、MD5 自前実装照合・selftest 18 ピン・seal 全ゲート PASS、開発中自己捕捉 6 件根治 (morton 定数静寂ゼロ化・parse_u64_auto hex 誤読・書込み静寂スロー 9 サイト write_loud 化等)) の CI 緑確認用
+- 2026-07-25 (count 140): wave 104 bench_harness 監査 (DD-1 record 末尾 fine スロット静寂飽和で percentile 粗フォールバック死にコード化+超過サンプル過小報告の二重虚偽根治・DD-2 run_timed fine 表固定 60M us=480MB/回確保 → max(60ms,target_ms)・1s cap 化 (最大 8MB、商 59.99994… 厳密ピン)・DD-3 percentile p=0 の want=0 未観測 0us 虚偽 → nearest-rank max(1) 化・DD-4 doc/label 虚偽群 ([0..10)/">=10s"/fine メモリ契約) 訂正・DD-5 ascii を rsift_bench markdown へ消費者配線+証明 doc 5 件 計5項目、+4 strict テスト 1004 全緑・adversarial 3 系統全検出・捕捉 22 件目 (「1/60 未満」自己断言誤り→挟み込みピン)・fmt fmdiff PASS (HEAD 3 ⊇ 現 2/自己 0)・警告 14/17/13 据え置き・digest 004c1cf5 不変) の CI 緑確認用

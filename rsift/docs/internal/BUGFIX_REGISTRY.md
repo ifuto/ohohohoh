@@ -415,6 +415,11 @@
 | DC-5 | 観 | minimal の retain(from!=to)/dedup_by は構築上到達不能 (推移交互性) → 証明 doc 注記のうえ防御維持 |
 | DC-6 | 観 | 空グラフ well-formed 性・reads 重複 no-op 性確認 → empty_graph テスト追加 (DC-2 assert 0==0 受理) |
 | DC-7 | 観 | passes()/merge_ao/merge_water は消費者ゼロ scaffold → 将来 wiring 用温存+doc 注記 (削除方針外) |
+| DD-1 | 中 | bench_harness record が fine_max_us 超過サンプルを末尾 fine スロットへ min(us, len-1) で静寂飽和 → percentile の粗バケットフォールバックが構築上到達不能の死にコード + 超過サンプルが fine_max_us に過小報告 (5,000us が 2,000us 表示) の二重虚偽 → get_mut で [0, fine_max_us] 内のみ記録 (フォールバック復活・保守的上振れ側へ) + 厳密ピン (p80=9,999/p100=999,999 vs 旧 2,000 = 2.5 倍/250 倍過小) |
+| DD-2 | 中 | run_timed fine 表が固定 60_000_000us = 呼出毎に 480,000,008 B (457.8 MiB) 確保 (rsift_bench 9 連続・lib テスト毎回、低スペック PC 敵対) → run_timed_fine_max_us = max(60ms, target_ms)・1s cap 化 (最大 8,000,008 B ≈ 1/60、商 59.99994… 厳密ピン) + saturating/clamp 境界 6 点ピン。捕捉 22 件目: 「1/60 未満」の自己断言が数学的誤り (60×8,000,008 > 480,000,008) をテスト赤で捕捉・両側挟み込みへ訂正 |
+| DD-3 | 低 | percentile_us p=0 で want=ceil(count·0)=0 → 先頭スロットで即 return 0us = 未観測値の虚偽報告 → nearest-rank 定義 rank∈[1,count] に max(1.0) クランプ (p0=最小値厳密ピン) |
+| DD-4 | 低 | doc/label 虚偽訂正: 構造体 doc「buckets[i]=[10^i..10^(i+1))」は bucket0 の 0us 含有と矛盾 → [0..10) 明記、ascii ラベル ">10s" は 10,000,000us 丁度含有区間と矛盾 → ">=10s"、fine フィールド doc「下位 1ms」はパラメトリック範囲と矛盾 → [0..=fine_max_us] + メモリ契約 8·(n+1)B 明記 |
+| DD-5 | 観 | Hdr::ascii の消費者がテストのみ → rsift_bench markdown へ per-bench bucket histogram 配線 (消費者追加方針)。併せて証明/契約 doc 注記: Stopwatch ops/sec は new〜finish 壁時計全期間ベース、csv name 非エスケープ前提、time() as u64 切捨ては ≈584,542 年で到達不能、percentile max_us fallback 到達不能 (全バケット合計=count≥want)、run_timed Instant+Duration 加算パニックは fail-loud 側 |
 
 ---
 

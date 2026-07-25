@@ -231,6 +231,12 @@ fn main() {
         md.push_str(&r.to_markdown_row());
         md.push('\n');
     }
+    // per-bench の分布も markdown に残す (Hdr::ascii の実消費者 — wave 104 DD-5 で配線)。
+    // p50/95/99 だけでは見えないバケット偏り (bimodal や tail 厚み) を report から判読可能にする。
+    md.push_str("\n#### per-bench bucket histogram (log-scale buckets)\n\n");
+    for r in &results {
+        md.push_str(&format!("`{}`\n```\n{}```\n\n", r.name, r.hdr.ascii(40)));
+    }
     std::fs::write(&path, &csv).expect("csv write");
     println!("\n--- markdown ---\n{}", md);
     println!("csv: {}", path.display());

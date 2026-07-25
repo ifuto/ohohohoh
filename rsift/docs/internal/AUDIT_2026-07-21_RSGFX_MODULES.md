@@ -5820,3 +5820,33 @@ RED (16≠8)、(c) WAW 欠落注入 → chain_4 のみ RED ([0,1] 同 wave 崩�
 fmt: rspeed fmdiff で HEAD 逸脱 5 行 ⊆ 包含・自己起因 0 行 PASS (自己 5 行を
 正準化して解決)、警告 14/17/13 据え置き、san 0 findings、
 digest `004c1cf5fb17bfe8` rows=357 実測不変。
+
+## DD. bench_harness.rs (wave 104, 2026-07-25)
+
+291 → 417 行。全行照合 + 消費者照合 (run_timed/csv_header/to_csv_row/
+to_markdown_row/BenchResult ← examples/rsift_bench.rs のみ (9 bench、CI 非
+ゲート — bench.yml は pseudo_mc_bench/wide_static_bench のみビルド/実行)、
+Stopwatch/Hdr::new/percentile_us/ascii ← モジュール内+テストのみ、
+wide_static_bench/full_graph_wiring は bench_harness 非参照 = digest 経路
+非含有を構造照合済)。全期待値を Python 機械検算で事前排撃
+(505,060/5=101,012.0、480,000,008/8,000,008=59.99994…、nearest-rank
+累積列 10/20/30→rank3、p80→bucket3 上限 9,999、p100→bucket5 上限 999,999)。
+
+| DD-1 | 中 | record が fine_max_us 超過サンプルを末尾 fine スロットへ `min(us, len-1)` で**静寂飽和** → (a) percentile_us の粗バケットフォールバックが構築上**到達不能の死にコード**化、(b) 超過サンプルが fine_max_us へ過小報告 (5,000us が fine_max=2,000 の表で 2,000us = 2.5 倍過小、500,000us は 250 倍過小) の二重虚偽 → `fine.get_mut(us)` で [0, fine_max_us] 内のみ記録する設計へ根治 (粗フォールバック復活、報告は保守的上振れ側へ) + 内部状態完全ピン (fine[2000]==0、buckets[1]=3/[3]=1/[5]=1) |
+| DD-2 | 中 | run_timed の fine 表が固定 60_000_000us = **呼出毎に 480,000,008 B (457.8 MiB) 確保** (rsift_bench 9 bench 連続・lib テスト run_timed_respects_limits 毎回 = CI/低スペック PC 敵対) → `run_timed_fine_max_us(target_ms) = clamp(target_ms saturating*1000, 60_000, 1_000_000)` へ根治 (全測定窓を通常カバー、最大 8,000,008 B) + 境界 6 点・メモリ比厳密ピン |
+| DD-3 | 低 | percentile_us で p=0 のとき want=ceil(count·0)=0 となり先頭スロットで即 return 0us = **未観測値の虚偽報告** → nearest-rank 定義 (rank ∈ [1, count]) に基づく `.max(1.0)` クランプで根治 (p0=最小値、p0.2=rank1、p0.6=rank3 厳密ピン) |
+| DD-4 | 低 | doc/label 虚偽群訂正: 構造体 doc「buckets[i] = [10^i..10^(i+1))」は bucket0 が 0us を含む実装と矛盾 → [0..10) 明記、ascii ラベル ">10s" は 10,000,000us 丁度を含む実区間と矛盾 → ">=10s"、fine フィールド doc「下位 1ms 分解能」はパラメトリック範囲 (new(2_000)→2ms 等) と矛盾 → [0..=fine_max_us] + 確保メモリ 8·(fine_max_us+1) B の契約明記 |
+| DD-5 | 観 | Hdr::ascii の消費者がテストのみ → rsift_bench.rs の markdown レポートへ per-bench bucket histogram セクション配線 (消費者追加方針)。併せて証明/契約 doc 注記 5 件: Stopwatch::new は構築時の壁時計ベース (ops/sec は new〜finish 全期間)、to_csv_row の name 非エスケープ前提、time() の `as u64` 切捨ては u64::MAX us ≈ 584,542 年で到達不能、percentile 末尾 max_us return は到達不能 (全バケット合計 == count ≥ want)、run_timed の Instant+Duration 加算は巨大 target_ms でパニック = fail-loud 側 |
+
+検証: +4 strict テスト (overflow skip+bucket ceiling/p0=min/fine_max 契約
+6 点+メモリ比/label honest) で **1004 全緑**。adversarial 3 系統全検出:
+(a) 飽和クランプ厳密逆戻し → overflow テストのみ RED、(b) max(1.0) 除去
+→ percentile_zero のみ RED、(c) 60M 固定逆戻し → contract のみ RED、
+各復元で md5 照合 MD5-VERIFIED。**捕捉 22 件目**: 自分の「1/60 未満」
+断言が数学的に誤り (60×8,000,008=480,000,480 > 480,000,008) → テスト赤
+で自己捕捉、整数除算商 59 + 両側挟み込み (59×new < old < 60×new) の
+厳密ピンへ訂正 (プロダクトコード無変更)。fmt: rspeed fmdiff で HEAD 逸脱
+3 ⊇ 現 2・自己起因 0 PASS (labels 行の正準化で HEAD 既存逸脱 1 件も解消)、
+警告 14/17/13 据え置き・bench_harness 起因 0、san 0、trailws 0、
+digest `004c1cf5fb17bfe8` rows=357 実測不変。固定版 md5
+2ced151a56d37659184ba5a36c420166 を /tmp・rsift/bak/ へ二重保存。
