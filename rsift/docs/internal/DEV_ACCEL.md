@@ -110,3 +110,42 @@ hot loop のみ opt1 にすれば実行速度を回復しつつ、registry deps 
   **導入不可・lld 21.1.8 継続**。一試行 0.8s で判断可能になった。
 - cargo-nextest: 同上 asset 不可 + nproc=2・単プロセススレッド並列で既に
   並列飽和しているため見送り継続 (asset 経路が開けば再評価)。
+
+## rspeed v2 大拡張 (2026-07-25、115 機能・単一バイナリ 4,927,944 B)
+
+ユーザー指示「rspeed に正確に行いたい機能を 100 個くらい自由に追加して」に対応。
+`tools/rspeed.rs` 一本 (std のみ、`rustc -O --edition 2021` で ~9s) を 9 → **115 機能**
+(dispatch エントリ 116 − エイリアス 1 (`grep`→`find`)) へ拡張。
+ビルドは `bash tools/build-rspeed.sh` → `/home/user/bin/rspeed` (git 追跡外)。
+
+### 追加バッチ構成 (全機能 `rspeed help` / `rspeed man <機能名>`)
+
+| バッチ | 内訳 | 代表機能 |
+| :--- | :--- | :--- |
+| A 厳密数値 (27) | f64/f32/f16/bf16 bit 解析・RNG 再現・整数論 | bits/bits-of/ulp/next/hfbits/gamma/morton/murmur/splitmix/xs64/pcg/fnv/prime/modpow/invmod/contfrac/table/range/monotone/roundtrip/ulperr/int-cast/quant/mat4/vec3/lerp/hypot/fp-table |
+| B スキャナ (24) | 監査用ソース走査 (strip_rust_code でコメント/文字列近似除去) | magic/floatlits/casts/clamps/divmod/shifts/unwraps/tests-index/test-find/test-count/fns/pubs (--save/--check API 指紋)/docs/todo-scan/dups/longlines/trailws/nonascii/eol/tabs/dead/hotfiles/diff (内蔵 LCS)/grep2 |
+| C リポジトリ (28) | 巻戻り対策・adversarial 儀式・提出ゲートの機械化 | md5/md5check (自前 MD5、RFC1321 照合)/status/changed-tests/env-check/snapshot/snapcheck (全追跡ファイル manifest)/rescue/adv-save/adv-restore/adv-diff/time-run/binsize/ghfile/ghlatest/wave-log/journal/registry-stats/wave-info/todo-pick/todo-pri/coverage/ci-status/lines/burndown/**seal** (提出前一括ゲート: san→fmdiff→trailws→台帳→test→digest→env-check)/dashboard |
+| D 統計/グラフィクス (26+1) | 数学ユーティリティと自己検証 | percentile/histogram/bigfact/fib/crc32/bitops/pack/unpack/endian/clamp-table/matc/quat/proj (wgpu/GL 両規約)/lookat/tri-area/bary/halton/r2/color/srgb-err/quat-slerp + **selftest (18 ピン)・man・nextwave** |
+
+### 精度保証 (全数値 Python/hashlib/仕様値の独立検算で一致確認済)
+
+- MD5 自前実装: `md5("")=d41d8cd98f00b204e9800998ecf8427e`、`md5("abc")=900150983cd24fb0d6963f7d28e17f72` (md5sum・hashlib 両照合)
+- splitmix64(0x42)=[0x2c1c719d2c17b759,0xa211b519d9a09a1c]、fmix64(4095)=0x29a9375b70e7db5a、fmix64(0xdeadbeef)=0xd24bd59f862a1dac (Python 再実装と完全一致)
+- f16 変換 RNE (0x2e66/0x3e00)、morton2(14,5)=0x93、fnv1a64("hello")=0xa430d84680aabd0b、pcg32[1]=0x75830bbd、invmod(3,121)=81、gamma(0.5) sRGB enc/dec、halton(5,2)=5/8、crc32("hello")=0x3610a686、gcd(1071,1029)=21
+- `seal` 全ゲート PASS を以って提出可能の定義とする (本コミット前に全ゲート実測 PASS)
+
+### 開発中の自己捕捉 6 件 (ツール作成時のテスト赤/実害を根治)
+
+1. **selftest ピン誤記**: 仮ピン 0x4008000000000001 (= (0.1+0.2)*10) → 正値 0x3fd3333333333334 (0.1+0.2) に訂正 (selftest 即 RED で捕捉)
+2. **monotone 判定 rc 設計訂正**: 単調非増加を rc=1 扱いしていた誤り → 増減混在のみ rc=1 (非増加/非減少は共に単調として rc=0) + bits の指数部ラベル誤植 (e→e_raw) 訂正
+3. **morton part1by2/compact1by2 定数誤記** [selftest 捕捉最大事例]: マジック定数を `0x1f0000000000ffff`/`0x1f0000ffff000000ff` と転記誤り (正: `0x001f_0000_0000_ffff`/`0x001f_0000_ff00_00ff`)。誤値では入力 bit8-20 が**静寂ゼロ化** (= 256 以上の座標で interleave 往復が壊れる潜伏実害、LUT 不要の morton 展開に直結) → 定数直値化 + exhaustive 往復検証 (2D 0..65536、3D 0..100,000+境界、仕様直交 bit i→3i 0..1024) 全 PASS
+4. **parse_u64_auto 追加**: 「数字のみ文字列を hex 優先解釈」する従来式 `from_str_radix(16).or_else(parse)` は `"4095"` を 0x4095=16533 に誤読 (pack 4 12 9 4095 で ROUNDTRIP-FAIL として顕在化) → 0x/0X 接頭辞=a-f 含有のみ hex、それ以外 decimal の自動基数判別ヘルパーへ統一 (murmur/bitops/pack/unpack/endian/splitmix/xs64/pcg 適用、pack/unpack の `unwrap_or(0)` 静寂ゼロ化も fail-loud 化)
+5. **snapshot タグ未サニタイズ + 書込み静寂スロー**: `snapshot /tmp/x` でタグ文字列をそのままファイル名化 → 存在しない下位パスで `let _ = fs::write(...)` が失敗を握り潰し「保存した」と誤報 → `snapshot_file()` で `/`,`\\` を `_` 化して統一 + **`write_loud()` ヘルパーを新設しユーザー要求の永続化書込み 9 サイト (tests-index/pubs --save/rescue×2/MANIFEST/adv-save×2/wave-log/fp_store) を全て fail-loud 化**
+6. **コンパイラ警告 4 件根治**: extract_tests 未使用 `path` 引数は削除側で正直化 (呼出 3 箇所追従) / `cnt` 死に代入は構造削除 (`refs += ok`) / 未使用 `nf` 行削除 / `qa` の不要 `mut` 除去 → `rustc -O` 警告 0
+
+### 不変量 (本拡張後に再実測)
+
+- `rustfmt --check tools/rspeed.rs` PASS (全行正準形)・`san` 0 findings 維持
+- selftest 18/18 PASS・警告 0 (`rustc -O`)
+- クレート側は無変更のまま 1000 テスト全緑 (161.17s)・digest `004c1cf5fb17bfe8` rows=357 不変
+- trailws 走査で HEAD 既存 3 件を発見 (compute_light_prop.rs:48/56, entity_culling.rs:419) — 棚卸し候補として記録 (本波では触らず)
