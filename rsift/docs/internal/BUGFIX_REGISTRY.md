@@ -460,6 +460,11 @@
 | DK-3 | 観 | 12 bit ドメイン契約の公表: アクセサは `id & 4095` で**静寂 wrap** し id ≥ 4096 を下位 12 bit の別 id へエイリアス (u16 全域・vanilla 広域 blockstate 空間は 12 bit を超えうる、プレースホルダ値の仮性とは独立の第 2 近似) — 全 65,536 入力で wrap 契約厳密 pin + wiring:986 の u64→u16 キャストと併せ 2 段 truncate 経路であることも注記 |
 | DK-4 | 観 | 構造集計の厳密ピン化: opaque 真 2,730/偽 1,366・transparent 真 820 (i=0 含む)・i%15==0 は 274・**opaque∧transparent 交差 546 個 = フラグ非排他** (最小反例 i=10。「transparent=true なら opaque=false」の消費者仮定は現値で誤り、正式テーブル化時に排他性の契約決定が必要)・light 16 レベル完全一様 256 (=4096/16) |
 | DK-5 | 低 | bench blocklut_lookup 3 行 (n=2^18/20/22) の acc を SplitMix64 完全独立シムで事前予測 (2,143,132/8,562,084/34,244,920、E[v]=2/3+7.5≈8.167/iter と整合) → seal 実測照合 |
+| DL-1 | 中 | exposure::target_exposure の**メータリング虚偽を根治**: ヘッダ「same metering used by Unreal's Histogram auto-exposure」に対し実装は線形 1/E[L] (算術平均の逆数) で、Epic 一次情報 (「Auto Exposure in Unreal Engine」: Histogram は log 輝度ヒストグラムを解析して平均輝度を決定) の **log 領域加重平均 (幾何平均)** と不一致 — Jensen E[lnL]≤lnE[L] で常に Unreal 式以下 (=実シーンで暗め、2 段シーン実測 新/旧=1.194824、新 8.543594/旧 7.150503)。log 領域計量へ修正 (定数シーンは両式厳密一致で挙動不変=既存 3 テスト維持、変動シーンのみ幾何平均側へ)。GPU パリティ無影響 (log/exp は WGSL 非搭載・luma/apply のみ GPU の責務分離)・digest 行なし・wiring a↔b 同実装比較と範囲 assert 維持。誠実残差異 (bin 数 64 vs 256・較正 18% 中間グレー K vs 1/geo-L 独自規約) を doc 公表 |
+| DL-2 | 低 | build_histogram の NaN/inf/退化入力契約公表+厳密 pin: NaN 色は f32::max 非 NaN 優先で l=1e-4 (bin 0)・+inf→bin 255・-inf→bin 0・min≦0 かつ max≦0 の退化範囲は log_max=NaN→range 床 1e-6 → 全 bin 255 静寂確定 (panic なし) → target は exp(9.21…)≈1e4→clamp 20 に厳密確定 (Python 機械検算一致) |
+| DL-3 | 低 | adapt 契約公表+厳密 pin: k=1-exp(-speed·dt) は de/dt=s(target−e) の**厳密離散解** (adapt(1,3,4,0.1)=1.659359908)・speed=0 恒等・負 speed/dt は反適応で 0.05 clamp・**NaN は 0.05 への静寂崩落でなく伝播** (clamp は比較 false で self 返却 = fail-visible) — adversarial (b) で max/min 連鎖化による NaN 崩落を 1 RED 検出 |
+| DL-4 | 観 | 分位境界契約 pin: lo/hi は `(total*pct/100) as u32` 切捨て・包含は bin 累積区間の整数中点 (bin 粒度依存)・low>hi/空ヒスト/全除外は 1.0 — adversarial (d) で中点→左端変体を 4 RED 検出 (既存定数 2 テストも連鎖検出) |
+| DL-5 | 観 | Vec4/Vec3 ops 消費者ゼロの意図的保持明記 (shader 側パリティ利用の API 面) + **捕捉 33 件目**: Vec4 の Mul が Vec3::new を呼ぶ転記 typo (E0061/E0308) — sandbox リセット後の初回コンパイルが捕捉 → 根治 (ゼロデイ記録: 2 度の作成で latent だった同 typo を apparatus が出荷前差止め) |
 
 ---
 

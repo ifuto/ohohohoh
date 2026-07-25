@@ -6131,3 +6131,48 @@ fail-loud 検出)・(b) opaque 規則 i%3→i%2 → construct+集計 pin の 2 R
 錨)。復元 md5 照合 MD5-VERIFIED 3 回。fmt: 長 assert 1 箇所を rustfmt 忠実
 適用、固定版 md5 77e2674ad6c7a2cf5443a94ef004bd60 を adv cache・rsift/bak/
 二重保存。seal 全ゲート PASS (変更追跡 4 件・1042 全緑)、**acc 3 行は事前予測と 3/3 MATCH** (SplitMix64 完全独立シムが実測を再現 = wave 110 の 12/12 と併せ bench 予測照合 15/15)、digest 004c1cf5 不変。
+
+## DL. exposure.rs (wave 112, 2026-07-26)
+
+177 → 278 行。消費者照合: full_graph_wiring (:1467 ドーム 32 方向の実スカイ
+サンプル → :1481-1487 build/target/adapt 実適用 → post_exposure レポート・
+:1662 TAA RGB 適用・:2595 範囲 assert (0.05..=20))、frame_proof_extra
+(cpu/gpu-exposure BMP 実出力、:213 luma bitwise 検査 = GPU 側は luma/apply
+のみで log/exp は CPU 責務の決定性設計)。bench digest 行なし。
+
+本 wave の大物は **DL-1 [中] メータリング虚偽の根治**: ヘッダの「same
+metering used by Unreal's Histogram auto-exposure」記載に対し、実装は線形
+領域の算術平均逆数 1/E[L] だった。Epic 一次情報 (「Auto Exposure in Unreal
+Engine」の Basic: 「average of the log luminance」/ Histogram: log 輝度
+ヒストグラムから平均輝度を決定) と照合すると Unreal は **log 領域加重平均
+= 幾何平均輝度**。Jensen 不等式 E[ln L] ≤ ln E[L] より旧実装は常に Unreal
+式以下 (= 実シーンで暗め、等号は定数シーンのみ) — 2 段シーン (0.1×900 +
+0.5×100、min 1e-3/max 1.0) の Python 独立シム実測: 旧 7.150503027 →
+新 8.543594451 (比 1.194824)、定数シーン L=0.5/0.25 は 2.0169146/3.9954206
+で**新旧厳密一致**。log 領域計量へ修正 (挙動変更は変動シーン限定、digest
+無関係、wiring a↔b 比較・範囲 assert・GPU パリティ境界は全て不変)。
+
+| DL-1 | 中 | メータリング虚偽根治 (上記)。誠実残差異: bin 数 (Unreal 64/本 256)・較正 (18% 中間グレー K/1/geo-L 独自規約) を doc 公表 |
+| DL-2 | 低 | build_histogram の NaN/inf/退化入力の決定的契約公表+pin (NaN→bin 0、+inf→bin 255、退化範囲→全 bin 255→clamp 20 厳密確定) |
+| DL-3 | 低 | adapt の厳密離散解 pin (1.659359908) + speed=0 恒等・負 speed 反適応・NaN 伝播 fail-visible 契約 |
+| DL-4 | 観 | 分位境界契約 pin (u32 切捨て・整数中点包含・low>hi/空/全除外 → 1.0) |
+| DL-5 | 観 | Vec4/Vec3 ops 消費者ゼロ保持明記 + 捕捉 33 件目 (Vec4 Mul の Vec3::new 転記 typo を初回コンパイルが E0061/E0308 で捕捉 → 根治) |
+
+検証: +6 strict テスト (幾何平均厳密値/bins 170,230・NaN/inf bins・退化崩壊
+clamp 20・adapt 厳密値/NaN 伝播・分位境界・計量不変性) でモジュール 9/9・
+既存 3 テストは DL-1 の数学的予言通り全緑維持。**adversarial 誠実記録**:
+(a) 線形 1/E[L] 逆戻し → 2 段 pin **1 RED** (定数 pin は不変のため正しく
+不発、錨の設計通り)・(b) NaN 崩落化 (clamp→max/min 連鎖) → NaN 伝播 pin
+1 RED・(c) bin clamp 0.9999→1.0 → **2 RED** (bin 256 index OOB panic で
+fail-loud 検出)・(d) 分位中点→左端 → **4 RED** (既存定数 2 テスト連鎖検出)。
+復元 md5 照合 MD5-VERIFIED 3 回 (固定版 2cc763a34515321be3a73b11c57905f4、
+adv cache・rsift/bak/ 二重保存)。
+
+**sandbox リセット第 2 号からの復旧記録** (wave 112 途上): /home/user/bin
+(rspeed)・/home/user/rust (toolchain)・/tmp (vendor + /tmp/dj 作業域) が
+全消失、HEAD は base 64294c6 へ巻戻り。正規手順 `ci/restore-env.sh` (vendor
+ブランチから toolchain 1.94.1 + 454 crates を sha256 照合で復元) で完全復旧
+し、消失した wave 112 作業中ファイルは会話内 authored text から逐語再構成
+(2 度の作成で latent だった Vec3::new typo は捕捉 33 としてコンパイルが
+差止め = 消失が検証強化に転化した実例)。git reset --hard FETCH_HEAD で
+HEAD 0eaaddb 復帰後、rspeed 再ビルド selftest 0 FAIL。
