@@ -420,6 +420,11 @@
 | DD-3 | 低 | percentile_us p=0 で want=ceil(count·0)=0 → 先頭スロットで即 return 0us = 未観測値の虚偽報告 → nearest-rank 定義 rank∈[1,count] に max(1.0) クランプ (p0=最小値厳密ピン) |
 | DD-4 | 低 | doc/label 虚偽訂正: 構造体 doc「buckets[i]=[10^i..10^(i+1))」は bucket0 の 0us 含有と矛盾 → [0..10) 明記、ascii ラベル ">10s" は 10,000,000us 丁度含有区間と矛盾 → ">=10s"、fine フィールド doc「下位 1ms」はパラメトリック範囲と矛盾 → [0..=fine_max_us] + メモリ契約 8·(n+1)B 明記 |
 | DD-5 | 観 | Hdr::ascii の消費者がテストのみ → rsift_bench markdown へ per-bench bucket histogram 配線 (消費者追加方針)。併せて証明/契約 doc 注記: Stopwatch ops/sec は new〜finish 壁時計全期間ベース、csv name 非エスケープ前提、time() as u64 切捨ては ≈584,542 年で到達不能、percentile max_us fallback 到達不能 (全バケット合計=count≥want)、run_timed Instant+Duration 加算パニックは fail-loud 側 |
+| DE-1 | 中 | branchless_dda inv_dir tiny-dir ガードが +INF 固定で符号を潰す → 負の tiny dir (|d|<1e-8) で step=-1 × inv=+INF = t_delta=-INF となり軸が負方向へ暴走 (本来命中のブロックを取り逃がし範囲外脱出)、整数境界始点では 0·INF=NaN で branchless_axis 比較が全 false 化し無関係な軸を踏み続ける二重の誤動作経路 → inv は符号保持 ±INF (-0.0 は +INF) + tiny lane の t_max/t_delta を直接 +INF 固定する lane 一貫 immobilize へ再設計 (digest 不変性を bench 入力域で構造証明: d_raw は 0.001 格子で負成分最小 |d|≈5.77e-4≫1e-8、ゼロ成分は +0.0、実測 digest も不変) + 厳密ピン 3 (負 tiny 命中 steps=5/整数境界 NaN hijack 遮断 steps=3/inv 符号・eps 境界・-0.0 完全ピン) |
+| DE-2 | 低 | trace_section が非有限 origin/dir を静寂受理 (NaN.floor() as i32 = 0 飽和で (0,0,0) 起点の虚偽 trace) → debug_assert fail-loud (release はコンパイルアウトで bench 計時経路と無干渉) + should_panic ピン |
+| DE-3 | 低 | 内外範囲判定の else-if が同値条件の再走査 (全軸 0<=v<16 の否定 ≡ 何れか v<0||v>=16 = 排反完備) → else 化 + 証明 doc (挙動完全等価) |
+| DE-4 | 観 | doc 群: branchless_axis の tie 優先度 X>Y>Z (argmin 最小添字) 明文化、VoxelHit 全フィールド doc、trace_section の max_steps/steps/範囲外即 None/air=0 契約、eps=1e-8 の根拠 (16³ 最長踏破 48 voxel で drift≦4.8e-7 voxel = 観測不能)、WGSL_BRANCHLESS_DDA は消費者ゼロ scaffold で t_max のみ進行・voxel 座標更新を欠く不完全対称の正直注記 (配線時統一)、NaN 非発生証明 (有限入力では DE-1 遮断後 0·INF 経路なし) |
+| DE-5 | 観 | テスト未カバー経路の strict 化: 負方向 slab 対称ピン (vz 15→6 steps=9) 追加 (既存テストは全て正方向のみで step=-1 経路未被験だった) + trailws 抱き合わせ: compute_light_prop.rs:48/56 (LIGHT_PROP_WGSL 生文字列内インデント空白行、WGSL は空白非感性・byte ピン無しを照合済)・entity_culling.rs:419 の trailing whitespace 3 件除去 (HEAD 逸脱 12→11 も 1 件改善) |
 
 ---
 

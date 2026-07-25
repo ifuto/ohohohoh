@@ -5850,3 +5850,34 @@ wide_static_bench/full_graph_wiring は bench_harness 非参照 = digest 経路
 警告 14/17/13 据え置き・bench_harness 起因 0、san 0、trailws 0、
 digest `004c1cf5fb17bfe8` rows=357 実測不変。固定版 md5
 2ced151a56d37659184ba5a36c420166 を /tmp・rsift/bak/ へ二重保存。
+
+## DE. branchless_dda.rs (wave 105, 2026-07-25)
+
+275 → 394 行。全行照合 + 消費者照合 (trace_section/Ray3 ← **wide_static_
+bench.rs:647 (digest 経路含有を実証)**・svo.rs:468 fallback (Some(&p) 経路は
+有限 ray のみ、NaN 系テストは全て palette=None で非到達)、WGSL_BRANCHLESS_
+DDA/branchless_axis/inv_dir ← モジュール内のみ、VoxelHit ← svo.rs:462
+destructure)。DE-1 の digest 不変性は bench 入力域で構造証明 (d_raw ∈
+{-1.000..0.999}/0.001 格子 → 負成分の最小 |d| = 0.001/√3 ≈ 5.77e-4 ≫ 1e-8、
+ゼロ成分は +0.0 のみで immobilize 同値) + digest 実測不変で二重担保。
+全期待値を Python 機械検算 (steps: 0→5、5→8、15→6、drift 4.8e-7)。
+
+| DE-1 | 中 | inv_dir の tiny-dir ガードが **+INF 固定で符号を潰す**: 負の tiny dir (|d|<1e-8) で step=-1 × inv=+INF → **t_delta=-INF** となり軸が負方向へ暴走 (vy 16 連続デクリメントで範囲外脱出 = 本来命中のブロックを取り逃がし)、整数境界始点では (b-o)=0 × INF = **NaN** で branchless_axis の比較が全 false 化 (a0/a2=false) → 無関係な z 軸を踏み続ける軸ハイジャックの二重誤動作 → inv は**符号保持 ±INF** (`-0.0` は immobilize 一貫で +INF、`d < 0.0` 判定で copysign の -0.0 罠を回避) + **tiny lane の t_max/t_delta を直接 +INF 固定する lane 一貫 immobilize** へ再設計 (0·INF=NaN 経路も構造遮断)。adversarial (a) で旧挙動の実害を実証: 負 tiny 命中テスト・整数境界テストが None 返却で RED |
+| DE-2 | 低 | 非有限 origin/dir の静寂受理 (NaN.floor() as i32 = 0 飽和 → (0,0,0) 起点の虚偽 trace) → **debug_assert fail-loud** (release コンパイルアウトで bench 計時経路と無干渉) + [should_panic] ピン (dev/test で確実発火) |
+| DE-3 | 低 | 内外範囲判定の else-if が同値条件の再走査 (全軸 0<=v<16 の否定 ≡ 何れかの軸で v<0||v>=16 — 排反完備) → else 化 + 証明 doc (挙動完全等価・digest 不変) |
+| DE-4 | 観 | doc 群 6 件: branchless_axis tie 優先度 X>Y>Z (argmin 最小添字) 明文化、VoxelHit 全フィールド doc (steps = 軸遷移回数・始点命中=0)、trace_section 契約 (max_steps=サンプル上限・範囲外即 None・air=0)、eps=1e-8 根拠 (16³ 最長踏破=48 voxel で drift≦4.8e-7 voxel=観測不能)、WGSL_BRANCHLESS_DDA 消費者ゼロ scaffold + voxel 座標更新を欠く不完全対称の正直注記、有限入力では NaN 非発生 (0·INF 遮断済) 証明 |
+| DE-5 | 観 | テスト未カバー経路の strict 化: 既存テストは全て正方向で **step=-1 経路未被験** → 負方向 slab 対称ピン (vz 15→6、steps=9)。抱き合わせ trailws: compute_light_prop.rs:48/56 (LIGHT_PROP_WGSL 生文字列内インデント空白行、WGSL 空白非感性・byte ピン無し照合済)・entity_culling.rs:419 の 3 件除去 (entity_culling HEAD 逸脱 12→11 も 1 件改善) |
+
+検証: +5 strict テスト (負 tiny immobile/整数境界 NaN 遮断/inv 符号・eps
+境界・-0.0 完全ピン/負方向 slab/should_panic 非有限) で **1009 全緑**。
+**adversarial 3 系統全検出**: (a) inv_dir+t_max/t_delta 旧セマンティクス厳密
+逆戻し → 3 テスト RED (負 tiny・整数境界ともに None 返却を実証)、
+(b) debug_assert 除去 → non_finite のみ RED、(c) naive copysign (-0.0→-INF)
+→ sign pin のみ RED、各復元 md5 照合 MD5-VERIFIED。**儀式ミス記録**: 初回
+adv-save が原版ゴールデンだったため一時的に修正版消失 → 会話内の全編集
+ペイロードから厳密再適用し修正版 md5 a6834c7d で golden 化 (喪失ゼロ、
+この過程自体が rescue/adv 儀式の必要性を実証)。fmt: fmdiff HEAD 0 ⊇ 現 0・
+自己起因 0 PASS (axis_inv 行を正準化解決)、警告 14/17/13 据え置き・
+branchless_dda 起因 0、san 0、trailws 0 (全 src 走査)、digest
+`004c1cf5fb17bfe8` rows=357 実測不変。固定版 md5
+a6834c7d0fff4eaa5a70d8136326fc82 を adv cache・rsift/bak/ へ二重保存。

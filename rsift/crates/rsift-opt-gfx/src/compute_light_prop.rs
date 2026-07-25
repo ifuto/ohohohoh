@@ -45,7 +45,7 @@ fn cs_light_propagate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let x = idx & 15u;
     let y = (idx >> 4u) & 15u;
     let z = idx >> 8u;
-    
+
     var max_block = 0u;
     if (x > 0u) { max_block = max(max_block, light_levels[idx - 1u] & 15u); }
     if (x < 15u) { max_block = max(max_block, light_levels[idx + 1u] & 15u); }
@@ -53,7 +53,7 @@ fn cs_light_propagate(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if (y < 15u) { max_block = max(max_block, light_levels[idx + 16u] & 15u); }
     if (z > 0u) { max_block = max(max_block, light_levels[idx - 256u] & 15u); }
     if (z < 15u) { max_block = max(max_block, light_levels[idx + 256u] & 15u); }
-    
+
     let current_block = light_levels[idx] & 15u;
     if (max_block > 1u && max_block - 1u > current_block) {
         light_levels[idx] = (light_levels[idx] & 0xFFF0u) | (max_block - 1u);

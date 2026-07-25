@@ -416,7 +416,7 @@ impl FastEntityCuller {
                 packet.push(cam[0], cam[1], cam[2], t.max[0] - 0.05, t.max[1] - 0.05, t.max[2] - 0.05);
                 packet.push(cam[0], cam[1], cam[2], t.min[0] + 0.05, t.min[1] + 0.05, t.min[2] + 0.05);
                 packet.push(cam[0], cam[1], cam[2], t.max[0] - 0.05, t.min[1] + 0.05, t.max[2] - 0.05);
-                
+
                 rays += packet.active_mask.count_ones();
                 let unblocked = ray_packet_unblocked_8wide(&packet, solids);
                 slot.last_eval_tick = self.tick;
