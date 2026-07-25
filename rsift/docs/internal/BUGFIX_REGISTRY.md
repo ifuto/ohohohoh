@@ -455,6 +455,11 @@
 | DJ-5 | 観 | 閉形式ピン化: 角始点 (d+1)(d+2)/2 (g>d)・中央 1+2d(d+1) (g≥2d+1)・g=8 中央クリップ 59、bench opaque=0 行 (28/85/59) を strict 固定 + **hash3 を Python 移植した完全独立シムで wide_static_bench visibility 全 12 行 (corner/center × g∈{8,16,32} × opaque∈{0,20}pct) の reached/vis_hits を事前予測 → seal 実測と全照合** |
 | DJ-6 | 低 | 抱き合わせ san 集合の網羅漏れ根治: repo 全量走査で cp932 不可 (= JIS X 0208 非含有 = 日本文出現不能) CJK 13 字・34 箇所の残留を発見 (透視/沈黙/精確/事実等への誤字、全てコメント/doc/md で挙動無関係) → 全 31 箇所を日本語字に根治 + san 集合を 457 字へ拡張 (機械検算で「452 字」主張は実効ユニーク 445 (447 tokens − 重複 2: U+9992/U+7EC7) の過大申告と判明 → 重複除去 + 12 字追加で 457 に確定しユニーク数を selftest 厳密ピン化)・**捕捉 30 件目**: seal が変更追跡ファイルのみ走査する運用盲点で、集合掲載済の U+5B9E が未変更ファイル (svdag.rs) に潜行していた → 全量走査を wave 運用に併用・**捕捉 31 件目**: 「452」カウント誤り (重複 2 の見落とし) をユニーク数ピンで再発防止 |
 | DJ-7 | 低 | 抱き合わせ tooling: fmdiff は HEAD 版を /tmp 孤立ファイルで rustfmt するため `mod` 宣言を含むファイル (jvm/lib.rs 等) の変更が rustfmt の mod 解決失敗で**構造的に seal 不通**だった → `--config skip_children=true` 化 (子 mod 非再帰で孤立評価可、mod 無しファイルの出力不変を旧 changed セット全体で実証) で根治・**捕捉 32 件目**: 私の EOF 修正 (jvm/lib.rs) が seal ゲート 2 で差止められこの制約を発見、併せて rsift-installer/Cargo.toml (CRLF 原生) への LF 末尾改行追加も san ゲート 1 が差止め → 当該 1 件は revert し EOL 専用 wave へ回付 (seal が範囲外混入を機械差止めした 2 連事例 = ゲート実効性の再実証)。EOF 末尾改行根治は 4 ファイル (api/gui-installer/jvm Cargo.toml + jvm/lib.rs) に確定 |
+| DK-1 | 低 | branchless_block::select_branchless のコメント不正確 (旧「(cond as u32 * a) + (!cond as u32 * b)を算術で」は実装の `|`/(1-m) 形と不一致) → 数学的完全等価 (m∈{0,1} で片側積は必ず 0、0|x = 0+x = x より OR/加算/XOR が全て一致、ビット共有時も厳密一方選択) を証明記述で誠実化 + OR≡ADD 代表 200 組 pin |
+| DK-2 | 観 | transparent フィールド消費者ゼロの意図的保持 → `transparent_branchless()` accessor 整備 (将来の半透明ソート/透過パス向け、削除しない消費者整備方針) + 全 4096 入力+wrap 一致 pin |
+| DK-3 | 観 | 12 bit ドメイン契約の公表: アクセサは `id & 4095` で**静寂 wrap** し id ≥ 4096 を下位 12 bit の別 id へエイリアス (u16 全域・vanilla 広域 blockstate 空間は 12 bit を超えうる、プレースホルダ値の仮性とは独立の第 2 近似) — 全 65,536 入力で wrap 契約厳密 pin + wiring:986 の u64→u16 キャストと併せ 2 段 truncate 経路であることも注記 |
+| DK-4 | 観 | 構造集計の厳密ピン化: opaque 真 2,730/偽 1,366・transparent 真 820 (i=0 含む)・i%15==0 は 274・**opaque∧transparent 交差 546 個 = フラグ非排他** (最小反例 i=10。「transparent=true なら opaque=false」の消費者仮定は現値で誤り、正式テーブル化時に排他性の契約決定が必要)・light 16 レベル完全一様 256 (=4096/16) |
+| DK-5 | 低 | bench blocklut_lookup 3 行 (n=2^18/20/22) の acc を SplitMix64 完全独立シムで事前予測 (2,143,132/8,562,084/34,244,920、E[v]=2/3+7.5≈8.167/iter と整合) → seal 実測照合 |
 
 ---
 

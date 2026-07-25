@@ -6104,3 +6104,30 @@ Cargo.toml (CRLF 原生) への LF 改行追加は san ゲート 1 が差止め 
 インシデント記録の帰属を訂正)。LF 正規化は 16,866 CR 行/120 ファイルを一括
 で触る大差分 + .gitattributes 設計を要するため専用 wave 引継ぎとする判断を
 記録 (registry 引継ぎ棚卸しに登録)。
+
+## DK. branchless_block.rs (wave 111, 2026-07-25)
+
+117 → 231 行。消費者照合: **digest 経路含有** (wide_static_bench セクション J
+blocklut_lookup 3 行: n=2^{18,20,22} で select+opaque+light の合成 `acc=`)、
+full_graph_wiring の実配線 6 箇所 (856 opaque ゲート・859/1020 発光シード
+採取・904/1304 パレット id 直入力・1034 select 実演、:107 フィールド保持)、
+`.transparent` フィールドは消費者ゼロ (保持方針)。注目の発見は modulo
+プレースホルダの**構造集計厳密化**: opaque∧transparent の交差が 546 個
+(最小反例 i=10) で 2 フラグが**排他でない**ことを厳密に確認 — 消費者が
+「transparent なら非 opaque」を仮定すると現値で誤る契約を公表。
+
+| DK-1 | 低 | select_branchless コメント不正確 (`+`/!cond 表記 vs 実装 `|`/(1-m)) → m∈{0,1} で片側積必ず 0 の完全等価 (OR/加算/XOR 一致、ビット共有でも厳密) を証明記述で誠実化 + 代表 200 組 pin |
+| DK-2 | 観 | transparent 消費者ゼロの意図的保持 → `transparent_branchless()` accessor 整備 (将来の半透明ソート/透過パス向け) + 全 4096+wrap 一致 pin |
+| DK-3 | 観 | 12 bit ドメイン契約公表: id ≥ 4096 は `& 4095` で静寂 wrap エイリアス (プレースホルダ値の仮性と独立の第 2 近似) + 全 u16 厳密 pin + wiring:986 u64→u16 で 2 段 truncate の注記リンク |
+| DK-4 | 観 | 構造集計厳密ピン: opaque 真 2,730/偽 1,366・transparent 真 820・i%15==0 274・**交差 546=非排他**・light 完全一様 256 |
+| DK-5 | 低 | bench blocklut_lookup 3 行の acc を SplitMix64 完全独立シムで事前予測 (2,143,132/8,562,084/34,244,920) → seal 実測照合 |
+
+検証: +4 strict テスト (accessor 全 4096+wrap・構造集計厳密値・全 65,536
+入力 wrap 契約・OR≡ADD 200 組) でモジュール 8/8。**adversarial 誠実記録**:
+(a) mask 除去 → domain wrap pin+wrap pin の **2 RED** (index OOB panic で
+fail-loud 検出)・(b) opaque 規則 i%3→i%2 → construct+集計 pin の 2 RED・
+(d) transparent 規則 → 2 RED・(c) select OR→XOR → **8 全緑=検出不能を誠実
+記録** (m∈{0,1} で XOR≡OR≡ADD の証明済み中性、truth-table pin 群が等価性の
+錨)。復元 md5 照合 MD5-VERIFIED 3 回。fmt: 長 assert 1 箇所を rustfmt 忠実
+適用、固定版 md5 77e2674ad6c7a2cf5443a94ef004bd60 を adv cache・rsift/bak/
+二重保存。seal 全ゲート PASS (変更追跡 4 件・1042 全緑)、**acc 3 行は事前予測と 3/3 MATCH** (SplitMix64 完全独立シムが実測を再現 = wave 110 の 12/12 と併せ bench 予測照合 15/15)、digest 004c1cf5 不変。
