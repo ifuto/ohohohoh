@@ -443,6 +443,11 @@
 | DH-5 | 観 | 消費者ゼロ API の生存確認 (MortonGrid3D/morton_sort_indices/encode_bmi2/decode_*_fast/MortonOrderTest): 削除せず doc 明記 + **morton_sort_indices のキー前計算最適化** (比較毎再評価 O(n log n)→O(n)、安定性含む新旧完全一致を仮設ファズ 64 種で証明) + fast 系 #[inline] 付与 |
 | DH-6 | 観 | MortonGrid3D 契約明文化 (SIZE 冪/≤1024・10 bit 全単射・SIZE=1024 は T=u32 で 4 GiB 級注意) + 非冪 assert の should_panic ピン |
 | DH-7 | 観 | **3 系統 Morton (morton_order / lbvh::morton3 / WGSL cs_morton) の相互等価ピン不存在** — lbvh part1by2 は第 1 段マスクで 10 bit 化を内包 → 全 u32 ドメイン (境界・内域・wrap ランダム 200k) で bitwise 一致ピンを追加 (将来発散の抑止) |
+| DI-1 | 中 | leaf_fast_path の**逐次変異スキャン意味論**: collapse は x+y+z パリティ (= スキャン最先 interior voxel と同位相) のみ → 固体立方体内部でも **3D チェッカー状の半分のみ消える** (旧 doc「only boundary faces remain」は厳密には虚偽)。閉形式 ⌈(a-2)³/2⌉ を Python 独立モデル照合 (a=3..10 → 1,4,14,32,63,108,172,256・全16³ = 1,372) + 境界環 untouched 証明。挙動は bench `delta_idsum` で digest 凍結のため契約公表+厳密ピン (snapshot 化は digest 更新の大規模見直し相当と誠実注記) |
+| DI-2 | 低 | is_leaf の 12-iter `contains` → 4×u64 ビットマスク展開表化 (hot loop 改善) + 全 65,536 入力で厳密等価ピン。**捕捉 29 件目**: u16 全域 (65,536) に対し表は 256 bit のみで **block ≥ 256 が index out-of-bounds panic** を生産経路へ持込んでいた (元 contains は全 u16 安全) — 全網羅テストが出荷前に捕捉 → guard (block < 256) で完全等価 + テスト鏡写しの guard 漏れも併せて根治 |
+| DI-3 | 低 | LEAF_TYPES の「legacy numeric ids」虚偽寄りコメント (162..=165 は旧 numeric id として不存在) → vanilla 分類上の目安 + hash 空間仮想 id 帯 (200..=205) への誠実注記 |
+| DI-4 | 観 | merge_leaf_mesh 消費者ゼロの保持明記 + 同一チャンク前提を debug_assert fail-loud 化 + byte 等価ピン (捕捉 27/28 件目: `color0` 不存在フィールド作文 (E0609)・slice == 誤用 (E0369) をビルドエラーが捕捉→Pod byte 照合へ) |
+| DI-5 | 観 | 境界 1 層非走査・wrapping guard の観察 (走査拡張変体は guard が境界 collapse を常に false にするため**証明済み意味的中性**、adversarial 証明) + 既存 a=2/border ピン維持 |
 
 ---
 

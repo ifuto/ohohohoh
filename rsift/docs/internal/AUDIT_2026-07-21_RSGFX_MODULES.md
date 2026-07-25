@@ -6003,6 +6003,41 @@ digest `004c1cf5fb17bfe8` rows=357 実測不変 (digest 視点中性を (c) で�
 テスト 13/13 ・**1025 全緑**。固定版 md5 7093e5ba11307dd2b40b2f9b6bb76258
 を adv cache・rsift/bak/ へ二重保存。
 
+## DI. leaf_fast_path.rs (wave 109, 2026-07-25)
+
+219 → 419 行。消費者照合: **digest 経路含有** (wide_static_bench.rs:29 use・
+795-815 で `apply_leaf_fast_path(&mut sec, true)` の `delta_idsum=` 行直行)、
+chunk_mesh.rs:181 の実メッシュ経路消費 (gui_settings トグル連動:93/143/181/
+204/379)、merge_leaf_mesh は消費者ゼロ (保持明記)。未使用 Quantized12ByteVertex
+import を削除 (元から tests 側のみ使用、lib 構成警告には含まれず後述問題なし)。
+注目の発見はビット「定理」化: 逐次変異スキャン (走査中に palette 変異) の
+collapse 対象が **x+y+z パリティ = スキャン最先 interior voxel の位相**で完全
+決定する閉形式 ⌈(a-2)³/2⌉ — Python 独立モデルで a=3..10 の列
+(1,4,14,32,63,108,172,256)・全 16³ = 1,372 = odd-parity interior 数
+(14³/2 切上げ)・境界環 untouched (x/y/z = 0 または 15 の各 256) を全て
+照合確定。ダイジェスト凍結領域のため意味論は据置の契約公表方針。
+
+| DI-1 | 中 | 逐次変異意味論の契約公表: doc「only boundary faces remain」は厳密に虚偽 (内部反運パリティ半分が残留)。閉形式ピン + snapshot 化は digest 大規模見直し相当の誠実注記 |
+| DI-2 | 低 | is_leaf 12-iter contains → 4×u64 ビットマスク表化 + 全 65,536 等価ピン。**捕捉 29 件目**: 表 256 bit に対し block ≥ 256 の u16 が **index out-of-bounds panic を生産経路持込** — 全網羅テストが出荷前捕捉 → guard `block < 256` 根治 (+ テスト鏡写しの guard 漏れ併合根治) |
+| DI-3 | 低 | LEAF_TYPES の legacy コメント虚偽寄り (162..=165 不存在 id) → 分類目安 + 仮想 id 帯の誠実注記 |
+| DI-4 | 観 | merge_leaf_mesh 消費者ゼロ保持 + 同一チャンク前提 debug_assert + byte 等価ピン (捕捉 27/28: 不存在フィールド作文 E0609・slice == 誤用 E0369 をビルド捕捉) |
+| DI-5 | 観 | 境界 non-scan・wrapping guard 観察。走査拡張 adversarial 変体は guard が境界 collapse を常 false → **証明済み中性**としてコンパイル省略 (lean プロトコル適用開始の wave) |
+
+検証: +5 strict テスト (パリティ残存列・全 16³ リング・チェッカー隣接不変量・
+65,536 全網羅・merge assert/往復) でモジュール 11/11・**1030 全緑**。
+**adversarial 誠実記録**: (a) snapshot 変体は x ループ内置きで「既変異の
+コピー」となり意味的中性 (私の設計ミスとして記録)・**(a') 真 snapshot
+(z 前置 frozen) → parity+full_section の 2 RED 検出**・(b) マスク表 1bit 汚染 →
+3 RED 検出・(c) 走査拡張 → 証明済み中性。復元 md5 照合 MD5-VERIFIED 2 回。
+**順序事故の誠実記録**: adv cache ディレクトリが sandbox リセットで消失し
+golden 保存・復元が失敗 (2 変体連鎖でファイル汚陸) → rsift/bak/ 二重保存から
+機械復旧 (md5 三重一致で完全回復、二重保存儀式の有効性を再実証)。fmt:
+HEAD 0 ⊇ 現 0・自己 0 (長 assert・turbofish 等 4 箇所正準化)、警告 12/15/13
+据置 (DI 系起因新規なし)、san 0、trailws 0、固定版 md5
+331ef959e03df70e1216c29c52dc1116 を adv cache・rsift/bak/ 二重保存、
+delta_idsum digest 不変は seal ゲートで確認。
+
+
 
 抱き合わせ **rspeed 拡張**: san 簡体字集合 298→**452 字** (wave 105
 コミット名の誤字 (U+4E3A 混入、正: 再走査) 素通りが発端 — 候補を **cp932
