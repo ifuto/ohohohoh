@@ -15,7 +15,7 @@
 //! 色内挿: `((64 - w) * e0 + w * e1 + 32) >> 6` (BC7 仕様公式)
 //! 4bit インデックス加重: aWeight4 (公式表 — 以下参照)
 //!
-//! エンコーダ: extents 初期値 → 3 回の { index 振分け → LSQ エンドポイント再検 } 練碳で
+//! エンコーダ: extents 初期値 → 3 回の { index 振分け → LSQ エンドポイント再検 } 練炭で
 //! 妥当実用品質 (ispc_texcomp 系簡素器と同系の方針, 全 real コード)。
 
 /// BC7 公式 4-bit 加重表 (Microsoft BC7 仕様の "aWeight4")。

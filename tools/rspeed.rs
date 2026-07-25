@@ -5030,7 +5030,8 @@ fn cmd_selftest(_a: &[String]) -> i32 {
             .unwrap_or_else(|| "None".into()),
         "81".into(),
     );
-    // san 簡体字集合 (wave 106 で 298 → 452 字拡張) の回帰ピン:
+    // san 簡体字集合 (wave 106 で 298 → 452 字「主張」、wave 110 で機械検算により
+    // 実効ユニーク 445 (447 tokens − 重複 2) に訂正し +12 字で 確定 457 字) の回帰ピン:
     // U+4E3A (コミットメッセージ誤字で素通りした字) を検出し、日本語使用字は誤検出しない
     let sf = san_scan_text("安全=\u{4e3a}重確認\n");
     chk(
@@ -5046,6 +5047,30 @@ fn cmd_selftest(_a: &[String]) -> i32 {
         san_scan_text("安全確認・一万円の処理結果\n")
             .len()
             .to_string(),
+        "0".into(),
+    );
+    // wave 110 追加 pin: 452 主張の過大申告 (+7) を機械検算が捕捉した経緯の再発防止。
+    // 集合のユニーク数を厳密 457 にピン (重複混入・過大申告・静寂縮小の全てを RED 化)。
+    let uniq: std::collections::HashSet<char> = SIMPLIFIED_SURE.chars().collect();
+    chk(
+        "san 簡体字集合ユニーク 457 字",
+        uniq.len().to_string(),
+        "457".into(),
+    );
+    // wave 110 追加 pin: 実在汚染として発見された新規 12 字の代表 (U+73AF) を検出し、
+    // 対応する日本語使用字 (U+74B0) は誤検出しない。
+    let sf2 = san_scan_text("境界=\u{73af} untouched\n");
+    chk(
+        "san 簡体字検出 (U+73AF)",
+        sf2.iter()
+            .filter(|f| f.rule == "SIMPLIFIED")
+            .count()
+            .to_string(),
+        "1".into(),
+    );
+    chk(
+        "san 日本文誤検出なし (U+74B0)",
+        san_scan_text("境界環は untouched\n").len().to_string(),
         "0".into(),
     );
     println!("selftest: {fails} FAIL");
@@ -5157,9 +5182,9 @@ const SIMPLIFIED_SURE: &str = concat!(
     "\u{8d5a}\u{8d5b}\u{8d60}\u{9488}\u{7ec7}\u{9489}\u{9493}\u{949d}\u{949e}\u{949f}\u{94a2}\u{94a5}\u{94a6}\u{94a7}\u{94a9}\u{94ae}\u{94b1}\u{94b3}\u{94bb}\u{94c1}\u{94c3}\u{94c5}\u{94c6}\u{94dc}",
     "\u{94dd}\u{94ed}\u{94f6}\u{94f8}\u{94fa}\u{94fe}\u{9500}\u{9501}\u{9504}\u{9505}\u{9508}\u{950b}\u{950c}\u{9510}\u{9519}\u{951a}\u{9521}\u{9523}\u{9524}\u{9525}\u{9526}\u{952d}\u{952e}\u{952f}",
     "\u{9530}\u{9540}\u{9547}\u{955c}\u{9570}\u{7ea2}\u{7ea6}\u{7ea7}\u{7eaa}\u{7eab}\u{7eac}\u{7eaf}\u{7eb1}\u{7eb2}\u{7eb3}\u{7eb5}\u{7eb6}\u{7eb7}\u{7eb8}\u{7eb9}\u{7eba}\u{7ebd}\u{7ebf}\u{7ec3}",
-    "\u{7ec4}\u{7ec5}\u{7ec6}\u{7ec7}\u{7ec8}\u{7eca}\u{7ecd}\u{7ece}\u{7ecf}\u{7ed1}\u{7ed2}\u{7ed3}\u{7ed5}\u{7ed8}\u{7ed9}\u{7eda}\u{7edd}\u{7edf}\u{7ee2}\u{7ee3}\u{7ee7}\u{7ee9}\u{7eea}\u{7eeb}",
+    "\u{7ec4}\u{7ec5}\u{7ec6}\u{7ec8}\u{7eca}\u{7ecd}\u{7ece}\u{7ecf}\u{7ed1}\u{7ed2}\u{7ed3}\u{7ed5}\u{7ed8}\u{7ed9}\u{7eda}\u{7edd}\u{7edf}\u{7ee2}\u{7ee3}\u{7ee7}\u{7ee9}\u{7eea}\u{7eeb}",
     "\u{7eed}\u{7eee}\u{7ef3}\u{7ef4}\u{7ef5}\u{7ef7}\u{7ef8}\u{7efc}\u{7efd}\u{7eff}\u{7f00}\u{7f06}\u{7f0e}\u{7f13}\u{7f14}\u{7f15}\u{7f16}\u{7f18}\u{7f1a}\u{7f20}\u{7f28}\u{7f29}\u{7f2a}\u{9965}",
-    "\u{9968}\u{996a}\u{996f}\u{9980}\u{9981}\u{9988}\u{998b}\u{998d}\u{998f}\u{9992}",
+    "\u{9968}\u{996a}\u{996f}\u{9980}\u{9981}\u{9988}\u{998b}\u{998d}\u{998f}",
     // wave 106 追加 154 字 (コミットメッセージ簡体字誤字 (U+4E3A) が san を素通りした経緯で拡張。
     // 候補 426 字 → cp932 エンコード不可 (= JIS X 0208 非含有 = 日本文出現不能) の
     // 機械的フィルタで 226 字に確定 → 既存 298 字と重複除去で +154 字 = 計 452 字。
@@ -5169,7 +5194,13 @@ const SIMPLIFIED_SURE: &str = concat!(
     "\u{5e99}\u{5e9f}\u{5f02}\u{5f20}\u{5f39}\u{5f52}\u{5f55}\u{5f7b}\u{590d}\u{5fc6}\u{5fe7}\u{6000}\u{6001}\u{6002}\u{603b}\u{6073}\u{6076}\u{60af}\u{60ef}\u{6124}\u{6151}\u{61a8}\u{8ba2}\u{8bbc}\u{8bbd}\u{8bc0}",
     "\u{7978}\u{79bb}\u{79ef}\u{7a02}\u{7a23}\u{7a33}\u{7a77}\u{7a8d}\u{7a91}\u{7a9c}\u{7a9d}\u{7ade}\u{7b3a}\u{7b5b}\u{7b77}\u{7b79}\u{7b7e}\u{7b80}\u{7bd3}\u{7ba9}\u{7c7b}\u{7caa}\u{7d27}\u{7ea0}\u{7ea4}\u{7f19}",
     "\u{7f1d}\u{7f24}\u{7f34}\u{7f81}\u{7f9f}\u{7fd8}\u{800d}\u{529e}\u{529d}\u{52b2}\u{52b3}\u{52bf}\u{52cb}\u{534f}\u{5356}\u{5355}\u{5361}\u{5367}\u{536b}\u{5385}\u{5386}\u{538b}\u{538c}\u{5395}\u{53a2}\u{53bf}",
-    "\u{53d8}\u{53e0}\u{53e6}\u{53f9}\u{5413}\u{5415}\u{5417}\u{542f}\u{5434}\u{5455}\u{545b}\u{545c}\u{5462}\u{5482}\u{54b1}\u{54cd}\u{54d1}\u{54d7}\u{54df}"
+    "\u{53d8}\u{53e0}\u{53e6}\u{53f9}\u{5413}\u{5415}\u{5417}\u{542f}\u{5434}\u{5455}\u{545b}\u{545c}\u{5462}\u{5482}\u{54b1}\u{54cd}\u{54d1}\u{54d7}\u{54df}",
+    // wave 110 追加 12 字 (リポジトリ全量走査で実在汚染として発見し実測で補完:
+    // 機械フィルタの候補プール網羅漏れだった 12 字)。併せて機械検算で確定:
+    // 従来の「452 字」主張は過大で実効ユニーク 445 (447 tokens − 重複 2) だった
+    // ため、重複 2 (U+9992/U+7EC7) を除去し +12 字で 457 字に確定。
+    // selftest でユニーク数を厳密ピン (過大申告・重複の再発防止)。
+    "\u{89c6}\u{6c89}\u{786e}\u{5783}\u{573e}\u{541e}\u{73af}\u{78b3}\u{6237}\u{4efd}\u{9304}\u{6362}"
 );
 
 struct Finding {
@@ -5467,6 +5498,12 @@ fn cmd_audit_todo(args: &[String]) -> i32 {
 fn run_fmt(path: &Path) -> Result<String, String> {
     let out = Command::new("rustfmt")
         .args(["--edition", "2021", "--emit", "stdout"])
+        // skip_children: out-of-line mod (子モジュール) へ再帰しない。
+        // 既定 (再帰) だと HEAD 版を /tmp の孤立ファイルに落とした際 `mod foo;`
+        // の解決に失敗して fmt 不能 (= mod 含有ファイルの fmdiff が構造的に
+        // FAIL する制約) だった。子へ潜らないので孤立ファイルでも常に評価可、
+        // mod 無しファイルの出力は不変 (wave 110 で根治、捕捉 32 件目)。
+        .args(["--config", "skip_children=true"])
         .arg(path)
         .output()
         .map_err(|e| format!("rustfmt 起動失敗: {e}"))?;
@@ -6010,7 +6047,7 @@ fn help() {
   percentile|histogram <値…|file> 分位数/ヒストグラム\n\
 \n\
 [ソーススキャナ系]\n\
-  san <file|dir>…        不可視 12 種/CRLF/末尾改行/U+FFFD・U+00E3/簡体字 452 字\n\
+  san <file|dir>…        不可視 12 種/CRLF/末尾改行/U+FFFD・U+00E3/簡体字 457 字\n\
   find [--count] <n> <p> 高速リテラル検索 / grep2 <A> <B> 共起分類\n\
   magic [dir] | floatlits | casts | clamps | divmod | shifts | unwraps\n\
   tests-index [crate] / test-find <str> / test-count [dir]  #[test] 索引・検索・積算\n\

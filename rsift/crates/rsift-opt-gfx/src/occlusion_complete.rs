@@ -212,7 +212,7 @@ impl SoftwareOcclusion {
     /// texel 中心が厳密に三角形内のものだけに被覆保証
     /// T = 3 頂点の最大 ndc_z (クランプ [0,1]) を書く
     /// (中心サンプルは部分被覆 texel を拾わない = 保証は真)。
-    /// いずれかの頂点が w <= 1e-6 (背面/退化) なら全沉默して棄却、
+    /// いずれかの頂点が w <= 1e-6 (背面/退化) なら全沈默して棄却、
     /// 全頂点が far 超過 (nz > 1) でも棄却 (どちらも undercoverage = 保守)。
     pub fn rasterize_triangle_swar(
         &mut self,
@@ -269,7 +269,7 @@ impl SoftwareOcclusion {
         }
     }
 
-    /// 2D 凸包 (monotone chain、f64、CCW)。透视射影は w > 0 半空間で
+    /// 2D 凸包 (monotone chain、f64、CCW)。透視射影は w > 0 半空間で
     /// 凸性を保存するので、これは AABB の厳密な射影 silhouette である。
     fn convex_hull(pts: &[(f64, f64); 8]) -> ([(f64, f64); 8], usize) {
         let mut sorted = *pts;
@@ -330,10 +330,10 @@ impl SoftwareOcclusion {
         let mut n = 0;
         for c in Self::aabb_corners(min, max) {
             // project_screen を使う (ガードバンド非適用): 画面に大きく写る
-            // occluder の |ndc|>1.2 の隅で全沉默しないため — CF-5。
+            // occluder の |ndc|>1.2 の隅で全沈默しないため — CF-5。
             let (sx, sy, z, ok) = project_screen(c, view_proj, self.width, self.height);
             if !ok {
-                return; // 背面跨ぎ → 保守フォールバック (全沉默して棄却)
+                return; // 背面跨ぎ → 保守フォールバック (全沈默して棄却)
             }
             z_min = z_min.min(z);
             z_max = z_max.max(z);
@@ -568,7 +568,7 @@ fn project(p: [f32; 3], vp: &[[f32; 4]; 4], w: u32, h: u32) -> (f32, f32, f32, b
 /// ndc_z 直接返却) だが、ガードバンド [-1.2, 1.2] は**適用しない**。
 /// 画面の遥か外 (|ndc| >> 1) の角は convex_hull → ±4 画面防御 clamp →
 /// 書込み範囲の切詰めで自然に処理できる。band で拒否すると画面に大きく
-/// 写る occluder (眼前の壁など) が全沉默して深度ピラミッドが欠落し、
+/// 写る occluder (眼前の壁など) が全沈默して深度ピラミッドが欠落し、
 /// 遮蔽が**非保守方向**に崩れる — CF-5 で project (test 用) と分割。
 fn project_screen(p: [f32; 3], vp: &[[f32; 4]; 4], w: u32, h: u32) -> (f32, f32, f32, bool) {
     let x = vp[0][0] * p[0] + vp[1][0] * p[1] + vp[2][0] * p[2] + vp[3][0];

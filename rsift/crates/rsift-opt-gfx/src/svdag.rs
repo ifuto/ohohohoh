@@ -33,7 +33,7 @@ impl SparseVoxelDag {
             root_id: u32::MAX,
         };
         // 基底ノードは「空リーフ」のみ事前登録する (solid 基底は登録しない
-        // 事实契約 — 初めての solid ボクセルが動的に id 1 を得る)。
+        // 事実契約 — 初めての solid ボクセルが動的に id 1 を得る)。
         // id 0 = 空リーフ { mask 0, children all u32::MAX } は de-facto 契約
         // であり、初期 root_id == 0 は「空世界の root」を意味する (CA-2)。
         let empty_leaf = SvdagNodeData { child_mask: 0, children: [u32::MAX; 8] };

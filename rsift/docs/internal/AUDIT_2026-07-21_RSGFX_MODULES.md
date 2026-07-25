@@ -1930,7 +1930,7 @@ cam_right/cam_up が非単位なら quad 伸縮・せん断、非直交なら平
 ### 追加テスト (+5, fail-loud)
 - band_boundaries_exact_with_tier_clamps (境界 8 点 + clamp 両端の
   帯値 24/48/96・72/144/288 ピン + inf dist/scale 受理)
-- billboard_exact_corners_and_uvs (身份基底 4 corner + 4 uv 厳密列 + 斜め基底)
+- billboard_exact_corners_and_uvs (身分基底 4 corner + 4 uv 厳密列 + 斜め基底)
 - select_rejects_nan_dist / select_rejects_non_monotonic_bands /
   for_tier_scale_rejects_nan (should_panic ×3)
 
@@ -3084,7 +3084,7 @@ render_pipeline:367,488、vertex_pool:55,115) を機械移行
 MultithreadedChunkBuilder の非-BGM フォールバック (Minimal tier /
 Low cpu_cores<4 で到達可能、render_pipeline :481 から呼出) が
 y ≤ 100−step の 100 面を生成し、頂点表現範囲 [0,64) 超過分が飽和
-量子化で **y≈64 の 1 面に全頂点が重なる垃圾**になっていた。
+量子化で **y≈64 の 1 面に全頂点が重なるゴミ**になっていた。
 純粋生成器 fallback_plane_mesh に抽出し y ∈ [0,16) に厳密限定
 (SECTION_SIZE 原像) + step 全型 (1/2/4) で高さ一意性ピン。
 
@@ -4303,7 +4303,7 @@ skip_frame 永久無効化バグ (A 期、台帳 A 期節) を修復済の経緯
   軸並行仮定で yaw/pitch 回転を無視 (45° で最大 41% 乖離)。
   bbox raster は silhouette 外の部分被覆 texel にも保証値を書いていた
   (凸体射影は一般に 6 角形等で bbox に満たない)。
-- 修復 (厳密): 8 隅を厳密 view 変換→透视除算 (凸体の射影 = 隅射影の凸包、
+- 修復 (厳密): 8 隅を厳密 view 変換→透視除算 (凸体の射影 = 隅射影の凸包、
   z>0 半空間で凸性保存により厳密 silhouette)。test 用 bbox は厳密外接
   (過大方向のみで保守)。raster は monotone chain 凸包 (f64、全非有限で
   プラットフォーム一意) の scanline フィルで**完全内包 texel のみ**に書く
@@ -4539,7 +4539,7 @@ CF-7/8 [観] 系)。テスト 2 → 13。
   (全て >= 0 または全て <= 0) — barycentric 内側 ⟺ λ_i >= 0 ∀i の
   必要十分条件で**巻き向き不変**。退化 (|area| < 1e-4) と全頂点 far
   超過は棄却 (書き損ね = 保守方向)、いずれか頂点が w <= 1e-6 なら
-  全沉默して棄却 (背面跨ぎ)。
+  全沈默して棄却 (背面跨ぎ)。
 - 両巻き向きで mip が**全 texel 同一** (順=逆=870 texel、検算ミラーも
   Python で同一性証明)。inside/outside セル 12 箇所を両巻きでピン。
   strict テスト: 恒等 vp、上辺 sy_e = 0.5012016296386719 (ny_e bits
@@ -4558,13 +4558,13 @@ CF-7/8 [観] 系)。テスト 2 → 13。
 + 凸包完全内包 scanline
 - test 用ガードバンド |ndc|<=1.2 を raster にも掛けると、画面一杯に
   写る眼前の壁級 occluder (本番 box の隅 (-8,60,8) は ndc_x=1.83) が
-  全沉默してピラミッドが欠落する = 非保守。そのため射影を
+  全沈默してピラミッドが欠落する = 非保守。そのため射影を
   **project (test 専用: band 付き、遠く画面外の occludee は遮蔽不可 =
   保守的に可視扱い)** と **project_screen (raster 専用: band 無し)**
   に分割。raster 側の座標爆発は凸包 scanline の ±4 画面防御 clamp と
   書込み範囲の切詰めで処理 (画面外成分は自然に消える、捨てるのは保守)。
 - AABB raster は 8 隅厳密射影 (p x M) → monotone chain 凸包 (f64、
-  透视射影は w>0 半空間で凸性保存) → scanline で**完全内包 texel のみ**
+  透視射影は w>0 半空間で凸性保存) → scanline で**完全内包 texel のみ**
   に T を書く (部分被覆に保証を与えない = 書き損ねは遮蔽過小 = 保守)。
   背面跨ぎ (いずれか隅 w <= 1e-6) と全隅 far 超過 (min nz > 1) は棄却。
 - 検算確定: 本番 box O の凸包 (矩形 [(-26.576,2.712),(90.576,61.288)])
@@ -5772,7 +5772,7 @@ lib.rs:182 re-export。chunk_dists の全 3 供給経路 (render_pipeline:1016/
   (内部一貫・外部非互換型) → wire_layout FAILED ほか連鎖、(c) needed_bits
   n-1→n 過剰 1 化 → boundary FAILED ほか全連鎖。固定版 ~/bak + rsift/bak
   (md5 4a2d9b03… 忠実復元 → 全緑)。注入訓練: (a) 初回 match arm カンマを
-  コメントが吞み構文エラー → コンパイル fail で検出・訂正版で厳密旧形再現。
+  コメントが呑み構文エラー → コンパイル fail で検出・訂正版で厳密旧形再現。
 - fmt: HEAD minor 偏差 (tail コメント群) / 自分の hunk は正準形、残偏差 1 行
   は HEAD deviant 内容に包含 (rustfmt 行末コメント整列挙動を 2 箇所発見、
   コメント先行配置で構造解決)。
@@ -5919,7 +5919,7 @@ Python 再検算が捕捉 → 確定値「50 calls」へ訂正 (watch: 本節記
 同一計算を再実行して数値の読み違いゼロを確認、doc コメント (50 calls) と
 assert メッセージ (51 級) の微細不一致は訂正済)。**儀式事故の誠実記録**:
 propagate_dirty 書換えの python splice が end アンカー誤認で impl 閉括弧
-+mod tests+strict 冒頭 5 テストを吞み込み (コンパイルエラー 3 件) → adv
++mod tests+strict 冒頭 5 テストを呑み込み (コンパイルエラー 3 件) → adv
 golden (修正版 md5 化済) から喪失区間を機械抽出して復元 (喪失ゼロ、
 「adv-save で修正版 golden 化 → adversarial 着手」の儀式順序が喪失耐性を
 与えることを再実証)。fmt: fmdiff HEAD 0 ⊇ 現 0・自己起因 0 PASS
@@ -6051,3 +6051,56 @@ selftest 18→**21 ピン** 全 PASS・rustfmt FMT_OK・rustc 警告 0・
 `san: [SIMPLIFIED] 簡体字 U+4E3A` 検出を確認 (以後は文字自体を引用せず
 コードポイント表記 — 本文書への再混入を san 自傷 3 件で契機に恒常化)。
 wave 105 件名の誤字は TRIGGER 142 注記で訂正記録。
+
+## DJ. visibility_graph.rs (wave 110, 2026-07-25)
+
+176 → 407 行。消費者照合: **digest 経路含有** (wide_static_bench
+visibility_flood 12 行: g∈{8,16,32} × opaque∈{0,20} × corner (:817) / center
+(:866))、full_graph_wiring.rs:142 フィールド保持・:967 で毎フレーム add_edge
+再登録・:989 flood_fill → visgraph_reachable (render_pipeline:1112 から
+毎フレーム呼出)。wiring 側の is_visible 呼出はゼロ (キャッシュ書込みのみ
+消費)。注目の発見は BFS 意味論の**定理化**: flood 結果集合は opaque 非始点を
+頂点除去した誘導部分グラフ (頂点集合 (V \ Opaque) ∪ {start}) における半径
+max_dist の BFS 球に**厳密一致**する (遮断測地球定理) — 独立第二実装
+(pruned 層別 BFS) との 20 試行差分ファズ + 閉形式照合で実証。さらに hash3 を
+Python 移植した完全独立シムで **bench 12 行の reached/vis_hits を事前予測**
+(corner: 28(0%)/25,24,25(20%)、vis_hits 3/2/0/0/0/0、center:
+59/51/85/71/85/62) → seal 実測と照合。
+
+| DJ-1 | 中 | add_edge の多重辺累積 (multigraph): 呼出毎無条件 push で、毎フレーム同一辺を再登録する tick_world 経由で adjacency Vec が単調増大 (結果は visited 抑止で正しいまま、メモリと BFS 走査幅のみ漸次増大) → 冪等化 (単純グラフ維持・逆向き無視・自己ループ 1 件正規化) で生産者側根治。挙動完全一致 (bench/wiring は各辺 1 回のみ構築) |
+| DJ-2 | 低 | visited HashMap<ChunkNode,bool> の bool 値デッド → HashSet 等価置換 |
+| DJ-3 | 低 | max_dist ちょうどの展開は子 (max_dist+1 層) が全て pop 即棄却の自明殻 → `dist < max_dist` guard で enqueue 抑止 (結果/is_opaque 呼出/キャッシュ bit 完全一致、queue 交通量のみ低減) |
+| DJ-4 | 観 | 意味論契約公表: 遮断測地球定理・is_opaque 各ノード高々 1 回 (始点も評価、判定値は不使用)・負 max_dist=空+空集合キャッシュ・CAP 全破棄 eviction で is_visible 一時 false (誤 true なし、再 flood で回復)・冪等/自己ループ正規化・BFS 訪問順決定性 — doc+ピン群 |
+| DJ-5 | 観 | 閉形式ピン化: 角 (d+1)(d+2)/2 (g>d)・中央 1+2d(d+1) (g≥2d+1)・g=8 クリップ 59・bench opaque=0 行 (28/85/59) strict 固定 + Python シムによる bench 12 行全事前予測 → seal 照合 |
+| DJ-6 | 低 | 抱き合わせ: san 網羅漏れ 12 字・repo 34 箇所残留 (全て字句誤り、挙動無関係) → 31 箇所根治 + 集合 452→457 (「452」は実効 445 と機械訂正) + selftest ユニーク 457 厳密ピン + 捕捉 30 (変更追跡のみ走査の盲点: 集合掲載済 U+5B9E が未変更 svdag.rs に潜行→全量走査併用化)・31 (重複 2 見落としのカウント誤りを機械捕捉) |
+
+検証: +8 strict テスト (冪等/自己ループ・閉形式球 d=0..=6・bench 閉形式・
+遮断測地球 20 試行ファズ・is_opaque 呼出 1 回 pin・負 max_dist・CAP
+eviction・訪問順決定性) でモジュール 14/14。**adversarial 誠実記録**:
+(a) dedupe 除去 (multigraph 逆戻し) → 冪等ピン 1 RED・(b) `&& dist > 0`
+除去 (始点免除削除) → 既存 opaque_start ピン 1 RED・(d) CAP clear 除去 →
+eviction ピン 1 RED・(c) DJ-3 殻 guard 除去 → **14 全緑=検出不能を誠実記録**
+(結果集合/呼出集合/キャッシュは bit 完全一致で queue 交通量のみ差の証明済み
+中性、閉形式ピン群が同等性の錨)。復元 md5 照合 MD5-VERIFIED 3 回。fmt:
+rustfmt --check 初回クリーン、固定版 md5 476fd0e3c2e19673796defccdae01b10
+を adv cache・rsift/bak/ 二重保存。seal 全ゲート PASS (変更追跡 21 件)、
+**bench 12 行は事前予測と 12/12 MATCH** (reached/vis_hits 全値一致 = 完全
+独立シムによる閉形式予測が実測を再現)、digest 004c1cf5 不変。
+
+抱き合わせ **rspeed/衛生同梱** (wave 110): san 集合 452「主張」→ 機械検算で
+実効 445 (447 tokens − 重複 2) に訂正、repo 全量走査で発見の 12 字追加で
+**457 に確定** (selftest ユニーク 457 厳密ピン + U+73AF 検出/U+74B0 非誤検出
+ピン、selftest 21→24 ピン、build-rspeed.sh 再デプロイ、全量 re-scan 0
+findings)。誤字 31 箇所根治 (透視/沈黙/精確/事実/一戸/ゴミ/呑/炭/分/録画/
+切換/環)。**fmdiff 構造制約の根治** (DJ-7): HEAD 版を /tmp 孤立ファイルで
+rustfmt していたため `mod` 含有ファイルの変更が構造的に seal 不通だった
+制約を `--config skip_children=true` 化で根治 (mod 無し出力不変を実証)。
+**捕捉 32 件目**: 私の EOF 修正 (jvm/lib.rs) が seal ゲート 2 で差止められ
+本制約を発見。EOF 末尾改行根治は 4 ファイルに確定、rsift-installer/
+Cargo.toml (CRLF 原生) への LF 改行追加は san ゲート 1 が差止め → revert
+して EOL 専用 wave へ回付 (seal が範囲外混入を 2 件機械差止め = ゲート
+実効性の再実証)。CRLF は base 64294c6 時点で
+131 テキストファイル含有を機械判定 = **原生・本セッション起因でない** (過去
+インシデント記録の帰属を訂正)。LF 正規化は 16,866 CR 行/120 ファイルを一括
+で触る大差分 + .gitattributes 設計を要するため専用 wave 引継ぎとする判断を
+記録 (registry 引継ぎ棚卸しに登録)。

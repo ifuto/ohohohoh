@@ -108,7 +108,7 @@ pub struct GuiDecision {
     pub invalidated: bool,
 }
 
-/// timescale に関係なく GUI 面を主画面へ貼る際の矩形 (ピクセル精确)。
+/// timescale に関係なく GUI 面を主画面へ貼る際の矩形 (ピクセル精確)。
 #[derive(Debug, Clone, Copy)]
 pub struct GuiBlit {
     pub src_size: (u32, u32),

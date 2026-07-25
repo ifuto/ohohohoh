@@ -83,7 +83,7 @@ impl Hdr {
     }
 
     /// パーセンタイル（nearest-rank 法: rank = ceil(p·count) ∈ [1, count]、p=0 → 最小値）。
-    /// fine レンジ内は 1us 精確。range 外サンプルは粗バケットの **上限値** を返す
+    /// fine レンジ内は 1us 精确。range 外サンプルは粗バケットの **上限値** を返す
     /// （保守的上振れ — 真値を過小には返さない。例: [1000..9999]us 帯なら 9999）。
     pub fn percentile_us(&self, p: f64) -> u64 {
         if self.count == 0 {
@@ -349,7 +349,7 @@ mod tests {
         assert_eq!(h.buckets[1], 3, "10/20/30 → [10..100)");
         assert_eq!(h.buckets[3], 1, "5,000 → [1000..10000)");
         assert_eq!(h.buckets[5], 1, "500,000 → [100000..1000000)");
-        // nearest-rank: count=5 → rank=ceil(0.5·5)=3 → 30us (fine 精確)
+        // nearest-rank: count=5 → rank=ceil(0.5·5)=3 → 30us (fine 精确)
         assert_eq!(h.percentile_us(0.50), 30);
         assert_eq!(h.percentile_us(0.60), 30, "rank=ceil(3)=3");
         // rank=ceil(0.8·5)=4 → fine 累計 3 で不足 → bucket3 上限 9,999 (保守的上振れ。

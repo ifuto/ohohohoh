@@ -292,7 +292,7 @@
 | CF-2 | 高 | rasterize 深度の近/遠逆転 (texel 被覆保証が偽 = potential false hole、CD-3 同型) → 最遠 raster + 厳密最近 test + strict 大なり (等値境界で自己遮蔽不可能) |
 | CF-3 | 高 | 三角形判定が complete-dead 級 (w_i ≡ -λ_i へのトレランス判定で採用領域 = v2 角相対幅 1e-4 の楔のみ) → 3 直接辺関数 + 同符号性で巻き向き不変化 |
 | CF-4 | 高 | rasterize_rect が完全画面外 rect を clamp で端列/端行に誤記述 (辺縁遮蔽の偽装作り得) → clamp 前 early-out |
-| CF-5 | 中 | band 検査の raster 適用は眼前壁級 occluder を全沉默 (非保守) → project (test 用 band 付) / project_screen (raster 用) 分割 + 8 角凸包完全内包 scanline + 背面/far 棄却 |
+| CF-5 | 中 | band 検査の raster 適用は眼前壁級 occluder を全沈默 (非保守) → project (test 用 band 付) / project_screen (raster 用) 分割 + 8 角凸包完全内包 scanline + 背面/far 棄却 |
 | CF-6 | 中 | hysteresis: && 合成の非過早性証明 (衝突は遅延のみ)・HashMap 16384 cap・frames=0 の max(1) 丸めをピン |
 | CF-7 | 観 | doc 誠実化: 「SWAR」命名はスカラー実装・lock-free 表現撤回・Halton ジッター現行未適用 (設計予備) の明記 |
 | CF-8 | 低 | 厳密ピン体系 (Halton f32 bits・本番行列 nz bits 0x3F7F3994 系・凸包 3712 texel・衝突遅延 +2 フレーム証明) |
@@ -448,6 +448,13 @@
 | DI-3 | 低 | LEAF_TYPES の「legacy numeric ids」虚偽寄りコメント (162..=165 は旧 numeric id として不存在) → vanilla 分類上の目安 + hash 空間仮想 id 帯 (200..=205) への誠実注記 |
 | DI-4 | 観 | merge_leaf_mesh 消費者ゼロの保持明記 + 同一チャンク前提を debug_assert fail-loud 化 + byte 等価ピン (捕捉 27/28 件目: `color0` 不存在フィールド作文 (E0609)・slice == 誤用 (E0369) をビルドエラーが捕捉→Pod byte 照合へ) |
 | DI-5 | 観 | 境界 1 層非走査・wrapping guard の観察 (走査拡張変体は guard が境界 collapse を常に false にするため**証明済み意味的中性**、adversarial 証明) + 既存 a=2/border ピン維持 |
+| DJ-1 | 中 | visibility_graph::add_edge の多重辺累積 (multigraph): 呼出毎の無条件 push だったため、毎フレーム同一辺を再登録する消費者 (full_graph_wiring::tick_world は render_pipeline:1112 から毎フレーム呼出) 経由で adjacency Vec が単調増大 — flood 結果は visited 抑止で正しいまま保たれるが、メモリと BFS 走査幅だけが漸次増大する構造 → 冪等化 (単純グラフ維持 + 逆向き再登録無視 + 自己ループ 1 件正規化) で生産者側根治。挙動完全一致 (bench/wiring は各辺 1 回のみ構築するため digest 凍結のまま) |
+| DJ-2 | 低 | visited の HashMap<ChunkNode, bool> は bool 値がデッド (key 存在のみ意味) → HashSet<ChunkNode> へ等価置換 |
+| DJ-3 | 低 | max_dist ちょうどのノードの展開は子 (max_dist+1 層) が全て pop 即棄却される自明殻 → `dist < max_dist` guard で enqueue 自体を抑止 (結果集合・is_opaque 呼出集合・キャッシュ内容は bit 完全一致で、queue 交通量のみ低減) |
+| DJ-4 | 観 | 意味論契約の公表: **遮断測地球定理** (flood 結果集合 = opaque 非始点を頂点除去した誘導部分グラフの半径 max_dist BFS 球に厳密一致 — 独立第二実装 (pruned 層別 BFS) との 20 試行差分ファズで実証)・is_opaque 呼出契約 (各ノード高々 1 回・始点も評価されるが判定値は不使用)・負 max_dist=空+空集合キャッシュ・CAP 全破棄 eviction で is_visible は一時 false (誤 true なし、再 flood で回復)・add_edge 冪等/自己ループ正規化・結果 Vec は BFS 訪問順で決定的 — ヘッダ/メソッド doc + ピン群 |
+| DJ-5 | 観 | 閉形式ピン化: 角始点 (d+1)(d+2)/2 (g>d)・中央 1+2d(d+1) (g≥2d+1)・g=8 中央クリップ 59、bench opaque=0 行 (28/85/59) を strict 固定 + **hash3 を Python 移植した完全独立シムで wide_static_bench visibility 全 12 行 (corner/center × g∈{8,16,32} × opaque∈{0,20}pct) の reached/vis_hits を事前予測 → seal 実測と全照合** |
+| DJ-6 | 低 | 抱き合わせ san 集合の網羅漏れ根治: repo 全量走査で cp932 不可 (= JIS X 0208 非含有 = 日本文出現不能) CJK 13 字・34 箇所の残留を発見 (透視/沈黙/精確/事実等への誤字、全てコメント/doc/md で挙動無関係) → 全 31 箇所を日本語字に根治 + san 集合を 457 字へ拡張 (機械検算で「452 字」主張は実効ユニーク 445 (447 tokens − 重複 2: U+9992/U+7EC7) の過大申告と判明 → 重複除去 + 12 字追加で 457 に確定しユニーク数を selftest 厳密ピン化)・**捕捉 30 件目**: seal が変更追跡ファイルのみ走査する運用盲点で、集合掲載済の U+5B9E が未変更ファイル (svdag.rs) に潜行していた → 全量走査を wave 運用に併用・**捕捉 31 件目**: 「452」カウント誤り (重複 2 の見落とし) をユニーク数ピンで再発防止 |
+| DJ-7 | 低 | 抱き合わせ tooling: fmdiff は HEAD 版を /tmp 孤立ファイルで rustfmt するため `mod` 宣言を含むファイル (jvm/lib.rs 等) の変更が rustfmt の mod 解決失敗で**構造的に seal 不通**だった → `--config skip_children=true` 化 (子 mod 非再帰で孤立評価可、mod 無しファイルの出力不変を旧 changed セット全体で実証) で根治・**捕捉 32 件目**: 私の EOF 修正 (jvm/lib.rs) が seal ゲート 2 で差止められこの制約を発見、併せて rsift-installer/Cargo.toml (CRLF 原生) への LF 末尾改行追加も san ゲート 1 が差止め → 当該 1 件は revert し EOL 専用 wave へ回付 (seal が範囲外混入を機械差止めした 2 連事例 = ゲート実効性の再実証)。EOF 末尾改行根治は 4 ファイル (api/gui-installer/jvm Cargo.toml + jvm/lib.rs) に確定 |
 
 ---
 
@@ -485,4 +492,5 @@
    full_graph_wiring「実 draw indices」注記 vs 連番の意味論差異 (BV 発)、
    aokana Hi-Z/visibility buffer 統合 (CB-3 で未配線明示)、
    render_pipeline.rs (1389 行) / full_graph_wiring.rs (2415 行) の本監査
-   (2 wave ずつ想定)。
+   (2 wave ずつ想定)、
+   base 64294c6 時点で 131 テキストファイルが CRLF 含有 (= 原生・本セッション起因でないと機械判定。16,866 CR 行/120 ファイルを一括で触る大差分 + .gitattributes 設計が要るため LF 正規化は専用 wave で実施) の引継ぎ。

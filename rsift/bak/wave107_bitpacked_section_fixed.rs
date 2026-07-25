@@ -43,7 +43,7 @@ impl CompactChunkSection {
 
     pub fn get(&self, x: usize, y: usize, z: usize) -> u16 {
         // DG-3 (捕捉25): SingleValue 経路は座標を捨てるため idx の assert では
-        // 守れない。enum ディスパッチ層で座標域を fail-loud 担保 (一戸関門)。
+        // 守れない。enum ディスパッチ層で座標域を fail-loud 担保 (一户関門)。
         debug_assert!(x < SECTION_SIZE && y < SECTION_SIZE && z < SECTION_SIZE);
         match self {
             Self::SingleValue(val) => *val,

@@ -75,7 +75,7 @@
 - `tbdr_hints.rs` / `software_tiling.rs` — タイルGPU向けヒント・ソフトウェアビン分割
 - `gl33_compat.rs` — OpenGL 3.3 世代フォールバック
 - `mip_streaming.rs` / `sparse_texture.rs` / `texture_budget.rs` / `texture_atlas.rs`
-- `material_batch.rs` / material sort (低スペック plan) — ステート変更换最小化
+- `material_batch.rs` / material sort (低スペック plan) — ステート変更換最小化
 - `ao_bake.rs` — 事前ベーク風の安い directional AO
 - GUI `feather_*` オプション (tile_binning / merged_subpass / pseudo_vrs / lod_3tier)
 

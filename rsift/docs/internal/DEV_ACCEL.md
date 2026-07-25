@@ -79,7 +79,7 @@ sudo apt install mold   # or GitHub releases (rui314/mold)
 | サブコマンド | 機能 | 代替対象 (旧) | 実測 |
 | :--- | :--- | :--- | :--- |
 | `expr [--f32] [--frac]` | 再帰下降パーサで f64 評価+bits / f32 逐次再現 / Fraction 正確分数 (循環節表示) | Python Fraction/Decimal 検算 | 全ピン計算専用化 (例: `0.1+0.2` → 3.0000000000000004 bits 0x4008000000000001、`1/3` → 0.(3)、gcd) |
-| `san` | 不可視文字 (U+200B/FEFF/NBSP/U+3000 等 12 種)・CRLF・末尾改行・文字化け (U+FFFD/U+00E3)・簡体字 **452 字確定集合** (wave 106 で 298 から拡張: 候補を cp932 エンコード不可 = JIS X 0208 非含有の機械フィルタで確定・日本語使用字は機械除外、source 自身も 0 findings になるよう \u{...} エスケープ表記化 + 文書内の該当字はコードポイント表記を義務化) | /tmp/san_check.py | 5 files 一括 ~3ms |
+| `san` | 不可視文字 (U+200B/FEFF/NBSP/U+3000 等 12 種)・CRLF・末尾改行・文字化け (U+FFFD/U+00E3)・簡体字 **457 字確定集合** (wave 106 で 298 から拡張: 候補を cp932 エンコード不可 = JIS X 0208 非含有の機械フィルタで確定・日本語使用字は機械除外、source 自身も 0 findings になるよう \u{...} エスケープ表記化 + 文書内の該当字はコードポイント表記を義務化。wave 110 で訂正+拡張: 「452 字」は機械検算で実効ユニーク 445 (447 tokens − 重複 2) と訂正、リポジトリ全量走査で発見した実在汚染 12 字を追加し 457 に確定、ユニーク数を selftest 厳密ピン化) | /tmp/san_check.py | 5 files 一括 ~3ms |
 | `find [--count]` | リテラル高速検索 (消費者照合) | grep -rn | repo 規模で即時 |
 | `fmdiff` | rustfmt 逸脱行の HEAD ベースライン包含照合 (DP-LCS 内蔵、逸脱行集合⊆HEAD 集合の機械判定) | /tmp/fmt_verify2.py + 手作業 4 コマンド | render_graph.rs で 0.2s (HEAD 5 行/自己 0 行 PASS) |
 | `test [-p crate] [filter]` | **独自 cargo test ランナー**: ソース指紋 (path+mtime+size+rustc ver) 不変なら cargo を起動せず target/debug/deps のテストバイナリを直接実行、変更時のみ `cargo test --no-run` 後に直接実行 | cargo test 毎回 | 指紋不変時 build SKIP 表示+実行尺のみ (full_graph 単体 161s、strict 系 0.00s) |

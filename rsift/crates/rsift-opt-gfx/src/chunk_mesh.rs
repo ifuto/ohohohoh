@@ -209,7 +209,7 @@ impl MultithreadedChunkBuilder {
 /// **wave 59 BI-C**: 頂点高さ y は [0, 16) に厳密限定 (セクション高 16 の
 /// 原像)。旧実装は 100 面 (y ≤ 100−step) を生成し、Quantized12ByteVertex
 /// の表現範囲 [0,64) を踏み外した頂点が飽和量子化で y≈64 の 1 面に全て
-/// 重なって貼り付く垃圾になっていた — 本 fallback は Minimal tier /
+/// 重なって貼り付くゴミになっていた — 本 fallback は Minimal tier /
 /// Low (cpu_cores<4) で到達可能な実経路。
 fn fallback_plane_mesh(cx: i32, cz: i32, step: usize) -> BuiltChunkMesh {
     let step = step.max(1);
@@ -382,7 +382,7 @@ mod tests {
     }
 
     /// wave 59 BI-C: fallback 平面列は頂点表現範囲内 (y ∈ [0,16)) で、
-    /// 全て異なる高さ (飽和による重なり垃圾でない) ことを step 全型でピン。
+    /// 全て異なる高さ (飽和による重なりゴミでない) ことを step 全型でピン。
     #[test]
     fn fallback_plane_mesh_respects_vertex_range() {
         for step in [1usize, 2, 4] {
