@@ -5227,7 +5227,7 @@ ktx2_transfer_follows_srgb_hint / ktx2_vkformat_values_match_vulkan_registry。
   → dfd テスト FAILED。(d) transfer 両分岐 2 化 → transfer テスト FAILED。
   いずれも検出確認後 /tmp/cn_fixed.rs から md5 忠実復元 → 7/7 緑。
 - 環境事象: なし (HEAD=65f046d から安定)。
-- 編集誤字捕捉: 「解決必须」(中国語混入)・「隙間ゾロ」(ゼロ誤打) の
+- 編集誤字捕捉: 「解決」の須を簡体字 U+987B/U+9874 にした中国語混入・「隙間ゾロ」(ゼロ誤打) の
   2 件を自分で検出・即修正 (検査規律の実績)。
 
 ### 残 (次 wave 以降の棚卸し)
@@ -5715,7 +5715,7 @@ lib.rs:182 re-export。chunk_dists の全 3 供給経路 (render_pipeline:1016/
 | DA-4 | 中 | lod_for_distance の NaN が全 < 比較を false にし最遠 LOD 5 へ静寂逃走 (近景最低詳細化) → 有限・非負 assert 遮断 (wave 71 BU-1 同型・現消費者経路非発火照合済) + 境界 12 点厳密ピン (全て「以上」次段側) |
 | DA-5 | 低 | mkv の Y 量子化 `y as i32` 切捨て = 近傍平均の .5 刻み補間値を平均 0.5m 分常に下落させるバイアス (LOD 段差 = スカートで塞ぐ相そのもの) → f32::round 最近接 (半は 0 から遠い側) 化 + 12.5→13/8.5→9 厳密ピン (旧 trunc 12/8) |
 | DA-6 | 低 | merge_4 タイ処理の doc 虚偽: テストコメント「tie は先着」は実挙動と逆 (max_by_key 公式仕様 = 同値最大の『最後』を返す → 後勝ち) → コメント訂正 + 後勝ち 0xBBBB 厳密ピン、absent の色は最多頻度不参加等 6 意味論ピン |
-| DA-7 | 低 | doc 群: 「小ãLODs」文字化け (U+00E3 混入) 訂正、skirt 深度「4-8m」→ 実式 min(4,max(min_y,1)) ∈ [1,4]m 訂正、neighbour_avg_y 死引数 _lod 除去 (map 段一致契約 doc 化)、縁クランプ複製重み注記、n==0 分岐の不到達性注記、「block review」不明瞭語訂正、half 命名嘘 (実は full cell) 解消 (cs/bx 整数化に同梱) |
+| DA-7 | 低 | doc 群: 「小LODs」の 小 の直後への U+00E3 文字化け混入 訂正、skirt 深度「4-8m」→ 実式 min(4,max(min_y,1)) ∈ [1,4]m 訂正、neighbour_avg_y 死引数 _lod 除去 (map 段一致契約 doc 化)、縁クランプ複製重み注記、n==0 分岐の不到達性注記、「block review」不明瞭語訂正、half 命名嘘 (実は full cell) 解消 (cs/bx 整数化に同梱) |
 
 ### 検証 (wave 101)
 - 989 全緑 (+6: 奇数/不変量 fail-loud+境界、上面角 16 語厳密ピン、量子化
@@ -5792,3 +5792,31 @@ lib.rs:182 re-export。chunk_dists の全 3 供給経路 (render_pipeline:1016/
   据置、範囲外検査付き checked_get 亜種の追加は消費者要求に応じて。
 - Vanilla のグローバルパレット直接 id 形式 (9bit 超) 自体を実装するかは
   Dh-vanilla 相互運用要件が出た時点で判断 (現状 12bit 完結で不足なし)。
+
+## DC. render_graph.rs (wave 103, 2026-07-25)
+
+299 → 504 行。全行照合 + 消費者照合 (render_pipeline.rs:35 use /:104
+フィールド /:180-181 `RenderGraphScheduler::new(feather.merged_subpasses,
+feather.minimal_barriers)` /:217 /:630 `log_schedule()` の trace ログのみ;
+passes()/barrier_count()/graph 各 field は外部消費者ゼロ、wide_static_bench/
+full_graph_wiring も render_graph 非参照 = digest 経路非含有を構造照合済)。
+全ピン値を Python 正確シム (forward-hazard 構築) で事前排撃し、その後 Rust
+実装厳密テストが bit 一致することで相互検証。本波は並行してユーザー指示
+「速度革命」(rspeed 統合+dev profile A/B) を実施 (DEV_ACCEL.md 参照)。
+
+| DC-1 | 高 | **依存構築が RAW のみ・全順序ペア (i,j 双方向) だったため、実際の Feather グラフが真のサイクルを内包**: translucent (idx2) と taa_composite (idx3) は共に Color を read+write する RMW パスで、`2書→3読` と `3書→2読` の双方向エッジが成立 → Kahn が 2 パスを schedule から**静寂脱落** (実 schedule=[0,1]、groups=[[0],[1]]、barriers=2 (Depth/Hzb のみ)、total_cost=6 (真値 11) = **フレームグラフ半消失の潜伏実害**)。既存テストは `!schedule.is_empty()`・`schedule.len() <= nodes.len()` 等の弱条件で素通りしていた → forward-hazard 依存モデルへ再設計 (宣言順を有効実行順と見做し i<j ペアに RAW∪WAR∪WAW、構築上必ず DAG、RMW 鎖は宣言順に直列化) + 全値厳密ピン (schedule=[0,1,2,3]、groups=[[0],[1],[2],[3]]、total_cost merged=11/non-merged=12、barriers 8 要素完全列挙) |
+| DC-2 | 中 | Kahn 残留ノード (サイクル等) の静寂脱落を止める防御が無かった → `assert_eq!(schedule.len(), n)` fail-loud 挿入 (forward-hazard 下で構築上到達不能だが恒久的防御として)。adversarial (a) で実効確認: 旧 RAW-only 逆戻し時に 6 テスト中 5 が当該行で RED |
+| DC-3 | 中 | `barrier_count()` が minimal 時 `len.max(1)`・non-minimal 時 `(len*2).max(2)` の**虚構メトリクス** (構造的根拠なしの見栄え係数×2) → 両モードで実本数 `barriers.len()` 正直化 (消費者 trace ログのみのため安全)。Feather 実値 8 (旧 non-minimal 報告 16) |
+| DC-4 | 低 | RMW パスの read→write パス内進行が `after_pass=自身` の自己遷移要素となる (推移点 [3],[6]、[7] は閲覧→CopyDst) ことの未明文化 → Barrier に「使用状態推移点列であって GPU queue 発行可能な外部バリア列ではない」趣旨の doc 明文化 |
+| DC-5 | 観 | minimal_barriers の `retain(from!=to)` と `dedup_by` は構築規則上両方到達不能 (prev!=st のときのみ push/(resource,to) 連続重複は last_state 交互遷移で発生不能) → Python 証明のうえ防御維持+doc 注記 |
+| DC-6 | 観 | ノード名空文字・reads 内重複の no-op 性・空グラフの well-formed 性 (DC-2 assert は 0==0 で受理) 確認 → empty_graph テスト追加 |
+| DC-7 | 観 | `passes()`/`ScheduledPass.merge_ao`/`merge_water` は消費者ゼロの scaffold → 将来サブパス分割 wiring 用に温存+doc 注記 (削除は方針外) |
+
+検証: +6 strict テスト (feather 完全 schedule/8 要素推移列/barrier_count
+両モード/RMW pair/WAW+RAW+WAR chain4/empty) で厳密ピン置換し 1000 全緑。
+adversarial 3 系統全検出: (a) RAW-only 全順序逆戻し → 5 件が DC-2 assert
+(154 行) で RED + chain_4 も RED、(b) ×2 虚構逆戻し → honest_both_modes のみ
+RED (16≠8)、(c) WAW 欠落注入 → chain_4 のみ RED ([0,1] 同 wave 崩れ)。
+fmt: rspeed fmdiff で HEAD 逸脱 5 行 ⊆ 包含・自己起因 0 行 PASS (自己 5 行を
+正準化して解決)、警告 14/17/13 据え置き、san 0 findings、
+digest `004c1cf5fb17bfe8` rows=357 実測不変。

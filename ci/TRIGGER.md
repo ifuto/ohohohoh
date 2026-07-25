@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 137
+- count: 138
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -155,3 +155,4 @@
 - 2026-07-25 (count 135): wave 100 nanite_clusters 監査 (CY-1 len%3 fail-loud・CY-2 next_seed gcd 完全置換化 (静寂消失根治)・CY-3 非有限頂点遮断・CY-4 親鎖実配線・CY-5 NaN マスク遮断+doc 書換・CY-6 恒真テスト実質化・CY-7 max3 除去 計7項目、983 全緑+adversarial 3 系統+fmt 0 一致+警告据え置き+digest 不変) の CI 緑確認用
 - 2026-07-25 (count 136): wave 101 distant_lod 監査 (DA-1 奇数寸法縁脱落 fail-loud・DA-2 上面角 Y スワップ根治・DA-3 origin 崩壊+整数ドメイン化・DA-4 NaN 最遠逃走遮断・DA-5 量子化 round 化・DA-6 tie 後勝ち訂正・DA-7 doc 群 計7項目、989 全緑+adversarial 3 系統+fmt 規律検証+捕捉 21 件目 (深度式期待値誤)+digest 不変) の CI 緑確認用
 - 2026-07-25 (count 137): wave 102 palette_pack 監査 (DB-1 fallback 未実装虚偽訂正・DB-2 worst 1.80 倍膨張誠実化・DB-3 rev 非計上明記・DB-4 set 同値 no-op 化・DB-5/6/7 観察 計7項目、994 全緑+adversarial 3 系統+fmt 規律+ワイヤ語/メモリモデル厳密ピン+digest 不変) の CI 緑確認用
+- 2026-07-25 (count 138): wave 103 render_graph 監査 (DC-1 高: RAW-only 全順序依存で Feather 実グラフ真サイクル (translucent ↔ taa RMW) → Kahn 2 パス静寂脱落を forward-hazard 化で根治+完全ピン・DC-2 assert fail-loud・DC-3 barrier_count ×2 虚構正直化・DC-4..7 計7項目、1000 全緑+adversarial 3 系統全検出+fmt fmdiff PASS (自己 0)+警告 14/17/13 据え置き+digest 不変) と速度革命 (tools/rspeed.rs 統合 (expr/san/fmdiff/test/bench 等 9 機能・単一バイナリ ~3ms)+dev profile hybrid (deps opt0+gfx opt1+debug=0: フルビルド 38s/全テスト 150s)・mold/nextest asset host 遮断で見送り実測記録) の CI 緑確認用

@@ -400,7 +400,7 @@
 | DA-4 | 中 | lod_for_distance NaN が全比較 false で最遠 LOD 5 静寂逃走 → 有限・非負 assert (wave 71 BU-1 同型)+境界 12 点ピン |
 | DA-5 | 低 | Y 量子化 trunc で平均 0.5m 下落バイアス → f32::round 最近接化 (12.5→13/8.5→9 ピン) |
 | DA-6 | 低 | merge_4 タイ「先着」コメント虚偽 (実は max_by_key 仕様の後勝ち) → 訂正+0xBBBB 厳密ピン+意味論 6 ピン |
-| DA-7 | 低 | doc 群: 「小ãLODs」文字化け・skirt「4-8m」虚偽 (実 [1,4])・_lod 死引数・縁複製重み・n==0 不到達・half 命名嘘 訂正/除去 |
+| DA-7 | 低 | doc 群: 「小LODs」U+00E3 文字化け混入・skirt「4-8m」虚偽 (実 [1,4])・_lod 死引数・縁複製重み・n==0 不到達・half 命名嘘 訂正/除去 |
 | DB-1 | 低 | palette_pack doc「322 種超 16bit フォールバック」未実装虚偽 (vanilla 9bit 設計の化石) → 訂正 (bits≤12 完結の数学的証明+ピン) |
 | DB-2 | 低 | doc「最大 ~1/4」虚偽方向: 全 4096 相異で 14,760B = 1.8018 倍膨張 → worst-case 含む誠実表訂正 + 実測 bit ピン |
 | DB-3 | 低 | memory_bytes が rev HashMap 非計上で過小表示 → 永続層定義値と doc 明確化 |
@@ -408,6 +408,13 @@
 | DB-5 | 観 | get/set 座標 debug_assert: release 範囲外は (z+1,0) エイリアス → 据置+doc 契約 |
 | DB-6 | 観 | 語跨ぎなし pack (MC 1.16+ 同型)・needed_bits 境界ピン・read OOB loud 確認 |
 | DB-7 | 観 | パレット単調増加 doc 追認・ratio 空列 1.0 定義注記・stats_for 一次情報性 |
+| DC-1 | 高 | render_graph 依存構築が RAW のみ全順序ペアで実 Feather グラフが真のサイクル (translucent ↔ taa RMW 双方向) となり Kahn が 2 パス静寂脱落 (schedule=[0,1]/cost=6/barriers=2、弱テスト素通り) → forward-hazard 化 (i<j の RAW∪WAR∪WAW、構築上 DAG) + 完全ピン (schedule=[0,1,2,3]/cost=11/barriers 8) |
+| DC-2 | 中 | Kahn 残留ノード静寂脱落を止める防御なし → assert_eq!(schedule.len(), n) fail-loud (旧 RAW-only 逆戻し adversarial で 5 テスト捕捉を実証) |
+| DC-3 | 中 | barrier_count() が minimal `.max(1)` / non-minimal `len*2` の虚構メトリクス (実 8 を 16 と報告) → 両モード実本数正直化 (消費者 trace のみ) |
+| DC-4 | 低 | RMW パス内 read→write 進行 (after_pass=自身) の未明文化 → Barrier doc「使用状態推移点列で外部発行バリア列ではない」明文化 |
+| DC-5 | 観 | minimal の retain(from!=to)/dedup_by は構築上到達不能 (推移交互性) → 証明 doc 注記のうえ防御維持 |
+| DC-6 | 観 | 空グラフ well-formed 性・reads 重複 no-op 性確認 → empty_graph テスト追加 (DC-2 assert 0==0 受理) |
+| DC-7 | 観 | passes()/merge_ao/merge_water は消費者ゼロ scaffold → 将来 wiring 用温存+doc 注記 (削除方針外) |
 
 ---
 

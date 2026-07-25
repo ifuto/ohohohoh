@@ -66,6 +66,24 @@ panic = "abort"
 strip = true
 overflow-checks = false
 
+# dev プロファイル (2026-07-25 wave 103 速度革命):
+# debug=true(full debuginfo)→0 のみ。opt-level は 1 を**維持**する:
+# opt0 への変更は実測で却下した (rsift-opt-gfx の lib テスト全体 312s 中
+# 309s 以上が full_graph_wiring::strict_tests::tick_world_periodic_rebuild_
+# cross_instance_deterministic 1 本で、opt0 化でこの自重カーネル系テストが
+# timeout 90s を超過するほど遅化 = 実行時間支配のため opt0 は逆効果)。
+# debug=0 は rsift-api A/B でテストバイナリ 13.3MB→2.0MB (6.6x 縮小)、
+# フルビルド 10.56s→5.17s (2.04x 短縮) を実測。panic Location は debuginfo
+# 非依存のため失敗時情報量不変、debug-assertions/overflow-checks は継続有効。
+# リリース配布物 (profile.release) には一切影響しない。
 [profile.dev]
+opt-level = 0
+debug = 0
+
+# rsift-opt-gfx の自重カーネル系テスト (full_graph_wiring::strict_tests::tick_
+# world_periodic_rebuild_cross_instance_deterministic 等、全実行時間の 99% を
+# 占める実測 309s+/312s @opt0) の実行速度だけは opt1 を確保する。
+# registry 依存 (wgpu/zstd 等) は実行ホットパスに居ないため opt0 のまま =
+# フルビルド高速化 (実測 44s 級) とテスト実行速度の両立。
+[profile.dev.package.rsift-opt-gfx]
 opt-level = 1
-debug = true
