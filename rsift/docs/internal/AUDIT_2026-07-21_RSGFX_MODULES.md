@@ -5698,3 +5698,52 @@ f32 エミュレーション, RN-even 逐次再現) + 独立 Rust プローブ +
 - clustered_indices のユニーク頂点コンパクション (頂点キャッシュ効率)。
 - full_graph_wiring 側の三角構築が identity index (実 topology 配線は同
   ファイルの将来課題コメント参照) — render_pipeline 第 3 部監査に同梱。
+
+## DA. distant_lod.rs (wave 101, 2026-07-25)
+
+320 → 687 行。全行照合 + 消費者照合 (full_graph_wiring.rs:1123-1127 の
+lod_for_distance のみ配線、結果は `_distant_lod` に破棄 = 計測 scaffold、
+lib.rs:182 re-export。chunk_dists の全 3 供給経路 (render_pipeline:1016/
+1032/1050) は i32 座標 hypot 由来で有限・非負を照合 → DA-4 assert 非発火
+確認)。downsample/build/merge_4 は現状テストのみ消費 (DH メッシュ経路は
+未配線)。wide_static_bench digest 経路に非含有を照合 + 実測不変確認。
+全数値を Python 厳密シム (角窓・クランプ・複製重みまで同一論理) で機械検算。
+
+| DA-1 | 中 | downsample の奇数寸法で末尾列/行が 2x2 走査の範囲外となり縁カラムが次段へ静寂脱落 (doc「2 の累乗でなくてもよい」と矛盾) → 偶数 (≤1 除く) fail-loud + 構造不変量 samples.len()==w*h 明示 (誤領域静寂参照も同時根絶) |
+| DA-2 | 中 | 上面 quad の角高さスワップ: 頂点配置順 (x,z)→(x,z+1)→(x+1,z+1)→(x+1,z) に対し角 Y を [y00,y10,y11,y01] で供給 (正は [y00,y01,y11,y10]) → 傾斜のある全セルで上面がねじれたサドルになる静寂幾何破壊 (flat 地形テストでは検出不能) → 位置対応へ訂正 + 4 セル厳密 pos_packed ピン (Python シム確定) |
+| DA-3 | 中 | mkv の origin 設計破綻: ローカル座標 bx から origin を差し引いていたため origin≠0 のマップでは全頂点が負側へ飽和し 0 平面へ崩壊 + f32 world 座標化は |origin|>2^24 で精度欠落 + u16 clamp が両経路で静寂 → 整数ドメインのローカル pack へ再設計 (origin は GPU 側 uniform 前提を doc 明文化) + fail-loud 契約 (lod<16, extent ≤65535, セル数 ≤214,748,364 = 20 verts/セル u32 上限) |
+| DA-4 | 中 | lod_for_distance の NaN が全 < 比較を false にし最遠 LOD 5 へ静寂逃走 (近景最低詳細化) → 有限・非負 assert 遮断 (wave 71 BU-1 同型・現消費者経路非発火照合済) + 境界 12 点厳密ピン (全て「以上」次段側) |
+| DA-5 | 低 | mkv の Y 量子化 `y as i32` 切捨て = 近傍平均の .5 刻み補間値を平均 0.5m 分常に下落させるバイアス (LOD 段差 = スカートで塞ぐ相そのもの) → f32::round 最近接 (半は 0 から遠い側) 化 + 12.5→13/8.5→9 厳密ピン (旧 trunc 12/8) |
+| DA-6 | 低 | merge_4 タイ処理の doc 虚偽: テストコメント「tie は先着」は実挙動と逆 (max_by_key 公式仕様 = 同値最大の『最後』を返す → 後勝ち) → コメント訂正 + 後勝ち 0xBBBB 厳密ピン、absent の色は最多頻度不参加等 6 意味論ピン |
+| DA-7 | 低 | doc 群: 「小ãLODs」文字化け (U+00E3 混入) 訂正、skirt 深度「4-8m」→ 実式 min(4,max(min_y,1)) ∈ [1,4]m 訂正、neighbour_avg_y 死引数 _lod 除去 (map 段一致契約 doc 化)、縁クランプ複製重み注記、n==0 分岐の不到達性注記、「block review」不明瞭語訂正、half 命名嘘 (実は full cell) 解消 (cs/bx 整数化に同梱) |
+
+### 検証 (wave 101)
+- 989 全緑 (+6: 奇数/不変量 fail-loud+境界、上面角 16 語厳密ピン、量子化
+  round+深度式 4 ケース、LOD 境界 12+遮断 4、merge_4 意味論 6、extent/
+  origin/零次元契約)。既存 tie テストも 0xBBBB 厳密値へ強化 (doc 虚偽訂正)。
+- アドバーサリアル 3 系統全検出: (a) DA-2 角スワップ復活 → top_quad FAILED
+  (quantize も連鎖検出)、(b) DA-5 trunc 復活 → quantize FAILED (12 vs 13)、
+  (c) DA-4 assert 除去 → lod boundaries FAILED (NaN 静寂 5 化)。
+  固定版 ~/bak + rsift/bak (md5 63c7183d… 忠実復元 → 全緑)。
+  注入訓練 1 失敗記録: (b) 初回は struct 式途中に // コメントを差し後続
+  フィールドを構文上消去する不正注入を即検出 (コンパイル確認前に restore)
+  → wave 98/100 に続く「必ずコンパイルが通る旧形厳密再脆弱化」規律再確認。
+- fmt: HEAD 85 / 自分の hunk は全て rustfmt 正準形へ機械置換 (22 hunk)、
+  残偏差 14 行は内容一致で HEAD deviant 集合に完全包含 (既存温存検証済)。
+- 警告: opt-gfx lib 14 / lib-test 17 / api 13 据え置き (本変更で増分ゼロ)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- 機械検算 (Bash 規律): 角平均 4 セル全値 (クランプ複製重み込み)、量子化
+  12.5→13/8.5→9/6.0/9.5→10/11.5→12、u32 上限 = 4,294,967,295/20 =
+  214,748,364、深度式 ∈ [1,4] 表、max_by_key tie 仕様、extent/lod 境界値。
+- テスト赤=自己誤り捕捉 21 件目: quantize テスト初版が深度式を 4.0 と
+  読み違え min_y=1.0 で赤 → コード正 (深度 1.0 で sb=11.5→12) ・期待値誤
+  を確定してピン訂正 (コード無変更)。経緯をテストコメントへ誠実記録。
+
+### 残 (次 wave 以降の棚卸し)
+- DH メッシュ経路の実配線 (downsample/LodMesh::build はテストのみ消費;
+  full_graph_wiring の `_distant_lod` 破棄 scaffold = 同ファイル第 4 部と
+  併せて実効配線 or 誠実な downgrade 判断)。
+- origin_x/z の GPU uniform 実受け渡し (doc 契約のみ、受け手なし)。
+- スカート winding/外向法線の GPU 側一貫性 (backface 契約は render 配線時に
+  一次情報照合予定)。
+- 上面/スカート色の 4 近傍補間 (現状セル代表色を全面共有)。

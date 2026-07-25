@@ -394,6 +394,13 @@
 | CY-5 | 中 | cluster_should_draw doc 式に proj_factor 省略+「誤差う」誤記+clamp 未記載・f32::max NaN 非伝播で NaN cam→d=1.0 マスクの静寂誤カリング → 有限性 assert! (cam/proj>0/eps/error/sphere)+doc 完全書換 (厳密不等号・clamp 2 所・error=0 常時採用明記) |
 | CY-6 | 低 | error_metric_nonzero_for_parents が error>=0.0 恒真 assert (nonzero を何も検査せず) → meshlets[0].error>0+any(>0) 実質化 |
 | CY-7 | 低 | max3(a,b) が 2 引数 max (命名嘘) → 除去し f32::max 二項直接化 |
+| DA-1 | 中 | distant_lod downsample 奇数寸法で縁カラム静寂脱落 (doc と矛盾) → 偶数 fail-loud + samples.len()==w*h 構造不変量明示 |
+| DA-2 | 中 | 上面 quad 角 Y スワップ ([y00,y10,y11,y01] → 正 [y00,y01,y11,y10]): 傾斜全セルで上面ねじれの静寂幾何破壊 (flat テスト不可視) → 位置対応訂正+厳密ピン |
+| DA-3 | 中 | mkv origin 設計破綻 (origin≠0 で全頂点 0 平面崩壊) + f32 2^24 精度壁 + u16 静寂 clamp → 整数ドメイン ローカル pack 再設計 + fail-loud 契約 (lod<16/extent/セル数 u32) |
+| DA-4 | 中 | lod_for_distance NaN が全比較 false で最遠 LOD 5 静寂逃走 → 有限・非負 assert (wave 71 BU-1 同型)+境界 12 点ピン |
+| DA-5 | 低 | Y 量子化 trunc で平均 0.5m 下落バイアス → f32::round 最近接化 (12.5→13/8.5→9 ピン) |
+| DA-6 | 低 | merge_4 タイ「先着」コメント虚偽 (実は max_by_key 仕様の後勝ち) → 訂正+0xBBBB 厳密ピン+意味論 6 ピン |
+| DA-7 | 低 | doc 群: 「小ãLODs」文字化け・skirt「4-8m」虚偽 (実 [1,4])・_lod 死引数・縁複製重み・n==0 不到達・half 命名嘘 訂正/除去 |
 
 ---
 
