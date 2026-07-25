@@ -5964,6 +5964,45 @@ san 0、trailws 0 (全 src 走査)、digest `004c1cf5fb17bfe8` rows=357 実測�
 捕捉 25 (enum 層盲点)・捕捉 26 (off-by-one) は台帳特記の系列に継続番号で
 記録 (合計 26 件)。
 
+## DH. morton_order.rs (wave 108, 2026-07-25)
+
+251 → 451 行。消費者照合: **digest 経路含有** (wide_static_bench.rs:32 use
+split_by_3/compact_by_3・morton_split3_rt の acc 行が digest 直行)、
+full_graph_wiring.rs:477 (局所性 sort コード生成)・:1012 (encode_2d、本質
+no-op)、lbvh.rs 側は自前 part1by2 実装持ち (本モジュール未使用)、
+frame_worldgen の cs_morton は WGSL ミラー (精密ミラーテストは別経路)、
+rsift-sim 側 morton_encode2 も別実装でクレート外消費者ゼロ。
+検証: 仮設差分ファズ (3d: 境界 11+400 万乱で split/compact ≡ naive・
+encode/decode base≡fast 全入力 bitwise・2d: 100 万乱で 32 bit 完全往復・
+Grid SIZE=16 全 4,096 単射・削体 sort 新旧 64 種一致) → ビット代数本体の
+[中]/[高] 欠陥は不存在、欠陥は**契約領域に集中** (DH-1..7)。
+
+| DH-1 | 中 | 3D 系の実効ドメイン 10 bit/成分が静寂切捨てで doc 非記載。生きた被害者 full_graph_wiring:477 が 21 bit マスクで上位 11 bit 静寂消失 (局所性 sort キー衝突) → 挙動完全一致の明示化 (& 1023) + 契約 doc 公表 + 厳密ピン。adversarial (a) で「前置 & 0x3FF 自体が数学的冗長 (第 1 段チェーンが中央強制)」を構造証明 |
+| DH-2 | 低 | split_by_3/2 の `mut a` 未使用警告 2 件根絶 (lib 14→12・lib-test 17→15 を機械改善) |
+| DH-3 | 低 | ヘッダ「2D/3D BMI2 完全実装」虚偽 (2D は経路なし) + encode_bmi2 名称誤導の誠実化 |
+| DH-4 | 観 | 負座標 wrap 契約 (-1→1023) の doc 明文化 + encode/sort 厳密ピン |
+| DH-5 | 観 | 消費者ゼロ API 保持明記 + sort キー前計算最適化 (O(n log n)→O(n) 評価、新旧 64 種完全一致をファズ証明) + fast #[inline] |
+| DH-6 | 観 | Grid 契約明文化 (SIZE 冪/≤1024/4 GiB 注意) + 非冪 should_panic ピン |
+| DH-7 | 観 | 3 系統 Morton (本モジュール/lbvh::morton3/WGSL) の相互等価ピン追加 (境界・内域・wrap 200k で bitwise 一致、将来発散抑止) |
+
+**adversarial の誠実な記録**: (a) 前置マスク 0x3FF→0xFFFF 変体 → **検出不能**
+(第 1 段 `&0x030000FF` で bits 10+ が自然に死ぬ構造のため前置マスクは冗長 = 切
+捨て意味論は magic チェーンが中央強制)・(a') 第 4 段マスク に汚染 bit 追加 →
+**検出不能** (全 1024 入力で Python 構造照合 0 差分 = 汚染 bit 17 が payload
+非到達・decode 不可視)・**(a'') ミスシフト (x|x<<2 → x|x<<3) → 13 中 4 RED
+検出**・(b) sort マスク &1023→&2047 → **検出不能** (同理由で意味的中性、
+digest 視点でも不変)・(c) wiring マスク逆戻し 1023→0xF_FFFF → **検出不能**
+(この変体自体が prose 証明の裏付けとして digest PASS を直接確認)。あわせて
+「切捨て意味論は中央 split_by_3 に唯一集中し、呼出側マスク群は全て契約意図
+の表現である」ことが adversarial 各系統で相互実証された。自傷記録: (c) の
+儀式中に wiring 編集行を HEAD へ全戻しする git checkout 事故 → 同内容を
+文脈追記つきで厳密再適用 (事故自体を誠実記録)。fmt: HEAD 8 ⊇ 現 8・自己
+起因 0 (6 箇所正準化機械適用)・対象外既存逸脱 (41/66/196/265 行) は HEAD の
+まま保持、警告 14→12/17→15/api 13 (DH-2 正当改善)、san 0、trailws 0、
+digest `004c1cf5fb17bfe8` rows=357 実測不変 (digest 視点中性を (c) で実証)。
+テスト 13/13 ・**1025 全緑**。固定版 md5 7093e5ba11307dd2b40b2f9b6bb76258
+を adv cache・rsift/bak/ へ二重保存。
+
 
 抱き合わせ **rspeed 拡張**: san 簡体字集合 298→**452 字** (wave 105
 コミット名の誤字 (U+4E3A 混入、正: 再走査) 素通りが発端 — 候補を **cp932

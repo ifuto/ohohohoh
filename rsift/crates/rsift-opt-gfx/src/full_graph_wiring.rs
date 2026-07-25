@@ -474,11 +474,13 @@ impl FullGraphWiring {
         self.bump.reset();
         let codes: Vec<u64> =
             crate::rayon_job::parallel_map_chunks(inputs.chunk_keys.clone(), |(cx, cz)| {
-                crate::morton_order::morton_encode_3d(
-                    (cx as u32) & 0xF_FFFF,
-                    0,
-                    (cz as u32) & 0xF_FFFF,
-                )
+                // DH-1: morton_encode_3d は 10 bit/成分で静寂切捨て (wave 108 契約公表)。
+                // `& 0xF_FFFF` (21 bit) マスクの上位 11 bit は従来も到達していなかった
+                // (split_by_3 の magic チェーン第 1 段で消失 = 切捨ては中央強制。)
+                // — 挙動完全一致のまま意図を明示に置換 (局所性は「低 10 bit 域の
+                // Z-curve」として解釈する契約)。くわえて adversarial (c) で本行を
+                // 旧マスクに逆戻ししても digest 不変 (= 中立性) を実測確認済。
+                crate::morton_order::morton_encode_3d((cx as u32) & 1023, 0, (cz as u32) & 1023)
             });
         if let Some(ptr) = self.bump.alloc_slice::<u64>(codes.len().max(1)) {
             unsafe {

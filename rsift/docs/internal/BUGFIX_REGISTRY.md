@@ -436,6 +436,13 @@
 | DG-4 | 観 | `BitpackedSection` pub フィールドの不変量自壊危険 (data レイアウト↔bits_per_block・pal_id < palette.len()・rev↔palette 1:1) を doc 明文化 (読み取り専用契約) |
 | DG-5 | 観 | 挙動不変の strict ピン強化: 同値 set 完全 no-op (wave 102 DB-4 同型を Strict 化)・5bit 跨ぎセル spill 厳密往復 (cell 12 = word0:60 / word1:1)・33,000 状態 16bit 全遷移可逆 + 仮設差分ファズ (100k ops・20 境界×2 組・40,300 状態で幅 0→16 完全可逆) 全 Pass を検証記録として台帳化 |
 | DG-6 | 低 | **捕捉 26 件目**: 設計中の幅境界述語 (no-span 表現) が **2^k+1 側を区間外と呼ぶ off-by-one** — 機械検算 (n∈{17,33,65,…,32769} 代入で (w-1)<…≤… の両端評価) が出荷前捕捉 → 包含形 `2^(w-1) < n ≤ 2^w` で厳密ピン化 (誤述語自体は未出荷、17↔16 不遷移ゆえ既存単調性テストでは検出不能だった) |
+| DH-1 | 中 | morton_order 3D 系 (split_by_3/encode_3d/_fast/decode) の実効ドメイン **10 bit/成分 (0..=1023) が doc 非記載で静寂切捨て** — 生きた被害者 `full_graph_wiring:477` が `0xF_FFFF` (21 bit) マスクで渡し**上位 11 bit 静寂消失** (局所性 sort キー衝突・安定性により不具合確定なし)、`morton_sort_indices` の呼出側 `& 1023` 明示と契約非対称 → 挙動完全一致のまま wiring を & 1023 明示化 (「切捨ては split_by_3 magic チェーン第 1 段が中央強制で前置 `& 0x3FF` 自体も数学的冗長」を adversarial (a) 変体で構造証明) + 全ドメイン契約を各 fn doc 公表 + 切捨て厳密ピン |
+| DH-2 | 低 | `split_by_3`/`split_by_2` の `mut a` 未使用 (変異しない束縛) unused_mut 警告 2 件根絶 (lib 警告ベースライン 14→12・lib-test 17→15 を機械改善、api 13 不変) |
+| DH-3 | 低 | ヘッダ「BMI2 動的検出を用いた 2D/3D…完全実装」虚偽 (**2D に BMI2 経路は不存在**) + `morton_encode_bmi2` 名称誤導 (非対応 CPU でも SWAR 実行・非 x86_64 は dispatch 自体なし) の誠実化、SWAR≡BMI2 全入力 bitwise 一致を差分ファズ証明 |
+| DH-4 | 観 | 負座標 `i32 as u32 & 1023` wrap 契約 (-1→1023=Z 曲線高角、局所性喪失) を doc 明文化 + encode/sort 両経路の厳密ピン (消費者へ offset 正規化を要求する旨) |
+| DH-5 | 観 | 消費者ゼロ API の生存確認 (MortonGrid3D/morton_sort_indices/encode_bmi2/decode_*_fast/MortonOrderTest): 削除せず doc 明記 + **morton_sort_indices のキー前計算最適化** (比較毎再評価 O(n log n)→O(n)、安定性含む新旧完全一致を仮設ファズ 64 種で証明) + fast 系 #[inline] 付与 |
+| DH-6 | 観 | MortonGrid3D 契約明文化 (SIZE 冪/≤1024・10 bit 全単射・SIZE=1024 は T=u32 で 4 GiB 級注意) + 非冪 assert の should_panic ピン |
+| DH-7 | 観 | **3 系統 Morton (morton_order / lbvh::morton3 / WGSL cs_morton) の相互等価ピン不存在** — lbvh part1by2 は第 1 段マスクで 10 bit 化を内包 → 全 u32 ドメイン (境界・内域・wrap ランダム 200k) で bitwise 一致ピンを追加 (将来発散の抑止) |
 
 ---
 
