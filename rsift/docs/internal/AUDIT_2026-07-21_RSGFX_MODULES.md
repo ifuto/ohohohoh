@@ -5747,3 +5747,48 @@ lib.rs:182 re-export。chunk_dists の全 3 供給経路 (render_pipeline:1016/
 - スカート winding/外向法線の GPU 側一貫性 (backface 契約は render 配線時に
   一次情報照合予定)。
 - 上面/スカート色の 4 近傍補間 (現状セル代表色を全面共有)。
+
+## DB. palette_pack.rs (wave 102, 2026-07-25)
+
+308 → 464 行。全行照合 + 消費者照合 (full_graph_wiring:1002 from_blocks/
+1045 stats_for 実配線、pseudo_mc_bench:36/2515 メモリ報告表示、rsift_bench:
+17/97-98 encode+random access 計測。set() は消費者ゼロのため DB-4 は振る舞い
+安全側修正として自己完結)。wide_static_bench digest 経路に非含有を照合
+(bitpacked_section は別モジュール) + 実測不変確認。全数値を Python 機械検算。
+
+| DB-1 | 低 | doc「322 種超 → 直接 16bit 格納にフォールバック」は未実装の虚偽 (vanilla の 9bit 超グローバルパレット化の化石、needed_bits(322)=9 と整合)。実装は bits ≤ 12 (ユニーク ≤ 4096) で完結 = フォールバック不要が数学的に証明できる → doc 訂正 + 12bit 完結ピン |
+| DB-2 | 低 | doc「最大 ~1/4」は敵対入力で偽: 全 4096 相異では 12bit 語パディング損込み 14,760B = **1.8018 倍に膨張** (実測 bit ピン) → 「縮む」表を worst-case 含む誠実表へ訂正 (2 種 524B/16 種 2088B/322 種 5340B/4096 種 14760B) |
+| DB-3 | 低 | memory_bytes が rev HashMap (working map) を非計上で bench 表示値が過小に見える → 「永続層 (wire/disk 相当) 定義値」と doc 明確化 (rev はエントリあたり数十 B 別途存在の注記) |
+| DB-4 | 低 | set() の単一値セクション同値上書きで 64 語 (512B) 確保の静寂「単一値脱却」 (10B→522B、何も変わらないのに) → no-op 早期復帰化 + 同 arm の到達不能死にコード (grow_bits が脱却を常に先に行う) 除去。消費者ゼロのため安全側修正 |
+| DB-5 | 観 | get/set の座標 debug_assert: release 範囲外は (z+1,0) への静寂エイリアス読み/書き。hot path のため据置 + doc 契約明記 (呼出側保証) |
+| DB-6 | 観 | 語跨ぎなしパッキング (MC 1.16+ 同型)・from_blocks 2 パス正・read OOB パニック=loud・needed_bits 境界表ピン (11 値) |
+| DB-7 | 観 | パレット単調増加 (refcount なし = vanilla 同設計) doc 追認、ratio 空列 1.0 の定義注記、stats_for の各種実測値が一次情報である旨 |
+
+### 検証 (wave 102)
+- 994 全緑 (+5: needed_bits 境界表、メモリモデル 5 ケース+f64 ratio bit ピン
+  2 件、12bit ワイヤ語 4 値+全往復、DB-4 no-op ピン、12bit 完結ピン)。
+- アドバーサリアル 3 系統全検出: (a) DB-4 早期復帰除去+旧確保ブロック厳密
+  復活 → set_same FAILED (10B vs 522B)、(b) write/read オフセット同改竄
+  (内部一貫・外部非互換型) → wire_layout FAILED ほか連鎖、(c) needed_bits
+  n-1→n 過剰 1 化 → boundary FAILED ほか全連鎖。固定版 ~/bak + rsift/bak
+  (md5 4a2d9b03… 忠実復元 → 全緑)。注入訓練: (a) 初回 match arm カンマを
+  コメントが吞み構文エラー → コンパイル fail で検出・訂正版で厳密旧形再現。
+- fmt: HEAD minor 偏差 (tail コメント群) / 自分の hunk は正準形、残偏差 1 行
+  は HEAD deviant 内容に包含 (rustfmt 行末コメント整列挙動を 2 箇所発見、
+  コメント先行配置で構造解決)。
+- 警告: opt-gfx lib 14 / lib-test 17 / api 13 据え置き (増分ゼロ)。
+- wide_static_bench structural_digest `004c1cf5fb17bfe8` rows=357 不変。
+- 機械検算 (Bash 規律): needed_bits 12 値、words/bytes 5 ケース
+  (524/2088/5340/14760B)、f64 ratio bit 2 値 (0x3fb0600000000000/
+  0x3ffcd40000000000)、ワイヤ語 3 値、worst ratio=1.8017578125、
+  needed_bits(322)=9 化石整合、u32 境界安全。
+
+### 残 (次 wave 以降の棚卸し)
+- rev の統計ビュー (memory_bytes_total 等) — working map 込みの実メモリを
+  bench 表示へ出すかの設計判断 (現状永続層定義で誠実化済)。
+- セクション全体の再 pack (from_blocks 呼び直し) の wiring 側利用
+  (単調増加のパレットを定期圧縮)。
+- get/set の release 範囲外エイリアス — 低スペック配慮の debug_assert 方針は
+  据置、範囲外検査付き checked_get 亜種の追加は消費者要求に応じて。
+- Vanilla のグローバルパレット直接 id 形式 (9bit 超) 自体を実装するかは
+  Dh-vanilla 相互運用要件が出た時点で判断 (現状 12bit 完結で不足なし)。

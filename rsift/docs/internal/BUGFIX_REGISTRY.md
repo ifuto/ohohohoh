@@ -401,6 +401,13 @@
 | DA-5 | 低 | Y 量子化 trunc で平均 0.5m 下落バイアス → f32::round 最近接化 (12.5→13/8.5→9 ピン) |
 | DA-6 | 低 | merge_4 タイ「先着」コメント虚偽 (実は max_by_key 仕様の後勝ち) → 訂正+0xBBBB 厳密ピン+意味論 6 ピン |
 | DA-7 | 低 | doc 群: 「小ãLODs」文字化け・skirt「4-8m」虚偽 (実 [1,4])・_lod 死引数・縁複製重み・n==0 不到達・half 命名嘘 訂正/除去 |
+| DB-1 | 低 | palette_pack doc「322 種超 16bit フォールバック」未実装虚偽 (vanilla 9bit 設計の化石) → 訂正 (bits≤12 完結の数学的証明+ピン) |
+| DB-2 | 低 | doc「最大 ~1/4」虚偽方向: 全 4096 相異で 14,760B = 1.8018 倍膨張 → worst-case 含む誠実表訂正 + 実測 bit ピン |
+| DB-3 | 低 | memory_bytes が rev HashMap 非計上で過小表示 → 永続層定義値と doc 明確化 |
+| DB-4 | 低 | set 単一値同値上書きで 512B 静寂確保 (10B→522B no-op 不変で) → 早期復帰 no-op 化 + 到達不能死にコード除去 |
+| DB-5 | 観 | get/set 座標 debug_assert: release 範囲外は (z+1,0) エイリアス → 据置+doc 契約 |
+| DB-6 | 観 | 語跨ぎなし pack (MC 1.16+ 同型)・needed_bits 境界ピン・read OOB loud 確認 |
+| DB-7 | 観 | パレット単調増加 doc 追認・ratio 空列 1.0 定義注記・stats_for 一次情報性 |
 
 ---
 
