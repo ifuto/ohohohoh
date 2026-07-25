@@ -5929,6 +5929,42 @@ golden (修正版 md5 化済) から喪失区間を機械抽出して復元 (喪
 230eec01293b0f9b4d01431b9f22d224 を adv cache・rsift/bak/ へ二重保存
 (捕捉 24 件目訂正 + assert 行 fmdiff 正準化後の最終版、265→370→373 行)。
 
+## DG. bitpacked_section.rs (wave 107, 2026-07-25)
+
+254 → 389 行。消費者照合: **digest 経路含有** (wide_static_bench.rs:22 use・
+408-430 `bitpacked_setfill` の `footprint=*B sum=*` 行が digest 直行 →
+幅成長政策・footprint 式は digest-可観測で据置義務)、full_graph_wiring.rs:1005
+は `CompactChunkSection::new_air()` の非発火利用のみ、クレート外消費者ゼロ。
+エンコード本体のビット代数 (単一/跨ぎ両ブランチのクリアマスク・拡幅 OR 転写・
+spill の ceil 不変量・pal_id 分割代数学) を手証明で全成立後、**参照モデルとの
+差分ファズ (仮設 examples/dg_fuzz_tmp.rs、非コミット)** で決定的有効性を確認:
+100k ランダム ops・幅境界 20×2 掃引・40,300 連番状態挿入で **幅 0→4→…→16 bit
+全遷移の完全可逆**、[中]/[高] ロジック欠陥は存在しなかった (成熟の実測)。
+検出は doc 虚偽・静寂破壊経路の設計級 (DG-1..6、捕捉 25・26 件目を含む)。
+
+| DG-1 | 低 | ヘッダ doc 虚偽群: 存在しない型名 `SingleValueSection`・「4..=15 bit」(実到達 16 を phaseC で実測、16 打止めは u16 ドメイン構造証明)・「4,000倍軽量化」(正確に **4,096 倍**) を訂正 + vanilla direct 移行は一次情報未照合と明記・vanilla 互換入出力非存在の消費者警告 |
+| DG-2 | 低 | `memory_footprint_bytes` が `rev` HashMap ヒープ非計上 (多数状態時は本体超過し得る) — digest 行 `footprint=*B` 不変のため式据置・契約 doc 化 (実メモリ管理用途禁止) |
+| DG-3 | 低 | 静寂破壊 2 経路 fail-loud 化: `idx` 範囲外座標の**別セル静寂エイリアス** (x=16→(0,y+1,z))・`get` `unwrap_or(0)` の域外 pal_id 静寂 air 化 → debug_assert + should_panic 2 ピン。**捕捉 25 件目**: 初版ピンが SingleValue 経路 (座標非参照) で不発をテスト赤が捕捉 → 関門を enum ディスパッチ層へ移設 |
+| DG-4 | 観 | pub フィールド不変量 (レイアウト↔bits・pal_id < len・rev↔palette 1:1) 自壊危険の doc 明文化 |
+| DG-5 | 観 | strict ピン強化: 同値 set 完全 no-op (DB-4 同型)・5bit 跨ぎ cell 12 spill 厳密往復・33,000 状態 16bit 全遷移可逆・差分ファズ全 Pass 記録 |
+| DG-6 | 低 | **捕捉 26 件目**: 設計中の幅境界述語 (no-span) が 2^k+1 側を区間外と呼ぶ **off-by-one** — 機械検算 (n∈{17,33,…,32769} 代入) が出荷前捕捉 → 包含形 `2^(w-1) < n ≤ 2^w` で厳密ピン化 (17↔16 不遷移ゆえ既存単調性テストでは検出不能) |
+
+検証: +5 strict テストでモジュール 9・**1017 全緑** (168.14s)。**adversarial
+3 系統**: (a) enum 層 assert 除去 → out_of_range RED、(b) pal_id assert 除去
+→ corrupted_pal_id RED、各復元 md5 照合 MD5-VERIFIED 2 回、**(c) idx 層
+assert のみ除去 → 検出不能を実測** (enum 層関門経由検査では非発火。
+`BitpackedSection` 直接 API 誤用への防御第 2 層として保持すると決定し doc に
+役割・検出不能の事実を誠実記録)。fmt: HEAD 0 / 自己 0 PASS (追加ブロックの
+正準化: フォーマット文字列 `{w-1}` 式不可を変数分割で根治・配列 12 要素の
+rustfmt 正準改行を忠実適用)、警告 14/17/13 据え置き (trace_section デッド
+コード警告は wave 99 以来の基線内・契約側で担保の設計として誠実注記のみ)、
+san 0、trailws 0 (全 src 走査)、digest `004c1cf5fb17bfe8` rows=357 実測不変
+(footprint/sum 供給経路の据置義務を満たす)。固定版 md5
+3158569caf46651142db11f03678ac0c を adv cache・rsift/bak/ へ二重保存。
+捕捉 25 (enum 層盲点)・捕捉 26 (off-by-one) は台帳特記の系列に継続番号で
+記録 (合計 26 件)。
+
+
 抱き合わせ **rspeed 拡張**: san 簡体字集合 298→**452 字** (wave 105
 コミット名の誤字 (U+4E3A 混入、正: 再走査) 素通りが発端 — 候補を **cp932
 エンコード不可 = JIS X 0208 非含有 = 日本文出現不能** の機械フィルタで

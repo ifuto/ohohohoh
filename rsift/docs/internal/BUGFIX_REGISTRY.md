@@ -430,6 +430,12 @@
 | DF-3 | 低 | doc 群正直化 5 件: ヘッダ「skylight propagation」は sky flood 未実装 (ニブルは格納のみ) ・消灯/減衰伝播未実装 (除去 BFS 要) を契約明記・opaque 点灯セル自身の発光設計・wrapping_sub の underflow→巨大値→フィルタの安全性・writes ≤ 15×4,096 = 61,440 の u32 非飽和証明 |
 | DF-4 | 観 | propagate_dirty 戻り値を改善 pop 数 → **改善書込み数**へ意味変更 (外部消費者ゼロを照合済)+ 2 emitters シナリオ総書込み **2,639** の厳密ピン (Python 独立シム照合) |
 | DF-5 | 中 | full re-seed (昇順) + 小 max_steps で予算が先頭冪等セルに燃え frontier が進まない **飢餓 (livelock)** — Python 検算中に budget=64 で不収束タイムアウトを実測発見 → writes-budget 設計で構造排除 (budget-before・冪等再訪は予算消費せず・budget 64 → 50 calls 収束・最終 packed bit 一致を Python 先行検算) |
+| DG-1 | 低 | bitpacked_section ヘッダ doc 虚偽群: 存在しない型名 `SingleValueSection` (実体は `CompactChunkSection::{SingleValue,Bitpacked}`)・「4..=15 bit」(実到達 16 を差分ファズ phaseC で実測: 33,000+ 状態で 15→16 遷移。上限は u16 ドメイン 65,536 状態 ≤ 2^16 の構造証明より **16 打止め・17 拡張は到達不能**)・「4,000倍軽量化」(正確に 8,192/2 = **4,096 倍**) を一括訂正 + vanilla 直接フォーマット移行は一次情報未照合と明記・互換入出力経路非存在の消費者警告 |
+| DG-2 | 低 | `memory_footprint_bytes` が `rev` HashMap ヒープ (バケット/制御配列) を非計上 — 多数状態時は本体超過し得る誤差だが digest 行 `footprint=*B` 不変のため定義式据置・契約を doc 明記 (実メモリ管理用途禁止) |
+| DG-3 | 低 | 静寂破壊 2 経路の fail-loud 化: ①`idx` の範囲外座標が加算で**別セルへ静寂エイリアス** (x=16 → (0,y+1,z) 同一 index)、②`get` の `unwrap_or(0)` が (pub フィールド破壊経由のみ到達の) 域外 pal_id を静寂 air (=0) 化 → debug_assert (release/bench 計時無干渉・戻り値契約不変) + should_panic 2 ピン。**捕捉 25 件目**: 初版ピンが SingleValue 経路 (座標非参照) で不発 → テスト赤が enum 層盲点を捕捉、関門を enum ディスパッチ層へ移設 (idx 層 assert は `BitpackedSection` 直接 API 防御の第 2 層として保持) |
+| DG-4 | 観 | `BitpackedSection` pub フィールドの不変量自壊危険 (data レイアウト↔bits_per_block・pal_id < palette.len()・rev↔palette 1:1) を doc 明文化 (読み取り専用契約) |
+| DG-5 | 観 | 挙動不変の strict ピン強化: 同値 set 完全 no-op (wave 102 DB-4 同型を Strict 化)・5bit 跨ぎセル spill 厳密往復 (cell 12 = word0:60 / word1:1)・33,000 状態 16bit 全遷移可逆 + 仮設差分ファズ (100k ops・20 境界×2 組・40,300 状態で幅 0→16 完全可逆) 全 Pass を検証記録として台帳化 |
+| DG-6 | 低 | **捕捉 26 件目**: 設計中の幅境界述語 (no-span 表現) が **2^k+1 側を区間外と呼ぶ off-by-one** — 機械検算 (n∈{17,33,65,…,32769} 代入で (w-1)<…≤… の両端評価) が出荷前捕捉 → 包含形 `2^(w-1) < n ≤ 2^w` で厳密ピン化 (誤述語自体は未出荷、17↔16 不遷移ゆえ既存単調性テストでは検出不能だった) |
 
 ---
 
