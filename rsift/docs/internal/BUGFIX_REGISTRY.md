@@ -425,6 +425,11 @@
 | DE-3 | 低 | 内外範囲判定の else-if が同値条件の再走査 (全軸 0<=v<16 の否定 ≡ 何れか v<0||v>=16 = 排反完備) → else 化 + 証明 doc (挙動完全等価) |
 | DE-4 | 観 | doc 群: branchless_axis の tie 優先度 X>Y>Z (argmin 最小添字) 明文化、VoxelHit 全フィールド doc、trace_section の max_steps/steps/範囲外即 None/air=0 契約、eps=1e-8 の根拠 (16³ 最長踏破 48 voxel で drift≦4.8e-7 voxel = 観測不能)、WGSL_BRANCHLESS_DDA は消費者ゼロ scaffold で t_max のみ進行・voxel 座標更新を欠く不完全対称の正直注記 (配線時統一)、NaN 非発生証明 (有限入力では DE-1 遮断後 0·INF 経路なし) |
 | DE-5 | 観 | テスト未カバー経路の strict 化: 負方向 slab 対称ピン (vz 15→6 steps=9) 追加 (既存テストは全て正方向のみで step=-1 経路未被験だった) + trailws 抱き合わせ: compute_light_prop.rs:48/56 (LIGHT_PROP_WGSL 生文字列内インデント空白行、WGSL は空白非感性・byte ピン無しを照合済)・entity_culling.rs:419 の trailing whitespace 3 件除去 (HEAD 逸脱 12→11 も 1 件改善) |
+| DF-1 | 中 | light_cache propagate_dirty の打ち切りが **pop 後 break でキュー先頭を未処理破棄**、かつ max_steps=0/丁度境界で「queue 空 × 未処理残」でも **dirty=false に確定** → 以後の呼出が `!dirty` 早退で**永久 no-op = ライト未完成のまま完了を詐称** (既存 dirty_cleared テストは dirty 未検査で素通りしていた) → VecDeque 廃止・writes-budget (budget-before) label-correcting pass へ再設計 (dirty = truncated に忠実) + 厳密ピン (0 steps dirty 維持・継続で収束到達) |
+| DF-2 | 低 | SectionLights::set の同値上書きが都度 dirty を宣言 → 無駄 re-flood 誘発 (wave 102 DB-4 同型) → 同値 no-op 早期復帰 + dirty 非汚染ピン (packed 不変も実証) |
+| DF-3 | 低 | doc 群正直化 5 件: ヘッダ「skylight propagation」は sky flood 未実装 (ニブルは格納のみ) ・消灯/減衰伝播未実装 (除去 BFS 要) を契約明記・opaque 点灯セル自身の発光設計・wrapping_sub の underflow→巨大値→フィルタの安全性・writes ≤ 15×4,096 = 61,440 の u32 非飽和証明 |
+| DF-4 | 観 | propagate_dirty 戻り値を改善 pop 数 → **改善書込み数**へ意味変更 (外部消費者ゼロを照合済)+ 2 emitters シナリオ総書込み **2,639** の厳密ピン (Python 独立シム照合) |
+| DF-5 | 中 | full re-seed (昇順) + 小 max_steps で予算が先頭冪等セルに燃え frontier が進まない **飢餓 (livelock)** — Python 検算中に budget=64 で不収束タイムアウトを実測発見 → writes-budget 設計で構造排除 (budget-before・冪等再訪は予算消費せず・budget 64 → 50 calls 収束・最終 packed bit 一致を Python 先行検算) |
 
 ---
 

@@ -1422,6 +1422,19 @@ fn cmd_modpow(a: &[String]) -> i32 {
     0
 }
 
+/// 拡張ユークリッドによる a^{-1} mod m (gcd(a,m)=1 のみ Some)。
+/// cmd_invmod と selftest が同一定義を共有するための抽出 (wave 106)
+fn modinv_i128(a: i128, m: i128) -> Option<i128> {
+    let (mut t, mut nt) = (0i128, 1i128);
+    let (mut r, mut nr) = (m, a.rem_euclid(m));
+    while nr != 0 {
+        let q = r / nr;
+        (t, nt) = (nt, t - q * nt);
+        (r, nr) = (nr, r - q * nr);
+    }
+    (r == 1).then(|| t.rem_euclid(m))
+}
+
 fn cmd_invmod(a: &[String]) -> i32 {
     // invmod <a> <m> : 拡張ユークリッド (gcd(a,m)=1 必要)
     if a.len() != 2 {
@@ -1432,26 +1445,19 @@ fn cmd_invmod(a: &[String]) -> i32 {
         eprintln!("整数で指定");
         return 2;
     };
-    let (mut t, mut nt) = (0i128, 1i128);
-    let (mut r, mut nr) = (m, x.rem_euclid(m));
-    while nr != 0 {
-        let q = r / nr;
-        (t, nt) = (nt, t - q * nt);
-        (r, nr) = (nr, r - q * nr);
-    }
-    if r != 1 {
-        eprintln!("逆元なし (gcd={r})");
+    let Some(inv) = modinv_i128(x, m) else {
+        eprintln!("逆元なし (gcd={})", gcd_i128(x, m));
         return 1;
-    }
+    };
     println!(
         "inverse({} , {}) = {} (検算: {}×{} mod {} = {})",
         a[0],
         a[1],
-        t.rem_euclid(m),
+        inv,
         a[0],
-        t.rem_euclid(m),
+        inv,
         a[1],
-        (x.rem_euclid(m) * t.rem_euclid(m)).rem_euclid(m)
+        (x.rem_euclid(m) * inv).rem_euclid(m)
     );
     0
 }
@@ -5015,7 +5021,33 @@ fn cmd_selftest(_a: &[String]) -> i32 {
         gcd_i128(1071, 1029).to_string(),
         "21".into(),
     );
-    // invmod
+    // invmod (孤立コメントとして残っていた忘れ物 pin を回収 — wave 106。
+    // 3×81 = 243 = 2×121+1)
+    chk(
+        "invmod(3,121)",
+        modinv_i128(3, 121)
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "None".into()),
+        "81".into(),
+    );
+    // san 簡体字集合 (wave 106 で 298 → 452 字拡張) の回帰ピン:
+    // U+4E3A (コミットメッセージ誤字で素通りした字) を検出し、日本語使用字は誤検出しない
+    let sf = san_scan_text("安全=\u{4e3a}重確認\n");
+    chk(
+        "san 簡体字検出 (U+4E3A)",
+        sf.iter()
+            .filter(|f| f.rule == "SIMPLIFIED")
+            .count()
+            .to_string(),
+        "1".into(),
+    );
+    chk(
+        "san 日本文誤検出なし",
+        san_scan_text("安全確認・一万円の処理結果\n")
+            .len()
+            .to_string(),
+        "0".into(),
+    );
     println!("selftest: {fails} FAIL");
     if fails > 0 {
         1
@@ -5127,7 +5159,17 @@ const SIMPLIFIED_SURE: &str = concat!(
     "\u{9530}\u{9540}\u{9547}\u{955c}\u{9570}\u{7ea2}\u{7ea6}\u{7ea7}\u{7eaa}\u{7eab}\u{7eac}\u{7eaf}\u{7eb1}\u{7eb2}\u{7eb3}\u{7eb5}\u{7eb6}\u{7eb7}\u{7eb8}\u{7eb9}\u{7eba}\u{7ebd}\u{7ebf}\u{7ec3}",
     "\u{7ec4}\u{7ec5}\u{7ec6}\u{7ec7}\u{7ec8}\u{7eca}\u{7ecd}\u{7ece}\u{7ecf}\u{7ed1}\u{7ed2}\u{7ed3}\u{7ed5}\u{7ed8}\u{7ed9}\u{7eda}\u{7edd}\u{7edf}\u{7ee2}\u{7ee3}\u{7ee7}\u{7ee9}\u{7eea}\u{7eeb}",
     "\u{7eed}\u{7eee}\u{7ef3}\u{7ef4}\u{7ef5}\u{7ef7}\u{7ef8}\u{7efc}\u{7efd}\u{7eff}\u{7f00}\u{7f06}\u{7f0e}\u{7f13}\u{7f14}\u{7f15}\u{7f16}\u{7f18}\u{7f1a}\u{7f20}\u{7f28}\u{7f29}\u{7f2a}\u{9965}",
-    "\u{9968}\u{996a}\u{996f}\u{9980}\u{9981}\u{9988}\u{998b}\u{998d}\u{998f}\u{9992}"
+    "\u{9968}\u{996a}\u{996f}\u{9980}\u{9981}\u{9988}\u{998b}\u{998d}\u{998f}\u{9992}",
+    // wave 106 追加 154 字 (コミットメッセージ簡体字誤字 (U+4E3A) が san を素通りした経緯で拡張。
+    // 候補 426 字 → cp932 エンコード不可 (= JIS X 0208 非含有 = 日本文出現不能) の
+    // 機械的フィルタで 226 字に確定 → 既存 298 字と重複除去で +154 字 = 計 452 字。
+    // 写学数据个网没体 等の日本語使用字は同フィルタで機械的に除外済)
+    "\u{4e3a}\u{6c49}\u{89c1}\u{5173}\u{53d1}\u{79cd}\u{6837}\u{4e60}\u{65f6}\u{957f}\u{5e93}\u{5904}\u{73b0}\u{5f00}\u{4e48}\u{8fd9}\u{4ebf}\u{9f99}\u{5b9e}\u{56fe}\u{5706}\u{4e50}\u{9a7f}\u{6cfd}\u{62e9}\u{5bf9}",
+    "\u{5e94}\u{4e49}\u{52a1}\u{52a8}\u{7535}\u{84dd}\u{5458}\u{4f17}\u{4f18}\u{4fe9}\u{4eec}\u{4ec5}\u{4f1e}\u{4f1f}\u{4f20}\u{4f24}\u{4f26}\u{4f2a}\u{5e01}\u{5e05}\u{5e08}\u{5e10}\u{5e26}\u{5e2e}\u{5e86}\u{5e90}",
+    "\u{5e99}\u{5e9f}\u{5f02}\u{5f20}\u{5f39}\u{5f52}\u{5f55}\u{5f7b}\u{590d}\u{5fc6}\u{5fe7}\u{6000}\u{6001}\u{6002}\u{603b}\u{6073}\u{6076}\u{60af}\u{60ef}\u{6124}\u{6151}\u{61a8}\u{8ba2}\u{8bbc}\u{8bbd}\u{8bc0}",
+    "\u{7978}\u{79bb}\u{79ef}\u{7a02}\u{7a23}\u{7a33}\u{7a77}\u{7a8d}\u{7a91}\u{7a9c}\u{7a9d}\u{7ade}\u{7b3a}\u{7b5b}\u{7b77}\u{7b79}\u{7b7e}\u{7b80}\u{7bd3}\u{7ba9}\u{7c7b}\u{7caa}\u{7d27}\u{7ea0}\u{7ea4}\u{7f19}",
+    "\u{7f1d}\u{7f24}\u{7f34}\u{7f81}\u{7f9f}\u{7fd8}\u{800d}\u{529e}\u{529d}\u{52b2}\u{52b3}\u{52bf}\u{52cb}\u{534f}\u{5356}\u{5355}\u{5361}\u{5367}\u{536b}\u{5385}\u{5386}\u{538b}\u{538c}\u{5395}\u{53a2}\u{53bf}",
+    "\u{53d8}\u{53e0}\u{53e6}\u{53f9}\u{5413}\u{5415}\u{5417}\u{542f}\u{5434}\u{5455}\u{545b}\u{545c}\u{5462}\u{5482}\u{54b1}\u{54cd}\u{54d1}\u{54d7}\u{54df}"
 );
 
 struct Finding {
@@ -5143,6 +5185,11 @@ fn san_scan_file(p: &Path) -> Result<Vec<Finding>, String> {
         Ok(t) => t,
         Err(_) => return Err("非 UTF-8 (バイナリ/文字コード異常)".into()),
     };
+    Ok(san_scan_text(&text))
+}
+
+/// san の走査核 (ファイル IO から分離 — selftest で直接ピン可能)
+fn san_scan_text(text: &str) -> Vec<Finding> {
     let mut out = Vec::new();
     let mut line = 1usize;
     let mut col = 0usize;
@@ -5199,7 +5246,7 @@ fn san_scan_file(p: &Path) -> Result<Vec<Finding>, String> {
             msg: "末尾改行なし".into(),
         });
     }
-    Ok(out)
+    out
 }
 
 fn cmd_san(args: &[String]) -> i32 {
@@ -5963,7 +6010,7 @@ fn help() {
   percentile|histogram <値…|file> 分位数/ヒストグラム\n\
 \n\
 [ソーススキャナ系]\n\
-  san <file|dir>…        不可視 12 種/CRLF/末尾改行/U+FFFD・U+00E3/簡体字 298 字\n\
+  san <file|dir>…        不可視 12 種/CRLF/末尾改行/U+FFFD・U+00E3/簡体字 452 字\n\
   find [--count] <n> <p> 高速リテラル検索 / grep2 <A> <B> 共起分類\n\
   magic [dir] | floatlits | casts | clamps | divmod | shifts | unwraps\n\
   tests-index [crate] / test-find <str> / test-count [dir]  #[test] 索引・検索・積算\n\

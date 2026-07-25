@@ -5881,3 +5881,63 @@ adv-save が原版ゴールデンだったため一時的に修正版消失 → 
 branchless_dda 起因 0、san 0、trailws 0 (全 src 走査)、digest
 `004c1cf5fb17bfe8` rows=357 実測不変。固定版 md5
 a6834c7d0fff4eaa5a70d8136326fc82 を adv cache・rsift/bak/ へ二重保存。
+
+## DF. light_cache.rs (wave 106, 2026-07-25)
+
+265 → 370 行。**propagate_dirty の実消費者はモジュール内テストのみ**を照合:
+render_pipeline.rs は LightPropagationCache の保持 (22/130)・初期化 (269)・
+mark_dirty (1250) までで propagate 非呼出、examples/wide_static_bench.rs は
+set_emitter:749/get_light:758 のみで digest 経路非発火、rsift-sim
+lighting/mod.rs:174 の同名メソッドは別クレート別実装 (無関係)。旧 VecDeque
+flood の段階収束系を **writes-budget (budget-before) label-correcting
+pass** へ根治: 各呼出は i=0..4,096 全走査の pass 反復、改善書込みのみ予算
+max_steps を消費、改善は各セル高々 15 回 (値域 1..=15) → 総数 ≤ 15×4,096
+= 61,440 (u32 飽和なし) で必終了、`sec.dirty = truncated` (打ち切り時のみ
+true の忠実契約)。
+
+| DF-1 | 中 | 打ち切りが **pop 後 break でキュー先頭を未処理破棄**、かつ max_steps=0/丁度境界で「queue 空 × 未処理残」でも **dirty=false に確定** → 以後の呼出が `!dirty` 早退で**永久 no-op = ライト未完成のまま収束詐称** (既存 dirty_cleared テストは dirty 未検査で素通り) → writes-budget 設計で根治 + 厳密ピン (0 steps で 0 writes・dirty 維持・継続呼出で収束到達 14) |
+| DF-2 | 低 | SectionLights::set の同値上書きが都度 dirty 宣言 → 無駄 re-flood (wave 102 DB-4 同型) → 同値 no-op 早期復帰 + dirty 非汚染・packed 不変ピン |
+| DF-3 | 低 | doc 群正直化 5 件: ヘッダ「skylight propagation」は sky flood **未実装** (ニブルは格納のみ、伝播しない)・消灯/減衰は除去 BFS 未実装を契約明記・opaque 点灯セル自身の発光設計 (MC 光源ブロック相当)・wrapping_sub の underflow→巨大値→`>= SEC` フィルタ安全性・writes ≤ 61,440 の非飽和証明 |
+| DF-4 | 観 | 戻り値を改善 pop 数 → **改善書込み数**へ意味変更 (外部消費者ゼロ照合済) + 2 emitters シナリオ全量書込み **2,639** の厳密ピン (Python 独立シム一致、11 improving passes) |
+| DF-5 | 中 | full re-seed (昇順) + 小 max_steps で予算が先頭冪等セルに燃え frontier 不進の **飢餓 (livelock)** — Python 検算が budget=64 で不収束タイムアウトを実測発見 → writes-budget 設計で構造排除 (冪等再訪は予算非消費、budget-before 判定) |
+
+検証: +3 strict テスト (zero_steps_preserves_dirty_and_later_converges・
+small_budget_truncation_still_converges (writes=2,639 ピン・200 call 上限・
+一括 flood との最終 packed bit 一致)・noop_set_does_not_remark_dirty) で
+モジュール 9 テスト・**1012 全緑** (165.44s)。**全期待値を Python 独立シム
+機械検算**: 全量 writes=2,639・budget=64 → **50 calls 収束・総 writes
+3,164・最終 packed bit 一致**・点灯セル 2,641。**adversarial 3 系統全検出**:
+(a) 旧 queue 実装厳密逆戻し (git HEAD 抽出) → zero_steps+small_budget RED、
+(b) elision 除去 → noop RED、(c) budget-after 変体 (書込み後に予算超過判定)
+→ dirty_cleared+zero_steps RED、各復元は adv 実施時点 golden (md5 b7568466)
+照合 3 回 MD5-VERIFIED。
+**捕捉 23 件目**: 初版 small_budget テストの `assert!(calls >= 2)` は
+「打ち切り有りなら複数回必要」との経験則断言だったが実機 1 call 収束で
+RED 自己捕捉 → Python 機械検算で真値 (50 calls) 確定の上で設計を
+再確定。**捕捉 24 件目**: 経験則由来の assert メッセージ「51 calls 級」を
+Python 再検算が捕捉 → 確定値「50 calls」へ訂正 (watch: 本節記載直前に
+同一計算を再実行して数値の読み違いゼロを確認、doc コメント (50 calls) と
+assert メッセージ (51 級) の微細不一致は訂正済)。**儀式事故の誠実記録**:
+propagate_dirty 書換えの python splice が end アンカー誤認で impl 閉括弧
++mod tests+strict 冒頭 5 テストを吞み込み (コンパイルエラー 3 件) → adv
+golden (修正版 md5 化済) から喪失区間を機械抽出して復元 (喪失ゼロ、
+「adv-save で修正版 golden 化 → adversarial 着手」の儀式順序が喪失耐性を
+与えることを再実証)。fmt: fmdiff HEAD 0 ⊇ 現 0・自己起因 0 PASS
+(スプライス由来の空白行事故を 3 段で根治)、警告 14/17/13 据え置き
+(light_cache 起因 0)、san 0、trailws 0 (全 src 走査)、digest
+`004c1cf5fb17bfe8` rows=357 実測不変。固定版 md5
+230eec01293b0f9b4d01431b9f22d224 を adv cache・rsift/bak/ へ二重保存
+(捕捉 24 件目訂正 + assert 行 fmdiff 正準化後の最終版、265→370→373 行)。
+
+抱き合わせ **rspeed 拡張**: san 簡体字集合 298→**452 字** (wave 105
+コミット名の誤字 (U+4E3A 混入、正: 再走査) 素通りが発端 — 候補を **cp932
+エンコード不可 = JIS X 0208 非含有 = 日本文出現不能** の機械フィルタで
+226 字に確定、重複除去 +154 字、写/学/数/据/个/网/没/体/万/与/那/出/中/
+理/文 は日本語使用字として機械除外 (手動選定の過誤を機械が訂正)、
+`san_scan_text(&str)` 抽出で selftest 直接ピン可能化、`modinv_i128` 抽出で
+cmd_invmod 共有化 (**孤立コメント `// invmod` の忘れ物 pin 回収**)、
+selftest 18→**21 ピン** 全 PASS・rustfmt FMT_OK・rustc 警告 0・
+/home/user/bin/rspeed 再デプロイ。実機検証: 「安全=U+4E3A 確認」の短文から
+`san: [SIMPLIFIED] 簡体字 U+4E3A` 検出を確認 (以後は文字自体を引用せず
+コードポイント表記 — 本文書への再混入を san 自傷 3 件で契機に恒常化)。
+wave 105 件名の誤字は TRIGGER 142 注記で訂正記録。

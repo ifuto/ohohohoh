@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 141
+- count: 142
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -159,3 +159,4 @@
 - 2026-07-25 (count 139): rspeed v2 大拡張 (9→115 機能: 厳密数値 27/スキャナ 24/リポジトリ 28/統計・グラフィクス 27、MD5 自前実装照合・selftest 18 ピン・seal 全ゲート PASS、開発中自己捕捉 6 件根治 (morton 定数静寂ゼロ化・parse_u64_auto hex 誤読・書込み静寂スロー 9 サイト write_loud 化等)) の CI 緑確認用
 - 2026-07-25 (count 140): wave 104 bench_harness 監査 (DD-1 record 末尾 fine スロット静寂飽和で percentile 粗フォールバック死にコード化+超過サンプル過小報告の二重虚偽根治・DD-2 run_timed fine 表固定 60M us=480MB/回確保 → max(60ms,target_ms)・1s cap 化 (最大 8MB、商 59.99994… 厳密ピン)・DD-3 percentile p=0 の want=0 未観測 0us 虚偽 → nearest-rank max(1) 化・DD-4 doc/label 虚偽群 ([0..10)/">=10s"/fine メモリ契約) 訂正・DD-5 ascii を rsift_bench markdown へ消費者配線+証明 doc 5 件 計5項目、+4 strict テスト 1004 全緑・adversarial 3 系統全検出・捕捉 22 件目 (「1/60 未満」自己断言誤り→挟み込みピン)・fmt fmdiff PASS (HEAD 3 ⊇ 現 2/自己 0)・警告 14/17/13 据え置き・digest 004c1cf5 不変) の CI 緑確認用
 - 2026-07-25 (count 141): wave 105 branchless_dda 監査 (DE-1 [中] inv_dir tiny-dir ガード +INF 固定の符号喪失 → 負 tiny で t_delta=-INF 軸暴走・整数境界で 0·INF=NaN 軸ハイジャックの二重誤動作 → 符号保持 ±INF+lane 一貫 immobilize 再設計 (digest 不変性を bench 入力域構造証明: 負成分最小 |d|≈5.77e-4≫1e-8 + 実測不変)・DE-2 非有限入力 debug_assert fail-loud・DE-3 内外判定排反完備 else 化・DE-4 doc 群 6 件・DE-5 負方向 slab 対称 strict + trailws 3 件除去 計6項目、+5 strict テスト 1009 全緑・adversarial 3 系統全検出・fmt fmdiff 自己 0・警告 14/17/13 据え置き・digest 004c1cf5 不変・台帳 363) の CI 緑確認用
+- 2026-07-25 (count 142): wave 106 light_cache 監査 (DF-1 [中] 打ち切りが pop 後 break でキュー先頭を未処理破棄+max_steps=0/丁度境界で dirty=false 確定 → 以後 `!dirty` 早退で永久 no-op = 収束詐称・DF-5 [中] full re-seed+小予算で先頭冪等セルに予算が燃え frontier 不進の livelock (Python 検算が budget=64 不収束を実測発見) → writes-budget (budget-before) label-correcting pass へ根治 (改善書込みのみ予算消費・冪等再訪非消費・総 writes ≤ 61,440 必終了・dirty=truncated 忠実)・DF-2 set 同値 no-op elision (DB-4 同型)・DF-3 doc 群 5 件 (sky flood/消灯伝播未実装の契約明記・opaque 自身発光・wrapping_sub 安全性・61,440 証明)・DF-4 戻り値=改善書込み数へ意味変更+全量 2,639 厳密ピン 計5項目、+3 strict テスト 1012 全緑・Python 独立シム全期待値検算 (全量 2,639/budget=64 → 50 calls 収束・総 writes 3,164・packed bit 一致)・adversarial 3 系統全検出 (queue 逆戻し/elision 除去/budget-after、adv 時点 golden md5 b7568466 照合復元・最終固定版 md5 230eec01)・捕捉 23 件目 (calls>=2 経験則断言が 1 call で RED)+24 件目 (assert メッセージ概数 51→確定 50、再検算捕捉)・fmt fmdiff 自己 0・警告 14/17/13 据え置き・san/trailws 0・digest 004c1cf5 不変・台帳 368) + rspeed san 簡体字集合 298→452 字拡張 (候補を cp932 エンコード不可=JIS X 0208 非含有の機械フィルタで確定・日本語使用字 15 字機械除外、san_scan_text/modinv_i128 抽出、selftest 18→21 ピン) の CI 緑確認用。**誤字訂正**: wave 105 コミット件名の「(U+4E3A)重走査」は「再走査」の誤記 (簡体字混入、リポジトリファイル混入なし、san 452 で再発防止、以後は文字自体を引用せずコードポイント表記)
