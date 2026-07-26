@@ -5,15 +5,10 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 /// DrawIndexedIndirectArgs — GL `glMultiDrawElementsIndirect` / wgpu equivalent.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct DrawIndexedIndirectArgs {
-    pub index_count: u32,
-    pub instance_count: u32,
-    pub first_index: u32,
-    pub base_vertex: i32,
-    pub first_instance: u32,
-}
+/// wave 126 DZ-3 (2026-07-26): gpu_culling 側の同レイアウト定義へ統一し
+/// 同名 3 重複 (execute_indirect/gpu_culling/ここ) を解消、ambiguous glob
+/// re-export 警告を根治 (Default derive は gpu_culling 側へ移設、等価性保持)。
+pub use crate::gpu_culling::DrawIndexedIndirectArgs;
 
 /// VAO-compat: records vertex layout + buffer offsets (bound at draw time on wgpu).
 #[derive(Debug, Clone)]

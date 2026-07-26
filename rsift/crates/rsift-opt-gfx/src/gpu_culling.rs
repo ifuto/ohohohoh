@@ -3,9 +3,8 @@
 //! Two-phase compute culling (frustum + optional HZB) with buffer pooling
 //! and adaptive tier gating — disabled on Minimal/Low tiers to save GPU budget.
 
-use wgpu::util::DeviceExt;
 use std::sync::Arc;
-use tracing::{info, debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 /// GPU-side bounding box SSBO entry
 #[repr(C)]
@@ -19,9 +18,12 @@ pub struct ChunkBoundingBox {
     pub _pad: [u32; 3],
 }
 
-/// Indirect draw command (`wgpu::util::DrawIndexedIndirectArgs` compatible)
+/// Indirect command (`wgpu::util::DrawIndexedIndirectArgs` compatible)
+/// **wave 126 DZ-3**: gl33_compat 側の重複定義を本定義へ統一 (再 export)。
+/// `Default` は gl33 版の derive を追従した等価性保持 (全 0=安全、Pod/Zeroable)。
+/// Default 実使用は旧 gl33 側にも無かった (derive のみ) ため消費差はゼロ。
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct DrawIndexedIndirectArgs {
     pub index_count: u32,
     pub instance_count: u32,
@@ -199,7 +201,10 @@ pub struct GpuDrivenCullingEngine {
 
 impl GpuDrivenCullingEngine {
     pub fn new(device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>, hzb_enabled: bool) -> Self {
-        info!("Initializing GPU-Driven Culling Engine (HZB={})", hzb_enabled);
+        info!(
+            "Initializing GPU-Driven Culling Engine (HZB={})",
+            hzb_enabled
+        );
 
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Rsift GPU Culling Shader"),
@@ -248,13 +253,14 @@ impl GpuDrivenCullingEngine {
             push_constant_ranges: &[],
         });
 
-        let culling_compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Rsift GPU Culling Pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader_module,
-            entry_point: "main",
-            compilation_options: Default::default(),
-        });
+        let culling_compute_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Rsift GPU Culling Pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader_module,
+                entry_point: "main",
+                compilation_options: Default::default(),
+            });
 
         Self {
             device,
@@ -305,7 +311,11 @@ impl GpuDrivenCullingEngine {
         indirect_commands: &[DrawIndexedIndirectArgs],
         frustum: &FrustumUniforms,
     ) {
-        debug!("GPU culling {} chunks (HZB={})", chunk_boxes.len(), self.hzb_enabled);
+        debug!(
+            "GPU culling {} chunks (HZB={})",
+            chunk_boxes.len(),
+            self.hzb_enabled
+        );
         // 契約ピン: frustum.chunk_count と実スライス長の不一致は、シェーダが
         // プール末尾の stale データまで cull 対象化する呼出側バグ。
         debug_assert_eq!(
@@ -314,26 +324,41 @@ impl GpuDrivenCullingEngine {
             "FrustumUniforms.chunk_count must equal chunk_boxes.len()"
         );
 
-        let (box_buf, indirect_buf, uniform_buf) =
-            self.buffer_pool.ensure_buffers(&self.device, chunk_boxes.len().max(1));
+        let (box_buf, indirect_buf, uniform_buf) = self
+            .buffer_pool
+            .ensure_buffers(&self.device, chunk_boxes.len().max(1));
 
-        self.queue.write_buffer(box_buf, 0, bytemuck::cast_slice(chunk_boxes));
-        self.queue.write_buffer(indirect_buf, 0, bytemuck::cast_slice(indirect_commands));
-        self.queue.write_buffer(uniform_buf, 0, bytemuck::bytes_of(frustum));
+        self.queue
+            .write_buffer(box_buf, 0, bytemuck::cast_slice(chunk_boxes));
+        self.queue
+            .write_buffer(indirect_buf, 0, bytemuck::cast_slice(indirect_commands));
+        self.queue
+            .write_buffer(uniform_buf, 0, bytemuck::bytes_of(frustum));
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("GPU Culling Bind Group"),
             layout: &self.bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: box_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: indirect_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: uniform_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: box_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: indirect_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform_buf.as_entire_binding(),
+                },
             ],
         });
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("GPU Culling Encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("GPU Culling Encoder"),
+            });
 
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -401,11 +426,8 @@ pub fn dispatch_adaptive_culling(
     hzb_enabled: bool,
     camera_pos: [f32; 3],
 ) -> usize {
-    let frustum = GpuDrivenCullingEngine::default_frustum(
-        camera_pos,
-        hzb_enabled,
-        chunk_boxes.len() as u32,
-    );
+    let frustum =
+        GpuDrivenCullingEngine::default_frustum(camera_pos, hzb_enabled, chunk_boxes.len() as u32);
 
     if gpu_enabled {
         if let Some(eng) = engine {
@@ -451,9 +473,21 @@ mod strict_tests {
 
     #[test]
     fn pod_layout_sizes_and_bytemuck_roundtrip() {
-        assert_eq!(std::mem::size_of::<ChunkBoundingBox>(), 48, "SSBO wire 48B 固定");
-        assert_eq!(std::mem::size_of::<DrawIndexedIndirectArgs>(), 20, "VK/MDI indirect cmd 20B");
-        assert_eq!(std::mem::size_of::<FrustumUniforms>(), 128, "uniform 128B アライン");
+        assert_eq!(
+            std::mem::size_of::<ChunkBoundingBox>(),
+            48,
+            "SSBO wire 48B 固定"
+        );
+        assert_eq!(
+            std::mem::size_of::<DrawIndexedIndirectArgs>(),
+            20,
+            "VK/MDI indirect cmd 20B"
+        );
+        assert_eq!(
+            std::mem::size_of::<FrustumUniforms>(),
+            128,
+            "uniform 128B アライン"
+        );
         let b = ChunkBoundingBox {
             min_xyz: [1.5, 2.5, 3.5],
             is_visible: 7,
@@ -465,7 +499,10 @@ mod strict_tests {
         let bytes = bytemuck::bytes_of(&b);
         assert_eq!(bytes.len(), 48);
         let back: &ChunkBoundingBox = bytemuck::from_bytes(bytes);
-        assert_eq!((back.is_visible, back.chunk_index, back.bindless_texture_id), (7, 9, 10));
+        assert_eq!(
+            (back.is_visible, back.chunk_index, back.bindless_texture_id),
+            (7, 9, 10)
+        );
         assert_eq!(back.min_xyz, [1.5, 2.5, 3.5]);
         assert_eq!(back._pad, [11, 12, 13]);
     }
@@ -475,12 +512,12 @@ mod strict_tests {
         // 回帰: 旧 far=-512 / 側面=-256 の符号反転で全件カリングとなる矛盾面群。
         let f = GpuDrivenCullingEngine::default_frustum([8.0, 64.0, -8.0], true, 123);
         let expect = [
-            [0.0f32, 0.0, 1.0, -0.1],   // near:  z >= 0.1
-            [0.0, 0.0, -1.0, 512.0],    // far:   z <= 512
-            [1.0, 0.0, 0.0, 256.0],     // left:  x >= -256
-            [-1.0, 0.0, 0.0, 256.0],    // right: x <= 256
-            [0.0, 1.0, 0.0, 256.0],     // bottom: y >= -256
-            [0.0, -1.0, 0.0, 256.0],    // top:   y <= 256
+            [0.0f32, 0.0, 1.0, -0.1], // near:  z >= 0.1
+            [0.0, 0.0, -1.0, 512.0],  // far:   z <= 512
+            [1.0, 0.0, 0.0, 256.0],   // left:  x >= -256
+            [-1.0, 0.0, 0.0, 256.0],  // right: x <= 256
+            [0.0, 1.0, 0.0, 256.0],   // bottom: y >= -256
+            [0.0, -1.0, 0.0, 256.0],  // top:   y <= 256
         ];
         assert_eq!(f.planes, expect);
         assert_eq!(f.camera_pos, [8.0, 64.0, -8.0, 1.0]);
@@ -494,13 +531,13 @@ mod strict_tests {
     #[test]
     fn cpu_frustum_cull_visibility_semantics() {
         let boxes = &mut [
-            mk_box([0.0, 0.0, 16.0], [16.0, 16.0, 32.0], 0),     // inside → visible
-            mk_box([0.0, 0.0, -30.0], [1.0, 1.0, 0.05], 1),      // near 外 (max_z < 0.1)
-            mk_box([0.0, 0.0, 600.0], [10.0, 10.0, 620.0], 2),   // far 外
-            mk_box([-400.0, 0.0, 16.0], [-300.0, 10.0, 32.0], 3),// left 外
-            mk_box([300.0, 0.0, 16.0], [400.0, 10.0, 32.0], 4),  // right 外
-            mk_box([0.0, 300.0, 16.0], [10.0, 400.0, 32.0], 5),  // top 外
-            mk_box([0.0, -400.0, 16.0], [10.0, -300.0, 32.0], 6),// bottom 外
+            mk_box([0.0, 0.0, 16.0], [16.0, 16.0, 32.0], 0), // inside → visible
+            mk_box([0.0, 0.0, -30.0], [1.0, 1.0, 0.05], 1),  // near 外 (max_z < 0.1)
+            mk_box([0.0, 0.0, 600.0], [10.0, 10.0, 620.0], 2), // far 外
+            mk_box([-400.0, 0.0, 16.0], [-300.0, 10.0, 32.0], 3), // left 外
+            mk_box([300.0, 0.0, 16.0], [400.0, 10.0, 32.0], 4), // right 外
+            mk_box([0.0, 300.0, 16.0], [10.0, 400.0, 32.0], 5), // top 外
+            mk_box([0.0, -400.0, 16.0], [10.0, -300.0, 32.0], 6), // bottom 外
         ];
         let cmds = &mut std::array::from_fn::<_, 7, _>(|i| mk_cmd(i as u32 * 100));
         let frustum = GpuDrivenCullingEngine::default_frustum([0.0, 64.0, 0.0], true, 7);
@@ -508,23 +545,38 @@ mod strict_tests {
         assert_eq!(visible, 1, "回帰: 旧面群は near/far 矛盾で 0 を返していた");
         assert_eq!(vis_flags(boxes), vec![1, 0, 0, 0, 0, 0, 0]);
         let inst: Vec<u32> = cmds.iter().map(|c| c.instance_count).collect();
-        assert_eq!(inst, vec![1, 0, 0, 0, 0, 0, 0], "is_visible と instance_count は同期");
+        assert_eq!(
+            inst,
+            vec![1, 0, 0, 0, 0, 0, 0],
+            "is_visible と instance_count は同期"
+        );
         let fi: Vec<u32> = cmds.iter().map(|c| c.first_index).collect();
-        assert_eq!(fi, vec![0, 100, 200, 300, 400, 500, 600], "他フィールドは不変更");
-        assert!(boxes.iter().all(|b| b.chunk_index < 7), "chunk_index も不変更");
+        assert_eq!(
+            fi,
+            vec![0, 100, 200, 300, 400, 500, 600],
+            "他フィールドは不変更"
+        );
+        assert!(
+            boxes.iter().all(|b| b.chunk_index < 7),
+            "chunk_index も不変更"
+        );
     }
 
     #[test]
     fn cpu_frustum_cull_shorter_commands_array_is_safe() {
         let boxes = &mut [
-            mk_box([0.0, 0.0, 16.0], [16.0, 16.0, 32.0], 0),   // visible
+            mk_box([0.0, 0.0, 16.0], [16.0, 16.0, 32.0], 0), // visible
             mk_box([0.0, 0.0, 600.0], [16.0, 16.0, 632.0], 1), // invisible (far)
         ];
         let cmds = &mut [mk_cmd(7)]; // 1 件しかない (get_mut 経路)
         let frustum = GpuDrivenCullingEngine::default_frustum([0.0; 3], false, 2);
         let visible = GpuDrivenCullingEngine::cpu_frustum_cull(boxes, cmds, &frustum);
         assert_eq!(visible, 1);
-        assert_eq!(vis_flags(boxes), vec![1, 0], "commands が短くても box 側は全件更新");
+        assert_eq!(
+            vis_flags(boxes),
+            vec![1, 0],
+            "commands が短くても box 側は全件更新"
+        );
         assert_eq!(cmds[0].instance_count, 1);
         assert_eq!(cmds[0].first_index, 7);
     }
@@ -545,11 +597,18 @@ mod strict_tests {
         // GPU 希望だが engine None → CPU フォールバック (結果は同一になるべき)
         let n2 = dispatch_adaptive_culling(None, &mut b2, &mut c2, true, true, cam);
         assert_eq!((n1, n2), (1, 1), "内側の 1 件のみ可視");
-        assert_eq!(vis_flags(&b1), vis_flags(&b2), "gpu_enabled の希望有無でフォールバック結果が変わらない");
+        assert_eq!(
+            vis_flags(&b1),
+            vis_flags(&b2),
+            "gpu_enabled の希望有無でフォールバック結果が変わらない"
+        );
         let (mut b3, mut c3) = (base(), vec![mk_cmd(0); 3]);
         let f = GpuDrivenCullingEngine::default_frustum(cam, true, 3);
         let n3 = GpuDrivenCullingEngine::cpu_frustum_cull(&mut b3, &mut c3, &f);
-        assert_eq!(n2, n3, "adaptive CPU 経路は直接 cpu_frustum_cull と bit 一致");
+        assert_eq!(
+            n2, n3,
+            "adaptive CPU 経路は直接 cpu_frustum_cull と bit 一致"
+        );
         assert_eq!(vis_flags(&b2), vis_flags(&b3));
         let inst2: Vec<u32> = c2.iter().map(|c| c.instance_count).collect();
         let inst3: Vec<u32> = c3.iter().map(|c| c.instance_count).collect();

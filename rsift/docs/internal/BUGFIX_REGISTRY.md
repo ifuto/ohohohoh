@@ -530,6 +530,11 @@
 | DY-2 | 観 | wiring 実消費公表: full_graph_wiring:930 登録は ry=0 固定 (K-1)・:936 evaluate 結果は report.aokana_visible_regions への**カウント集計のみ**でリージョン選択 (実カリング駆動) に未接続 — 「評価実効・消費は集計型」(恒等/常時 miss とも別型の中間) の誇張なき公表 |
 | DY-3 | 低 | リージョン座標スケール厳密契約群: coords*64 は 2^6 乗算のみで i32 安全域 bit 正確 (2^24→0x4E800000・-2^24→0xCE800000)・**min+64 の退化境界** (2^30 スケールで ulp=128 タイ偶数丸め → AABB 厚み 0、実害域 ≦2^20 では 8 ulp 正確)・**i32 乗算溢れ経路** (region ≥2^25 で debug panic/release wrap→符号反転 0xCF000000、wrapping_mul pin、DU-5 同型 2 件目)。全値 rq (dy_vals/dy_max/dy_wrap) 導出。**捕捉 49 件目**: pin 初版の (1<<25)*64 が自身の debug panic を照らし**実装上の overflow ハザードを発見** — テスト赤ではなく panic による捕捉、wrapping 形式で根治的 pin 化 |
 | DY-4 | 低 | p-vertex 選択 `>=0.0` vs `>0.0` の**完全等価変異証明** (差は ±0.0 成分のみ、その寄与は ±0.0 で和・判定不変、NaN も同選択) — adversarial (a) 全緑で機械確認・検出不能は証明付きで誠実記録。検出担保は (a') n-vertex 反転で RED 3。斜め平面 pin 追設 (非軸平面の p-vertex 分岐経路を固定、rq 導出 24/-8) |
+| DZ-1 | 低 | gpu_culling.rs DeviceExt 完全未使用 import 削除 (使途 0 箇所、census 実 grep) |
+| DZ-2 | 低 | persistent_vbo_pool.rs 未使用 import 3 件削除 (Quantized12ByteVertex は mod tests :437 で独立 import 済・PackedPullQuad 使途ゼロ・debug tracing 使途ゼロ、DeviceExt は使用中で温存) |
+| DZ-3 | 低 | **DrawIndexedIndirectArgs 同名 3 重複定義の統一**: gl33_compat.rs 独自定義 (CRLF 原生 309 行) を削除し `pub use crate::gpu_culling::DrawIndexedIndirectArgs` へ統一 (レイアウト同一 repr(C) 5 フィールド、Default derive は gpu_culling 側へ移設で等価性保持、真消費型は execute_indirect 版で azdo/full_graph_wiring 経路) — ambiguous glob re-export 警告根治・**捕捉 51 件目** (初版は原生 CRLF を保持した perl 編集に固執 → san ゲート 1 が変更内 CR を拒否し FAIL (原生 CRLF は引継ぎ一括 wave 対象だが変更ファイルは san 適格) → 当該ファイルを LF 正規化で根治・fmt 正準 0 維持) |
+| DZ-4 | 低 | occlusion_query::build_vertices private 化 (消費者は自モジュール内 :716 本体+テストのみ、pub 公開面の実需なし) — OccVertex (pub(self)) との private_interfaces 警告根治、将来需要時の再公開方針を保持明記 |
+| DZ-5 | 観 | **opt-gfx lib 警告 6→0 完全根治** 達成の機械照合記録 (api 側 13 件は別枠棚卸し)・HEAD 原生 3 ファイル (gpu_culling 161 行逸脱等、fmt 未適用の既往) へ fmdiff 正準形を忠実適用 (wave 文化の現逸脱 0 へ整合)・adversarial 対偶 3 ((a) gl33 戻し→ambiguous 復活・(b) pub 戻し→private_interfaces 復活・(c) import 戻し→unused 警告復活、全て build 照合で機械確認、復元後 0)・**捕捉 50 件目**: wave 125 報告の「1111 全緑」は機械値 1112 (1106+6) の誤記 → 全量再実行の test result で捕捉・訂正 |
 
 ---
 

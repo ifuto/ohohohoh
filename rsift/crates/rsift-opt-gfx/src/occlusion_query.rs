@@ -120,10 +120,22 @@ pub fn look_at(eye: [f32; 3], center: [f32; 3], up: [f32; 3]) -> Mat4 {
     let s = norm(cross(f, up));
     let u = cross(s, f);
     [
-        s[0], u[0], -f[0], 0.0, //
-        s[1], u[1], -f[1], 0.0, //
-        s[2], u[2], -f[2], 0.0, //
-        -dot(s, eye), -dot(u, eye), dot(f, eye), 1.0,
+        s[0],
+        u[0],
+        -f[0],
+        0.0, //
+        s[1],
+        u[1],
+        -f[1],
+        0.0, //
+        s[2],
+        u[2],
+        -f[2],
+        0.0, //
+        -dot(s, eye),
+        -dot(u, eye),
+        dot(f, eye),
+        1.0,
     ]
 }
 
@@ -258,7 +270,10 @@ impl QueryCore {
     }
 
     pub fn state(&self, id: usize) -> VisState {
-        self.slots.get(id).map(|s| s.state).unwrap_or(VisState::Unknown)
+        self.slots
+            .get(id)
+            .map(|s| s.state)
+            .unwrap_or(VisState::Unknown)
     }
 
     /// (draw, culled) under current states.
@@ -674,14 +689,23 @@ impl GpuOcclusionPass {
     }
 
     /// CPU-side expansion of query boxes into triangle soup (12 tris / box).
-    pub fn build_vertices(boxes: &[QueryBox]) -> Vec<OccVertex> {
+    /// **wave 126 DZ-4**: 消費者は自モジュール内 (:716 本体・テスト) のみで
+    /// `pub` 公開面の実需なし → private 化して OccVertex (pub(self)) との
+    /// private_interfaces 警告を根治。将来の外部需要時に再公開方針 (保持)。
+    fn build_vertices(boxes: &[QueryBox]) -> Vec<OccVertex> {
         const TRIS: [[usize; 3]; 12] = [
-            [0, 1, 3], [0, 3, 2], // zmin
-            [4, 6, 7], [4, 7, 5], // zmax
-            [0, 4, 5], [0, 5, 1], // ymin
-            [2, 3, 7], [2, 7, 6], // ymax
-            [0, 2, 6], [0, 6, 4], // xmin
-            [1, 5, 7], [1, 7, 3], // xmax
+            [0, 1, 3],
+            [0, 3, 2], // zmin
+            [4, 6, 7],
+            [4, 7, 5], // zmax
+            [0, 4, 5],
+            [0, 5, 1], // ymin
+            [2, 3, 7],
+            [2, 7, 6], // ymax
+            [0, 2, 6],
+            [0, 6, 4], // xmin
+            [1, 5, 7],
+            [1, 7, 3], // xmax
         ];
         let mut out = Vec::with_capacity(boxes.len() * 36);
         for (i, bx) in boxes.iter().enumerate() {

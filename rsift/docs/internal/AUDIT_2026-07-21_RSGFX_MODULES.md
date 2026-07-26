@@ -6614,8 +6614,43 @@ lib 警告 7、digest 004c1cf5 不変、台帳 464。
   検出不能は証明付き誠実記録。(a') n-vertex 反転 RED 3 で検出担保。
   斜め平面 pin (rq 導出 24/-8) を追設し非軸分岐経路を固定。
 
-+2 strict テスト (6/6) で 1111 全緑。adversarial: (a) 等価全緑 (証明付)・
-(a') 3 RED・(b) 接触 <= 化 → 1 RED・(c) sort 削除 → 1 RED・
-(d) mut 戻し → 警告 7 復活+テスト不変。復元 md5 VERIFIED 4 回。
++2 strict テスト (6/6) で **1112 全緑** (捕捉 50: 初版「1111」は誤記、
+module run 1106 filtered+6 の機械値で訂正、後述)。adversarial: (a) 等価
+全緑 (証明付)・(a') 3 RED・(b) 接触 <= 化 → 1 RED・(c) sort 削除 →
+1 RED・(d) mut 戻し → 警告 7 復活+テスト不変。復元 md5 VERIFIED 4 回。
 fmdiff 現逸脱 0。固定版 md5 a7139a359ec14880e82536058c91d9cd。
 lib 警告 6、digest 004c1cf5 不変、台帳 468。
+
+## DZ. 警告掃除 wave (wave 126, 2026-07-26) — opt-gfx lib 警告 6→0
+
+対象: gpu_culling.rs・persistent_vbo_pool.rs・occlusion_query.rs・
+gl33_compat.rs (全て警告発生源、census 実 grep で消費者確定後に根治)。
+
+- **DZ-1/2 [低]** 未使用 import 4 件削除 (DeviceExt・Quantized12ByteVertex
+  (mod tests 独立 import 済)・PackedPullQuad・debug、使用分は温存)。
+- **DZ-3 [低]** DrawIndexedIndirectArgs 同名 3 重複 (execute_indirect
+  (真消費型 azdo/full_graph_wiring)・gpu_culling (内部消費)・gl33_compat
+  (内部のみ)) の統一: gl33 独自定義削除→gpu_culling 版 pub use 化、
+  Default derive 移設で等価性保持。CRLF 原生ファイルは perl で CRLF 保持
+  編集 (304 CR 行、混合なし)。ambiguous glob re-export 根治。
+- **DZ-4 [低]** build_vertices private 化 (消費者内部のみ) で
+  private_interfaces 根治。保持明記 (将来需要時再公開)。
+- **DZ-5 [観]** **lib 警告 6→0 機械照合** (api 13 件は別枠棚卸し)。
+  HEAD 原生 3 ファイルの fmt 逸脱 (161/64+/43 行) を発見し fmdiff 正準形
+  忠実適用 (現逸脱 0、digest 不変を seal ゲート 5 で担保)。adversarial
+  対偶 3 (gl33 戻し→ambiguous 復活・pub 戻し→private_interfaces 復活・
+  import 戻し→unused 復活) 全て build 照合で機械確認、復元 md5
+  VERIFIED。テストは DZ 非追加で **1112 全緑** 維持 (全量再実行
+  201.04s)。
+
+**捕捉 50 件目**: wave 125 記録の「1111 全緑」は誤記 — 機械値は module
+run の「1106 filtered」+「6 passed」= **1112**。DZ 全量再実行の
+「1112 passed」で捕捉・本節+DY 節を訂正 (seal ゲート 4 PASS には影響
+なし、報告数値の正確性のみ)。記録文化「台帳数値は seal 機械値に照合」
+の例外として今後は module run の filtered+passed 和を一次値とする。
+**捕捉 51 件目**: DZ-3 初版は gl33_compat.rs の原生 CRLF を保持した perl
+行編集に固執 (304 CR 行維持) → **seal ゲート 1 (san) が変更ファイル内
+CR を検出し FAIL** (原生 CRLF 自体は引継ぎ一括 wave の対象だが、変更
+スコープ内の CR は適格)。当該ファイルを LF 正規化で根治 (fmt 正準 0・
+内容同一性は差分 0 で担保)、「CRLF 一括 wave とは別に、必要性駆動の
+先行 1 件」として台帳・本節へ誠実記録。

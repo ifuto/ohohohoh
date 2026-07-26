@@ -3,12 +3,11 @@
 //! Eliminates per-chunk VBO alloc/free (driver GC). Combined with
 //! `multi_draw_indexed_indirect`, all visible chunks draw in one command.
 
-use crate::chunk_mesh::{BuiltChunkMesh, Quantized12ByteVertex, VERTEX_STRIDE_BYTES};
+use crate::chunk_mesh::{BuiltChunkMesh, VERTEX_STRIDE_BYTES};
 use crate::gpu_culling::DrawIndexedIndirectArgs;
-use crate::packed4::PackedPullQuad;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use wgpu::util::DeviceExt;
 
 const DEFAULT_POOL_MB_HIGH: usize = 1024;
@@ -177,7 +176,10 @@ impl PersistentVboPool {
         if vcount as usize > self.vertex_capacity || icount as usize > self.index_capacity {
             self.release(mesh.chunk_x, mesh.chunk_z);
             self.oversize_rejects += 1;
-            warn!("[PersistentVbo] chunk ({}, {}) too large", mesh.chunk_x, mesh.chunk_z);
+            warn!(
+                "[PersistentVbo] chunk ({}, {}) too large",
+                mesh.chunk_x, mesh.chunk_z
+            );
             return None;
         }
 
@@ -323,11 +325,7 @@ impl PersistentVboPoolGpu {
         Self::new(PersistentVboPool::adaptive())
     }
 
-    pub fn ensure_gpu(
-        &mut self,
-        device: Arc<wgpu::Device>,
-        queue: Arc<wgpu::Queue>,
-    ) {
+    pub fn ensure_gpu(&mut self, device: Arc<wgpu::Device>, queue: Arc<wgpu::Queue>) {
         if self.vertex_buffer.is_some() {
             self.device = Some(device);
             self.queue = Some(queue);
@@ -341,18 +339,22 @@ impl PersistentVboPoolGpu {
         let indirect_cap = 65536usize;
         let ind_size = (indirect_cap * std::mem::size_of::<DrawIndexedIndirectArgs>()) as u64;
 
-        self.vertex_buffer = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Rsift Persistent VBO"),
-            contents: &self.cpu.vertex_staging,
-            usage: wgpu::BufferUsages::VERTEX
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::STORAGE,
-        }));
-        self.index_buffer = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Rsift Persistent IBO"),
-            contents: &self.cpu.index_staging,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        }));
+        self.vertex_buffer = Some(
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Rsift Persistent VBO"),
+                contents: &self.cpu.vertex_staging,
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::STORAGE,
+            }),
+        );
+        self.index_buffer = Some(
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Rsift Persistent IBO"),
+                contents: &self.cpu.index_staging,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            }),
+        );
         self.indirect_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Rsift MDI Indirect"),
             size: ind_size,
@@ -374,9 +376,15 @@ impl PersistentVboPoolGpu {
 
     /// Patch GPU buffer regions for newly uploaded chunk slots.
     pub fn flush_slot(&mut self, slot: &PersistentSlot, mesh: &BuiltChunkMesh) {
-        let Some(queue) = self.queue.as_ref() else { return };
-        let Some(vb) = self.vertex_buffer.as_ref() else { return };
-        let Some(ib) = self.index_buffer.as_ref() else { return };
+        let Some(queue) = self.queue.as_ref() else {
+            return;
+        };
+        let Some(vb) = self.vertex_buffer.as_ref() else {
+            return;
+        };
+        let Some(ib) = self.index_buffer.as_ref() else {
+            return;
+        };
 
         let voff = slot.vertex_offset as usize * VERTEX_STRIDE_BYTES;
         queue.write_buffer(vb, voff as u64, bytemuck::cast_slice(&mesh.vertices));
@@ -385,8 +393,12 @@ impl PersistentVboPoolGpu {
     }
 
     pub fn flush_mdi(&mut self) {
-        let Some(queue) = self.queue.as_ref() else { return };
-        let Some(ib) = self.indirect_buffer.as_ref() else { return };
+        let Some(queue) = self.queue.as_ref() else {
+            return;
+        };
+        let Some(ib) = self.indirect_buffer.as_ref() else {
+            return;
+        };
         self.cpu.rebuild_mdi();
         if !self.cpu.mdi_commands.is_empty() {
             queue.write_buffer(ib, 0, bytemuck::cast_slice(&self.cpu.mdi_commands));
@@ -440,7 +452,10 @@ mod tests {
         BuiltChunkMesh {
             chunk_x: cx,
             chunk_z: cz,
-            vertices: vec![Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0); n],
+            vertices: vec![
+                Quantized12ByteVertex::encode(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+                n
+            ],
             indices: (0..(n as u32)).collect(),
         }
     }
