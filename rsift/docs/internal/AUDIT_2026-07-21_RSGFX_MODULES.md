@@ -6824,3 +6824,24 @@ a096609c) → 全緑確認。教訓: 復元コマンドは必ず md5 照合と�
 
 本 wave は捕捉なし。HEAD 原生 fmt 逸脱 36 行含め正準適用 (現逸脱 0)。
 digest 不変を seal ゲート 5 で担保。
+
+---
+
+## EE. simd_kernels_avx2.rs (wave 131, 2026-07-26)
+
+126 行・既存 4 テスト (fuzz オラクル付)。全アーキテクチャ bit 同一の
+歴史注記 (旧非 x86_64 fallback 修正済) がある精錬済みモジュール。
+
+- **EE-1 [低] x 未ガードの堅牢化**: face_visible_bitmask は z >= 16 を
+  ガードする一方 x は未ガードで、`1u32 << x` は **x >= 32 で debug
+  パニック / release 静寂巻付き (x % 32)** → bit0 立ち mask に誤 true
+  を返し得た (z ガードとの非対称)。`x >= 16 → false` ガード追加。
+  x ∈ [16, 32) は旧結果も false (masks の実効ビット 0..16 のみ) で
+  bitwise 同一 = 挙動変更域は x >= 32 のみ (panic/巻付き → 決定的
+  false、M-4/DU-5 系堅牢化と同型)。+1 strict テスト、adversarial ガード
+  除去で **実 panic RED** (:52) 機械確認、復元 MD5-VERIFIED (e41f1e37)。
+- **EE-2 [観]** 消費者形状公表: 実呼出は full_graph_wiring:1000/1002
+  の面可視サンプル 1 系のみ (census grep)。既存 fuzz オラクル
+  (spec_masks 別ループ形状) と全 PF bit 同一契約は現役確認。
+
+本 wave は捕捉なし。digest 不変を seal ゲート 5 で担保。

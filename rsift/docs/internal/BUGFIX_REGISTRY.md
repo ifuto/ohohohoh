@@ -552,6 +552,8 @@
 | EC-3 | 観 | 材料引き当ては chunk_keys × pull_meshes の線形 find = O(n·m) — 両者とも数百スケールで現害は小さい (支配 tex 決定用途)。HashMap 化は冗長メモリとの実効見合いを要検討として棚卸し公表 |
 | ED-1 | 低 | overdraw_sort::sort_front_to_back / overdraw_saved の `partial_cmp(...).unwrap()` / `unwrap_or(Equal)` — NaN 中心・NaN カメラが 1 つ混入すると partial_cmp None で **lib 内パニック** (adversarial 復元で panic 実演 RED 機械確認) → `total_cmp` 全順序化 (有限値で結果完全一致 = IEEE-754 bit 全順序、-0.0<+0.0 も決定的、NaN dist2 は最奥配置で決定的・panic なし、M-4 系堅牢化と同型)。+1 strict テスト (NaN 中心で [1,0] 最奥配置・NaN カメラ全 Equal で安定元順序・再実行同一性・overdraw_saved NaN 無 panic)、消費者 census: 本番は full_graph_wiring:704 (report.overdraw_order) のみ |
 | ED-2 | 観 | early_z_shaded / overdraw_saved の実消費者はテスト/計測のみ (本番呼出なし、census grep) — 計算量 O(width × spans) 棚卸し、計測器+WGSL 実コンパイル検証資産として保持 (directive⑦) |
+| EE-1 | 低 | simd_kernels_avx2::face_visible_bitmask の **x 未ガード** (z は :42 でガード済みの非対称) — `1u32 << x` が **x >= 32 で debug パニック / release では静寂にビット巻付き (x % 32)** → bit0 立ちの mask に対し誤 true を返し得た → `x >= 16 → false` ガード追加 (x ∈ [16,32) は旧結果も false で bitwise 同一、挙動変更域は x>=32 のみ、M-4/DU-5 系堅牢化と同型)。+1 strict テスト (x=16/17/31 false + x=32/33/64/usize::MAX 無 panic false + 有効域不変)、adversarial ガード除去で **実 panic RED** (:52) 機械確認・復元 MD5-VERIFIED。消費者 census: full_graph_wiring:1000/1002 (定数 3,4,5) のみ |
+| EE-2 | 観 | 同モジュール消費者形状公表: greedy_mask_avx2/face_visible_bitmask の実呼出は full_graph_wiring の面可視サンプル 1 系のみ (census grep)。全アーキテクチャ bit 同一の既存契約 (ヘッダ歴史注記) と fuzz オラクル (spec_masks 別ループ形状) は現役確認 |
 
 ---
 

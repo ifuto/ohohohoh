@@ -39,8 +39,14 @@ pub fn greedy_mask_avx2(palette: &[u16; 4096]) -> [u32; 16] {
 /// カラムマスクの (x, z) ビットを参照する。mask は y 縮約済みのため
 /// y 引数は呼び出し側の (x, y, z) 対称性のためにのみ存在する (値に依らない)。
 /// z >= 16 (セクション外) は常に false。
+/// 【wave 131 EE-1】x >= 16 も常に false: 旧実装は x 未ガードで
+/// `1u32 << x` が **x >= 32 で debug パニック / release では静寂に
+/// ビット巻付き (x % 32) → bit 0 立ちの mask に対し誤 true** を返し得た
+/// (z ガードとの非対称)。x ∈ [16, 32) では旧結果も false (masks の
+/// 実効ビットは 0..16 のみ) であり、本ガードの挙動変更域は x >= 32 の
+/// み (debug panic/巻付き → 決定的 false。M-4/DU-5 系の堅牢化と同型)。
 pub fn face_visible_bitmask(masks: &[u32; 16], x: usize, _y: usize, z: usize) -> bool {
-    if z >= 16 {
+    if z >= 16 || x >= 16 {
         return false;
     }
     (masks[z] & (1u32 << x)) != 0
@@ -75,7 +81,11 @@ mod strict_tests {
         let mut full = [1u16; 4096];
         full[123] = 7;
         full[4095] = u16::MAX;
-        assert_eq!(greedy_mask_avx2(&full), [0xFFFFu32; 16], "全充填は全ビット立つ");
+        assert_eq!(
+            greedy_mask_avx2(&full),
+            [0xFFFFu32; 16],
+            "全充填は全ビット立つ"
+        );
         // Config はデフォルト無効 (opt-in 設計)
         assert!(!SimdAvx2Config::default().enabled);
         let cfg = SimdAvx2Config { enabled: true };
@@ -85,7 +95,12 @@ mod strict_tests {
 
     #[test]
     fn single_voxel_sets_exactly_one_bit() {
-        for &(x, y, z) in &[(0usize, 0usize, 0usize), (9, 3, 7), (15, 15, 15), (8, 0, 15)] {
+        for &(x, y, z) in &[
+            (0usize, 0usize, 0usize),
+            (9, 3, 7),
+            (15, 15, 15),
+            (8, 0, 15),
+        ] {
             let mut p = [0u16; 4096];
             p[x + y * 16 + z * 256] = 1;
             let m = greedy_mask_avx2(&p);
@@ -106,7 +121,11 @@ mod strict_tests {
                 .rotate_left(17);
             *v = if h % 7 < 3 { (i % 500) as u16 + 1 } else { 0 };
         }
-        assert_eq!(greedy_mask_avx2(&p), spec_masks(&p), "全 4096 セル任意配置で厳密一致");
+        assert_eq!(
+            greedy_mask_avx2(&p),
+            spec_masks(&p),
+            "全 4096 セル任意配置で厳密一致"
+        );
     }
 
     #[test]
@@ -115,11 +134,41 @@ mod strict_tests {
         p[3 + 4 * 16 + 5 * 256] = 9; // (3,4,5)
         p[10 + 0 * 16 + 5 * 256] = 1; // 同じ z=5 の別 x
         let m = greedy_mask_avx2(&p);
-        assert!(face_visible_bitmask(&m, 3, 999, 5), "y は縮約済みなので値に依らない");
+        assert!(
+            face_visible_bitmask(&m, 3, 999, 5),
+            "y は縮約済みなので値に依らない"
+        );
         assert!(face_visible_bitmask(&m, 10, 0, 5));
         assert!(!face_visible_bitmask(&m, 4, 4, 5), "空セルは false");
         assert!(!face_visible_bitmask(&m, 3, 4, 4), "別 z は false");
         assert!(!face_visible_bitmask(&m, 3, 4, 16), "z==16 は範囲外ガード");
-        assert!(!face_visible_bitmask(&m, 3, 4, usize::MAX), "巨大 z でもパニックしない");
+        assert!(
+            !face_visible_bitmask(&m, 3, 4, usize::MAX),
+            "巨大 z でもパニックしない"
+        );
+    }
+
+    #[test]
+    fn face_visible_bitmask_x_guard_and_wraparound_regression() {
+        // EE-1: x >= 16 は常に false (z ガードとの対称性)。
+        // 旧実装は x >= 32 で debug panic / release 静寂巻付き — 本 pin の
+        // x=32/64 ケースは旧実装で panic (=回帰検出)。masks の実効ビット
+        // 0..16 域からの逸脱は 16..32 で旧実装と結果一致 (false) も確認。
+        let mut p = [0u16; 4096];
+        p[0 + 0 * 16 + 5 * 256] = 1; // (0,0,5): bit0 が立つ mask
+        let m = greedy_mask_avx2(&p);
+        for x in [16usize, 17, 31] {
+            assert!(
+                !face_visible_bitmask(&m, x, 0, 5),
+                "x={x}: セクション外は false"
+            );
+        }
+        for x in [32usize, 33, 64, usize::MAX] {
+            assert!(
+                !face_visible_bitmask(&m, x, 0, 5),
+                "x={x}: 旧リリース巻付き域 (bit0 ⟹ 誤 true) も panic せず false"
+            );
+        }
+        assert!(face_visible_bitmask(&m, 0, 0, 5), "有効域は不変");
     }
 }
