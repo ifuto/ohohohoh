@@ -526,6 +526,10 @@
 | DX-2 | 低 | idx(x,y,z)=x+16y+256z 厳密 pin: idx(15,15,15)=4095 (排他的終端)・全 4096 引数単射完全走査・座標復元 roundtrip (i%16,(i/16)%16,i/256) — svo/section_rle/section_compress/noise_upsample/voxel_cone_tracing/world_column_store/leaf_fast_path 等 10+ ファイルが共有する座標規約を固定 (全値 rq dx_idx.rq で assert 事前導出) |
 | DX-3 | 観 | 消費者形状公表: 本番経路は render_pipeline:427 (mesh_chunk_column)・:438 (mesh_chunk_column_pull_world、mesh_section_y0 由来実引数)。frame_reference (3 箇所)・gpu_vertex_pull:52・chunk_mesh:182・frame_reuse:344 は参照レンダ/テスト経路 (census 実 grep 照合) |
 | DX-4 | 観 | 等価性オラクル資産の棚卸し公表: 10 テスト体制 (pull u16 対照 fuzz・bitcols face_visible 対照 fuzz・edge 断面一致・12B 経路同系) は既存維持 — adversarial (c) で 5 RED (fuzz 4+flat_layer 1) を確認し検出力の現役性を機械実証。本 wave は doc+1 pin+属性整理のみで mesh 出力 (digest) は完全不変 |
+| DY-1 | 低 | aokana insert_shallow_region の `mut dag` unused_mut 警告根治 (root_id 読取+move のみで可変操作なし)、opt-gfx lib 警告 7→6 機械照合、(d) mut 戻しで警告 7 復活+テスト不変の対偶確認 |
+| DY-2 | 観 | wiring 実消費公表: full_graph_wiring:930 登録は ry=0 固定 (K-1)・:936 evaluate 結果は report.aokana_visible_regions への**カウント集計のみ**でリージョン選択 (実カリング駆動) に未接続 — 「評価実効・消費は集計型」(恒等/常時 miss とも別型の中間) の誇張なき公表 |
+| DY-3 | 低 | リージョン座標スケール厳密契約群: coords*64 は 2^6 乗算のみで i32 安全域 bit 正確 (2^24→0x4E800000・-2^24→0xCE800000)・**min+64 の退化境界** (2^30 スケールで ulp=128 タイ偶数丸め → AABB 厚み 0、実害域 ≦2^20 では 8 ulp 正確)・**i32 乗算溢れ経路** (region ≥2^25 で debug panic/release wrap→符号反転 0xCF000000、wrapping_mul pin、DU-5 同型 2 件目)。全値 rq (dy_vals/dy_max/dy_wrap) 導出。**捕捉 49 件目**: pin 初版の (1<<25)*64 が自身の debug panic を照らし**実装上の overflow ハザードを発見** — テスト赤ではなく panic による捕捉、wrapping 形式で根治的 pin 化 |
+| DY-4 | 低 | p-vertex 選択 `>=0.0` vs `>0.0` の**完全等価変異証明** (差は ±0.0 成分のみ、その寄与は ±0.0 で和・判定不変、NaN も同選択) — adversarial (a) 全緑で機械確認・検出不能は証明付きで誠実記録。検出担保は (a') n-vertex 反転で RED 3。斜め平面 pin 追設 (非軸平面の p-vertex 分岐経路を固定、rq 導出 24/-8) |
 
 ---
 

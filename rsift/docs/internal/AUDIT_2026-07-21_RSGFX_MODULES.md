@@ -6591,3 +6591,31 @@ VERIFIED + 強化 pin 込み最終版へ fmt 正準適用 (差分 54 行→0)。
 検出力実証)。検出不能ゼロ。復元 md5 VERIFIED 2 回。fmt 正準適用
 (差分 14→0)。固定版 md5 e1655861f3cd27a3dcaaf35b14a96639。
 lib 警告 7、digest 004c1cf5 不変、台帳 464。
+
+## DY. aokana.rs (wave 125, 2026-07-26)
+
+原版 200 行・md5 2cbeb168ddbdfacb0c66da91d30443f9 (wave 77-78 CA/CB
+監査済の再 census)。消費者: full_graph_wiring:114/256/930/936 のみ。
+
+- **DY-1 [低]** `mut dag` unused_mut 根治 (lib 警告 7→6 機械照合)。
+- **DY-2 [観]** wiring 実消費公表: 930 登録 ry=0 固定 (K-1)・936
+  evaluate 結果は aokana_visible_regions へのカウント集計のみ (実
+  カリング選択に未接続) = 「評価実効・消費は集計型」の中間構造。
+- **DY-3 [低]** スケール厳密契約群: coords*64 は i32 安全域 bit 正確
+  (2^24→0x4E800000/-2^24→0xCE800000)・min+64 退化境界 (2^30/ulp=128
+  タイ偶数丸めで厚み 0、実害域 ≦2^20 では 8 ulp 正確)・**i32 溢れ経路**
+  (≥2^25 で debug panic/release wrap→0xCF000000、wrapping pin、DU-5
+  同型 2 件目)。全値 rq (dy_vals/dy_max/dy_wrap) 導出。
+  **捕捉 49 件目**: 初版 pin の (1<<25)*64 が自身の debug panic で
+  **実装上の overflow ハザードを照らす** (panic による捕捉) →
+  wrapping 形式で根治的 pin 化。
+- **DY-4 [低]** `>=0.0` vs `>0.0` 完全等価変異証明 (±0.0 成分のみ差、
+  寄与 ±0.0 で和・判定不変、NaN 同選択) → (a) 全緑で機械確認、
+  検出不能は証明付き誠実記録。(a') n-vertex 反転 RED 3 で検出担保。
+  斜め平面 pin (rq 導出 24/-8) を追設し非軸分岐経路を固定。
+
++2 strict テスト (6/6) で 1111 全緑。adversarial: (a) 等価全緑 (証明付)・
+(a') 3 RED・(b) 接触 <= 化 → 1 RED・(c) sort 削除 → 1 RED・
+(d) mut 戻し → 警告 7 復活+テスト不変。復元 md5 VERIFIED 4 回。
+fmdiff 現逸脱 0。固定版 md5 a7139a359ec14880e82536058c91d9cd。
+lib 警告 6、digest 004c1cf5 不変、台帳 468。
