@@ -6217,3 +6217,45 @@ composite 恒等) が真のまま保存されるため。pin の欠陥ではな�
 apparatus 強化点)。(d) edge clamp 除去 → **2 RED** (index OOB panic で
 fail-loud)。復元 md5 照合 MD5-VERIFIED 4 回 (固定版
 80bb678a918c7901bb4350d0c393a754、adv cache・rsift/bak/ 二重保存)。
+
+## DN. cpu_saver.rs (wave 114, 2026-07-26)
+
+129 → 373 行 (rustfmt 後)。消費者照合: workspace 全 grep で直接呼出 **ゼロ**
+(lib.rs:47 `pub use cpu_saver::*` の公開 API 面のみ)。bench digest 行なし。
+原版 md5 6c383361a42d25e69eaa7223034540e8。**警告由来の選定** (bench digest
+経路は wave 113 時点で全消化、残りの lib 警告 11 件中 `cpu_saver` の未使用
+bytemuck import を持つ最前線を機械選定)。固定後 lib 警告 **11 → 10**。
+
+本 wave は修正性質が「誠実化+契約化」中心で破壊的変更はゼロ (実コード差分は
+use 行除去のみを機械検証: doc/test 以外の本体は byte 等価)。
+
+| DN-1 | 低 | 未使用 `bytemuck::{Pod, Zeroable}` import 除去 (警告根治) + ヘッダ過剰主張の誠実化 (「完全撲滅」→ 命令選択はコンパイラ依存 / DDA 本体は branchless_dda / 64B 一致はレイアウト依存) |
+| DN-2 | 低 | branchless_select 契約 doc+厳密 pin (xorshift 200 組 if/else 厳密照合・NaN ペイロード 0x7FC00001/-0.0 0x80000000/±inf bit 保持・`|`/`+`/`^` 等価証明記述 DK-1 同型) |
+| DN-3 | 低 | stepper 契約 pin: step_direction 境界 (-0.0→0・NaN→0・±inf→±1)、advance_axis 343 網羅ちょうど 1 軸 + タイ優先 x>y>z + 全 NaN→z |
+| DN-4 | 低 | タイル走査 bijection 閉形式 (各 2bit フィールドのビット置換) + 到達順 先頭 8/末尾 4/index64 spot 厳密 pin・prefetch 契約 (セマンティクス非観測・無効アドレス非フォールト) + fault-free smoke |
+| DN-5 | 観 | 消費者ゼロの意図的保持明記 (将来ホットループ向けプリミティブ=公開 API 面) |
+
+検証: +5 strict テスト (select bit 厳密+NaN ペイロード/step 境界/軸排他
+343+タイ優先/bijection 閉形式+到達順/prefetch smoke) でモジュール 7/7・
+既存 2 テスト不変。総数 1054 → **1059 全緑**。**adversarial 誠実記録**:
+(a) mask の wrapping_neg 除去 (mask=1/0) → **2 RED** (既存基本ピン+
+新設 200 組厳密照合が連鎖)。(b) タイ優先の非包含化 (`<=`→`<`) → **1 RED**
+(優先 pin が検出、343 排他網羅は変体下でも真のため正しく不発)。(c) タイル
+内ループ順交換 (網羅保存・順序変更) → **1 RED** (順序 pin が検出、網羅 count
+pin は網羅が真のままのため正しく不発 = 網羅と順序のピン分離設計が有効)。
+(d) prefetch 除去 → 7 全緑 = **検出不能・証明済み中性** (セマンティクスを
+持たないハードウェアヒントのため変更は値非観測、設計書通りの検出空白を
+誇張せず記録)。adversarial は fmt 正規化前の golden (9cf34c38…) で実施、
+md5 照合 MD5-VERIFIED 4 回。最終固定版は fmdiff 忠実適用 (下記) 後の
+050e1136055f55e7b695efb08849e7d9 (adv cache・rsift/bak/ 二重保存) で、
+use 順正規化のみの差分のため adversarial 結論は全て不変。
+
+**fmt インシデント (seal ゲート 2 差止め → 根治、捕捉 36 件目)**: 初回 seal
+で `HEAD 逸脱 3 ⊅ 現逸脱 4 (自己起因 2)` が FAIL。原因は私の ad hoc
+`rustfmt --edition 2024` 走査と fmdiff の正準形が cfg-gated `use` ブロック
+(x86/x86_64 4 行) の並べ替え規則で不一致だったこと (HEAD 由来の逸脱領域で
+doc 挿入による LCS 位置混同が「自己起因」判定を誘発)。fmdiff 出力を忠実適用
+(x86/x86_64 ペアで _mm_prefetch を _MM_HINT_T0 より先に配置) し現逸脱 0 で
+根治 — cfg グルーピング内の use 順は意味に無影響 (論理的自己同一) で
+adversarial 結論全て不変。ad hoc rustfmt の版不一致が差止められた記録として
+誠実に残す。

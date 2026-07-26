@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 149
+- count: 150
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -168,3 +168,5 @@
 - 2026-07-26 (count 148): wave 112 exposure 監査 (DL-1 [中] **メータリング虚偽根治**: 「Unreal Histogram 同型」記載に対し線形 1/E[L] であった実装を Epic 一次情報の log 領域加重平均 (幾何平均) へ修正 — Jensen で常に暗め (2 段実測 新/旧=1.194824)、定数シーンは両式厳密一致で挙動不変 (既存 3 テスト維持)・GPU パリティ無影響 (log/exp は CPU 責務)・bin 64/256・18% 中間グレー較正差を誠実公表・DL-2 [低] NaN/inf/退化 (全 bin 255→clamp 20) 決定的契約 pin・DL-3 [低] adapt 厳密離散解 1.659359908 pin+NaN 伝播 fail-visible 契約・DL-4 [観] 分位切捨て/中点包含/1.0 fallback pin・DL-5 [観] Vec ops 保持明記+捕捉 33 (Vec4 Mul の Vec3::new 転記 typo を初回コンパイルが捕捉) 計5項目、+6 strict テスト 1048 全緑・adversarial ((a) 線形逆戻し→2 段 pin 1 RED (定数 pin は不変で正しく不発)・(b) NaN 崩落化→1 RED・(c) bin clamp 1.0→2 RED (index OOB panic fail-loud)・(d) 中点→左端→4 RED)・**sandbox リセット第 2 号からの完全復旧** (toolchain+vendor 両喪失 → ci/restore-env.sh で 1.94.1+454 crates sha256 照合復元 + 消失ファイルは会話内 authored text から逐語再構成)・fmt 2 箇所忠実適用・digest 004c1cf5 不変・固定版 md5 2cc763a3・台帳 403) の CI 緑確認用
 
 - 2026-07-26 (count 149): wave 113 bloom 監査 (DM-1 [中] prefilter 相対ゲイン意味論公表 (f=(l-T)/T.max(1e-4)、l>2T で入力超過増幅 T=1,l=4→出力 12・小閾値 f≈999 発散級、luma 保存形との違いを誠実化、l=2T bit 恒等・l=T 境界 0・厳密値 pin、呼出側契約 threshold≫1e-4)・DM-2 [中] **wiring の bloom 実効ゼロ証明**: wiring:1671 は tonemap_display 後の値 (linear_to_srgb 1.0 clamp で mapped∈[0,1]³) に適用するため luma≤1.0=threshold → ゲート常真→bloom≡0→composite は bit 厳密な恒等写像 (729+1 点 to_bits pin)、閾値再調整は 美的判断=ユーザー設計領域で引継ぎ・DM-3 [低] blur 二項核 [1,4,6,4,1]/16 全て二進厳密・和厳密 1.0→定数保存 bit 厳密・半径 0 恒等・dst<src panic・edge-clamp doc・DM-4 [観] luma 3 系統 bit 一致 256 色 pin・DM-5 [観] NaN 伝播/clamp 64 契約+捕捉 34 (Vec4 Mul Vec3::new 同一零デイ再犯 E0061/E0308 即捕捉)・35 (closure &mut の let f を E0596 が捕捉) 計5項目、+6 strict テスト 1054 全緑・adversarial ((a) ゲート反転→3 RED、wiring 恒等 pin は knee>0 の smoothstep(0) 崩壊で bloom≡0 保持=正しい不発を誠実記録・(b) 重み 0.376→2 RED・(c) knee 乗算除去→新設 knee pin 1 RED (pin 前は検出不能、adversarial 設計で空白発見=強化点)・(d) edge clamp 除去→2 RED index OOB panic fail-loud)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変 (bench 行なし)・固定版 md5 80bb678a・台帳 408) の CI 緑確認用
+
+- 2026-07-26 (count 150): wave 114 cpu_saver 監査 (DN-1 [低] 未使用 bytemuck import 除去 (lib 警告 11→10)+ヘッダ誠実化 (完全撲滅の静的保証不可/DDA 本体は branchless_dda/64B 一致はレイアウト依存)・DN-2 [低] select 契約 pin (200 組厳密一致・NaN ペイロード/-0.0/±inf bit 保持・|/+/^ 等価証明 DK-1 同型)・DN-3 [低] stepper 境界 pin (-0.0→0・NaN→0・343 網羅排他+タイ優先 x>y>z)・DN-4 [観] タイル bijection 閉形式+到達順 spot pin・prefetch セマンティクス非観測契約+smoke・DN-5 [観] 消費者ゼロ保持明記 計5項目、+5 strict テスト 1059 全緑・adversarial ((a) neg 除去→2 RED・(b) タイ非包含化→1 RED 排他網羅は正しく不発・(c) 内回り交換→1 RED 網羅 pin は正しく不発・(d) prefetch 除去→7 全緑=検出不能・証明済み中性)・復元 md5 照合 VERIFIED 4 回・実コード差分は use 行除去のみ byte 検証・digest 004c1cf5 不変・固定版 md5 050e1136 (fmdiff 忠実適用後)・台帳 413) の CI 緑確認用

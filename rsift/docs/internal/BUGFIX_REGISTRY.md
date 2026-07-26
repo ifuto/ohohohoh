@@ -470,6 +470,11 @@
 | DM-3 | 低 | blur_row 契約公表+厳密 pin: 重み [0.0625,0.25,0.375,0.25,0.0625] = 二項核 [1,4,6,4,1]/16 は**全て二進厳密値**かつ和は f32 で厳密 1.0 → 定数保存は 1 ulp 誤差もない **bit 厳密** (to_bits 化)・radius=0 は bit 恒等・dst<src は panic (fail-loud、should_panic pin)・端は edge-clamp (adversarial (d) clamp 除去 → j OOB panic で 2 RED)。 |
 | DM-4 | 観 | luma Rec.709 式が 3 系統 (bloom / frame_postfx::luma_run_cpu / exposure 内蔵) で**bit 一致**を xorshift 256 色ランダムで厳密 pin (乗加順序差による 1 ulp 発散の将来混入を apparatus 化)。 |
 | DM-5 | 観 | composite/prefilter の NaN 伝播 pin (f32 比較 false で self 返却 = fail-visible、0 側への静寂崩落ではない)・composite 上限 64 clamp 公表・Vec4/Vec3 ops 消費者ゼロの意図的保持明記。**捕捉 34 件目**: Vec4 Mul の Vec3::new 転記 typo を 2 連続 wave で再犯 (捕捉 33 と同一零デイ、E0061/E0308 が即捕捉) → 根治。**捕捉 35 件目**: &mut 借用 closure を `let f` で宣言 (E0596: `let mut f` 必須) を初回コンパイルが捕捉 → 根治。 |
+| DN-1 | 低 | cpu_saver の未使用 import `bytemuck::{Pod, Zeroable}` 除去 (構造体皆無で実使用なし、lib 警告 11→10)。併せてヘッダの「分岐予測ミスを完全撲滅する/4x4x4 L1 キャッシュライン最適化/Branchless DDA」を誠実化: 命令選択はコンパイラ依存で「完全撲滅」は静的保証不可・タイル=4³=64voxel 確定だが 64B 一致は voxel=1B レイアウト依存・DDA 本体は branchless_dda (DE 監査済) 側で本モジュールは符号/軸選択プリミティブ |
+| DN-2 | 低 | branchless_select 系の契約 doc+厳密 pin: mask=-(cond as i32) 全域で支持集合非交差のため `|`/`+`/`^` 完全等価 (DK-1 同型)、値は if/else と全入力厳密一致。f32 版は to_bits 往復が安定保証で **NaN ペイロード/-0.0/±inf を bit 保持** (quiet 化・正規化しない) — xorshift 200 組厳密照合 + 0x7FC00001/0x80000000 の厳密 pin |
+| DN-3 | 低 | BranchlessVoxelStepper 契約公表+厳密 pin: step_direction は +>0→1/-<0→-1/else 0 の境界で -0.0→0 (IEEE で -0.0<0.0 は false)・**NaN→0** (両比較 false)・±inf→±1。advance_axis は {vals}³=343 網羅で**ちょうど 1 軸 true** (異常値含む排他選択)・同値タイ優先 x>y>z・全 NaN→z フォールバックの厳密 pin |
+| DN-4 | 低 | LoopTiledVoxelScanner: 到達 index 閉形式 (y>>2)·1024+(z>>2)·256+(x>>2)·64+(y&3)·16+(z&3)·4+(x&3) の **bijection 性** (2bit フィールド置換) + 先頭 8/末尾 4/index64 spot の到達順厳密 pin。CacheLinePrefetcher: prefetch はセマンティクス非観測 (値に無影響のヒント)・x86 では無効アドレス非フォールト (アーキテクチャ保証) の契約 + smoke pin |
+| DN-5 | 観 | 消費者ゼロ (lib.rs re-export 経由の公開 API 面のみ) の保持明記 (削除せず将来ホットループ向けプリミティブとして契約ピン化) — 「消費者いなくても消さない」方針踏襲。**捕捉 36 件目**: 私の ad hoc `rustfmt --edition 2024` 走査と seal の fmdiff 正準形 (fg-gated `use` の並べ替え規則) が不一致となり seal ゲート 2 が自己起因逸脱 2 行を差止め → fmdiff 出力を忠実適用 (x86/x86_64 ペアで _mm_prefetch を _MM_HINT_T0 より先に) して根治 (cfg ゲート別グルーピングで意味的自己同一、adversarial 結論は不変) |
 
 ---
 
