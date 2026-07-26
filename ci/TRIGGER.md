@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 156
+- count: 157
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -182,3 +182,5 @@
 - 2026-07-26 (count 155): wave 119 smaa 監査 (DS-1 [中] wiring 恒等証明 (aa 同一色 5 引数+戻り値破棄 = 恒等クラス 3 件目、実効化は近傍配線設計判断で引継ぎ)・DS-2 [低] edge 厳密 bit pin (V/H 强度 1.0/tie→horiz=false/0x3ECCCCCC)・DS-3 [低] NaN 非対称 (center/n/s マスク 0x3DCCCCD0、e/w 伝播)・DS-4 [低] blend 境界厳密 pin・DS-5 [観] 閾値 2 分岐対蹠・DS-6 [観] directionless 公表 (contrast 通過∧両軸差ゼロ→strength=0)+捕捉 41 (シナリオ盲スポットをテスト赤が捕捉) 計6項目、+6 strict テスト 1086 全緑・adversarial ((a) <=化→3 RED・(b) 0.1→0.01→1 RED・(c) clamp 1.0→1 RED・(d) strength 交換→5 RED)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変・固定版 md5 a1063898・台帳 439) [w118 との 2 コミット集約 push] の CI 緑確認用
 
 - 2026-07-26 (count 156): wave 120 ssr 監査 (DT-1 [中] wiring 常時 miss 証明 (sampler 0.0/∞ → diff<0 永不発+戻り値破棄 = 恒等クラスと別型のゼロ効果)・DT-2 [低] hit 窓 [0,thickness] 両端 inclusive/max_dist 厳密 >/NaN fail-safe/退化境界の厳密 pin 群・DT-3 [低] reflect 厳密 bit+ゼロ法線パススルー+末尾 normalize drift pin (検出空白補完)・DT-4 [観] Vec4 保持明記・DT-5 [観] Rust/WGSL 空マーカー表現差+uv 様式化公表・DT-6 [観] 一方向符号付き窓公表 計6項目、+7 strict テスト 1093 全緑・adversarial ((a) 下端 strict→1 RED・(b) 上端 strict→1 RED・(c) max_dist 等価化→1 RED・(d) 両側窓→2 RED・(e) normalize 除去→初回検出不能 (全 pin ∥pre∥≡1.0) → 1 ulp ずれ drift pin 追設で再 RED = w113/118 と同型強化)・復元 md5 照合 VERIFIED 6 回・digest 004c1cf5 不変・固定版 md5 c8c84e11・台帳 445) と **rspeed 新言語 rq 導入** (AI 記述最優先の静的型付き小言語: f32 IEEE 厳密計算を libm FFI で保証、Python struct+ctypes エミュレートの全面移行先。selftest 24→32 ピン・全値 python 対照 bit 一致検証済。構文書 docs/internal/RQ.md) [w119・w120・rq の 3 コミット集約 push] の CI 緑確認用
+
+- 2026-07-26 (count 157): RQ v2 大拡張 (ユーザー提示仕様の全実装 + v2.1 拡張): const 宣言 (トップレベル限定・定数式・同名 fn/let と名前空間共有・**順序不問の fixpoint コンパイル時評価**)・複合代入 += 等 (スカラー+配列要素)・for i: i64 in a..b / a..=b (START/END 1 回評価・VAR 代入は型エラー・i64::MAX 防御打切)・break/continue (ループ外は構文エラー)・loop・match 文 (i64/bool・重複腕検出・網羅強制 (_ 腕 or bool 両腕)・fall-through なし・const 腕解決)・**固定長配列 [T; N]** (T=f32/i64/u32/bool・1..=256・平坦のみ・コピーセマンティクス・境界外 exit 3・リテラルは型注釈文脈必須+copy 片側リテラル補完の v2.1 明確化)・len/fill/copy・prelude+4 (clamp01/lerp/sign/frac、clamp01 の NaN は「比較 false で透過」= 実装通りに誠実記載)・**v2.1 追加**: 整数ビット演算 & | ^ ~ << >> (i64/u32・マスク付き wrapping シフト = FNV/パック監査の直結需要)・elif (else{if} 脱糖)・assert ラベル第 2 引数・pi()/e() (0x40490FDB/0x402DF854 保証、wave 116 教訓)・tan/hypot (libm FFI)・fma (単一丸め、通常式と別値の機械導出対で固定 0xB97FFC00 vs 0xB9800000)・先頭ドット小数 .5 字句対応 (v1 仕様書記載のみの欠落根治)・字句の `1..2` 範囲 vs 小数曖昧さ規則明文化・selftest 32→**51 ピン** 0 FAIL・RQ.md v2 全面改訂 (§9-1 トップレベル let 禁止案は v1 破壊的誤記として errata 明記不採用・配列 p 出力はスカラー同一形式に統一) + 捕捉 46 (selftest ピン挿入位置の (rc,out) 被覆を selftest 1 FAIL が機械捕捉→精密修復)・第 3 号環境リセット (toolchain 消失+ローカル git ref 巻戻り) から restore-env.sh + FETCH_HEAD mixed リセットで完全復旧・digest 004c1cf5 不変・fmdiff 正準 (現逸脱 0) の CI 緑確認用
