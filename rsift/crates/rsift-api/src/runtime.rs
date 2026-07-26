@@ -51,7 +51,7 @@ impl RsiftRuntime {
         criterion: &str,
         amount: u32,
     ) -> (bool, bool) {
-        let mut reg = self.advancements.lock().unwrap();
+        let reg = self.advancements.lock().unwrap();
         let mut state = self.advancement_state.lock().unwrap();
         let (criterion_done, granted) = state.grant_progress(&reg, adv_id, criterion, amount);
         if granted {

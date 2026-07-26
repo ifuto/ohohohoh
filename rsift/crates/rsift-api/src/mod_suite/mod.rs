@@ -3,12 +3,12 @@
 //! Fabric/NeoForge 相当のモジュール群を Rsift ネイティブ実装として提供します。
 //! 公開 API 名に外部ローダー名は含めません。各モジュールは JVM ブリッジ経由で Minecraft に届きます。
 
-pub mod modules;
+pub mod suite_modules;
 
+use crate::content::ContentRegistry;
 use crate::lifecycle::EventBus;
 use crate::networking::NetworkManager;
 use crate::rendering::RenderingRegistry;
-use crate::content::ContentRegistry;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 use tracing::info;
@@ -112,7 +112,7 @@ impl SuiteModuleId {
             Self::LifecycleEvents => "rsift_api::lifecycle::EventBus",
             Self::Networking => "rsift_api::networking::NetworkManager",
             Self::ClientRendering => "rsift_api::rendering::RenderingRegistry",
-            Self::RendererApi => "rsift_api::mod_suite::modules::RendererApi",
+            Self::RendererApi => "rsift_api::mod_suite::suite_modules::RendererApi",
             Self::ResourceLoader => "rsift_api::resources::ResourceLoader",
             Self::ContentRegistries => "rsift_api::content::ContentRegistry",
             Self::Screen => "rsift_api::ui_ext::ScreenRegistry",
@@ -144,15 +144,15 @@ impl SuiteModuleId {
 /// Complete mod platform suite — mods access via `ModContext::suite()`.
 #[derive(Clone)]
 pub struct ModSuite {
-    pub modules: Arc<RwLock<HashMap<SuiteModuleId, modules::SuiteModuleHandle>>>,
+    pub modules: Arc<RwLock<HashMap<SuiteModuleId, suite_modules::SuiteModuleHandle>>>,
     pub events: Arc<EventBus>,
     pub networking: Arc<NetworkManager>,
     pub rendering: Arc<RwLock<RenderingRegistry>>,
     pub resources: Arc<RwLock<crate::resources::ResourceLoader>>,
     pub gameplay: Arc<RwLock<crate::gameplay::GameplayRegistry>>,
     pub content: Arc<RwLock<ContentRegistry>>,
-    pub renderer_api: modules::RendererApi,
-    pub networking_api: modules::NetworkingApi,
+    pub renderer_api: suite_modules::RendererApi,
+    pub networking_api: suite_modules::NetworkingApi,
     initialized: Arc<RwLock<bool>>,
 }
 
@@ -166,7 +166,7 @@ impl ModSuite {
     pub fn new() -> Self {
         let mut map = HashMap::with_capacity(SuiteModuleId::ALL.len());
         for &id in SuiteModuleId::ALL {
-            map.insert(id, modules::SuiteModuleHandle::new(id));
+            map.insert(id, suite_modules::SuiteModuleHandle::new(id));
         }
         info!("[ModSuite] {} platform modules registered", map.len());
         Self {
@@ -177,8 +177,8 @@ impl ModSuite {
             resources: Arc::new(RwLock::new(crate::resources::ResourceLoader::new())),
             gameplay: Arc::new(RwLock::new(crate::gameplay::GameplayRegistry::new())),
             content: Arc::new(RwLock::new(ContentRegistry::new())),
-            renderer_api: modules::RendererApi::default(),
-            networking_api: modules::NetworkingApi::default(),
+            renderer_api: suite_modules::RendererApi::default(),
+            networking_api: suite_modules::NetworkingApi::default(),
             initialized: Arc::new(RwLock::new(false)),
         }
     }
@@ -192,11 +192,15 @@ impl ModSuite {
             }
         }
         *self.initialized.write().unwrap() = true;
-        info!("[ModSuite] activated {}/{} modules (JVM-wired)", count, SuiteModuleId::ALL.len());
+        info!(
+            "[ModSuite] activated {}/{} modules (JVM-wired)",
+            count,
+            SuiteModuleId::ALL.len()
+        );
         Ok(count)
     }
 
-    pub fn module(&self, id: SuiteModuleId) -> Option<modules::SuiteModuleHandle> {
+    pub fn module(&self, id: SuiteModuleId) -> Option<suite_modules::SuiteModuleHandle> {
         self.modules.read().ok()?.get(&id).cloned()
     }
 

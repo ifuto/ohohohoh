@@ -6,8 +6,8 @@
 //! 1ミリたりとも余すことなく Rust ネイティブで実装します。
 
 use std::sync::{Arc, RwLock};
-use std::collections::HashMap;
-use tracing::{info, debug, trace};
+
+use tracing::{debug, info, trace};
 
 /// イベントのリスナー優先度 (`net.neoforged.bus.api.EventPriority`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -91,7 +91,10 @@ impl ModEventBus {
     }
 
     pub fn add_common_setup_listener(&mut self, priority: EventPriority, listener: CommonSetupFn) {
-        debug!("Adding CommonSetup listener to ModEventBus (Priority: {:?})", priority);
+        debug!(
+            "Adding CommonSetup listener to ModEventBus (Priority: {:?})",
+            priority
+        );
         self.common_setup_listeners.push((priority, listener));
         self.common_setup_listeners.sort_by_key(|k| k.0);
     }
@@ -107,7 +110,9 @@ impl ModEventBus {
     }
 
     pub fn dispatch_common_setup(&self, mod_id: &str) {
-        let event = FMLCommonSetupEvent { mod_id: mod_id.to_string() };
+        let event = FMLCommonSetupEvent {
+            mod_id: mod_id.to_string(),
+        };
         for (_, cb) in &self.common_setup_listeners {
             cb(&event);
         }
@@ -157,26 +162,40 @@ impl LivingDamageEvent {
             cancel_state: EventCancelState::default(),
         }
     }
-    pub fn get_amount(&self) -> f32 { self.new_amount }
-    pub fn set_amount(&mut self, amount: f32) { self.new_amount = amount; }
+    pub fn get_amount(&self) -> f32 {
+        self.new_amount
+    }
+    pub fn set_amount(&mut self, amount: f32) {
+        self.new_amount = amount;
+    }
 }
 
 impl CancellableEvent for LivingDamageEvent {
-    fn is_canceled(&self) -> bool { self.cancel_state.is_canceled() }
-    fn set_canceled(&mut self, canceled: bool) { self.cancel_state.set_canceled(canceled); }
+    fn is_canceled(&self) -> bool {
+        self.cancel_state.is_canceled()
+    }
+    fn set_canceled(&mut self, canceled: bool) {
+        self.cancel_state.set_canceled(canceled);
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct BlockBreakEvent {
     pub player_uuid: String,
     pub block_key: String,
-    pub x: i32, pub y: i32, pub z: i32,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
     pub cancel_state: EventCancelState,
 }
 
 impl CancellableEvent for BlockBreakEvent {
-    fn is_canceled(&self) -> bool { self.cancel_state.is_canceled() }
-    fn set_canceled(&mut self, canceled: bool) { self.cancel_state.set_canceled(canceled); }
+    fn is_canceled(&self) -> bool {
+        self.cancel_state.is_canceled()
+    }
+    fn set_canceled(&mut self, canceled: bool) {
+        self.cancel_state.set_canceled(canceled);
+    }
 }
 
 pub type ServerStartingFn = Arc<dyn Fn(&ServerStartingEvent) + Send + Sync>;
@@ -196,13 +215,24 @@ impl GameEventBus {
         Self::default()
     }
 
-    pub fn add_server_starting_listener(&mut self, priority: EventPriority, listener: ServerStartingFn) {
+    pub fn add_server_starting_listener(
+        &mut self,
+        priority: EventPriority,
+        listener: ServerStartingFn,
+    ) {
         self.server_starting_listeners.push((priority, listener));
         self.server_starting_listeners.sort_by_key(|k| k.0);
     }
 
-    pub fn add_living_damage_listener(&mut self, priority: EventPriority, listener: LivingDamageFn) {
-        info!("Registering NeoForge LivingDamageEvent listener on GameBus (Priority: {:?})", priority);
+    pub fn add_living_damage_listener(
+        &mut self,
+        priority: EventPriority,
+        listener: LivingDamageFn,
+    ) {
+        info!(
+            "Registering NeoForge LivingDamageEvent listener on GameBus (Priority: {:?})",
+            priority
+        );
         self.living_damage_listeners.push((priority, listener));
         self.living_damage_listeners.sort_by_key(|k| k.0);
     }
@@ -213,7 +243,13 @@ impl GameEventBus {
     }
 
     /// LivingDamageEvent をディスパッチし、キャンセルされた場合は None を、そうでない場合は修正後ダメージ量を返す
-    pub fn dispatch_living_damage(&self, entity_id: u32, entity_type: &str, source: &str, amount: f32) -> Option<f32> {
+    pub fn dispatch_living_damage(
+        &self,
+        entity_id: u32,
+        entity_type: &str,
+        source: &str,
+        amount: f32,
+    ) -> Option<f32> {
         let mut event = LivingDamageEvent::new(entity_id, entity_type, source, amount);
         for (_, cb) in &self.living_damage_listeners {
             cb(&mut event);
@@ -230,7 +266,9 @@ impl GameEventBus {
         let mut event = BlockBreakEvent {
             player_uuid: player.to_string(),
             block_key: block.to_string(),
-            x, y, z,
+            x,
+            y,
+            z,
             cancel_state: EventCancelState::default(),
         };
         for (_, cb) in &self.block_break_listeners {

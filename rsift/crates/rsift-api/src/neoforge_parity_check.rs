@@ -4,15 +4,15 @@
 //! live [`crate::platform::WireStatus`] — not hard-coded pass flags.
 
 use crate::{
-    neoforge_event_bus::{ModEventBus, GameEventBus, EventPriority, CancellableEvent},
-    neoforge_registries::DeferredRegister,
-    neoforge_capabilities::{AttachmentType, AttachmentCodec},
+    fabric_parity_check::{FabricParityChecker, ParityCheckResult, VerificationStatus},
+    neoforge_capabilities::{AttachmentCodec, AttachmentType},
     neoforge_config::ModConfigSpecBuilder,
-    fabric_parity_check::{FabricParityChecker, VerificationStatus, ParityCheckResult},
+    neoforge_event_bus::{EventPriority, GameEventBus, ModEventBus},
+    neoforge_registries::DeferredRegister,
     platform,
 };
 use std::sync::{Arc, RwLock};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 pub struct UnifiedDoubleChecker;
 
@@ -28,9 +28,8 @@ impl UnifiedDoubleChecker {
         let neo_ok = Self::validate_neoforge_runtime();
         let neo_pass = neo_ok.is_ok();
         let wire_ok = wire.last_error.is_none();
-        let neo_live = |ok: bool| -> bool {
-            ok && neo_pass && (if wire.applied { wire_ok } else { true })
-        };
+        let neo_live =
+            |ok: bool| -> bool { ok && neo_pass && (if wire.applied { wire_ok } else { true }) };
 
         // --- NeoForge Double-Check Categories (derived from runtime Result + WireStatus) ---
 
@@ -89,11 +88,17 @@ impl UnifiedDoubleChecker {
             return Err(format!("NeoForge runtime validation failed: {e}"));
         }
 
-        let passed_count = results.iter().filter(|r| r.status == VerificationStatus::Passed).count();
+        let passed_count = results
+            .iter()
+            .filter(|r| r.status == VerificationStatus::Passed)
+            .count();
         let total_count = results.len();
 
         info!("------------------------------------------------------------------------");
-        info!("Double-Check Audit Summary: {}/{} Subsystems Passed!", passed_count, total_count);
+        info!(
+            "Double-Check Audit Summary: {}/{} Subsystems Passed!",
+            passed_count, total_count
+        );
         if passed_count == total_count {
             info!("DOUBLE-CHECK VERIFIED: Fabric & NeoForge parity derived from WireStatus + runtime validation");
         } else {
@@ -113,7 +118,13 @@ impl UnifiedDoubleChecker {
         Ok(results)
     }
 
-    fn verify_item(category: &str, official_mod: &str, rsift_mod: &str, passed: bool, notes: &str) -> ParityCheckResult {
+    fn verify_item(
+        category: &str,
+        official_mod: &str,
+        rsift_mod: &str,
+        passed: bool,
+        notes: &str,
+    ) -> ParityCheckResult {
         ParityCheckResult {
             category: category.to_string(),
             fabric_api_module: official_mod.to_string(),
@@ -143,19 +154,27 @@ impl UnifiedDoubleChecker {
         let mut mod_bus = ModEventBus::new();
         let mut game_bus = GameEventBus::new();
 
-        mod_bus.add_common_setup_listener(EventPriority::Normal, Arc::new(|evt| {
-            info!("CommonSetup executed for {}", evt.mod_id);
-        }));
+        mod_bus.add_common_setup_listener(
+            EventPriority::Normal,
+            Arc::new(|evt| {
+                info!("CommonSetup executed for {}", evt.mod_id);
+            }),
+        );
         mod_bus.dispatch_common_setup("test_mod");
 
         let damage_received = Arc::new(RwLock::new(false));
         let flag_clone = damage_received.clone();
-        game_bus.add_living_damage_listener(EventPriority::High, Arc::new(move |evt| {
-            if evt.damage_source == "magic" {
-                evt.set_amount(evt.get_amount() * 2.0); // double magic damage
-                if let Ok(mut g) = flag_clone.write() { *g = true; }
-            }
-        }));
+        game_bus.add_living_damage_listener(
+            EventPriority::High,
+            Arc::new(move |evt| {
+                if evt.damage_source == "magic" {
+                    evt.set_amount(evt.get_amount() * 2.0); // double magic damage
+                    if let Ok(mut g) = flag_clone.write() {
+                        *g = true;
+                    }
+                }
+            }),
+        );
 
         let res_damage = game_bus.dispatch_living_damage(1, "minecraft:sheep", "magic", 5.0);
         if res_damage != Some(10.0) || !*damage_received.read().unwrap() {
@@ -163,7 +182,9 @@ impl UnifiedDoubleChecker {
         }
 
         // 3. Validate Data Attachments & Capabilities
-        let mana_attachment = AttachmentType::builder(|| 100_i32).serialize(AttachmentCodec::Int).build();
+        let mana_attachment = AttachmentType::builder(|| 100_i32)
+            .serialize(AttachmentCodec::Int)
+            .build();
         if mana_attachment.get_default() != 100 {
             return Err("AttachmentType default value validation failed".to_string());
         }
@@ -171,7 +192,10 @@ impl UnifiedDoubleChecker {
         // 4. Validate TOML Configuration Builder
         let mut spec_builder = ModConfigSpecBuilder::new();
         spec_builder.push("general");
-        let _mana_regen = spec_builder.comment("Mana regen rate").define_in_range_int("mana_regen", 5, 0, 100);
+        let _mana_regen =
+            spec_builder
+                .comment("Mana regen rate")
+                .define_in_range_int("mana_regen", 5, 0, 100);
         spec_builder.pop();
         let spec = spec_builder.build();
         if !spec.entries.contains_key("general.mana_regen") {

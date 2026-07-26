@@ -167,10 +167,17 @@ impl AdaptivePerfEngine {
 
         info!("========================================================================");
         info!(" [AdaptivePerf] Hardware Probe");
-        info!("   CPU: {} ({} cores / {} threads)", cpu_model, cpu_cores, cpu_threads);
+        info!(
+            "   CPU: {} ({} cores / {} threads)",
+            cpu_model, cpu_cores, cpu_threads
+        );
         info!("   RAM: {:.1} GB", ram_gb);
         info!("   GPU: {} (score={})", gpu_name, gpu_score);
-        info!("   Tier: {} | Flagship boost: {}", tier.label(), flagship_boost);
+        info!(
+            "   Tier: {} | Flagship boost: {}",
+            tier.label(),
+            flagship_boost
+        );
         info!("========================================================================");
 
         profile
@@ -353,9 +360,7 @@ impl AdaptivePerfEngine {
             PerformanceTier::High if rp.speed_first => {
                 "Flagship 2K: full GPU-driven + Hi-Z + CPU occlusion hybrid".into()
             }
-            PerformanceTier::High => {
-                "Performance: GPU culling + greedy mesh, Hi-Z optional".into()
-            }
+            PerformanceTier::High => "Performance: GPU culling + greedy mesh, Hi-Z optional".into(),
         }
     }
 
@@ -418,7 +423,12 @@ impl AdaptivePerfEngine {
         }
     }
 
-    pub fn classify_tier(cores: usize, ram_gb: f64, gpu_score: u32, is_software: bool) -> PerformanceTier {
+    pub fn classify_tier(
+        cores: usize,
+        ram_gb: f64,
+        gpu_score: u32,
+        is_software: bool,
+    ) -> PerformanceTier {
         if is_software && gpu_score < 1000 {
             return PerformanceTier::Minimal;
         }
@@ -439,10 +449,18 @@ impl AdaptivePerfEngine {
 
     fn estimate_physical_cores(threads: usize, cpu_model: &str) -> usize {
         let lower = cpu_model.to_lowercase();
-        if lower.contains("7800x3d") || lower.contains("5800x3d") { return 8; }
-        if lower.contains("7700") || lower.contains("7600") { return 8; }
-        if lower.contains("7950x") || lower.contains("7900") { return 16; }
-        if lower.contains("5900x") || lower.contains("3900x") { return 12; }
+        if lower.contains("7800x3d") || lower.contains("5800x3d") {
+            return 8;
+        }
+        if lower.contains("7700") || lower.contains("7600") {
+            return 8;
+        }
+        if lower.contains("7950x") || lower.contains("7900") {
+            return 16;
+        }
+        if lower.contains("5900x") || lower.contains("3900x") {
+            return 12;
+        }
         // SMT: assume 2 threads per core
         (threads / 2).max(1).min(threads)
     }
@@ -475,9 +493,15 @@ impl AdaptivePerfEngine {
             use std::mem::MaybeUninit;
             #[repr(C)]
             struct MemoryStatusEx {
-                length: u32, memory_load: u32, total_phys: u64, avail_phys: u64,
-                total_page_file: u64, avail_page_file: u64, total_virtual: u64,
-                avail_virtual: u64, avail_extended_virtual: u64,
+                length: u32,
+                memory_load: u32,
+                total_phys: u64,
+                avail_phys: u64,
+                total_page_file: u64,
+                avail_page_file: u64,
+                total_virtual: u64,
+                avail_virtual: u64,
+                avail_extended_virtual: u64,
             }
             extern "system" {
                 fn GlobalMemoryStatusEx(buf: *mut MemoryStatusEx) -> i32;
@@ -505,7 +529,12 @@ impl AdaptivePerfEngine {
             }
         }
         let _ = cpu_model;
-        (22_000, "Discrete GPU (speed_first)".to_string(), false, false)
+        (
+            22_000,
+            "Discrete GPU (speed_first)".to_string(),
+            false,
+            false,
+        )
     }
 
     /// Pick best discrete GPU — fixes wmic returning iGPU/Microsoft Basic first
@@ -525,8 +554,16 @@ impl AdaptivePerfEngine {
         enumerate_display_devices()
     }
 
+    /// **wave 127 EA-3 (2026-07-26)**: 呼出元は detect_gpu_fast_flagship/
+    /// detect_gpu_heuristic の cfg(windows) ブロックと mod tests (:750) のみ →
+    /// `cfg(any(test, windows))` で生成範囲を明示し lib (Linux) の dead_code
+    /// 警告を根治 (greedy_merge_2d_pull の cfg(test) 分類と同型の整理)。
+    #[cfg(any(test, target_os = "windows"))]
     fn pick_best_gpu(names: &[String]) -> (u32, String, bool, bool) {
-        let mut best_name = names.last().cloned().unwrap_or_else(|| "Unknown GPU".to_string());
+        let mut best_name = names
+            .last()
+            .cloned()
+            .unwrap_or_else(|| "Unknown GPU".to_string());
         let mut best_score = 0u32;
 
         for name in names {
@@ -547,25 +584,49 @@ impl AdaptivePerfEngine {
 
         let lower = best_name.to_lowercase();
         let is_software = lower.contains("microsoft basic") || lower.contains("llvmpipe");
-        let is_mobile = (lower.contains("intel") || lower.contains("uhd") || lower.contains("iris xe"))
-            && !lower.contains("rx ") && !lower.contains("rtx ");
+        let is_mobile =
+            (lower.contains("intel") || lower.contains("uhd") || lower.contains("iris xe"))
+                && !lower.contains("rx ")
+                && !lower.contains("rtx ");
 
         (best_score, best_name, is_mobile, is_software)
     }
 
     fn score_gpu_name(name: &str) -> u32 {
         let n = name.to_lowercase();
-        if n.contains("rx 7900 xtx") || n.contains("rtx 4090") { return 30_000; }
-        if n.contains("rx 7900") || n.contains("rtx 4080") { return 26_000; }
-        if n.contains("rx 7800 xt") || n.contains("rx 7800") { return 22_000; }
-        if n.contains("rtx 4070 ti") || n.contains("rx 7700 xt") { return 19_000; }
-        if n.contains("rtx 4070") || n.contains("rx 7700") { return 17_000; }
-        if n.contains("rtx 3080") || n.contains("rx 6800") { return 15_000; }
-        if n.contains("rtx 3060") || n.contains("rx 6600") { return 10_000; }
-        if n.contains("gtx 1660") || n.contains("rx 580") { return 5_000; }
-        if n.contains("intel") && n.contains("uhd") { return 1_500; }
-        if n.contains("iris xe") { return 2_500; }
-        if n.contains("vega") && n.contains("radeon") { return 4_000; }
+        if n.contains("rx 7900 xtx") || n.contains("rtx 4090") {
+            return 30_000;
+        }
+        if n.contains("rx 7900") || n.contains("rtx 4080") {
+            return 26_000;
+        }
+        if n.contains("rx 7800 xt") || n.contains("rx 7800") {
+            return 22_000;
+        }
+        if n.contains("rtx 4070 ti") || n.contains("rx 7700 xt") {
+            return 19_000;
+        }
+        if n.contains("rtx 4070") || n.contains("rx 7700") {
+            return 17_000;
+        }
+        if n.contains("rtx 3080") || n.contains("rx 6800") {
+            return 15_000;
+        }
+        if n.contains("rtx 3060") || n.contains("rx 6600") {
+            return 10_000;
+        }
+        if n.contains("gtx 1660") || n.contains("rx 580") {
+            return 5_000;
+        }
+        if n.contains("intel") && n.contains("uhd") {
+            return 1_500;
+        }
+        if n.contains("iris xe") {
+            return 2_500;
+        }
+        if n.contains("vega") && n.contains("radeon") {
+            return 4_000;
+        }
         0
     }
 
@@ -631,7 +692,10 @@ mod windows_hw {
     fn utf16(s: &str) -> Vec<u16> {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     }
 
     fn wide_to_string(w: &[u16]) -> String {
@@ -642,7 +706,14 @@ mod windows_hw {
     pub fn read_registry_string(path: &str, value: &str) -> Option<String> {
         unsafe {
             let mut opened: HKEY = std::ptr::null_mut();
-            if RegOpenKeyExW(HKEY_LOCAL_MACHINE, utf16(path).as_ptr(), 0, 0x20019, &mut opened) != 0 {
+            if RegOpenKeyExW(
+                HKEY_LOCAL_MACHINE,
+                utf16(path).as_ptr(),
+                0,
+                0x20019,
+                &mut opened,
+            ) != 0
+            {
                 return None;
             }
             let mut buf = [0u8; 512];
@@ -692,12 +763,18 @@ mod windows_hw {
 #[cfg(target_os = "windows")]
 use windows_hw::{enumerate_display_devices, read_registry_string};
 
+/// **wave 127 EA-3**: 非 windows 対称 stub。呼出元は全て cfg(windows) 内のため
+/// 非 windows lib ビルドでは消費者ゼロ → `#[allow(dead_code)]` + 保持明記
+/// (directive⑦: 削除せず。windows 実装とのシグネチャ対称をテスト pin で担保、
+/// stub の振る舞い (None/空) 契約もテストで固定)。
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 fn read_registry_string(_path: &str, _value: &str) -> Option<String> {
     None
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 fn enumerate_display_devices() -> Vec<String> {
     Vec::new()
 }
@@ -705,6 +782,20 @@ fn enumerate_display_devices() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// wave 127 EA-3: 非 windows 対称 stub の振る舞い契約 pin
+    /// (directive⑦: 削除せず保持 — windows 実装とのシグネチャ対称を
+    /// 機械担保。Linux CI では本 pin が stub を消費し fail-visible を維持)。
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn non_windows_stubs_return_empty_contracts() {
+        assert_eq!(
+            read_registry_string("any", "any"),
+            None,
+            "stub は None 契約"
+        );
+        assert!(enumerate_display_devices().is_empty(), "stub は空 Vec 契約");
+    }
 
     #[test]
     fn rx7800xt_gets_performance_tier() {
@@ -757,10 +848,14 @@ mod tests {
     fn eco_tier_is_lightest() {
         let rp = AdaptivePerfEngine::render_profile(&HardwareProfile {
             tier: PerformanceTier::Minimal,
-            cpu_cores: 2, cpu_threads: 2,
-            cpu_model: "Old CPU".into(), ram_gb: 4.0,
-            gpu_score: 500, gpu_name: "Basic".into(),
-            is_mobile_gpu: true, is_software_renderer: true,
+            cpu_cores: 2,
+            cpu_threads: 2,
+            cpu_model: "Old CPU".into(),
+            ram_gb: 4.0,
+            gpu_score: 500,
+            gpu_name: "Basic".into(),
+            is_mobile_gpu: true,
+            is_software_renderer: true,
             flagship_boost: false,
         });
         assert_eq!(rp.render_distance, 0);

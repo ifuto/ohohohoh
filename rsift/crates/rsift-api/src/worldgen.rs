@@ -61,7 +61,7 @@ impl Chunk {
 }
 
 #[inline]
-fn chunk_index(x: usize, y: i32, z: usize, min_y: i32, world_height: u32) -> usize {
+fn chunk_index(x: usize, y: i32, z: usize, min_y: i32, _world_height: u32) -> usize {
     ((y - min_y) as usize) * (CHUNK_SIZE_X * CHUNK_SIZE_Z) + z * CHUNK_SIZE_X + x
 }
 
@@ -77,9 +77,8 @@ impl ValueNoise2D {
     }
 
     fn hash(&self, x: i64, z: i64) -> f32 {
-        let mut h = self.seed
-            ^ (x.wrapping_mul(374761393) as u64)
-            ^ (z.wrapping_mul(668265263) as u64);
+        let mut h =
+            self.seed ^ (x.wrapping_mul(374761393) as u64) ^ (z.wrapping_mul(668265263) as u64);
         h = h.wrapping_mul(1274126177);
         h ^= h >> 13;
         ((h & 0xFFFF) as f32) / 65535.0
@@ -184,8 +183,8 @@ impl ChunkGenerator {
 
     #[inline]
     fn hash_f32(&self, wx: i64, wz: i64, salt: i64) -> f32 {
-        let mut h = self.seed
-            ^ ((wx.wrapping_mul(2654435761) ^ wz.wrapping_mul(40503) ^ salt) as u64);
+        let mut h =
+            self.seed ^ ((wx.wrapping_mul(2654435761) ^ wz.wrapping_mul(40503) ^ salt) as u64);
         h = h.wrapping_mul(1274126177);
         h ^= h >> 13;
         ((h & 0xFFFF) as f32) / 65535.0
@@ -219,7 +218,8 @@ impl ChunkGenerator {
                     } else {
                         self.stone_block
                     };
-                    let idx = chunk_index(lx as usize, y, lz as usize, self.min_y, self.world_height);
+                    let idx =
+                        chunk_index(lx as usize, y, lz as usize, self.min_y, self.world_height);
                     blocks[idx] = state;
                 }
 
@@ -227,8 +227,13 @@ impl ChunkGenerator {
                 if top < self.sea_level {
                     for y in (top + 1)..=self.sea_level {
                         if y >= self.min_y && y < self.min_y + self.world_height as i32 {
-                            let idx =
-                                chunk_index(lx as usize, y, lz as usize, self.min_y, self.world_height);
+                            let idx = chunk_index(
+                                lx as usize,
+                                y,
+                                lz as usize,
+                                self.min_y,
+                                self.world_height,
+                            );
                             blocks[idx] = BlockState::WATER;
                         }
                     }
@@ -350,7 +355,10 @@ impl ChunkGeneratorRegistry {
 
     pub fn register(&mut self, g: ChunkGenerator) -> Result<(), String> {
         if self.generators.contains_key(&g.id) {
-            return Err(format!("chunk generator '{}' already registered", g.id.as_str()));
+            return Err(format!(
+                "chunk generator '{}' already registered",
+                g.id.as_str()
+            ));
         }
         info!("Registering ChunkGenerator: {}", g.id.as_str());
         self.generators.insert(g.id.clone(), Arc::new(g));
@@ -382,7 +390,9 @@ impl ChunkGeneratorRegistry {
     }
 
     pub fn active(&self) -> Option<Arc<ChunkGenerator>> {
-        self.active.as_ref().and_then(|id| self.generators.get(id).cloned())
+        self.active
+            .as_ref()
+            .and_then(|id| self.generators.get(id).cloned())
     }
 
     /// アクティブな生成器でチャンクを生成（未設定なら None）。
@@ -459,7 +469,10 @@ mod tests {
             .sea_level(62)
             .build();
         let c = g.generate(0, 0);
-        assert!(c.count_block(BlockState::WATER) > 0, "expected water below sea level");
+        assert!(
+            c.count_block(BlockState::WATER) > 0,
+            "expected water below sea level"
+        );
     }
 
     #[test]
@@ -521,9 +534,7 @@ mod tests {
         let dup = ChunkGenerator::default_for(RegistryKey::new("mod", "myworld"), 21);
         assert!(reg.register(dup).is_err());
         // set unknown -> error
-        assert!(reg
-            .set_active(&RegistryKey::new("mod", "nope"))
-            .is_err());
+        assert!(reg.set_active(&RegistryKey::new("mod", "nope")).is_err());
         assert!(reg.set_active(&RegistryKey::new("mod", "myworld")).is_ok());
         let c = reg.generate_active(0, 0);
         assert!(c.is_some());

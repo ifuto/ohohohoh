@@ -535,6 +535,12 @@
 | DZ-3 | 低 | **DrawIndexedIndirectArgs 同名 3 重複定義の統一**: gl33_compat.rs 独自定義 (CRLF 原生 309 行) を削除し `pub use crate::gpu_culling::DrawIndexedIndirectArgs` へ統一 (レイアウト同一 repr(C) 5 フィールド、Default derive は gpu_culling 側へ移設で等価性保持、真消費型は execute_indirect 版で azdo/full_graph_wiring 経路) — ambiguous glob re-export 警告根治・**捕捉 51 件目** (初版は原生 CRLF を保持した perl 編集に固執 → san ゲート 1 が変更内 CR を拒否し FAIL (原生 CRLF は引継ぎ一括 wave 対象だが変更ファイルは san 適格) → 当該ファイルを LF 正規化で根治・fmt 正準 0 維持) |
 | DZ-4 | 低 | occlusion_query::build_vertices private 化 (消費者は自モジュール内 :716 本体+テストのみ、pub 公開面の実需なし) — OccVertex (pub(self)) との private_interfaces 警告根治、将来需要時の再公開方針を保持明記 |
 | DZ-5 | 観 | **opt-gfx lib 警告 6→0 完全根治** 達成の機械照合記録 (api 側 13 件は別枠棚卸し)・HEAD 原生 3 ファイル (gpu_culling 161 行逸脱等、fmt 未適用の既往) へ fmdiff 正準形を忠実適用 (wave 文化の現逸脱 0 へ整合)・adversarial 対偶 3 ((a) gl33 戻し→ambiguous 復活・(b) pub 戻し→private_interfaces 復活・(c) import 戻し→unused 警告復活、全て build 照合で機械確認、復元後 0)・**捕捉 50 件目**: wave 125 報告の「1111 全緑」は機械値 1112 (1106+6) の誤記 → 全量再実行の test result で捕捉・訂正 |
+| EA-1 | 低 | rsift-api 未使用 import 6 件除去 (worldgen `debug`・neoforge_registries `debug`+`warn`・neoforge_capabilities `debug`・networking `std::collections::HashMap`・runtime `info`)・worldgen `chunk_index` の未使用 `world_height` 引数を `_world_height` 化 (chunk_index は高さ非依存設計、呼出 4 箇所の冗長渡しを混入防止のため明示)・runtime `let mut reg` (advancements lock) の unused_mut 根治 (非可変利用のみ) |
+| EA-2 | 低 | **異シグネチャ同名 2 重定義の ambiguous glob 根治 2 件**: ① lifecycle `ServerStartingFn` (= Arc&lt;dyn Fn()&gt;) → `ServerStartingCallback` rename (:66 type・:95 field・:124 register、消費者は自モジュールのみ。neoforge_event_bus 版 `ServerStartingFn` = Fn(&amp;ServerStartingEvent) の :182/189/199 と同名衝突) ② **mod_suite::modules → suite_modules へファイル mv** (fabric_api::modules (公式 Fabric 構造) との glob ambiguous 根治、`modules::`→`suite_modules::` 全 8 箇所+mod_suite/mod.rs:115 binding 文字列、git 記録は delete+add) |
+| EA-3 | 低 | adaptive_perf `pick_best_gpu` に `#[cfg(any(test, target_os = "windows"))]` 付与 (呼出元 detect_gpu_fast_flagship/detect_gpu_heuristic の cfg(windows) ブロック+mod tests :750 のみ → 非 windows lib での dead_code 根治、DX-1 cfg(test) 分類と同型整理)・非 windows 対称 stub `read_registry_string`/`enumerate_display_devices` に `#[allow(dead_code)]`+保持明記 (呼出元は全て cfg(windows) 内のため非 windows lib では消費者ゼロ、directive⑦により削除せず対称性契約として保持)・+1 strict テスト `non_windows_stubs_return_empty_contracts` (stub が None/空を返す契約を cfg(not(windows)) で fail-loud pin) |
+| EA-4 | 観 | HEAD 原生の **fmt 未適用逸脱へ正準形忠実適用** (neoforge_event_bus 等、DZ-5 と同型の既往逸脱)・**CRLF 原生 3 ファイル LF 正規化** (engine_caps 458 CR 行・mod_suite/mod 233・modules → suite_modules 51、HEAD 機械 grep 値) — 捕捉 51 と同型の「変更スコープ内 CR は san 適格」に基づく必要性駆動先行、`git diff --ignore-space-at-eol --numstat` で内容差分を照合 (LF 化自体は eol のみ) |
+| EA-5 | 観 | **rsift-api lib 警告 13→0 機械照合** (opt-gfx lib (DZ-5) に続き 2 crate 目の完全根治)・adversarial 対偶 2: (a) stub 側 `#[allow(dead_code)]` 外し→never used 警告 2 復活・(b) `ServerStartingCallback`→旧 `ServerStartingFn` 戻し→ambiguous glob 警告復活、各 build 照合で警告復活を機械確認・復元 md5 VERIFIED・復帰警告 0・api テスト 49/49 全緑維持 (net +1 = EA-3 pin 追設) |
+| EA-6 | 中 | **ゼロデイ級潜伏テスト欠陥の発見・修正**: engine_caps `sm69_requires_score_and_vram` 旧版は `assert!(probe.sm69_eligible)` を無条件要求、しかし `check_sm69_eligibility` は DX12 Agility (Windows+DXGI) を必要条件とし非 windows では常に not eligible → **Linux で構造的に必落ち**。bench.yml が `cargo test -p rsift-opt-gfx --lib` のみで rsift-api テストを走らせないため長期誰にも検出されず (orig 戻しで既往失敗を機械確定、本 wave 変更起因でない)。設計意図 (SM6.9 = DX12 Agility 依存 = Windows 専用) を公表し経路分割 pin 化: windows は eligible・非 windows は not eligible+block_reason に "DX12" 含有を全 PF fail-loud 固定・低スコア 8k は全環境で不可のまま不変。CI 軟点 (bench.yml が api テスト非対象) は棚卸し記録へ |
 
 ---
 
@@ -546,7 +552,9 @@
    BG-1 (SVO trace 意味論スタブ)、BL-1 (Perlin 全定数化)、
    BZ-1 (確保失敗リーク)、BX-1 (中間ヒット誤タグ)、
    CF-1 (転置射影)、CF-3 (complete-dead 三角形判定)、
-   CG-1 (転置フラスタム抽出・コモンモード不発)。
+   CG-1 (転置フラスタム抽出・コモンモード不発)、
+   EA-6 (SM6.9 資格テストの Linux 構造的必落ち・DX12 Agility 必要条件の
+   潜伏、CI が api テスト非対象のため長期未検出)。
 2. **自己誤り捕捉実績** (テスト赤/検算が設計ミスを検出した記録):
    BM-3 bfSize、BN-3 RCAS 入力 f64、BP-3 負入力 wrap、BX-2 ×2
    (octant シナリオ・R90² 表現)、CA-4 不変量設計、BZ 注入手順修正、
@@ -573,4 +581,7 @@
    aokana Hi-Z/visibility buffer 統合 (CB-3 で未配線明示)、
    render_pipeline.rs (1389 行) / full_graph_wiring.rs (2415 行) の本監査
    (2 wave ずつ想定)、
-   base 64294c6 時点で 131 テキストファイルが CRLF 含有 (= 原生・本セッション起因でないと機械判定。16,866 CR 行/120 ファイルを一括で触る大差分 + .gitattributes 設計が要るため LF 正規化は専用 wave で実施) の引継ぎ。
+   base 64294c6 時点で 131 テキストファイルが CRLF 含有 (= 原生・本セッション起因でないと機械判定。16,866 CR 行/120 ファイルを一括で触る大差分 + .gitattributes 設計が要るため LF 正規化は専用 wave で実施)、
+   bench.yml が rsift-api テスト非対象 (EA-6 で発覚した CI 軟点。api crate を
+   CI テスト対象に含めるかどうかは Actions 分数との兼ね合いのため
+   ユーザー判断へ。wave 127 時点 13→0 達成の警告 0 状態は seal で担保) の引継ぎ。

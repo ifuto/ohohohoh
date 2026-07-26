@@ -4,9 +4,9 @@
 //! (`AttachmentType<T>`, `ATTACHMENT_TYPES`) および新ケーパビリティシステムを実装します。
 
 use crate::registry::RegistryKey;
-use std::sync::{Arc, RwLock};
 use std::collections::HashMap;
-use tracing::{info, debug};
+use std::sync::{Arc, RwLock};
+use tracing::info;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachmentCodec {
@@ -93,7 +93,12 @@ pub trait IItemHandler: Send + Sync {
     fn get_slots(&self) -> usize;
     fn get_stack_in_slot(&self, slot: usize) -> Option<(RegistryKey, u32)>;
     fn insert_item(&mut self, slot: usize, item: RegistryKey, count: u32, simulate: bool) -> u32;
-    fn extract_item(&mut self, slot: usize, amount: u32, simulate: bool) -> Option<(RegistryKey, u32)>;
+    fn extract_item(
+        &mut self,
+        slot: usize,
+        amount: u32,
+        simulate: bool,
+    ) -> Option<(RegistryKey, u32)>;
 }
 
 pub struct RegisterCapabilitiesEvent {
@@ -117,16 +122,32 @@ impl RegisterCapabilitiesEvent {
         }
     }
 
-    pub fn register_block_entity(&self, cap_type: &str, block_entity_key: RegistryKey, provider_symbol: &str) {
-        info!("Registering NeoForge Capability [{}] for BlockEntity {}", cap_type, block_entity_key.as_str());
+    pub fn register_block_entity(
+        &self,
+        cap_type: &str,
+        block_entity_key: RegistryKey,
+        provider_symbol: &str,
+    ) {
+        info!(
+            "Registering NeoForge Capability [{}] for BlockEntity {}",
+            cap_type,
+            block_entity_key.as_str()
+        );
         if let Ok(mut map) = self.block_capabilities.write() {
-            map.insert(block_entity_key, format!("{}:{}", cap_type, provider_symbol));
+            map.insert(
+                block_entity_key,
+                format!("{}:{}", cap_type, provider_symbol),
+            );
         }
         crate::platform::mark_dirty();
     }
 
     pub fn register_item(&self, cap_type: &str, item_key: RegistryKey, provider_symbol: &str) {
-        info!("Registering NeoForge Capability [{}] for Item {}", cap_type, item_key.as_str());
+        info!(
+            "Registering NeoForge Capability [{}] for Item {}",
+            cap_type,
+            item_key.as_str()
+        );
         if let Ok(mut map) = self.item_capabilities.write() {
             map.insert(item_key, format!("{}:{}", cap_type, provider_symbol));
         }

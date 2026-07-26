@@ -138,7 +138,7 @@ impl EngineFeature {
             | Self::ReverseZ
             | Self::HiZOcclusion
             | Self::PersistentMappedBuffers
-            |             Self::StagingBelt
+            | Self::StagingBelt
             | Self::GpuDrivenDrawCull
             | Self::ConservativeRasterization
             | Self::MultiViewInstancing => ShaderModelTier::Sm66,
@@ -241,7 +241,8 @@ impl GpuCapabilityProbe {
     pub fn from_hardware(hw: &crate::adaptive_perf::HardwareProfile) -> Self {
         let vram_mb = estimate_vram_mb(hw);
         let dx12_agility_supported = cfg!(target_os = "windows") && !hw.is_software_renderer;
-        let (sm69_eligible, block_reason) = Self::check_sm69_eligibility(hw, vram_mb, dx12_agility_supported);
+        let (sm69_eligible, block_reason) =
+            Self::check_sm69_eligibility(hw, vram_mb, dx12_agility_supported);
         let recommended_tier = if sm69_eligible {
             ShaderModelTier::Sm69
         } else {
@@ -269,7 +270,10 @@ impl GpuCapabilityProbe {
             return (false, Some("software renderer".into()));
         }
         if !dx12 {
-            return (false, Some("DX12 Agility requires Windows + DXGI adapter".into()));
+            return (
+                false,
+                Some("DX12 Agility requires Windows + DXGI adapter".into()),
+            );
         }
         if hw.gpu_score < 12_000 {
             return (
@@ -295,7 +299,10 @@ impl GpuCapabilityProbe {
         (true, None)
     }
 
-    pub fn resolve_tier(&self, requested: Option<ShaderModelTier>) -> Result<ShaderModelTier, String> {
+    pub fn resolve_tier(
+        &self,
+        requested: Option<ShaderModelTier>,
+    ) -> Result<ShaderModelTier, String> {
         match requested {
             Some(ShaderModelTier::Sm69) if !self.sm69_eligible => Err(self
                 .sm69_block_reason
@@ -360,7 +367,10 @@ impl EngineCaps {
         }
     }
 
-    pub fn install_default(probe: &GpuCapabilityProbe, requested: Option<ShaderModelTier>) -> Result<Self, String> {
+    pub fn install_default(
+        probe: &GpuCapabilityProbe,
+        requested: Option<ShaderModelTier>,
+    ) -> Result<Self, String> {
         let tier = probe.resolve_tier(requested)?;
         let backend = if probe.dx12_agility_supported {
             RenderBackend::Dx12Agility
@@ -372,7 +382,9 @@ impl EngineCaps {
 
     /// Read JVM system properties set by installer (`-Drsift.shader_model=6.9`).
     pub fn from_jvm_props() -> Option<Self> {
-        let sm = std::env::var("rsift.shader_model").ok().and_then(|s| ShaderModelTier::from_str(&s))?;
+        let sm = std::env::var("rsift.shader_model")
+            .ok()
+            .and_then(|s| ShaderModelTier::from_str(&s))?;
         let backend = std::env::var("rsift.render.backend")
             .ok()
             .and_then(|s| RenderBackend::from_str(&s))
@@ -424,22 +436,40 @@ mod tests {
         }
     }
 
+    /// wave 127 EA-6 (2026-07-26、**ゼロデイ級発見**): 旧テストは
+    /// `assert!(probe.sm69_eligible)` を無条件要求していたが、
+    /// check_sm69_eligibility は **DX12 Agility (Windows + DXGI) を必要条件**
+    /// とし非 windows では常に not eligible → Linux では構造的に必落ち
+    /// (bench.yml が opt-gfx のみで rsift-api テストを走らせないため
+    /// **長期誰も気づかない潜伏テスト欠陥**)。設計意図 (SM6.9 = DX12 Agility
+    /// 依存 = Windows 専用) を誇張なく公表し、経路を分割 pin 化:
+    /// windows では eligible、非 windows では not eligible + ブロック理由に
+    /// "DX12" を含むことを全プラットフォームで fail-loud 固定。
     #[test]
     fn sm69_requires_score_and_vram() {
         let probe = GpuCapabilityProbe::from_hardware(&mock_hw(22_000, false, false));
-        assert!(probe.sm69_eligible);
+        #[cfg(target_os = "windows")]
+        {
+            assert!(probe.sm69_eligible, "Windows+DX12: 22k score は eligible");
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(!probe.sm69_eligible, "非 Windows: DX12 不在で常に不可");
+            let reason = probe.sm69_block_reason.as_deref().unwrap_or("");
+            assert!(
+                reason.contains("DX12"),
+                "ブロック理由は DX12 Agility 必要条件を示す: {reason}"
+            );
+        }
         let low = GpuCapabilityProbe::from_hardware(&mock_hw(8_000, false, false));
-        assert!(!low.sm69_eligible);
+        assert!(!low.sm69_eligible, "8k score は全環境で不可");
     }
 
     #[test]
     fn sm69_request_blocked_on_weak_gpu() {
         let probe = GpuCapabilityProbe::from_hardware(&mock_hw(5_000, false, false));
         assert!(probe.resolve_tier(Some(ShaderModelTier::Sm69)).is_err());
-        assert_eq!(
-            probe.resolve_tier(None).unwrap(),
-            ShaderModelTier::Sm66
-        );
+        assert_eq!(probe.resolve_tier(None).unwrap(), ShaderModelTier::Sm66);
     }
 
     #[test]

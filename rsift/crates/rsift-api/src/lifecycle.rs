@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{info, debug};
+use tracing::debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvironmentType {
@@ -63,7 +63,7 @@ pub trait DedicatedServerModInitializer: Send + Sync {
     fn on_server_init(&self, env: &ModLoaderEnvironment) -> Result<(), String>;
 }
 
-pub type ServerStartingFn = Arc<dyn Fn() + Send + Sync>;
+pub type ServerStartingCallback = Arc<dyn Fn() + Send + Sync>;
 pub type ServerStartedFn = Arc<dyn Fn() + Send + Sync>;
 pub type ServerStoppingFn = Arc<dyn Fn() + Send + Sync>;
 pub type ServerStoppedFn = Arc<dyn Fn() + Send + Sync>;
@@ -92,7 +92,7 @@ pub type EntityUnloadFn = Arc<dyn Fn(u32, &str) + Send + Sync>;
 
 #[derive(Default, Clone)]
 pub struct EventBus {
-    pub server_starting_callbacks: Vec<ServerStartingFn>,
+    pub server_starting_callbacks: Vec<ServerStartingCallback>,
     pub server_started_callbacks: Vec<ServerStartedFn>,
     pub server_stopping_callbacks: Vec<ServerStoppingFn>,
     pub server_stopped_callbacks: Vec<ServerStoppedFn>,
@@ -121,7 +121,7 @@ impl EventBus {
         Self::default()
     }
 
-    pub fn register_server_starting(&mut self, cb: ServerStartingFn) {
+    pub fn register_server_starting(&mut self, cb: ServerStartingCallback) {
         debug!("Registering ServerStarting lifecycle callback");
         self.server_starting_callbacks.push(cb);
     }

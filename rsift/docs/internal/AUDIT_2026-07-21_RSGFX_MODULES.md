@@ -6654,3 +6654,63 @@ CR を検出し FAIL** (原生 CRLF 自体は引継ぎ一括 wave の対象だ�
 スコープ内の CR は適格)。当該ファイルを LF 正規化で根治 (fmt 正準 0・
 内容同一性は差分 0 で担保)、「CRLF 一括 wave とは別に、必要性駆動の
 先行 1 件」として台帳・本節へ誠実記録。
+
+---
+
+## EA. rsift-api 警告掃除 wave (wave 127, 2026-07-26) — api lib 警告 13→0
+
+DZ で opt-gfx lib 0 を達成した残件 (api 側 13 件棚卸し) の消化。
+スコープ: rsift-api 10 モジュール + mod_suite 2 ファイル (12 変更)。
+ベースライン: api テスト 49 全緑・lib 警告 13 (全量再実測)。
+
+- **EA-1 [低]** 未使用 import 6 件除去 (worldgen `debug`・registries
+  `debug`+`warn`・capabilities `debug`・networking `HashMap`・runtime
+  `info`)。worldgen `chunk_index` の未使用 `world_height` 引数は
+  `_world_height` 化 (設計が高さ非依存で実害なし、混入防止で明示)。
+  runtime `let mut reg` (advancements lock) unused_mut 根治。
+- **EA-2 [低]** **異シグネチャ同名 2 重定義の ambiguous glob 根治**。
+  ① lifecycle `ServerStartingFn` (Arc&lt;dyn Fn()&gt;) →
+  `ServerStartingCallback` rename — neoforge_event_bus 版
+  (`Fn(&ServerStartingEvent)`) と同名 2 重定義だった。消費者は
+  lifecycle 自モジュール (:66/:95/:124) のみ (census grep)。
+  ② `mod_suite::modules` → `suite_modules` へファイル mv —
+  fabric_api::modules (公式 Fabric 構造) との glob ambiguous 根治。
+  参照全 8 箇所 + mod_suite/mod.rs:115 binding 文字列を置換、
+  git 記録は delete+add (rename 検出は commit 時の差分最小化任せ)。
+- **EA-3 [低]** adaptive_perf `pick_best_gpu` に
+  `#[cfg(any(test, target_os = "windows"))]` — 呼出元が全て
+  cfg(windows) ブロック内 + mod tests のため非 windows lib では dead。
+  DX-1 cfg(test) 分類と同型の「範囲明示整理」。非 windows 対称 stub
+  `read_registry_string`/`enumerate_display_devices` は消費者ゼロだが
+  directive⑦により削除せず `#[allow(dead_code)]`+保持明記、+1 strict
+  テスト `non_windows_stubs_return_empty_contracts` で None/空契約を
+  cfg(not(windows)) fail-loud pin (49/49 全緑の機械値)。
+- **EA-4 [観]** HEAD 原生 fmt 逸脱へ正準形忠実適用 (DZ-5 同型、
+  rsift-api は fmt 未適用の素面が多く残存) + **CRLF 原生 3 ファイル
+  LF 正規化** (engine_caps 458 CR 行・mod_suite/mod 233・modules →
+  suite_modules 51、HEAD 機械 grep 値)。捕捉 51 と同型「変更スコープ内
+  CR は san 適格」の必要性駆動先行、`git diff --ignore-space-at-eol`
+  で内容差分照合 (LF 化は eol のみ)。
+- **EA-5 [観]** **rsift-api lib 警告 13→0 機械照合** (opt-gfx (DZ-5)
+  に続く 2 crate 目の完全根治)。adversarial 対偶 2: (a) stub 側
+  `#[allow(dead_code)]` 外し → never used 警告 2 復活、(b)
+  `ServerStartingCallback` → 旧 `ServerStartingFn` 戻し → ambiguous
+  警告復活。各 build 照合で機械確認、復元 md5 VERIFIED・復帰警告 0。
+- **EA-6 [中]** **ゼロデイ級潜伏テスト欠陥の発見・修正**。
+  engine_caps `sm69_requires_score_and_vram` 旧版は
+  `assert!(probe.sm69_eligible)` を無条件要求していたが
+  `check_sm69_eligibility` は **DX12 Agility (Windows+DXGI) を必要条件**
+  とし非 windows では常に not eligible → **Linux では構造的に必落ち**。
+  bench.yml が `cargo test -p rsift-opt-gfx --lib` のみで rsift-api
+  テストを走らせないため、テストを実行する者がおらず**長期誰にも検出
+  されなかった** (orig 戻しで既往失敗を機械確定、本 wave 変更起因で
+  ない)。設計意図 (SM6.9 = DX12 Agility 依存 = Windows 専用) 自体は
+  正しいため、誇張なく公表したうえで経路を分割 pin 化: windows は
+  eligible・非 windows は not eligible + block_reason に "DX12" 含有を
+  全プラットフォーム fail-loud 固定・低スコア 8k は全環境で不可のまま
+  不変。CI 軟点 (bench.yml api 非対象) は台帳・棚卸しへ記録。
+
+本 wave は捕捉なし (捕捉 50/51 は DZ 節)。adversarial は上記対偶 2 で
+検出力確認、search 変異なし (警告掃除 wave のため DZ と同型運用)。
+digest `004c1cf5fb17bfe8` rows=357 は opt-gfx 由来のため api 変更で
+不変 (seal ゲート 5 で担保)。

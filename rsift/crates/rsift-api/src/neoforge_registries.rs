@@ -4,11 +4,11 @@
 //! `DeferredHolder<R, T>`, `DeferredItem`, `DeferredBlock`、および
 //! `RegisterEvent` / `NewRegistryEvent` を1ミリたりとも余すことなく実装します。
 
-use crate::registry::RegistryKey;
 use crate::neoforge_event_bus::ModEventBus;
-use std::sync::{Arc, RwLock};
+use crate::registry::RegistryKey;
 use std::collections::HashMap;
-use tracing::{info, debug, warn};
+use std::sync::{Arc, RwLock};
+use tracing::info;
 
 /// レジストリのターゲットタイプ (`BuiltInRegistries.BLOCK` や `BuiltInRegistries.ITEM` など)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -37,7 +37,11 @@ pub struct DeferredHolder<T> {
 }
 
 impl<T: Clone> DeferredHolder<T> {
-    pub fn new(key: RegistryKey, reg_type: RegistryType, supplier: impl Fn() -> T + Send + Sync + 'static) -> Self {
+    pub fn new(
+        key: RegistryKey,
+        reg_type: RegistryType,
+        supplier: impl Fn() -> T + Send + Sync + 'static,
+    ) -> Self {
         Self {
             key,
             registry_type: reg_type,
@@ -123,15 +127,24 @@ impl<T: Clone + Send + Sync + 'static> DeferredRegister<T> {
     }
 
     /// アイテム/ブロック等のサプライヤーを遅延登録 (`register(String name, Supplier<T> sup)`)
-    pub fn register(&mut self, name: impl Into<String>, supplier: impl Fn() -> T + Send + Sync + 'static) -> DeferredHolder<T> {
+    pub fn register(
+        &mut self,
+        name: impl Into<String>,
+        supplier: impl Fn() -> T + Send + Sync + 'static,
+    ) -> DeferredHolder<T> {
         let name_str = name.into();
         let key = RegistryKey::new(&self.namespace, &name_str);
-        info!("DeferredRegister [{:?}] adding entry supplier: {}", self.registry_type, key.as_str());
-        
+        info!(
+            "DeferredRegister [{:?}] adding entry supplier: {}",
+            self.registry_type,
+            key.as_str()
+        );
+
         let holder = DeferredHolder::new(key.clone(), self.registry_type.clone(), supplier);
         let holder_clone = holder.clone();
-        
-        self.entries.push((name_str, Arc::new(move || holder_clone.clone())));
+
+        self.entries
+            .push((name_str, Arc::new(move || holder_clone.clone())));
         holder
     }
 
