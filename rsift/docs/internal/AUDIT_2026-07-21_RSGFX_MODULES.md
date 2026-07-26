@@ -6356,3 +6356,41 @@ steps 8→16 (**精度改善方向の変更**) → **1 RED** — pin は「値�
 正準化後の固定版 5ce9282dc1435b242ebee4c7c8920595、adversarial は正規化
 前 017bf11e で実施後に fmdiff 適用 — fmt のみの差分のため結論不変、adv
 cache・rsift/bak/ 二重保存)。
+
+## DR. particle_control.rs (wave 118, 2026-07-26)
+
+204 → 522 行 (rustfmt 後)。消費者照合: full_graph_wiring:310-311 (default
+budget: 4000/256·10・保護 3.0・距離倍率 [0.7,1.0,1.0,0.8,0.8,0.6,0.5,1.0,1.0,
+1.0])・:1392-1408 (begin_tick→8 クアッド要求、max_render 128)。原版 md5
+4fbf63a1...。bench digest 行なし。wiring 密度 7-同数残存 4 件から辞書順で
+機械選定。
+
+本 wave の大物は **DR-1 [中] wiring 側の二重カウント+単調累積の根治**
+(上の台帳入り詳細に識る): `allow()` 内部計上と繰り返し呼出の**二重計上**と
+`reset_counts` 未呼出による **tick 跨ぎ単調累積**の複合で、パーティクル
+発生可否が数十 tick で構造的に間引き支配へ破壊。プロトコル strict 化
+(begin_tick→reset_counts→allow) で根治。wiring 側 strict テスト群は全て
+不変 (decision を直接 assert するテストは既存せず、digest 無関係)。
+
+| DR-1 | 中 | wiring 二重カウント+単調累積根治 + controller プロトコル厳格化 (count 回帰 pin も新設) |
+| DR-2 | 低 | kind_idx 静寂クランプ/直接 note_active 非対称 pin |
+| DR-3 | 低 | 短絡順序厳密契約 pin (総数超過=kind bypass/id=5,6 着地・保護計上・dist==max_d 非カリング・NaN 通常評価) |
+| DR-4 | 観 | FNV 間引き厳密 pin (系列/分布 80/160) + 検出空白発見→呼出側レート census pin 追設 |
+| DR-5 | 観 | loose `matches!` の決定的着地点精緻化 (222→Cull/5→Decimate) + 捕捉 40 (復元 anchor 崩壊で golden 流出しかけを md5 で即検知) |
+
+検証: **+7** strict テスト (count プロトコル/kind クランプ非対称/順序 bypass/
+距離境界+NaN/FNV 系列+分布/決定的着地+**call-site レート census**) で
+モジュール 11/11・既存 4 テスト不変。総数 **1080 全緑** (初版 1079 は集計
+誤り、seal 機械値で訂正)。wiring 側の
+改修は fmdiff により wiring:1392-1408 以外の差が byte 等価 (HEAD 逸脱 32
+含⊇現逸脱 32) と機械担保。**adversarial 誠実記録**: (a) 短絡順序交換 →
+**1 RED** (bypass pin: id=6 が CullTotalBudget→CullKindBudget へ決定変化
+rate 変化で検出)。(b) total 間引き 1/8→1/16 → **初回 11 全緑=検出不能**
+(id=5/6 の 2 値標本では 1/8/1/16 が同着点 (h%8=0∧h%16=0 / h%8=3∧h%16=3)、
+誠実記録) → 呼出側レート census pin (640 ids → 80 vs 40) 追設で **再実行
+1 RED** = wave 113 knee pin と同型の apparatus 強化。(c) `.min(9)` 除去 →
+**1 RED** (kind_idx=10 で per_kind_distance 配列 index OOB panic、fail-loud
+検出)。(d) 距離 `>`→`>=` → **1 RED** (境界包含 pin)。復元 md5 照合
+MD5-VERIFIED、(c) 前の版は rustfmt 変形で anchor 崩壊事故 (捕捉 40) 後に
+再採取 = 固定版 a966ad7dc4cd1584926cbb5c14fea10d (adv cache・rsift/bak/
+二重保存)。

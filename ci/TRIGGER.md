@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 153
+- count: 154
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -176,3 +176,5 @@
 - 2026-07-26 (count 152): wave 116 atmospheric 監査 (DP-1 [低] モデル形態誠実化 (一様 8km スラブ静近似/位相・Beer は物理式) + sky/位相の厳密 bit pin (Python IEEE f32+ctypes libm 独立シム事前導出→照合)・DP-2 [低] 球面正規化 ∫=1 中点 4096 + 床非発動解析証明・DP-3 [低] **WGSL PI 丸め根治** (3.14159265→3.14159274=f32 PI bit 一致、WGSL/CPU 非超越部 bit 一致) + 捕捉 37 (コメント自己衝突→言い換え根治)・DP-4 [観] normalize 境界/NaN 伝播 pin + 捕捉 38 (独立シム結合順誤り 1 ulp → 左結合訂正し 6/6 照合)・DP-5 [観] Vec4 ゼロ保持明記 計5項目、+5 strict テスト 1068 全緑・adversarial ((a) g 反転→1 RED 定性ピン非検出=Rayleigh 支配の誠実記録・(b) 右端点→1 RED・(c) 16π→4π→3 RED 3 層連鎖・(d) steps 16→1 RED 品質改善方向も決定性契約で検出・(e) WGSL PI 逆戻し→1 RED 走査 pin)・復元 md5 照合 VERIFIED 5 回・digest 004c1cf5 不変・固定版 md5 52464f66/4b734e96・台帳 423) の CI 緑確認用
 
 - 2026-07-26 (count 153): wave 117 fxaa 監査 (DQ-1 [中] **wiring 恒等証明**: wiring:1694 が同一色 5 引数で contrast≡0 → shade は bit 厳密恒等 = 本経路 FXAA 実効ゼロの構造確定 (DM-2 bloom と同種、実効化はフレームバッファ近傍設計判断で引継ぎ)・DQ-2 [低] 勾配軸タイブレーク pin (0x3F1EB852)・DQ-3 [低] NaN 位置非対称公表+pin (n/s マスク/e/w/center 伝播)・DQ-4 [観] threshold 2 分岐 pin (floor/relative 対蹠+輝度シフト丸め変化 0x3BB43958↔0x3BB43980)・DQ-5 [観] Rec.601 厳密性+Rec.709 混在警告+捕捉 39 (bits 二重 typo) 計5項目、+5 strict テスト 1073 全緑・adversarial ((a) >=化→2 RED・(b) ペア交換→3 RED CE 対称標本は交換不変で誠実記録・(c) 床除去→2 RED zero-luma 0/0 NaN 連鎖・(d) 係数攪拌→4 RED)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変・固定版 md5 5ce9282d・台帳 428) の CI 緑確認用
+
+- 2026-07-26 (count 154): wave 118 particle_control 監査 (DR-1 [中] **wiring 二重カウント+単調累積根治**: allow() 内部計上+重複呼出 (実効半量予算) + reset_counts 未呼出 (tick 跨ぎ累積で恒久間引き支配化) をプロトコル strict 化 (begin_tick→reset_counts→allow 1 本) で根治・DR-2 [低] kind 静寂クランプ pin・DR-3 [低] 短絡順序厳密契約 pin (総数超過=kind bypass/保護計上/dist=境界非カリング/NaN 通常評価)・DR-4 [観] FNV 厳密 pin (分布 80/160) + 検出空白発見→呼出側レート census 追設・DR-5 [観] 決定的着地精緻化+捕捉 40 (復元 anchor 崩壊の golden 流出事故を md5 即検知で根治) 計5項目、**+7** strict テスト 1080 全緑・adversarial ((a) 順序交換→1 RED・(b) 1/8→1/16 初回検出不能→census 追設で再 RED=w113 と同型強化・(c) clamp 除去→1 RED panic fail-loud・(d) >=化→1 RED)・復元 md5 照合 VERIFIED・digest 004c1cf5 不変・固定版 md5 a966ad7d・台帳 433) の CI 緑確認用

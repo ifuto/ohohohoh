@@ -1387,7 +1387,15 @@ impl FullGraphWiring {
         }
 
         // Particles: 実クアッド位置での発生可否判定 (実カメラ距離)。
+        // 【監査 2026-07-26 DR-1】旧実装は (1) reset_counts を一切呼ばず
+        // active 数が tick を跨いで**単調累積**し、(2) allow() 内部の
+        // note_active に加えて成功側で**もう一度** note_active を呼ぶ
+        // **二重カウント**をしていた。結果として実効予算は意図の半量以下へ
+        // 縮退し、数十 tick で恒久的に間引き (1/8/1/4) 支配へ落ち込んだ。
+        // プロトコルを「begin_tick → reset_counts → allow (内部カウント
+        // 1 本)」に根治。許否値の追跡は report 側を参照。
         self.particles.begin_tick();
+        self.particles.reset_counts();
         for (i, pos) in inputs.quad_positions.iter().take(8).enumerate() {
             let req = crate::particle_control::ParticleRequest {
                 id: (self.tick << 8) ^ i as u64,
@@ -1395,15 +1403,7 @@ impl FullGraphWiring {
                 pos: *pos,
                 velocity_mag: inputs.camera_speed,
             };
-            let decision = self.particles.allow(&req, inputs.camera_pos, 128.0);
-            if matches!(
-                decision,
-                crate::particle_control::SpawnDecision::Allow
-                    | crate::particle_control::SpawnDecision::AllowProtected
-                    | crate::particle_control::SpawnDecision::AllowDecimated
-            ) {
-                self.particles.note_active(i % 4);
-            }
+            let _decision = self.particles.allow(&req, inputs.camera_pos, 128.0);
         }
 
         // HUD: 実統計バーを実バッチ (draw call 削減量を実測)。

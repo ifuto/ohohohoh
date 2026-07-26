@@ -490,6 +490,11 @@
 | DQ-3 | 低 | **NaN 伝播の位置非対称**を公表+厳密 pin: min/max の NaN 脱落により **n/s の NaN は完全マスク** (gy=NaN→比較 false→else 分岐で E/W 有限なら有限出力) だが、e/w/center の NaN は avg/out へ伝播。マスク側は厳密 0x3F000000、伝播側は is_nan で pin (従来 doc の「非有限の扱いは未規定」を詳細規定へ更新) |
 | DQ-4 | 観 | threshold 2 分岐構造の厳密 pin: `base.max(lmax*rel)` は暗所で絶対床 1/256=0x3B800000、明所で相対支配 (例 0x3DAD3A1D)。暗所 0.0055 デルタで発動・+0.5 シフト同輝度差では不発の対蹠を厳密値固定 + **輝度シフトで contrast が丸め変化する事実** (0x3BB43958↔0x3BB43980) の公表 |
 | DQ-5 | 観 | luma は Rec.601 (0.299/0.587/0.114) で post チェーン他段 (bloom/exposure の Rec.709) と**係数系混在** — FXAA 伝統に整合した意図的選択だが消費者警告として公表、旧 doc「BT.601-ish」は係数として厳密に Rec.601 そのもののため訂正 + luma(1,1,1)=1.0 厳密 (0.299+0.587+0.114 の左結合和)。**捕捉 39 件目**: NaN pin で `bits(bits(0.5) as f32)` と二重 bits の自分 typo をテスト赤が捕捉 → 根治 |
+| DR-1 | 中 | **wiring 側のパーティクル二重カウント+単調累積を根治**: full_graph_wiring:1392-1408 は (1) `begin_tick` が tick 回転のみでカウント類をリセットしないのに `reset_counts` を一切呼ばず active 数が tick を跨いで単調累積し (予算解釈が「同時アクティブ」から「累積総数」へ変質)、(2) `allow()` 内部の note_active に加え成功側で**もう一度** note_active を呼ぶ**二重カウント** (実効予算≈意図の半量、per_kind 256 は 32 tick 級で恒久的間引き支配へ落ち込む構造)。プロトコル「begin_tick → reset_counts → allow (内部カウント 1 本)」に根治 + controller doc に使用規約を strict 化 (digest 経路なし、strict テスト影響なし) |
+| DR-2 | 低 | kind_idx>=10 は Other (9) への**静寂クランプ**契約公表+pin (allow 経路では 9 として計上、直接 note_active(10) は no-op の非対称) — DK-3 の 12bit wrap と同族の index ドメイン公表 |
+| DR-3 | 低 | 短絡順序の厳密契約公表+pin: 総数予算超過時はカテゴリ予算を**バイパス** (1/8 通過ならカテゴリ満杯でも AllowDecimated)・保護粒子も予算計上 (保護が far 粒子を飢えさせうる意図設計)・dist==max_d はカリングしない (厳密 `>`、ε 超過で CullTooFar・計上なし)・NaN 位置は両比較 false で**拒否しない通常予算評価**へ進む fail-visible |
+| DR-4 | 観 | FNV-1a 間引きの厳密ピン化: 独立 Python シムで事前導出 (keep(12345,50,8)=F・tick 0..4 系列 [F,F,F,F,T])・連続 640 ids で n=8→**厳密 80**・n=4→**厳密 160** (均質分布)・adversarial (b) で検出空白 (id=5/6 の 2 値標本では 1/8→1/16 変化が区別不可) を発見→**呼出側レート census pin 追設** (80 vs 40) で強化 |
+| DR-5 | 観 | 既存 kind_budget_enforcement の loose `matches!` を決定的着地点精緻化: keep(222,0,4)=false のため厳密 CullKindBudget・id=5 → AllowDecimated (FNV シム事前選定、fail-visible pin) + **捕捉 40 件目**: adversarial 復元手順の anchor が rustfmt による行分割で崩れ anchor assert 失敗のまま変体が golden へ流出しかけた → md5 で即時検知して完全修復 (復元 assert 二重化/流出後の即差替え手順へ強化) |
 
 ---
 
