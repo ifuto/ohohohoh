@@ -485,6 +485,11 @@
 | DP-3 | 低 | **WGSL PI 定数の丸め不足を根治** (`3.14159265` → `3.14159274` = f32::consts::PI 0x40490FDB と bit 一致) — WGSL/CPU 位相関数の非超越部は bit 一致へ。pow(d,1.5) はドライバ依存のため bit 同値は構造不可・normalize 0 振舞差 (CPU self 返却/WGSL NaN) を差異公表 + ソース走査 pin。**捕捉 37 件目**: 修正コメント自身が旧リテラル文字列を含み自己衝突 (pin の negative-anchor 設計ミスをテスト赤が捕捉) → コメント言い換えで根治 |
 | DP-4 | 観 | normalize 境界契約 pin (閾 1e-8 内外・0 vec→self 返却・NaN ray→全成分 NaN 伝播・transmittance(0)=1/+inf=0)。**捕捉 38 件目**: Python 独立シムで内部貢献の乗算を右結合的に評価 (Rust 左結合と z 成分 1 ulp 差) → 左結合に訂正し 6/6 成分で実測照合完了 |
 | DP-5 | 観 | Vec4/sky_color_v4/Vec4 ops 消費者ゼロの意図的保持明記 (WGSL 側パリティ API 面、消さない方針)。Wgsl 登録 (gpu_runtime collect_all_wgsl) 経路は確認済だがピクセル還流は pipeline 未追跡と誠実注記 |
+| DQ-1 | 中 | **fxaa::shade の wiring 恒等証明**: 唯一の Rust 側呼出 full_graph_wiring:1694 は同一色 (sharpened) を 5 引数 (center/n/s/e/w) 全てに与えるため lmin==lmax → contrast≡0 < threshold → `return center` の **bit 厳密な恒等写像** — 本経路の FXAA は描画に一切寄与しない (GPU AA は別経路 fxaa.wgsl 登録、Rust 側は参照実装/将来 CPU フォールバック)。DM-2 (bloom) と同種の構造的確定で誇張なく記録。実効化 (真の近傍サンプリング) はフレームバッファ配線を伴う設計判断のため引継ぎ |
+| DQ-2 | 低 | 勾配軸タイブレーク契約 pin: 厳密 `>` のため |gx|==|gy| は **else (E/W) 優先** — gray-luma 線形で 0.7-0.3≡0.9-0.5 となる構成で out=0x3F1EB852・t=0x3ECCCCC8 を Python IEEE f32 シム事前導出→照合 |
+| DQ-3 | 低 | **NaN 伝播の位置非対称**を公表+厳密 pin: min/max の NaN 脱落により **n/s の NaN は完全マスク** (gy=NaN→比較 false→else 分岐で E/W 有限なら有限出力) だが、e/w/center の NaN は avg/out へ伝播。マスク側は厳密 0x3F000000、伝播側は is_nan で pin (従来 doc の「非有限の扱いは未規定」を詳細規定へ更新) |
+| DQ-4 | 観 | threshold 2 分岐構造の厳密 pin: `base.max(lmax*rel)` は暗所で絶対床 1/256=0x3B800000、明所で相対支配 (例 0x3DAD3A1D)。暗所 0.0055 デルタで発動・+0.5 シフト同輝度差では不発の対蹠を厳密値固定 + **輝度シフトで contrast が丸め変化する事実** (0x3BB43958↔0x3BB43980) の公表 |
+| DQ-5 | 観 | luma は Rec.601 (0.299/0.587/0.114) で post チェーン他段 (bloom/exposure の Rec.709) と**係数系混在** — FXAA 伝統に整合した意図的選択だが消費者警告として公表、旧 doc「BT.601-ish」は係数として厳密に Rec.601 そのもののため訂正 + luma(1,1,1)=1.0 厳密 (0.299+0.587+0.114 の左結合和)。**捕捉 39 件目**: NaN pin で `bits(bits(0.5) as f32)` と二重 bits の自分 typo をテスト赤が捕捉 → 根治 |
 
 ---
 

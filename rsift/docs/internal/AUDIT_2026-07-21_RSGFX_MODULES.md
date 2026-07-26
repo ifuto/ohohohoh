@@ -6321,3 +6321,38 @@ steps 8→16 (**精度改善方向の変更**) → **1 RED** — pin は「値�
 変更には再 pin (手続) が要ることを誠実に明記。(e) WGSL PI 逆戻し →
 **1 RED** (ソース走査 pin)。復元 md5 照合 MD5-VERIFIED 5 回 (固定版 rs
 52464f66・wgsl 4b734e96、adv cache・rsift/bak/ 二重保存)。
+
+## DQ. fxaa.rs (wave 117, 2026-07-26)
+
+224 → 348 行 (rustfmt 後)。消費者照合: full_graph_wiring:1694-1699 (5 引数全
+てに同一色 — 恒等、下記 DQ-1)、gpu_runtime:64 経由で fxaa.wgsl 登録 (CPU
+側は CE (2026-07-24) 監査済の参照実装、本 wave は残ギャップの closure)。
+原版 md5 a390b4f25f374c...。wiring 密度 7-同数残存のうち辞書順先頭で機械選定。
+
+本 wave の中核は **DQ-1 [中] wiring 恒等証明**: CE 時代からの実装知識
+(「shade は CPU reference」) を構造化したのと同型に、唯一消費者が同一色
+5 引数を与えるため contrast≡0 → bit 厳密な恒等 = 本経路 FXAA 実効ゼロの
+確定。DM-2 (bloom) と同一の「ゼロ効果構造」クラスであり、実効化は
+フレームバッファ近傍サンプリングの設計判断のため引継ぎ棚卸しに登録
+(私は wiring を変更しない)。
+
+| DQ-1 | 中 | wiring 恒等証明 (hdr 域含む 5 点グリッド bit pin) — FXAA 本経路実効ゼロの構造確定 |
+| DQ-2 | 低 | 勾配軸タイブレーク pin (厳密 > → タイは E/W、0x3F1EB852) |
+| DQ-3 | 低 | NaN 位置非対称の公表+pin (n/s マスク =0x3F000000、e/w/center 伝播) |
+| DQ-4 | 観 | threshold 2 分岐選択 pin (floor/relative 支配の対蹠、輝度シフト丸め変化 0x3BB43958↔0x3BB43980) |
+| DQ-5 | 観 | Rec.601 vs Rec.709 係数混在の消費者警告 + Rec.601 厳密性 (luma(1,1,1)=1.0) pin + 捕捉 39 (bits 二重 typo をテスト赤が捕捉) |
+
+検証: +5 strict テスト (wiring 恒等 5 点/tie 厳密 bit/NaN 非対称/threshold
+対蹠/Rec.601 係数) でモジュール 12/12・既存 7 テスト不変。総数 **1073 全緑**。
+**adversarial 誠実記録**: (a) タイブレーク `>` → `>=` → **2 RED** (tie pin
++ threshold シーン A (gx=gy=0 の退化同値) 連鎖)。(b) ブレンドペア交換 →
+**3 RED** (NaN 非対称+tie+threshold) — 誠実記録: CE の vertical/horizontal
+厳密ピンは対称標本 (両ペア平均が 0.5 同値) で**交換不変**のため不発、
+新設の非対称標本 pin 群が検出 = CE/DQ の標本設計補完性の実例。 (c) 絶対床
+除去 → **2 RED** (threshold pin + wiring 恒等ピンが zero-luma 除算 NaN
+(0/0→clamp も NaN) で連鎖検出 = 床が恒等経路の 0/0 ガードにもなっている
+ことの実証)。(d) luma 0.299→0.300 → **4 RED** (luma 係数ピン+CE untouched
+等輝度根拠+tie 根拠+threshold)。復元 md5 照合 MD5-VERIFIED 4 回 (rustfmt
+正準化後の固定版 5ce9282dc1435b242ebee4c7c8920595、adversarial は正規化
+前 017bf11e で実施後に fmdiff 適用 — fmt のみの差分のため結論不変、adv
+cache・rsift/bak/ 二重保存)。
