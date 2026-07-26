@@ -5073,6 +5073,71 @@ fn cmd_selftest(_a: &[String]) -> i32 {
         san_scan_text("境界環は untouched\n").len().to_string(),
         "0".into(),
     );
+    // ---- rq 小言語ピン (2026-07-26 導入。Python struct+ctypes 移行の正確性錨) ----
+    // f32 加算の厳密 bits (ハード IEEE: 0.1f32+0.2f32 = 0x3E99999A)
+    let (rc, out) = rq_run("p 0.1+0.2;\n", false, false);
+    chk(
+        "rq f32 0.1+0.2 bits",
+        format!("{rc}:{}", out.trim_end()),
+        "0:0x3E99999A 0.3".into(),
+    );
+    // libm FFI 同一性 (ctypes libm 検証値: expf(0.5) = 0x3FD3094C)
+    let (rc, out) = rq_run("p exp(0.5);\n", false, false);
+    chk(
+        "rq libm exp(0.5) FFI",
+        format!("{rc}:{}", out.trim_end()),
+        "0:0x3FD3094C 1.6487212".into(),
+    );
+    // 静的型検査: i64 リテラルの f32 への暗黙流入を拒否
+    let (rc, out) = rq_run("let a: f32 = 1;\n", false, false);
+    chk(
+        "rq 型不一致拒否 (exit 2)",
+        format!("{rc}:{}", out.contains("宣言型 f32 に対し式の型は i64")),
+        "2:true".into(),
+    );
+    // fn + while + 左結合の決定出力 (1+..+5 = 15)
+    let (rc, out) = rq_run(
+        "fn addmul(a:i64,b:i64)->i64 { ret a*10+b; }\nlet s:i64 = 0;\nlet k:i64 = 1;\nwhile k <= 5 {\n s = addmul(s,k);\n k = k+1;\n}\np s;\n",
+        false,
+        false,
+    );
+    chk(
+        "rq fn/while 累積",
+        format!("{rc}:{}", out.trim_end()),
+        "0:0x0000000000003039 12345".into(),
+    );
+    // bits/b 往復 (from_bits 0x3F800000 = 1.0)
+    let (rc, out) = rq_run("p bits(b(0x3F800000));\n", false, false);
+    chk(
+        "rq bits/b 往復",
+        format!("{rc}:{}", out.trim_end()),
+        "0:0x3F800000 1065353216".into(),
+    );
+    // NaN 比較規則 (IEEE: 全順序比較 false、!= は true)
+    let (rc, out) = rq_run("p nan() < 1.0;\np nan() != nan();\n", false, false);
+    chk(
+        "rq NaN 比較規則",
+        format!("{rc}:{}", out.trim_end().replace('\n', "|")),
+        "0:false|true".into(),
+    );
+    // assert 失敗は exit 3 (fail-loud)
+    let (rc, out) = rq_run("assert 1 > 2;\n", false, false);
+    chk(
+        "rq assert 失敗 exit 3",
+        format!("{rc}:{}", out.contains("assert 失敗")),
+        "3:true".into(),
+    );
+    // prelude: dot3/len3/luma601 が Rust 実装と bit 同一 (luma601(1,0,0)=f32(0.299))
+    let (rc, out) = rq_run(
+        "p luma601(1.0,0.0,0.0);\np len3(0.0,0.0,4.5);\n",
+        true,
+        false,
+    );
+    chk(
+        "rq prelude luma601/len3",
+        format!("{rc}:{}", out.trim_end().replace('\n', "|")),
+        "0:0x3E991687 0.299|0x40900000 4.5".into(),
+    );
     println!("selftest: {fails} FAIL");
     if fails > 0 {
         1
@@ -5092,6 +5157,7 @@ fn cmd_man(a: &[String]) -> i32 {
         ("seal", "提出前検証の一括ゲート: 変更ファイル san → fmdiff → trailws → 台帳件数 → テスト → digest → env-check。--quick --skip-tests --skip-bench で段省略可。"),
         ("snapshot", "git 追跡全ファイルの md5 manifest を ~/.rspeed-cache/snapshot-<tag>.txt へ。snapcheck で ADD/MOD/DEL 差分 (sandbox 巻戻りの機械検出)。git が壊れていても restore-env 後でも動く。"),
         ("rescue", "変更追跡 + 指定 untracked の構造維持退避 (MANIFEST.md5 同梱)。既定 /tmp/rescue-rspeed。巻戻り 3 連発の教訓からの定形化。"),
+        ("rq", "AI 記述最優先の静的型付き小言語 (f32 IEEE 厳密計算。Python struct+ctypes libm エミュレートの移行先)。rspeed rq <file.rq> | -e ソース [--prelude] [--check]。構文は docs/internal/RQ.md。"),
         ("adv-save", "固定版ファイルのゴールデン + md5 を ~/.rspeed-cache/adv/ に保存。adversarial 儀式 (逆行・RED 確認・忠実復元) の bookend。"),
         ("adv-restore", "ゴールデンを md5 照合して厳密復元。復元後 md5 も再照合。1bit でも違えば失敗。adversarial 儀式の endgame。"),
         ("dead", "pub fn の repo 全体トークン参照数を数え、定義行のみのものを列挙。ヒューリスティック (同名衝突・self 参照混入あり) のため 『消費者ゼロ候補』。一次情報照合 (実 grep) を別途必須とする。"),
@@ -6015,7 +6081,7 @@ fn cmd_warn(args: &[String]) -> i32 {
 
 fn help() {
     println!(
-        "rspeed — Rsift 監査統合高速ツール (115 機能 / std のみ / rustc -O 単一バイナリ)\n\
+        "rspeed — Rsift 監査統合高速ツール (116 機能 / std のみ / rustc -O 単一バイナリ)\n\
 \n\
 [厳密数値系]\n\
   expr [--f32|--frac] <式>…      f64+bits / f32 逐次丸め / Fraction 正確分数 (循環節つき)\n\
@@ -6076,6 +6142,1482 @@ fn help() {
     );
 }
 
+// =====================================================================
+// rq: AI 記述最優先の静的型付き小言語 (2026-07-26 導入)
+//
+// 目的: これまで Python (struct + ctypes libm) で行っていた f32 IEEE
+// エミュレート計算を rspeed に全面移行するための実行基盤。
+//
+// 設計方針 (AI が生成ミスしにくいことを最優先、人間の読みやすさは二の次):
+//   * 全変数は明示型 `let x: f32 = ...;`、暗黙変換は一切なし (静的型検査)。
+//   * 文は必ず `;` 終端。空白/改行は意味を持たない。コメントは `#`。
+//   * キーワードは極小: let fn if else while ret p assert + 型名。
+//   * f32 演算はハードウェア IEEE-754 単精度 (Rust f32 と bit 同一)。
+//     sqrt/exp/ln/pow/sin/cos/atan2 は libm FFI (ctypes libm と bit 同一検証済)。
+//   * 演算子是法は Rust 同一・全て左結合 (|| < && < 比較 < 加減 < 乗除剰余)。
+//   * 仕様の完全版は docs/internal/RQ.md を参照 (構文を忘れたら必ず読む)。
+// =====================================================================
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RqTy {
+    F32,
+    I64,
+    U32,
+    Bool,
+    Str,
+}
+
+impl RqTy {
+    fn name(self) -> &'static str {
+        match self {
+            RqTy::F32 => "f32",
+            RqTy::I64 => "i64",
+            RqTy::U32 => "u32",
+            RqTy::Bool => "bool",
+            RqTy::Str => "str",
+        }
+    }
+    fn from_name(s: &str) -> Option<RqTy> {
+        match s {
+            "f32" => Some(RqTy::F32),
+            "i64" => Some(RqTy::I64),
+            "u32" => Some(RqTy::U32),
+            "bool" => Some(RqTy::Bool),
+            "str" => Some(RqTy::Str),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum RqTok {
+    Id(String),
+    Fl(f32),
+    I(i64),
+    U(u32),
+    St(String),
+    Op(&'static str),
+}
+
+/// rq 字句解析。エラーは (行, メッセージ)。
+fn rq_lex(src: &str) -> Result<Vec<(RqTok, usize)>, (usize, String)> {
+    let b = src.as_bytes();
+    let mut i = 0usize;
+    let mut line = 1usize;
+    let mut out: Vec<(RqTok, usize)> = Vec::new();
+    while i < b.len() {
+        let c = b[i];
+        if c == b'\n' {
+            line += 1;
+            i += 1;
+            continue;
+        }
+        if c == b' ' || c == b'\t' || c == b'\r' {
+            i += 1;
+            continue;
+        }
+        if c == b'#' {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        let ln = line;
+        if c.is_ascii_alphabetic() || c == b'_' {
+            let s = i;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
+            }
+            out.push((RqTok::Id(src[s..i].to_string()), ln));
+            continue;
+        }
+        if c.is_ascii_digit() {
+            let s = i;
+            if c == b'0' && i + 1 < b.len() && (b[i + 1] == b'x' || b[i + 1] == b'X') {
+                i += 2;
+                let hs = i;
+                while i < b.len() && (b[i].is_ascii_hexdigit() || b[i] == b'_') {
+                    i += 1;
+                }
+                if hs == i {
+                    return Err((ln, "0x の直後に 16 進桁が必要".into()));
+                }
+                let t: String = src[hs..i].chars().filter(|&c| c != '_').collect();
+                let v = u32::from_str_radix(&t, 16)
+                    .map_err(|_| (ln, format!("u32 範囲外の 16 進リテラル: 0x{t}")))?;
+                out.push((RqTok::U(v), ln));
+                continue;
+            }
+            while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'_') {
+                i += 1;
+            }
+            let mut is_f = false;
+            if i < b.len() && b[i] == b'.' {
+                is_f = true;
+                i += 1;
+                while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'_') {
+                    i += 1;
+                }
+            }
+            if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
+                is_f = true;
+                i += 1;
+                if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+                    i += 1;
+                }
+                let ds = i;
+                while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'_') {
+                    i += 1;
+                }
+                if ds == i {
+                    return Err((ln, "指数部に桁が必要".into()));
+                }
+            }
+            let t: String = src[s..i].chars().filter(|&c| c != '_').collect();
+            if is_f {
+                let v: f32 = t
+                    .parse()
+                    .map_err(|_| (ln, format!("f32 リテラル不正: {t}")))?;
+                out.push((RqTok::Fl(v), ln));
+            } else {
+                let v: i64 = t
+                    .parse()
+                    .map_err(|_| (ln, format!("i64 範囲外の整数リテラル: {t}")))?;
+                out.push((RqTok::I(v), ln));
+            }
+            continue;
+        }
+        if c == b'"' {
+            i += 1;
+            let mut raw: Vec<u8> = Vec::new();
+            loop {
+                if i >= b.len() {
+                    return Err((ln, "文字列が閉じていない".into()));
+                }
+                match b[i] {
+                    b'"' => {
+                        i += 1;
+                        break;
+                    }
+                    b'\\' => {
+                        i += 1;
+                        if i >= b.len() {
+                            return Err((ln, "エスケープ途中で終端".into()));
+                        }
+                        match b[i] {
+                            b'n' => raw.push(b'\n'),
+                            b't' => raw.push(b'\t'),
+                            b'\\' => raw.push(b'\\'),
+                            b'"' => raw.push(b'"'),
+                            x => return Err((ln, format!("未知のエスケープ: \\{}", x as char))),
+                        }
+                        i += 1;
+                    }
+                    x => {
+                        if x == b'\n' {
+                            line += 1;
+                        }
+                        raw.push(x);
+                        i += 1;
+                    }
+                }
+            }
+            let s = String::from_utf8(raw).map_err(|_| (ln, "文字列が UTF-8 不正".into()))?;
+            out.push((RqTok::St(s), ln));
+            continue;
+        }
+        // 2 文字演算子優先
+        let two = if i + 1 < b.len() { &src[i..i + 2] } else { "" };
+        let two_op = match two {
+            "<=" => Some("<="),
+            ">=" => Some(">="),
+            "==" => Some("=="),
+            "!=" => Some("!="),
+            "&&" => Some("&&"),
+            "||" => Some("||"),
+            "->" => Some("->"),
+            _ => None,
+        };
+        if let Some(op) = two_op {
+            out.push((RqTok::Op(op), ln));
+            i += 2;
+            continue;
+        }
+        let one_op = match c {
+            b'+' => Some("+"),
+            b'-' => Some("-"),
+            b'*' => Some("*"),
+            b'/' => Some("/"),
+            b'%' => Some("%"),
+            b'<' => Some("<"),
+            b'>' => Some(">"),
+            b'!' => Some("!"),
+            b'=' => Some("="),
+            b';' => Some(";"),
+            b':' => Some(":"),
+            b',' => Some(","),
+            b'(' => Some("("),
+            b')' => Some(")"),
+            b'{' => Some("{"),
+            b'}' => Some("}"),
+            _ => None,
+        };
+        match one_op {
+            Some(op) => {
+                out.push((RqTok::Op(op), ln));
+                i += 1;
+            }
+            None => {
+                return Err((ln, format!("解釈できない文字: {:?}", c as char)));
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[derive(Clone, Debug)]
+struct RqE {
+    k: RqEK,
+    ln: usize,
+}
+
+#[derive(Clone, Debug)]
+enum RqEK {
+    Fl(f32),
+    I(i64),
+    U(u32),
+    Bl(bool),
+    Sl(String),
+    Var(String),
+    Call(String, Vec<RqE>),
+    Neg(Box<RqE>),
+    Not(Box<RqE>),
+    Bin(&'static str, Box<RqE>, Box<RqE>),
+}
+
+#[derive(Clone, Debug)]
+struct RqS {
+    k: RqSK,
+    ln: usize,
+}
+
+#[derive(Clone, Debug)]
+enum RqSK {
+    Let {
+        n: String,
+        ty: RqTy,
+        e: RqE,
+    },
+    Set {
+        n: String,
+        e: RqE,
+    },
+    Fn {
+        n: String,
+        ps: Vec<(String, RqTy)>,
+        rt: RqTy,
+        body: Vec<RqS>,
+    },
+    If {
+        c: RqE,
+        t: Vec<RqS>,
+        f: Vec<RqS>,
+    },
+    While {
+        c: RqE,
+        body: Vec<RqS>,
+    },
+    Ret(RqE),
+    P(RqE),
+    Assert(RqE),
+    Block(Vec<RqS>),
+}
+
+/// 予約語 (変数名・関数名として使用不可)。AI が衝突で混乱しないよう列挙固定。
+const RQ_RESERVED: &[&str] = &[
+    "let", "fn", "if", "else", "while", "ret", "p", "assert", "true", "false", "f32", "i64", "u32",
+    "bool", "str",
+];
+
+struct RqParser {
+    t: Vec<(RqTok, usize)>,
+    p: usize,
+}
+
+impl RqParser {
+    fn peek(&self) -> Option<&RqTok> {
+        self.t.get(self.p).map(|(k, _)| k)
+    }
+    fn peek_ln(&self) -> usize {
+        self.t.get(self.p).map(|(_, l)| *l).unwrap_or(0)
+    }
+    fn next(&mut self) -> Option<RqTok> {
+        let r = self.t.get(self.p).map(|(k, _)| k.clone());
+        if r.is_some() {
+            self.p += 1;
+        }
+        r
+    }
+    fn at_op(&self, op: &str) -> bool {
+        matches!(self.peek(), Some(RqTok::Op(o)) if *o == op)
+    }
+    fn eat_op(&mut self, op: &str) -> bool {
+        if self.at_op(op) {
+            self.p += 1;
+            true
+        } else {
+            false
+        }
+    }
+    fn expect_op(&mut self, op: &str) -> Result<usize, (usize, String)> {
+        let ln = self.peek_ln();
+        if self.eat_op(op) {
+            Ok(ln)
+        } else {
+            Err((ln, format!("`{op}` が必要 (直前トークン位置)")))
+        }
+    }
+    fn take_id(&mut self) -> Result<(String, usize), (usize, String)> {
+        let ln = self.peek_ln();
+        match self.next() {
+            Some(RqTok::Id(s)) => {
+                if RQ_RESERVED.contains(&s.as_str()) {
+                    Err((ln, format!("予約語 `{s}` は識別子に使えない")))
+                } else {
+                    Ok((s, ln))
+                }
+            }
+            _ => Err((ln, "識別子が必要".into())),
+        }
+    }
+    fn take_ty(&mut self) -> Result<RqTy, (usize, String)> {
+        let ln = self.peek_ln();
+        match self.next() {
+            Some(RqTok::Id(s)) => RqTy::from_name(&s)
+                .ok_or_else(|| (ln, format!("型名 (f32/i64/u32/bool/str) が必要: `{s}`"))),
+            _ => Err((ln, "型名が必要".into())),
+        }
+    }
+    fn program(&mut self) -> Result<Vec<RqS>, (usize, String)> {
+        let mut v = Vec::new();
+        while self.peek().is_some() {
+            v.push(self.stmt()?);
+        }
+        Ok(v)
+    }
+    fn block_body(&mut self) -> Result<Vec<RqS>, (usize, String)> {
+        self.expect_op("{")?;
+        let mut v = Vec::new();
+        while !self.at_op("}") {
+            if self.peek().is_none() {
+                return Err((self.peek_ln(), "`}` が無いまま終端".into()));
+            }
+            v.push(self.stmt()?);
+        }
+        self.expect_op("}")?;
+        Ok(v)
+    }
+    fn stmt(&mut self) -> Result<RqS, (usize, String)> {
+        let ln = self.peek_ln();
+        if self.at_op("{") {
+            let b = self.block_body()?;
+            return Ok(RqS {
+                k: RqSK::Block(b),
+                ln,
+            });
+        }
+        match self.peek() {
+            Some(RqTok::Id(w)) if w == "let" => {
+                self.next();
+                let (n, _) = self.take_id()?;
+                self.expect_op(":")?;
+                let ty = self.take_ty()?;
+                self.expect_op("=")?;
+                let e = self.expr()?;
+                self.expect_op(";")?;
+                Ok(RqS {
+                    k: RqSK::Let { n, ty, e },
+                    ln,
+                })
+            }
+            Some(RqTok::Id(w)) if w == "fn" => {
+                self.next();
+                let (n, _) = self.take_id()?;
+                self.expect_op("(")?;
+                let mut ps = Vec::new();
+                if !self.at_op(")") {
+                    loop {
+                        let (pn, pln) = self.take_id()?;
+                        self.expect_op(":")?;
+                        let pt = self.take_ty()?;
+                        if ps.iter().any(|(x, _): &(String, RqTy)| *x == pn) {
+                            return Err((pln, format!("仮引数 `{pn}` が重複")));
+                        }
+                        ps.push((pn, pt));
+                        if !self.eat_op(",") {
+                            break;
+                        }
+                    }
+                }
+                self.expect_op(")")?;
+                self.expect_op("->")?;
+                let rt = self.take_ty()?;
+                let body = self.block_body()?;
+                Ok(RqS {
+                    k: RqSK::Fn { n, ps, rt, body },
+                    ln,
+                })
+            }
+            Some(RqTok::Id(w)) if w == "if" => {
+                self.next();
+                let c = self.expr()?;
+                let t = self.block_body()?;
+                let f = if matches!(self.peek(), Some(RqTok::Id(w2)) if w2 == "else") {
+                    self.next();
+                    self.block_body()?
+                } else {
+                    Vec::new()
+                };
+                Ok(RqS {
+                    k: RqSK::If { c, t, f },
+                    ln,
+                })
+            }
+            Some(RqTok::Id(w)) if w == "while" => {
+                self.next();
+                let c = self.expr()?;
+                let body = self.block_body()?;
+                Ok(RqS {
+                    k: RqSK::While { c, body },
+                    ln,
+                })
+            }
+            Some(RqTok::Id(w)) if w == "ret" => {
+                self.next();
+                let e = self.expr()?;
+                self.expect_op(";")?;
+                Ok(RqS {
+                    k: RqSK::Ret(e),
+                    ln,
+                })
+            }
+            Some(RqTok::Id(w)) if w == "p" => {
+                self.next();
+                let e = self.expr()?;
+                self.expect_op(";")?;
+                Ok(RqS { k: RqSK::P(e), ln })
+            }
+            Some(RqTok::Id(w)) if w == "assert" => {
+                self.next();
+                let e = self.expr()?;
+                self.expect_op(";")?;
+                Ok(RqS {
+                    k: RqSK::Assert(e),
+                    ln,
+                })
+            }
+            Some(RqTok::Id(_)) => {
+                let (n, nln) = self.take_id()?;
+                if !self.eat_op("=") {
+                    return Err((
+                        nln,
+                        format!("`{n}` の後は `=` (代入) のみ有効 (式文は禁止、p で出力)"),
+                    ));
+                }
+                let e = self.expr()?;
+                self.expect_op(";")?;
+                Ok(RqS {
+                    k: RqSK::Set { n, e },
+                    ln,
+                })
+            }
+            _ => Err((
+                ln,
+                "文の先頭が不明 (let/fn/if/while/ret/p/assert/代入/{)".into(),
+            )),
+        }
+    }
+    fn expr(&mut self) -> Result<RqE, (usize, String)> {
+        self.p_or()
+    }
+    fn p_or(&mut self) -> Result<RqE, (usize, String)> {
+        let mut l = self.p_and()?;
+        while self.at_op("||") {
+            let ln = self.peek_ln();
+            self.next();
+            let r = self.p_and()?;
+            l = RqE {
+                k: RqEK::Bin("||", Box::new(l), Box::new(r)),
+                ln,
+            };
+        }
+        Ok(l)
+    }
+    fn p_and(&mut self) -> Result<RqE, (usize, String)> {
+        let mut l = self.p_cmp()?;
+        while self.at_op("&&") {
+            let ln = self.peek_ln();
+            self.next();
+            let r = self.p_cmp()?;
+            l = RqE {
+                k: RqEK::Bin("&&", Box::new(l), Box::new(r)),
+                ln,
+            };
+        }
+        Ok(l)
+    }
+    fn p_cmp(&mut self) -> Result<RqE, (usize, String)> {
+        const CMPS: &[&str] = &["<", "<=", ">", ">=", "==", "!="];
+        let mut l = self.p_add()?;
+        loop {
+            let op = match self.peek() {
+                Some(RqTok::Op(o)) if CMPS.contains(o) => *o,
+                _ => break,
+            };
+            let ln = self.peek_ln();
+            self.next();
+            let r = self.p_add()?;
+            l = RqE {
+                k: RqEK::Bin(op, Box::new(l), Box::new(r)),
+                ln,
+            };
+        }
+        Ok(l)
+    }
+    fn p_add(&mut self) -> Result<RqE, (usize, String)> {
+        let mut l = self.p_mul()?;
+        loop {
+            let op = if self.at_op("+") {
+                Some("+")
+            } else if self.at_op("-") {
+                Some("-")
+            } else {
+                None
+            };
+            let Some(op) = op else { break };
+            let ln = self.peek_ln();
+            self.next();
+            let r = self.p_mul()?;
+            l = RqE {
+                k: RqEK::Bin(op, Box::new(l), Box::new(r)),
+                ln,
+            };
+        }
+        Ok(l)
+    }
+    fn p_mul(&mut self) -> Result<RqE, (usize, String)> {
+        let mut l = self.p_un()?;
+        loop {
+            let op = if self.at_op("*") {
+                Some("*")
+            } else if self.at_op("/") {
+                Some("/")
+            } else if self.at_op("%") {
+                Some("%")
+            } else {
+                None
+            };
+            let Some(op) = op else { break };
+            let ln = self.peek_ln();
+            self.next();
+            let r = self.p_un()?;
+            l = RqE {
+                k: RqEK::Bin(op, Box::new(l), Box::new(r)),
+                ln,
+            };
+        }
+        Ok(l)
+    }
+    fn p_un(&mut self) -> Result<RqE, (usize, String)> {
+        let ln = self.peek_ln();
+        if self.at_op("-") {
+            self.next();
+            let e = self.p_un()?;
+            return Ok(RqE {
+                k: RqEK::Neg(Box::new(e)),
+                ln,
+            });
+        }
+        if self.at_op("!") {
+            self.next();
+            let e = self.p_un()?;
+            return Ok(RqE {
+                k: RqEK::Not(Box::new(e)),
+                ln,
+            });
+        }
+        self.p_prim()
+    }
+    fn p_prim(&mut self) -> Result<RqE, (usize, String)> {
+        let ln = self.peek_ln();
+        match self.next() {
+            Some(RqTok::Fl(v)) => Ok(RqE { k: RqEK::Fl(v), ln }),
+            Some(RqTok::I(v)) => Ok(RqE { k: RqEK::I(v), ln }),
+            Some(RqTok::U(v)) => Ok(RqE { k: RqEK::U(v), ln }),
+            Some(RqTok::St(s)) => Ok(RqE { k: RqEK::Sl(s), ln }),
+            Some(RqTok::Id(s)) => {
+                if s == "true" {
+                    return Ok(RqE {
+                        k: RqEK::Bl(true),
+                        ln,
+                    });
+                }
+                if s == "false" {
+                    return Ok(RqE {
+                        k: RqEK::Bl(false),
+                        ln,
+                    });
+                }
+                if RQ_RESERVED.contains(&s.as_str()) {
+                    return Err((ln, format!("予約語 `{s}` は式に使えない")));
+                }
+                if self.at_op("(") {
+                    self.next();
+                    let mut args = Vec::new();
+                    if !self.at_op(")") {
+                        loop {
+                            args.push(self.expr()?);
+                            if !self.eat_op(",") {
+                                break;
+                            }
+                        }
+                    }
+                    self.expect_op(")")?;
+                    Ok(RqE {
+                        k: RqEK::Call(s, args),
+                        ln,
+                    })
+                } else {
+                    Ok(RqE {
+                        k: RqEK::Var(s),
+                        ln,
+                    })
+                }
+            }
+            Some(RqTok::Op("(")) => {
+                let e = self.expr()?;
+                self.expect_op(")")?;
+                Ok(e)
+            }
+            other => Err((ln, format!("式の先頭が不明: {other:?}"))),
+        }
+    }
+}
+
+/// 組み込み関数シグネチャ表 (名前, 仮引数型, 戻り値型)。同名の複数候補は
+/// 厳密一致で選ぶ (f/i/u のみ多重定義)。
+fn rq_builtin_sigs() -> Vec<(&'static str, Vec<RqTy>, RqTy)> {
+    use RqTy::*;
+    let mut v: Vec<(&'static str, Vec<RqTy>, RqTy)> = Vec::new();
+    for n in [
+        "sqrt", "exp", "ln", "sin", "cos", "abs", "floor", "ceil", "trunc", "round",
+    ] {
+        v.push((n, vec![F32], F32));
+    }
+    for n in ["pow", "atan2", "min", "max", "copysign"] {
+        v.push((n, vec![F32, F32], F32));
+    }
+    v.push(("bits", vec![F32], U32));
+    v.push(("b", vec![U32], F32));
+    for n in ["is_nan", "is_inf", "is_fin"] {
+        v.push((n, vec![F32], Bool));
+    }
+    for n in ["nan", "inf", "ninf"] {
+        v.push((n, vec![], F32));
+    }
+    v.push(("f", vec![I64], F32));
+    v.push(("f", vec![U32], F32));
+    v.push(("i", vec![F32], I64));
+    v.push(("i", vec![U32], I64));
+    v.push(("u", vec![F32], U32));
+    v.push(("u", vec![I64], U32));
+    v
+}
+
+enum RqErr {
+    /// 構文/型エラー (exit 2)
+    C(usize, String),
+    /// 実行時エラー (exit 3)
+    R(usize, String),
+}
+
+struct RqChecker {
+    /// ユーザー関数名 → (仮引数型, 戻り値型)
+    fns: HashMap<String, (Vec<RqTy>, RqTy)>,
+}
+
+impl RqChecker {
+    fn expr(&self, e: &RqE, scopes: &[HashMap<String, RqTy>]) -> Result<RqTy, RqErr> {
+        match &e.k {
+            RqEK::Fl(_) => Ok(RqTy::F32),
+            RqEK::I(_) => Ok(RqTy::I64),
+            RqEK::U(_) => Ok(RqTy::U32),
+            RqEK::Bl(_) => Ok(RqTy::Bool),
+            RqEK::Sl(_) => Ok(RqTy::Str),
+            RqEK::Var(n) => {
+                for sc in scopes.iter().rev() {
+                    if let Some(t) = sc.get(n) {
+                        return Ok(*t);
+                    }
+                }
+                Err(RqErr::C(e.ln, format!("未定義の変数 `{n}`")))
+            }
+            RqEK::Call(n, args) => {
+                let mut tys = Vec::new();
+                for a in args {
+                    tys.push(self.expr(a, scopes)?);
+                }
+                if let Some((ps, rt)) = self.fns.get(n) {
+                    if *ps == tys {
+                        return Ok(*rt);
+                    }
+                    return Err(RqErr::C(
+                        e.ln,
+                        format!(
+                            "fn {n} の引数型が不一致 (要 {} / 与 {})",
+                            ps.iter().map(|t| t.name()).collect::<Vec<_>>().join(","),
+                            tys.iter().map(|t| t.name()).collect::<Vec<_>>().join(",")
+                        ),
+                    ));
+                }
+                for (bn, ps, rt) in rq_builtin_sigs() {
+                    if bn == n && ps == tys {
+                        return Ok(rt);
+                    }
+                }
+                Err(RqErr::C(
+                    e.ln,
+                    format!(
+                        "未知の関数または引数型不一致: {n}({})",
+                        tys.iter().map(|t| t.name()).collect::<Vec<_>>().join(",")
+                    ),
+                ))
+            }
+            RqEK::Neg(x) => {
+                let t = self.expr(x, scopes)?;
+                match t {
+                    RqTy::F32 | RqTy::I64 => Ok(t),
+                    RqTy::U32 => Err(RqErr::C(
+                        e.ln,
+                        "u32 への unary - は禁止 (意図が wrapping なら 0 - x)".into(),
+                    )),
+                    _ => Err(RqErr::C(
+                        e.ln,
+                        format!("unary - は数値型のみ (与 {})", t.name()),
+                    )),
+                }
+            }
+            RqEK::Not(x) => {
+                let t = self.expr(x, scopes)?;
+                if t == RqTy::Bool {
+                    Ok(RqTy::Bool)
+                } else {
+                    Err(RqErr::C(e.ln, format!("! は bool のみ (与 {})", t.name())))
+                }
+            }
+            RqEK::Bin(op, a, b) => {
+                let ta = self.expr(a, scopes)?;
+                let tb = self.expr(b, scopes)?;
+                let ln = e.ln;
+                match *op {
+                    "&&" | "||" => {
+                        if ta == RqTy::Bool && tb == RqTy::Bool {
+                            Ok(RqTy::Bool)
+                        } else {
+                            Err(RqErr::C(
+                                ln,
+                                format!(
+                                    "{op} は bool 同士のみ (与 {} と {})",
+                                    ta.name(),
+                                    tb.name()
+                                ),
+                            ))
+                        }
+                    }
+                    "==" | "!=" => {
+                        if ta == tb && matches!(ta, RqTy::F32 | RqTy::I64 | RqTy::U32 | RqTy::Bool)
+                        {
+                            Ok(RqTy::Bool)
+                        } else {
+                            Err(RqErr::C(
+                                ln,
+                                format!(
+                                    "{op} は同型の f32/i64/u32/bool (与 {} と {})",
+                                    ta.name(),
+                                    tb.name()
+                                ),
+                            ))
+                        }
+                    }
+                    "<" | "<=" | ">" | ">=" => {
+                        if ta == tb && matches!(ta, RqTy::F32 | RqTy::I64 | RqTy::U32) {
+                            Ok(RqTy::Bool)
+                        } else {
+                            Err(RqErr::C(
+                                ln,
+                                format!(
+                                    "{op} は同型の f32/i64/u32 (与 {} と {})",
+                                    ta.name(),
+                                    tb.name()
+                                ),
+                            ))
+                        }
+                    }
+                    _ => {
+                        // 算術 (+ - * / %)
+                        if ta == tb && matches!(ta, RqTy::F32 | RqTy::I64 | RqTy::U32) {
+                            Ok(ta)
+                        } else {
+                            Err(RqErr::C(
+                                ln,
+                                format!("算術 {op} は同型の f32/i64/u32 (与 {} と {})。明示変換 f()/i()/u() を使う", ta.name(), tb.name()),
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fn stmts(
+        &self,
+        ss: &[RqS],
+        scopes: &mut Vec<HashMap<String, RqTy>>,
+        cur_ret: Option<RqTy>,
+    ) -> Result<(), RqErr> {
+        for s in ss {
+            match &s.k {
+                RqSK::Let { n, ty, e } => {
+                    let te = self.expr(e, scopes)?;
+                    if te != *ty {
+                        return Err(RqErr::C(
+                            s.ln,
+                            format!("let {n}: 宣言型 {} に対し式の型は {}", ty.name(), te.name()),
+                        ));
+                    }
+                    scopes.last_mut().unwrap().insert(n.clone(), *ty);
+                }
+                RqSK::Set { n, e } => {
+                    let te = self.expr(e, scopes)?;
+                    let mut found = None;
+                    for sc in scopes.iter().rev() {
+                        if let Some(t) = sc.get(n) {
+                            found = Some(*t);
+                            break;
+                        }
+                    }
+                    match found {
+                        None => return Err(RqErr::C(s.ln, format!("代入先 `{n}` が未定義"))),
+                        Some(t) if t != te => {
+                            return Err(RqErr::C(
+                                s.ln,
+                                format!(
+                                    "代入 {n}: 変数型 {} に対し式の型は {}",
+                                    t.name(),
+                                    te.name()
+                                ),
+                            ))
+                        }
+                        _ => {}
+                    }
+                }
+                RqSK::Fn { n, .. } => {
+                    return Err(RqErr::C(s.ln, format!("fn {n} はトップレベルにのみ書ける")));
+                }
+                RqSK::If { c, t, f } => {
+                    let tc = self.expr(c, scopes)?;
+                    if tc != RqTy::Bool {
+                        return Err(RqErr::C(s.ln, format!("if 条件は bool (与 {})", tc.name())));
+                    }
+                    scopes.push(HashMap::new());
+                    self.stmts(t, scopes, cur_ret)?;
+                    scopes.pop();
+                    scopes.push(HashMap::new());
+                    self.stmts(f, scopes, cur_ret)?;
+                    scopes.pop();
+                }
+                RqSK::While { c, body } => {
+                    let tc = self.expr(c, scopes)?;
+                    if tc != RqTy::Bool {
+                        return Err(RqErr::C(
+                            s.ln,
+                            format!("while 条件は bool (与 {})", tc.name()),
+                        ));
+                    }
+                    scopes.push(HashMap::new());
+                    self.stmts(body, scopes, cur_ret)?;
+                    scopes.pop();
+                }
+                RqSK::Ret(e) => {
+                    let Some(rt) = cur_ret else {
+                        return Err(RqErr::C(s.ln, "ret は fn の中でのみ有効".into()));
+                    };
+                    let te = self.expr(e, scopes)?;
+                    if te != rt {
+                        return Err(RqErr::C(
+                            s.ln,
+                            format!("ret の型 {} が fn 宣言の {} と不一致", te.name(), rt.name()),
+                        ));
+                    }
+                }
+                RqSK::P(e) => {
+                    self.expr(e, scopes)?;
+                }
+                RqSK::Assert(e) => {
+                    let te = self.expr(e, scopes)?;
+                    if te != RqTy::Bool {
+                        return Err(RqErr::C(s.ln, format!("assert は bool (与 {})", te.name())));
+                    }
+                }
+                RqSK::Block(b) => {
+                    scopes.push(HashMap::new());
+                    self.stmts(b, scopes, cur_ret)?;
+                    scopes.pop();
+                }
+            }
+        }
+        Ok(())
+    }
+    /// トップレベル: fn シグネチャ収集 → 本文検査 → 他文検査
+    fn program(
+        &self,
+        ss: &[RqS],
+    ) -> Result<HashMap<String, (Vec<(String, RqTy)>, RqTy, Vec<RqS>)>, RqErr> {
+        let mut fns: HashMap<String, (Vec<(String, RqTy)>, RqTy, Vec<RqS>)> = HashMap::new();
+        for s in ss {
+            if let RqSK::Fn { n, ps, rt, body } = &s.k {
+                if rq_builtin_sigs().iter().any(|(bn, _, _)| bn == n) {
+                    return Err(RqErr::C(s.ln, format!("組み込み関数名 `{n}` は再定義不可")));
+                }
+                if fns.contains_key(n) {
+                    return Err(RqErr::C(s.ln, format!("fn {n} が二重定義")));
+                }
+                fns.insert(n.clone(), (ps.clone(), *rt, body.clone()));
+            }
+        }
+        let chk = RqChecker {
+            fns: fns
+                .iter()
+                .map(|(n, (ps, rt, _))| (n.clone(), (ps.iter().map(|(_, t)| *t).collect(), *rt)))
+                .collect(),
+        };
+        // fn 本文の検査 (各 fn は独立スコープ)
+        for (n, (ps, rt, body)) in &fns {
+            let mut scopes = vec![ps.iter().cloned().collect::<HashMap<String, RqTy>>()];
+            // ret が構文的に 1 つ以上あることを要求
+            fn has_ret(ss: &[RqS]) -> bool {
+                ss.iter().any(|s| match &s.k {
+                    RqSK::Ret(_) => true,
+                    RqSK::If { t, f, .. } => has_ret(t) || has_ret(f),
+                    RqSK::While { body, .. } => has_ret(body),
+                    RqSK::Block(b) => has_ret(b),
+                    _ => false,
+                })
+            }
+            if !has_ret(body) {
+                let ln = body.first().map(|s| s.ln).unwrap_or(0);
+                return Err(RqErr::C(ln, format!("fn {n} に ret がありません")));
+            }
+            chk.stmts(body, &mut scopes, Some(*rt))?;
+        }
+        // トップレベル文の検査 (fn 除く)
+        let mut scopes = vec![HashMap::new()];
+        for s in ss {
+            if matches!(s.k, RqSK::Fn { .. }) {
+                continue;
+            }
+            chk.stmts(std::slice::from_ref(s), &mut scopes, None)?;
+        }
+        Ok(fns)
+    }
+}
+
+#[derive(Clone, Debug)]
+enum RqV {
+    F(f32),
+    I(i64),
+    U(u32),
+    B(bool),
+    S(String),
+}
+
+enum RqFlow {
+    None,
+    Ret(RqV),
+}
+
+const RQ_STEP_LIMIT: u64 = 10_000_000;
+const RQ_DEPTH_LIMIT: u32 = 2048;
+
+struct RqInterp<'a> {
+    fns: &'a HashMap<String, (Vec<(String, RqTy)>, RqTy, Vec<RqS>)>,
+    steps: u64,
+    depth: u32,
+    out: String,
+}
+
+extern "C" {
+    fn sqrtf(x: f32) -> f32;
+    fn expf(x: f32) -> f32;
+    fn logf(x: f32) -> f32;
+    fn powf(x: f32, y: f32) -> f32;
+    fn sinf(x: f32) -> f32;
+    fn cosf(x: f32) -> f32;
+    fn atan2f(y: f32, x: f32) -> f32;
+}
+
+impl<'a> RqInterp<'a> {
+    fn tick(&mut self, ln: usize) -> Result<(), RqErr> {
+        self.steps += 1;
+        if self.steps > RQ_STEP_LIMIT {
+            return Err(RqErr::R(
+                ln,
+                format!("実行ステップ上限 {RQ_STEP_LIMIT} 超過 (無限ループ疑い)"),
+            ));
+        }
+        Ok(())
+    }
+    fn expr(&mut self, e: &RqE, scopes: &mut Vec<HashMap<String, RqV>>) -> Result<RqV, RqErr> {
+        self.tick(e.ln)?;
+        match &e.k {
+            RqEK::Fl(v) => Ok(RqV::F(*v)),
+            RqEK::I(v) => Ok(RqV::I(*v)),
+            RqEK::U(v) => Ok(RqV::U(*v)),
+            RqEK::Bl(v) => Ok(RqV::B(*v)),
+            RqEK::Sl(v) => Ok(RqV::S(v.clone())),
+            RqEK::Var(n) => {
+                for sc in scopes.iter().rev() {
+                    if let Some(v) = sc.get(n) {
+                        return Ok(v.clone());
+                    }
+                }
+                Err(RqErr::R(e.ln, format!("未定義変数 `{n}` (型検査漏れ)")))
+            }
+            RqEK::Neg(x) => match self.expr(x, scopes)? {
+                RqV::F(v) => Ok(RqV::F(-v)),
+                RqV::I(v) => Ok(RqV::I(v.wrapping_neg())),
+                _ => Err(RqErr::R(e.ln, "unary - の型不正 (型検査漏れ)".into())),
+            },
+            RqEK::Not(x) => match self.expr(x, scopes)? {
+                RqV::B(v) => Ok(RqV::B(!v)),
+                _ => Err(RqErr::R(e.ln, "! の型不正 (型検査漏れ)".into())),
+            },
+            RqEK::Bin(op, a, b) => {
+                // && || は短絡評価
+                if *op == "&&" {
+                    let RqV::B(x) = self.expr(a, scopes)? else {
+                        return Err(RqErr::R(e.ln, "&& の型不正".into()));
+                    };
+                    if !x {
+                        return Ok(RqV::B(false));
+                    }
+                    let RqV::B(y) = self.expr(b, scopes)? else {
+                        return Err(RqErr::R(e.ln, "&& の型不正".into()));
+                    };
+                    return Ok(RqV::B(y));
+                }
+                if *op == "||" {
+                    let RqV::B(x) = self.expr(a, scopes)? else {
+                        return Err(RqErr::R(e.ln, "|| の型不正".into()));
+                    };
+                    if x {
+                        return Ok(RqV::B(true));
+                    }
+                    let RqV::B(y) = self.expr(b, scopes)? else {
+                        return Err(RqErr::R(e.ln, "|| の型不正".into()));
+                    };
+                    return Ok(RqV::B(y));
+                }
+                let va = self.expr(a, scopes)?;
+                let vb = self.expr(b, scopes)?;
+                rq_binop(op, &va, &vb)
+                    .ok_or_else(|| RqErr::R(e.ln, format!("二項演算 {op} の型不整合 (型検査漏れ)")))
+            }
+            RqEK::Call(n, args) => {
+                let mut vs = Vec::new();
+                for a in args {
+                    vs.push(self.expr(a, scopes)?);
+                }
+                if let Some((ps, _rt, body)) = self.fns.get(n) {
+                    self.depth += 1;
+                    if self.depth > RQ_DEPTH_LIMIT {
+                        return Err(RqErr::R(
+                            e.ln,
+                            format!("fn 呼出深度上限 {RQ_DEPTH_LIMIT} 超過 (再帰疑い)"),
+                        ));
+                    }
+                    let mut sc = vec![ps
+                        .iter()
+                        .map(|(pn, _)| pn.clone())
+                        .zip(vs)
+                        .collect::<HashMap<String, RqV>>()];
+                    let mut r = RqV::B(false);
+                    for s in body {
+                        if let RqFlow::Ret(v) = self.stmt(s, &mut sc)? {
+                            r = v;
+                            self.depth -= 1;
+                            return Ok(r);
+                        }
+                    }
+                    self.depth -= 1;
+                    return Err(RqErr::R(
+                        e.ln,
+                        format!("fn {n} が ret せずに終了 (全経路で ret すること)"),
+                    ));
+                }
+                rq_builtin(n, &vs).ok_or_else(|| {
+                    RqErr::R(e.ln, format!("組み込み関数 {n} の型不整合 (型検査漏れ)"))
+                })
+            }
+        }
+    }
+    fn stmt(&mut self, s: &RqS, scopes: &mut Vec<HashMap<String, RqV>>) -> Result<RqFlow, RqErr> {
+        self.tick(s.ln)?;
+        match &s.k {
+            RqSK::Let { n, e, .. } => {
+                let v = self.expr(e, scopes)?;
+                scopes.last_mut().unwrap().insert(n.clone(), v);
+                Ok(RqFlow::None)
+            }
+            RqSK::Set { n, e } => {
+                let v = self.expr(e, scopes)?;
+                for sc in scopes.iter_mut().rev() {
+                    if sc.contains_key(n) {
+                        sc.insert(n.clone(), v);
+                        return Ok(RqFlow::None);
+                    }
+                }
+                Err(RqErr::R(
+                    s.ln,
+                    format!("代入先 `{n}` が未定義 (型検査漏れ)"),
+                ))
+            }
+            RqSK::If { c, t, f } => {
+                let RqV::B(cv) = self.expr(c, scopes)? else {
+                    return Err(RqErr::R(s.ln, "if 条件の型不正".into()));
+                };
+                scopes.push(HashMap::new());
+                let body = if cv { t } else { f };
+                let mut r = RqFlow::None;
+                for st in body {
+                    let r2 = self.stmt(st, scopes)?;
+                    if matches!(r2, RqFlow::Ret(_)) {
+                        r = r2;
+                        break;
+                    }
+                }
+                scopes.pop();
+                Ok(r)
+            }
+            RqSK::While { c, body } => {
+                loop {
+                    let RqV::B(cv) = self.expr(c, scopes)? else {
+                        return Err(RqErr::R(s.ln, "while 条件の型不正".into()));
+                    };
+                    if !cv {
+                        break;
+                    }
+                    scopes.push(HashMap::new());
+                    let mut r = RqFlow::None;
+                    for st in body {
+                        if let RqFlow::Ret(v) = self.stmt(st, scopes)? {
+                            r = RqFlow::Ret(v);
+                            break;
+                        }
+                    }
+                    scopes.pop();
+                    if matches!(r, RqFlow::Ret(_)) {
+                        return Ok(r);
+                    }
+                }
+                Ok(RqFlow::None)
+            }
+            RqSK::Ret(e) => Ok(RqFlow::Ret(self.expr(e, scopes)?)),
+            RqSK::P(e) => {
+                let v = self.expr(e, scopes)?;
+                self.out.push_str(&rq_fmt(&v));
+                self.out.push('\n');
+                Ok(RqFlow::None)
+            }
+            RqSK::Assert(e) => {
+                let RqV::B(v) = self.expr(e, scopes)? else {
+                    return Err(RqErr::R(s.ln, "assert の型不正".into()));
+                };
+                if !v {
+                    return Err(RqErr::R(s.ln, "assert 失敗".into()));
+                }
+                Ok(RqFlow::None)
+            }
+            RqSK::Block(b) => {
+                scopes.push(HashMap::new());
+                let mut r = RqFlow::None;
+                for st in b {
+                    if let RqFlow::Ret(v) = self.stmt(st, scopes)? {
+                        r = RqFlow::Ret(v);
+                        break;
+                    }
+                }
+                scopes.pop();
+                Ok(r)
+            }
+            RqSK::Fn { n, .. } => Err(RqErr::R(
+                s.ln,
+                format!("fn {n} はトップレベルのみ (型検査漏れ)"),
+            )),
+        }
+    }
+}
+
+/// 二項演算 (型検査通過済みの同型ペアのみ成功)。
+fn rq_binop(op: &str, a: &RqV, b: &RqV) -> Option<RqV> {
+    match (a, b) {
+        (RqV::F(x), RqV::F(y)) => Some(match op {
+            "+" => RqV::F(x + y),
+            "-" => RqV::F(x - y),
+            "*" => RqV::F(x * y),
+            "/" => RqV::F(x / y),
+            "%" => RqV::F(x % y),
+            "<" => RqV::B(x < y),
+            "<=" => RqV::B(x <= y),
+            ">" => RqV::B(x > y),
+            ">=" => RqV::B(x >= y),
+            "==" => RqV::B(x == y),
+            "!=" => RqV::B(x != y),
+            _ => return None,
+        }),
+        (RqV::I(x), RqV::I(y)) => Some(match op {
+            "+" => RqV::I(x.wrapping_add(*y)),
+            "-" => RqV::I(x.wrapping_sub(*y)),
+            "*" => RqV::I(x.wrapping_mul(*y)),
+            "/" => RqV::I(x.checked_div(*y)?),
+            "%" => RqV::I(x.checked_rem(*y)?),
+            "<" => RqV::B(x < y),
+            "<=" => RqV::B(x <= y),
+            ">" => RqV::B(x > y),
+            ">=" => RqV::B(x >= y),
+            "==" => RqV::B(x == y),
+            "!=" => RqV::B(x != y),
+            _ => return None,
+        }),
+        (RqV::U(x), RqV::U(y)) => Some(match op {
+            "+" => RqV::U(x.wrapping_add(*y)),
+            "-" => RqV::U(x.wrapping_sub(*y)),
+            "*" => RqV::U(x.wrapping_mul(*y)),
+            "/" => RqV::U(x.checked_div(*y)?),
+            "%" => RqV::U(x.checked_rem(*y)?),
+            "<" => RqV::B(x < y),
+            "<=" => RqV::B(x <= y),
+            ">" => RqV::B(x > y),
+            ">=" => RqV::B(x >= y),
+            "==" => RqV::B(x == y),
+            "!=" => RqV::B(x != y),
+            _ => return None,
+        }),
+        (RqV::B(x), RqV::B(y)) => match op {
+            "==" => Some(RqV::B(x == y)),
+            "!=" => Some(RqV::B(x != y)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// 組み込み関数の実行 (型検査で引数型は保証済み)。
+fn rq_builtin(n: &str, vs: &[RqV]) -> Option<RqV> {
+    let f1 = |i: usize| -> Option<f32> {
+        match vs.get(i) {
+            Some(RqV::F(x)) => Some(*x),
+            _ => None,
+        }
+    };
+    match n {
+        "sqrt" => Some(RqV::F(unsafe { sqrtf(f1(0)?) })),
+        "exp" => Some(RqV::F(unsafe { expf(f1(0)?) })),
+        "ln" => Some(RqV::F(unsafe { logf(f1(0)?) })),
+        "pow" => Some(RqV::F(unsafe { powf(f1(0)?, f1(1)?) })),
+        "sin" => Some(RqV::F(unsafe { sinf(f1(0)?) })),
+        "cos" => Some(RqV::F(unsafe { cosf(f1(0)?) })),
+        "atan2" => Some(RqV::F(unsafe { atan2f(f1(0)?, f1(1)?) })),
+        "abs" => Some(RqV::F(f1(0)?.abs())),
+        "floor" => Some(RqV::F(f1(0)?.floor())),
+        "ceil" => Some(RqV::F(f1(0)?.ceil())),
+        "trunc" => Some(RqV::F(f1(0)?.trunc())),
+        "round" => Some(RqV::F(f1(0)?.round())),
+        "min" => Some(RqV::F(f1(0)?.min(f1(1)?))),
+        "max" => Some(RqV::F(f1(0)?.max(f1(1)?))),
+        "copysign" => Some(RqV::F(f1(0)?.copysign(f1(1)?))),
+        "bits" => Some(RqV::U(f1(0)?.to_bits())),
+        "b" => match vs.first() {
+            Some(RqV::U(x)) => Some(RqV::F(f32::from_bits(*x))),
+            _ => None,
+        },
+        "is_nan" => Some(RqV::B(f1(0)?.is_nan())),
+        "is_inf" => Some(RqV::B(f1(0)?.is_infinite())),
+        "is_fin" => Some(RqV::B(f1(0)?.is_finite())),
+        "nan" => Some(RqV::F(f32::NAN)),
+        "inf" => Some(RqV::F(f32::INFINITY)),
+        "ninf" => Some(RqV::F(f32::NEG_INFINITY)),
+        "f" => Some(RqV::F(match vs.first()? {
+            RqV::I(x) => *x as f32,
+            RqV::U(x) => *x as f32,
+            _ => return None,
+        })),
+        "i" => Some(RqV::I(match vs.first()? {
+            RqV::F(x) => *x as i64,
+            RqV::U(x) => *x as i64,
+            _ => return None,
+        })),
+        "u" => Some(RqV::U(match vs.first()? {
+            RqV::F(x) => *x as u32,
+            RqV::I(x) => *x as u32,
+            _ => return None,
+        })),
+        _ => None,
+    }
+}
+
+/// p 出力の整形 (数値は `0x<bits 16進大文字> <10進>` の統一形)。
+fn rq_fmt(v: &RqV) -> String {
+    match v {
+        RqV::F(x) => format!(
+            "0x{:08X} {}",
+            x.to_bits(),
+            if x.is_nan() {
+                "NaN".to_string()
+            } else if x.is_infinite() {
+                if x.is_sign_negative() {
+                    "-inf".into()
+                } else {
+                    "inf".into()
+                }
+            } else {
+                format!("{x}")
+            }
+        ),
+        RqV::I(x) => format!("0x{:016X} {}", *x as u64, x),
+        RqV::U(x) => format!("0x{:08X} {}", x, x),
+        RqV::B(x) => format!("{x}"),
+        RqV::S(x) => x.clone(),
+    }
+}
+
+/// --prelude で前置される標準小関数群 (Vec3/luma 系。監査 wave の定形)。
+/// 左結合評価は Rust 実装 (Vec3::dot/length, luma) と bit 同一。
+const RQ_PRELUDE: &str = r#"fn dot3(ax:f32,ay:f32,az:f32,bx:f32,by:f32,bz:f32)->f32 { ret ax*bx+ay*by+az*bz; }
+fn len3(x:f32,y:f32,z:f32)->f32 { ret sqrt(dot3(x,y,z,x,y,z)); }
+fn ns(x:f32,y:f32,z:f32)->f32 { let l:f32 = len3(x,y,z); if l > 1e-8 { ret 1.0/l; } ret 1.0; }
+fn luma601(r:f32,g:f32,b:f32)->f32 { ret 0.299*r+0.587*g+0.114*b; }
+fn luma709(r:f32,g:f32,b:f32)->f32 { ret 0.2126*r+0.7152*g+0.0722*b; }
+"#;
+
+/// rq プログラム全体の実行。戻り値は (終了コード, 出力文字列)。
+/// 0=成功, 2=構文/型エラー, 3=実行時エラー。エラー文は出力に含む。
+fn rq_run(src: &str, prelude: bool, check_only: bool) -> (i32, String) {
+    let owned;
+    let s = if prelude {
+        owned = format!("{RQ_PRELUDE}{src}");
+        owned.as_str()
+    } else {
+        src
+    };
+    let toks = match rq_lex(s) {
+        Ok(t) => t,
+        Err((ln, m)) => return (2, format!("rq: 行 {ln}: {m}\n")),
+    };
+    let mut p = RqParser { t: toks, p: 0 };
+    let prog = match p.program() {
+        Ok(v) => v,
+        Err((ln, m)) => return (2, format!("rq: 行 {ln}: {m}\n")),
+    };
+    let checker = RqChecker {
+        fns: HashMap::new(),
+    };
+    let fns = match checker.program(&prog) {
+        Ok(f) => f,
+        Err(RqErr::C(ln, m)) => return (2, format!("rq: 行 {ln}: {m}\n")),
+        Err(RqErr::R(ln, m)) => return (3, format!("rq: 行 {ln}: {m}\n")),
+    };
+    if check_only {
+        return (0, format!("rq: 型検査 OK (fn {} 件)\n", fns.len()));
+    }
+    let mut it = RqInterp {
+        fns: &fns,
+        steps: 0,
+        depth: 0,
+        out: String::new(),
+    };
+    let mut scopes = vec![HashMap::new()];
+    for st in &prog {
+        if matches!(st.k, RqSK::Fn { .. }) {
+            continue;
+        }
+        match it.stmt(st, &mut scopes) {
+            Ok(RqFlow::None) => {}
+            Ok(RqFlow::Ret(_)) => {
+                return (3, format!("rq: 行 {}: トップレベルで ret は不可\n", st.ln));
+            }
+            Err(RqErr::R(ln, m)) => {
+                it.out.push_str(&format!("rq: 行 {ln}: {m}\n"));
+                return (3, it.out);
+            }
+            Err(RqErr::C(ln, m)) => {
+                it.out.push_str(&format!("rq: 行 {ln}: {m}\n"));
+                return (2, it.out);
+            }
+        }
+    }
+    (0, it.out)
+}
+
+fn cmd_rq(a: &[String]) -> i32 {
+    let mut src: Option<String> = None;
+    let mut path: Option<&str> = None;
+    let mut prelude = false;
+    let mut check_only = false;
+    let mut i = 0;
+    while i < a.len() {
+        match a[i].as_str() {
+            "-e" => {
+                i += 1;
+                if i >= a.len() {
+                    eprintln!("rspeed rq: -e の後にソースが必要");
+                    return 2;
+                }
+                src = Some(a[i].clone());
+            }
+            "--prelude" => prelude = true,
+            "--check" => check_only = true,
+            s if path.is_none() => path = Some(s),
+            _ => {
+                eprintln!("rspeed rq: 引数過多: {}", a[i]);
+                return 2;
+            }
+        }
+        i += 1;
+    }
+    let code = match (src, path) {
+        (Some(s), None) => s,
+        (None, Some(p)) => match std::fs::read_to_string(p) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("rspeed rq: {p} が読めない: {e}");
+                return 2;
+            }
+        },
+        _ => {
+            eprintln!("usage: rspeed rq <file.rq> | -e '<ソース>' [--prelude] [--check]");
+            eprintln!("  f32 IEEE 厳密計算の小言語 (Python struct+ctypes 移行先)。構文は docs/internal/RQ.md");
+            return 2;
+        }
+    };
+    let (rc, out) = rq_run(&code, prelude, check_only);
+    if rc == 0 {
+        print!("{out}");
+    } else {
+        eprint!("{out}");
+    }
+    rc
+}
+
 fn main() {
     // | head 等で stdout が閉じた時の EPIPE パニックを静かに扱う
     // (UNIX ツール流儀: 141 (=128+SIGPIPE) で終了。それ以外のパニックは従来通り表示)。
@@ -6096,6 +7638,7 @@ fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let rc = match args.first().map(|s| s.as_str()) {
         Some("expr") => cmd_expr(&args[1..]),
+        Some("rq") => cmd_rq(&args[1..]),
         Some("san") => cmd_san(&args[1..]),
         Some("find") | Some("grep") => cmd_find(&args[1..]),
         Some("regcount") => cmd_regcount(&args[1..]),
