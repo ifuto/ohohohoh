@@ -6800,3 +6800,27 @@ a096609c) → 全緑確認。教訓: 復元コマンドは必ず md5 照合と�
 本 wave は捕捉なし (52/53 は EB 節)。HEAD 原生 fmt 逸脱 29 行相当を含め
 正準適用 (現逸脱 0・自己起因逸脱は初版 5 行を捕捉→正準で根治)。digest
 不変を seal ゲート 5 で担保。
+
+---
+
+## ED. overdraw_sort.rs (wave 130, 2026-07-26)
+
+実効経路 (report.overdraw_order → upload 順) に直結するソート系。既存 3
+テスト・110 行 (HEAD 時)。ベースライン 1114 全緑・警告 0。
+
+- **ED-1 [低] NaN 未防備 unwrap の堅牢化**: sort_front_to_back の
+  `da.partial_cmp(&db).unwrap()` — NaN 中心・NaN カメラが 1 つでも混入
+  すると partial_cmp が None で **lib 内パニック**。上流カメラは
+  world_column_store で非有限拒否 (既存 pin) されるが、本 API は公開
+  ライブラリとして素の配列を受ける規約のため変異は合法入力域に隣接。
+  `total_cmp` 全順序化 (有限値で演算結果完全一致、Rust 1.62+ の標準
+  全順序、NaN dist2 は最奥配置・panic なし)。adversarial 復元
+  (partial_cmp().unwrap() 戻し) で**実 panic**(:32:33) による RED を
+  機械確認 → 復元 MD5-VERIFIED・4/4 GREEN。+1 strict テストで契約 pin。
+  overdraw_saved 側の unwrap_or(Equal) も同根で total_cmp 化。
+- **ED-2 [観]** early_z_shaded/overdraw_saved の実消費者はテスト/計測
+  のみ (census grep、本番は sort_front_to_back × full_graph_wiring:704
+  のみ)。O(width × spans) 棚卸し、計測器+WGSL 検証資産として保持。
+
+本 wave は捕捉なし。HEAD 原生 fmt 逸脱 36 行含め正準適用 (現逸脱 0)。
+digest 不変を seal ゲート 5 で担保。

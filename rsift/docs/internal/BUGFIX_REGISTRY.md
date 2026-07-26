@@ -550,6 +550,8 @@
 | EC-1 | 低 | **BA-3 解消**: render_pipeline::frame の quad_budget 経路で cast_bytes_to_slice の失敗 (ラギッド/非整列) に `.map(to_vec).unwrap_or_default()` が被さり **全 quad を静寂空化して書き戻す** データ損失パス → pure 部 `apply_quad_budget_bytes` 抽出 (失敗時 bytes 無変更保持で bool 返却)+呼出側 fail-loud warn。生成規約上ほぼ到達不能だが「到達不能」を理由に損失を許容しない。+1 strict テスト (4→2 切詰め順序保持・budget 内不変・ラギッド 8n+1 で false+bytes 無変更)、adversarial 旧式戻しで **1 RED** 機械確認・復元 MD5-VERIFIED |
 | EC-2 | 観 | DRS `internal_size` の評価結果は読み捨て (`let _internal`) — 内部解像度の変更は未還元で、ヘッダ行「(no resolution scaling)」の現行効果と整合する計測実演として誠実注記 (将来の解像度スケーリング接続用結合点として保持、directive⑦) |
 | EC-3 | 観 | 材料引き当ては chunk_keys × pull_meshes の線形 find = O(n·m) — 両者とも数百スケールで現害は小さい (支配 tex 決定用途)。HashMap 化は冗長メモリとの実効見合いを要検討として棚卸し公表 |
+| ED-1 | 低 | overdraw_sort::sort_front_to_back / overdraw_saved の `partial_cmp(...).unwrap()` / `unwrap_or(Equal)` — NaN 中心・NaN カメラが 1 つ混入すると partial_cmp None で **lib 内パニック** (adversarial 復元で panic 実演 RED 機械確認) → `total_cmp` 全順序化 (有限値で結果完全一致 = IEEE-754 bit 全順序、-0.0<+0.0 も決定的、NaN dist2 は最奥配置で決定的・panic なし、M-4 系堅牢化と同型)。+1 strict テスト (NaN 中心で [1,0] 最奥配置・NaN カメラ全 Equal で安定元順序・再実行同一性・overdraw_saved NaN 無 panic)、消費者 census: 本番は full_graph_wiring:704 (report.overdraw_order) のみ |
+| ED-2 | 観 | early_z_shaded / overdraw_saved の実消費者はテスト/計測のみ (本番呼出なし、census grep) — 計算量 O(width × spans) 棚卸し、計測器+WGSL 実コンパイル検証資産として保持 (directive⑦) |
 
 ---
 
