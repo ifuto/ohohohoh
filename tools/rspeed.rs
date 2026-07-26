@@ -5305,6 +5305,30 @@ fn cmd_selftest(_a: &[String]) -> i32 {
         format!("{rc}:{}", out.trim_end()),
         "0:hit".into(),
     );
+    // RB-1 (2026-07-26 ゼロデイ級): rq 字句解析はマルチバイト文字で
+    // panic せず fail-loud へ到達する (旧版は &src[i..i+N] str スライスの
+    // char 境界でハードパニック。orig 版では "panicked … byte index 35 is
+    // not a char boundary" を機械確認済)。(a) `#` コメント内の日本語は受理、
+    // (b) 文法外の非 ASCII 文字は字句エラー rc=2 で帰還 (panic しない)、
+    // (c) 文字列リテラル中の日本語は受理。
+    let (rc, out) = rq_run("# のコメント (日本語)\np \"ok\";\n", false, false);
+    chk(
+        "rq RB-1 日本語コメント受理",
+        format!("{rc}:{}", out.trim_end()),
+        "0:ok".into(),
+    );
+    let (rc, out) = rq_run("の\n", false, false);
+    chk(
+        "rq RB-1 非 ASCII 文字は panic せず字句エラー",
+        format!("{rc}:{}", out.contains("解釈できない文字")),
+        "2:true".into(),
+    );
+    let (rc, out) = rq_run("p \"日本語の文字列\";\n", false, false);
+    chk(
+        "rq RB-1 日本語文字列受理",
+        format!("{rc}:{}", out.trim_end()),
+        "0:日本語の文字列".into(),
+    );
     println!("selftest: {fails} FAIL");
     if fails > 0 {
         1
@@ -6553,33 +6577,41 @@ fn rq_lex(src: &str) -> Result<Vec<(RqTok, usize)>, (usize, String)> {
             out.push((RqTok::St(s), ln));
             continue;
         }
-        // 3 文字演算子優先 (..=)
-        let three = if i + 2 < b.len() { &src[i..i + 3] } else { "" };
-        if three == "..=" {
+        // 3 文字演算子優先 (..=) — **RB-1 (2026-07-26 ゼロデイ級修正)**: 比較は
+        // byte スライスで行う。旧実装は `&src[i..i+3]` の **str スライス** だった
+        // ため、文法外のマルチバイト文字 (例: 日本語を含む `// …の…` — `//` は
+        // RQ でコメントではない) が「解釈できない文字」の fail-loud エラーに
+        // **到達する前に** char 境界 panic していた (rb 系に `//` コメントを
+        // 書いた初の実地で発見。演算子は全て ASCII なので byte 比較と str 比較の
+        // 結果は完全一致 = 挙動中立の根治)。
+        if i + 2 < b.len() && &b[i..i + 3] == b"..=" {
             out.push((RqTok::Op("..="), ln));
             i += 3;
             continue;
         }
-        // 2 文字演算子優先
-        let two = if i + 1 < b.len() { &src[i..i + 2] } else { "" };
-        let two_op = match two {
-            "<=" => Some("<="),
-            ">=" => Some(">="),
-            "==" => Some("=="),
-            "!=" => Some("!="),
-            "&&" => Some("&&"),
-            "||" => Some("||"),
-            "->" => Some("->"),
-            "=>" => Some("=>"),
-            ".." => Some(".."),
-            "+=" => Some("+="),
-            "-=" => Some("-="),
-            "*=" => Some("*="),
-            "/=" => Some("/="),
-            "%=" => Some("%="),
-            "<<" => Some("<<"),
-            ">>" => Some(">>"),
-            _ => None,
+        // 2 文字演算子優先 (RB-1: byte 比較、同根)。
+        let two_op = if i + 1 < b.len() {
+            match &b[i..i + 2] {
+                b"<=" => Some("<="),
+                b">=" => Some(">="),
+                b"==" => Some("=="),
+                b"!=" => Some("!="),
+                b"&&" => Some("&&"),
+                b"||" => Some("||"),
+                b"->" => Some("->"),
+                b"=>" => Some("=>"),
+                b".." => Some(".."),
+                b"+=" => Some("+="),
+                b"-=" => Some("-="),
+                b"*=" => Some("*="),
+                b"/=" => Some("/="),
+                b"%=" => Some("%="),
+                b"<<" => Some("<<"),
+                b">>" => Some(">>"),
+                _ => None,
+            }
+        } else {
+            None
         };
         if let Some(op) = two_op {
             out.push((RqTok::Op(op), ln));

@@ -6714,3 +6714,59 @@ DZ で opt-gfx lib 0 を達成した残件 (api 側 13 件棚卸し) の消化�
 検出力確認、search 変異なし (警告掃除 wave のため DZ と同型運用)。
 digest `004c1cf5fb17bfe8` rows=357 は opt-gfx 由来のため api 変更で
 不変 (seal ゲート 5 で担保)。
+
+---
+
+## EB. full_graph_wiring 重点監査 + rspeed RB-1 (wave 128, 2026-07-26)
+
+大物監査の先行: full_graph_wiring.rs (wave 128 時点 HEAD 2,690 行) の
+構造走査から得た確定項目 + 作業中に実地発見した tools ゼロデイ修正。
+ベースライン: opt-gfx 1112 全緑・lib 警告 0・api 49 全緑。
+
+- **EB-1 [低]** HUD 統計バー色の**優先順位罠**: 旧式
+  `0xFF30_8040 + (i as u32) << 4` は Rust の結合規則 (+ > <<) により
+  `(base + i) << 4` と評価 → alpha が意図の 0xFF (不透明) から 0xF3 へ
+  化け base 上位 nibble 欠落 (rq eb_hud.rq 導出機械値 i=0 → 0xF3080400、
+  i=1 → 0xF3080410)。実害域は HUD スクラッチバーの色のみ。base 定数の
+  0xFF alpha 明示から不透明意図と判定し `base + (i << 4)` へ根治、
+  ピン可能化のため純粋関数 `hud_layer_color` (:2095) 抽出。
+  +1 strict テスト :2176 (layer 0..3 の golden 0xFF308040/50/60/70 +
+  全 16 層 alpha=0xFF)、adversarial (a) 旧式戻しで **1 RED** 機械確認、
+  復元 MD5-VERIFIED (捕捉 52 後に実施)。
+- **EB-2 [低]** corner_ao_from_palette 戻りタプルの (u_sign, v_sign) は
+  3 分岐すべてで out_sign(face) と常に等しい冗長値かつ消費者ゼロ
+  (`let _` 破棄のみ) → 5 タプルを 3 タプルに縮小 (slab_slots 削除と同型、
+  実効符号は face_out が out_sign(face) を直引きのため喪失なし、
+  コンパイル中立照合)。
+- **EB-3 [観]** decals 評価ループの恒常空: push サイト 0 件・公開登録
+  API 不在 (census grep 機械確認) → 旧コメント「登録 API 経由の実データ
+  があれば」は虚偽、誠実訂正。結合点は directive⑦ で保持。
+- **EB-4 [観]** meshlet_cone 法線は i%6 巡回の 6 軸**合成**列 (実メッシュ
+  面法線未接続、件数のみ chunk_materials 由来) — 「実面法線クラスタ」
+  部分が虚偽だったため誠実訂正 (錐体ビルド/visible 評価は実演維持)。
+- **EB-5 [低]** 消費者不在ローカルメトリクス削除 2 件: frb_above
+  (camera 高さ比較カウント)・slab_base (確保前 used_bytes スナップ) —
+  いずれも集計後 `let _` 破棄のみ (slab_slots 前例同型、挙動中立
+  コンパイル照合)。
+- **EB-6 [中] ゼロデイ級 tools 欠陥 RB-1**: rspeed rq 字句解析
+  (rq_lex) の `&src[i..i+3]`/`&src[i..i+2]` **str スライス**が文法外
+  マルチバイト文字の char 境界でハードパニック (「解釈できない文字」
+  の fail-loud 経路を bypass)。発見経路: rq 全計算移行後、初めて日本語
+  を含む `//` コメント (RQ では文法外、コメントは `#`) を書いた実地で
+  "panicked … byte index 35 is not a char boundary" を機械再現。
+  byte スライス比較への根治 (演算子は全て ASCII、str/byte 比較の結果
+  完全一致 = 挙動中立) + selftest +3 ピン (51→**54**: 日本語コメント受理・
+  非 ASCII 字句エラー rc=2 帰還・日本語文字列受理)、`rspeed selftest`
+  0 FAIL。RQ.md 文法は不変 (実装欠陥の修正のみ)。
+
+**捕捉 52 件目**: EB-1 adversarial 検証後の復元 `cp` が cwd の誤りで
+**静寂失敗** (bash はエラーでも続行)、続くテストが変異体上で 1 fail。
+md5 VERIFIED 照合ステップの失敗出力で捕捉 → 正しい絶対パスで復元 (MD5
+a096609c) → 全緑確認。教訓: 復元コマンドは必ず md5 照合とセットで、
+失敗時は即停止運用を継続。影響ゼロ (seal 前に回帰)。
+**捕捉 53 件目**: EB 台帳追記 edit_file の old_text アンカが EA-1 行頭
+(`| EA-1 | 低 |`) を巻き込んで消費し、EA-1 行の接頭が削除され 特記事項
+ヘッダと癒合 → 追記直後の `grep -n "^| E-"` 構造検査で即捕捉、sed 行
+手術 (ブロック退避→行削除→接頭復元→EA-6 後へ再挿入) で EA-1..6/EB-1..6
+の時系列順に完全修復 (backup /tmp/registry_before_repair.md 保持)。
+教訓: 台帳追記の old_text は直前行末尾のみに絞る。

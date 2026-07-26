@@ -457,7 +457,10 @@ impl FullGraphWiring {
             self.registry
                 .set_state(*k, crate::dashmap_registry::ChunkBuildState::Building);
         }
-        let slab_base = self.gpu_arena.used_bytes();
+        // EB-5 (2026-07-26): 旧 slab_base (確保前 gpu_arena.used_bytes の
+        // スナップショット) も let _ 破棄のみの消費者不在メトリクスだった
+        // ため参照ごと削除 (slab_slots と同型。gpu_arena.used_bytes() 自体は
+        // vram_used_bytes 集計で引き続き実評価される)。
         // slab.alloc は allocator 状態を実際に進める副作用 (スロット消費・満杯判定)
         // 自体が目的。確保できたスロット数を数えるだけの書き込み専用カウンタ
         // (slab_slots) は消費者不在のため削除 (監査警告 full_graph_wiring.rs:404/411)。
@@ -715,7 +718,6 @@ impl FullGraphWiring {
             if let Some(h) = self.gpu_arena.alloc(bytes) {
                 self.gpu_alloc_queue.push_back((h, arena_epoch));
             }
-            let _ = slab_base;
         }
         // 2 エポック以上前の確保を退役→回収 (実世代管理)。
         while let Some((h, ep)) = self.gpu_alloc_queue.pop_front() {
@@ -876,7 +878,6 @@ impl FullGraphWiring {
         //    はなく、組立タプルは GPU へ送達されず破棄される。旧コメントの
         //    「GPU 入力へ実変換」は虚偽だったため訂正。count 自体は実測)。
         let mut frb_count = 0u32;
-        let mut frb_above = 0u32;
         for (i, pos) in inputs
             .quad_positions
             .iter()
@@ -886,12 +887,11 @@ impl FullGraphWiring {
             let mat = inputs.quad_materials.get(i).copied().unwrap_or(0);
             let _billboard = (*pos, 0.5f32, mat); // (center, half_size, color)
             frb_count += 1;
-            if pos[1] >= inputs.camera_pos[1] - 32.0 {
-                frb_above += 1;
-            }
+            // EB-5 (2026-07-26): 旧 frb_above (camera_pos[1]-32 未満との高さ
+            // 比較カウント) は集計後に let _ 破棄されるのみの消費者不在
+            // メトリクスだったため削除 (slab_slots 削除と同型、挙動中立)。
         }
         report.frb_billboards = frb_count;
-        let _ = frb_above;
 
         // -- SVDAG / Transform-Aware / Aokana (実パレットから実構築 — 初回 & 定期更新)。
         if let Some(palette) = inputs.section_palettes.first() {
@@ -1162,7 +1162,10 @@ impl FullGraphWiring {
             report.nanite_meshlets = clusters.meshlets.len() as u32;
             report.nanite_meshlets_culled = culled;
         }
-        // Meshlet cone: 実面法線クラスタ錐体カリング。
+        // Meshlet cone: 【誠実注記 EB-4 (2026-07-26)】法線は i%6 巡回の
+        // 6 軸**合成**列 (実メッシュの面法線には未接続、件数のみ
+        // chunk_materials.len() 由来) — 旧コメントの「実面法線クラスタ」は
+        // 虚偽だったため訂正。錐体のビルドと visible 評価自体は実演。
         {
             let normals: Vec<[f32; 3]> = (0..inputs.chunk_materials.len().min(16))
                 .map(|i| {
@@ -1429,7 +1432,7 @@ impl FullGraphWiring {
                     8.0 + v.clamp(0.0, 1.0) * 120.0,
                     18.0 + i as f32 * 12.0,
                 ],
-                0xFF30_8040 + (i as u32) << 4,
+                hud_layer_color(i as u16),
                 (0.0, 0.0),
             );
         }
@@ -1438,7 +1441,11 @@ impl FullGraphWiring {
         drop(hud_view);
         let _ = hud_saved;
 
-        // Decals: 実登録デカールのみ評価 (通常空 — 登録 API 経由の実データがあれば評価)。
+        // Decals: 【誠実注記 EB-3 (2026-07-26)】旧コメントの「登録 API 経由の
+        // 実データがあれば」は虚偽 — 本ベクタへの push 経路はクレート内に
+        // **存在しない** (census grep: 書き込みサイト 0 件、公開登録 API なし)。
+        // 本ループは恒常空で実評価は構造的に不発。将来の登録経路接続用の
+        // 結合点として保持 (directive⑦)。
         for d in &self.decals {
             let _ = crate::decals::decal_local(
                 crate::decals::Vec3::new(
@@ -2018,12 +2025,16 @@ fn corner_ao_from_palette(
     face: u32,
     lut: &crate::branchless_block::BlockLut,
 ) -> u32 {
-    let (axis_out, axis_u, axis_v, u_sign, v_sign) = match face {
-        2 | 3 => (1i32, 0i32, 2i32, out_sign(face), out_sign(face)), // Y 面: 接線 X,Z
-        0 | 1 => (0i32, 1i32, 2i32, out_sign(face), out_sign(face)), // X 面: 接線 Y,Z
-        _ => (2i32, 0i32, 1i32, out_sign(face), out_sign(face)),     // Z 面: 接線 X,Y
+    // EB-2 (2026-07-26): 旧 5 タプルの (u_sign, v_sign) は 3 分岐すべてで
+    // out_sign(face) と**常に等しい冗長値**かつ消費者不在 (let _ 破棄のみ)
+    // だったため削除 (slab_slots 削除と同型の純粋整理、挙動は完全中立で
+    // コンパイル照合)。実効の符号は直下 face_out が out_sign(face) を直接
+    // 引いており喪失なし。
+    let (axis_out, axis_u, axis_v) = match face {
+        2 | 3 => (1i32, 0i32, 2i32), // Y 面: 接線 X,Z
+        0 | 1 => (0i32, 1i32, 2i32), // X 面: 接線 Y,Z
+        _ => (2i32, 0i32, 1i32),     // Z 面: 接線 X,Y
     };
-    let _ = (u_sign, v_sign);
     let at = |dx: i32, dy: i32, dz: i32| -> bool {
         let (nx, ny, nz) = (x + dx, y + dy, z + dz);
         if nx < 0 || nz < 0 || ny < 0 || nx >= 16 || nz >= 16 {
@@ -2072,6 +2083,17 @@ fn out_sign(face: u32) -> i32 {
         0 | 2 | 4 => 1,
         _ => -1,
     }
+}
+
+/// HUD 統計バーのレイヤー色。【EB-1 (2026-07-26 修正)】旧式は
+/// `0xFF30_8040 + (i as u32) << 4` — Rust は `<<` より `+` が強く結合
+/// するため **`(base + i) << 4`** と評価され、alpha が意図の 0xFF
+/// (不透明) から 0xF3 へ化け、base 上位 nibble も捨てていた (rq 導出
+/// 機械値: i=0 で 0xF3080400)。不透明意図 (base 定数に 0xFF alpha を
+/// 据える書き方) に沿って `base + (i<<4)` に根治。ピン可能化のため
+/// 純粋関数として抽出 (tick_world 呼び出し点は layer=i<4)。
+fn hud_layer_color(layer: u16) -> u32 {
+    0xFF30_8040 + ((layer as u32) << 4)
 }
 
 /// 全 WGSL を収集 (GPU ランタイム検証用・後方互換)。
@@ -2151,6 +2173,28 @@ mod strict_tests {
     }
 
     #[test]
+    fn hud_layer_color_opaque_exact_goldens() {
+        // EB-1: 優先順位根治後の厳密値 (rq eb_hud.rq 導出機械値)。
+        // 旧式 `(base + i) << 4` は i=0 で 0xF3080400 (alpha 0xF3、base
+        // 上位 nibble 欠落) — 旧式への回帰は本 pin で即 RED。
+        let expect = [0xFF30_8040u32, 0xFF30_8050, 0xFF30_8060, 0xFF30_8070];
+        for (i, e) in expect.iter().enumerate() {
+            assert_eq!(
+                hud_layer_color(i as u16),
+                *e,
+                "layer {i}: base + (i<<4) の bit 厳密値"
+            );
+        }
+        for l in 0..16u16 {
+            assert_eq!(
+                hud_layer_color(l) >> 24,
+                0xFF,
+                "layer {l} の alpha は常時 0xFF (不透明)"
+            );
+        }
+    }
+
+    #[test]
     fn view_proj_to_m16_is_column_major_transpose() {
         let mut m = [[0.0f32; 4]; 4];
         for r in 0..4 {
@@ -2161,7 +2205,10 @@ mod strict_tests {
         let out = view_proj_to_m16(&m);
         assert_eq!(
             out,
-            [0.0, 4.0, 8.0, 12.0, 1.0, 5.0, 9.0, 13.0, 2.0, 6.0, 10.0, 14.0, 3.0, 7.0, 11.0, 15.0],
+            [
+                0.0, 4.0, 8.0, 12.0, 1.0, 5.0, 9.0, 13.0, 2.0, 6.0, 10.0, 14.0, 3.0, 7.0, 11.0,
+                15.0
+            ],
             "out[c*4+r] = m[r][c] の列優先並べ替え"
         );
     }
@@ -2353,25 +2400,41 @@ mod strict_tests {
     #[test]
     fn mean_sigma_empty_fallback_and_exact_pairs() {
         let (mu, sig) = mean_sigma(&[]);
-        assert_eq!((mu.x, mu.y, mu.z), (0.5, 0.0, 0.0), "空入力の既定 mean (仕様固定)");
+        assert_eq!(
+            (mu.x, mu.y, mu.z),
+            (0.5, 0.0, 0.0),
+            "空入力の既定 mean (仕様固定)"
+        );
         assert_eq!((sig.x, sig.y, sig.z), (0.1, 0.1, 0.1), "空入力の既定 sigma");
         let one = [crate::taa_ycocg::Vec3::new(2.0, 4.0, 8.0)];
         let (mu, sig) = mean_sigma(&one);
         assert_eq!((mu.x, mu.y, mu.z), (2.0, 4.0, 8.0));
-        assert_eq!((sig.x, sig.y, sig.z), (0.0, 0.0, 0.0), "単一要素の sigma は 0");
+        assert_eq!(
+            (sig.x, sig.y, sig.z),
+            (0.0, 0.0, 0.0),
+            "単一要素の sigma は 0"
+        );
         let two = [
             crate::taa_ycocg::Vec3::new(1.0, 2.0, 3.0),
             crate::taa_ycocg::Vec3::new(3.0, 2.0, 1.0),
         ];
         let (mu, sig) = mean_sigma(&two);
         assert_eq!((mu.x, mu.y, mu.z), (2.0, 2.0, 2.0));
-        assert_eq!((sig.x, sig.y, sig.z), (1.0, 0.0, 1.0), "population sigma (1/n 分散)");
+        assert_eq!(
+            (sig.x, sig.y, sig.z),
+            (1.0, 0.0, 1.0),
+            "population sigma (1/n 分散)"
+        );
     }
 
     #[test]
     fn material_independent_hash_goldens() {
         let mut i = empty_inputs();
-        assert_eq!(i.material_independent_hash(), 0x811C_9DC5, "空は FNV 種値そのまま");
+        assert_eq!(
+            i.material_independent_hash(),
+            0x811C_9DC5,
+            "空は FNV 種値そのまま"
+        );
         i.chunk_materials = vec![0];
         assert_eq!(i.material_independent_hash(), 0x050C_5D1F);
         i.chunk_materials = vec![1];
@@ -2396,7 +2459,8 @@ mod strict_tests {
         // --- ケース A: 近傍なし → 3 (無遮蔽で最も明るい) ---
         assert_eq!(
             corner_ao_from_palette(std::slice::from_ref(&air), 4, 4, 4, 2, &lut),
-            3, "全 air 近傍は 3 (=無遮蔽)"
+            3,
+            "全 air 近傍は 3 (=無遮蔽)"
         );
         // --- s1 のみ → 2 (1 段減光) / 両側 → 0 (完全遮蔽) ---
         let mut sec_b = air;
@@ -2404,8 +2468,11 @@ mod strict_tests {
         assert_eq!(corner_ao_from_palette(&[sec_b], 4, 4, 4, 2, &lut), 2);
         let mut sec_c = sec_b;
         sec_c[section_idx(5, 5, 4)] = 1; // s2
-        assert_eq!(corner_ao_from_palette(&[sec_c], 4, 4, 4, 2, &lut), 0,
-            "両側隣接は corner_ao が 0 (最大遮蔽) を返す規約");
+        assert_eq!(
+            corner_ao_from_palette(&[sec_c], 4, 4, 4, 2, &lut),
+            0,
+            "両側隣接は corner_ao が 0 (最大遮蔽) を返す規約"
+        );
         // --- corner のみ → 2 ---
         let mut sec_d = air;
         sec_d[section_idx(5, 5, 5)] = 1; // face 2 の corner = (x+1, y+1, z+1)
@@ -2424,8 +2491,11 @@ mod strict_tests {
         // face 2 (+Y) @ (4,15,4): s1 = (3,16,4) → sections[1][idx(3,0,4)]
         let mut sec_h = [air, air];
         sec_h[1][section_idx(3, 0, 4)] = 1;
-        assert_eq!(corner_ao_from_palette(&sec_h, 4, 15, 4, 2, &lut), 2,
-            "y>=16 は sy=ny/16 のセクションを参照 (1 枚構成)");
+        assert_eq!(
+            corner_ao_from_palette(&sec_h, 4, 15, 4, 2, &lut),
+            2,
+            "y>=16 は sy=ny/16 のセクションを参照 (1 枚構成)"
+        );
     }
 
     #[test]
@@ -2436,8 +2506,15 @@ mod strict_tests {
             .collect();
         let free = collect_all_wgsl();
         assert_eq!(free, expect, "全ソースを順序通りに連結 (欠落/改竄を検出)");
-        assert_eq!(FullGraphWiring::collect_all_wgsl(), expect, "assoc は free への純粋委譲");
-        assert!(!expect.is_empty(), "gpu_runtime に少なくとも 1 ソースが登録");
+        assert_eq!(
+            FullGraphWiring::collect_all_wgsl(),
+            expect,
+            "assoc は free への純粋委譲"
+        );
+        assert!(
+            !expect.is_empty(),
+            "gpu_runtime に少なくとも 1 ソースが登録"
+        );
     }
 
     #[test]
@@ -2446,7 +2523,10 @@ mod strict_tests {
         let dir = std::env::temp_dir().join(format!(
             "rsift_fgw_ao_test_{}_{}",
             std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let mut w = FullGraphWiring::new(&dir);
         let mut quads = vec![PackedPullQuad::new(4, 4, 4, 7, 0, 2, 3, 2)];
@@ -2468,10 +2548,15 @@ mod strict_tests {
         assert_eq!(changed, 2, "変更クアッド数 = 実視覚効果の実測");
         assert_eq!(PackedPullQuad::unpack_light_ao(quads[0].word0), 2);
         assert_eq!(
-            PackedPullQuad::new(4, 4, 4, 7, 2, 2, 3, 2), quads[0],
+            PackedPullQuad::new(4, 4, 4, 7, 2, 2, 3, 2),
+            quads[0],
             "AO 以外の packed フィールド (tex/face/w/h) は厳密保存"
         );
-        assert_eq!(PackedPullQuad::unpack_light_ao(quads[1].word0), 3, "max() 取れる側は不変");
+        assert_eq!(
+            PackedPullQuad::unpack_light_ao(quads[1].word0),
+            3,
+            "max() 取れる側は不変"
+        );
         assert_eq!(PackedPullQuad::unpack_light_ao(quads[2].word0), 3);
         assert_eq!(PackedPullQuad::unpack_light_ao(quads[3].word0), 3);
         let _ = std::fs::remove_dir_all(&dir);
@@ -2499,22 +2584,40 @@ mod strict_tests {
     /// プロセス全域カウンタ由来、power_skip_extra: 壁時計由来) を除く 15 個を,
     /// f32 は IEEE-754 ビット同一として全比較する。
     fn assert_report_det_subset(a: &FrameWiringReport, b: &FrameWiringReport, ctx: &str) {
-        assert_eq!(a.next_build_budget, b.next_build_budget, "{ctx}: next_build_budget");
+        assert_eq!(
+            a.next_build_budget, b.next_build_budget,
+            "{ctx}: next_build_budget"
+        );
         assert_eq!(a.overdraw_order, b.overdraw_order, "{ctx}: overdraw_order");
-        assert_eq!(a.draw_command_count, b.draw_command_count, "{ctx}: draw_command_count");
-        assert_eq!(a.lockfree_cache_hits, b.lockfree_cache_hits, "{ctx}: lockfree_cache_hits");
+        assert_eq!(
+            a.draw_command_count, b.draw_command_count,
+            "{ctx}: draw_command_count"
+        );
+        assert_eq!(
+            a.lockfree_cache_hits, b.lockfree_cache_hits,
+            "{ctx}: lockfree_cache_hits"
+        );
         assert_eq!(a.lbvh_culled, b.lbvh_culled, "{ctx}: lbvh_culled");
         assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
         );
-        assert_eq!(a.visgraph_reachable, b.visgraph_reachable, "{ctx}: visgraph_reachable");
-        assert_eq!(a.nanite_meshlets, b.nanite_meshlets, "{ctx}: nanite_meshlets");
+        assert_eq!(
+            a.visgraph_reachable, b.visgraph_reachable,
+            "{ctx}: visgraph_reachable"
+        );
+        assert_eq!(
+            a.nanite_meshlets, b.nanite_meshlets,
+            "{ctx}: nanite_meshlets"
+        );
         assert_eq!(
             a.nanite_meshlets_culled, b.nanite_meshlets_culled,
             "{ctx}: nanite_meshlets_culled"
         );
-        assert_eq!(a.vram_used_bytes, b.vram_used_bytes, "{ctx}: vram_used_bytes");
+        assert_eq!(
+            a.vram_used_bytes, b.vram_used_bytes,
+            "{ctx}: vram_used_bytes"
+        );
         assert_eq!(
             a.post_exposure.to_bits(),
             b.post_exposure.to_bits(),
@@ -2531,7 +2634,10 @@ mod strict_tests {
             "{ctx}: clp_lit_fraction (bit)"
         );
         assert_eq!(a.frb_billboards, b.frb_billboards, "{ctx}: frb_billboards");
-        assert_eq!(a.subsystems_active, b.subsystems_active, "{ctx}: subsystems_active");
+        assert_eq!(
+            a.subsystems_active, b.subsystems_active,
+            "{ctx}: subsystems_active"
+        );
     }
 
     const IDENTITY_VP: [[f32; 4]; 4] = [
@@ -2571,32 +2677,53 @@ mod strict_tests {
         for t in 1..=4u64 {
             inputs.frame_index = t;
             let r = w.tick_world(&inputs);
-            assert_eq!(r.aokana_visible_regions, 0, "tick {t}: パレットなし → リージョン未登録");
+            assert_eq!(
+                r.aokana_visible_regions, 0,
+                "tick {t}: パレットなし → リージョン未登録"
+            );
             assert_eq!(
                 r.visgraph_reachable, 1,
                 "tick {t}: グラフ無辺でも flood_fill は始点 (cam_chunk=(0,0), dist=0) を常時含む \
                  (visibility_graph 設計: dist=0 は opaqueness 非適用)"
             );
             assert_eq!(r.lbvh_culled, 0, "tick {t}: AABB なし → LBVH カリングなし");
-            assert_eq!(r.nanite_meshlets, 0, "tick {t}: クアッドなし → メッシュレットなし");
+            assert_eq!(
+                r.nanite_meshlets, 0,
+                "tick {t}: クアッドなし → メッシュレットなし"
+            );
             assert_eq!(r.nanite_meshlets_culled, 0, "tick {t}");
-            assert_eq!(r.frb_billboards, 0, "tick {t}: クアッドなし → ビルボード変換なし");
+            assert_eq!(
+                r.frb_billboards, 0,
+                "tick {t}: クアッドなし → ビルボード変換なし"
+            );
             assert_eq!(
                 r.clp_lit_fraction.to_bits(),
                 0.0f32.to_bits(),
                 "tick {t}: CLP 未ディスパッチ → 既定 0.0"
             );
-            assert_eq!(r.draw_command_count, 0, "tick {t}: コマンドなし → 0 (compact_and_filter 空走査)");
-            assert_eq!(r.lockfree_cache_hits, 0, "tick {t}: VRAM キャッシュ走査なし");
+            assert_eq!(
+                r.draw_command_count, 0,
+                "tick {t}: コマンドなし → 0 (compact_and_filter 空走査)"
+            );
+            assert_eq!(
+                r.lockfree_cache_hits, 0,
+                "tick {t}: VRAM キャッシュ走査なし"
+            );
             assert_eq!(r.vram_used_bytes, 0, "tick {t}: 実アロケーションなし");
-            assert_eq!(r.subsystems_active, 60, "tick {t}: 配線サブシステム総数は仕様値");
+            assert_eq!(
+                r.subsystems_active, 60,
+                "tick {t}: 配線サブシステム総数は仕様値"
+            );
             assert!(r.overdraw_order.is_empty(), "tick {t}");
             assert!(
                 (0.05..=20.0).contains(&r.post_exposure),
                 "tick {t}: 露光は adapt() クランプ域内: {}",
                 r.post_exposure
             );
-            assert!(r.ambient_light.is_finite(), "tick {t}: IBL アンビエントは有限");
+            assert!(
+                r.ambient_light.is_finite(),
+                "tick {t}: IBL アンビエントは有限"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2614,9 +2741,15 @@ mod strict_tests {
             assert_report_det_subset(&ra, &rb, &format!("tick {t}"));
             // K-1 回帰: パレット供給チャンク (0,0) → リージョン (0,0,0) (64³ 区画)。
             // 区画 AABB [0,64)³ は恒等フラスタム 6 面全合格 → 常時 1 区画可視。
-            assert_eq!(ra.aokana_visible_regions, 1, "tick {t}: K-1 実登録 1 区画が可視");
+            assert_eq!(
+                ra.aokana_visible_regions, 1,
+                "tick {t}: K-1 実登録 1 区画が可視"
+            );
             // 3 層フィルタ (SIMD frustum / LBVH / compact mask) 全通過の静的検証済み。
-            assert_eq!(ra.draw_command_count, 1, "tick {t}: 1 可視チャンク = 1 コマンド");
+            assert_eq!(
+                ra.draw_command_count, 1,
+                "tick {t}: 1 可視チャンク = 1 コマンド"
+            );
             assert_eq!(ra.frb_billboards, 24, "tick {t}: 24 クアッドの実変換");
         }
         let _ = std::fs::remove_dir_all(&dir_a);
@@ -2680,7 +2813,10 @@ mod strict_tests {
             let rb = b.tick_world(&ib);
             if SAMPLE.contains(&t) {
                 assert_report_det_subset(&ra, &rb, &format!("tick {t}"));
-                assert_eq!(ra.aokana_visible_regions, 1, "tick {t}: 再構築後も実座標登録を維持");
+                assert_eq!(
+                    ra.aokana_visible_regions, 1,
+                    "tick {t}: 再構築後も実座標登録を維持"
+                );
             }
         }
         let _ = std::fs::remove_dir_all(&dir_a);
