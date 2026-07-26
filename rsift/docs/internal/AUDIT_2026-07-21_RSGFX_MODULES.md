@@ -6567,3 +6567,27 @@ fmdiff 現逸脱 0 (初版から正準形)。原版からの差分は doc+tests 
 不変 (誠実記録: 警告根治は build カウント照合が pin 代替)。復元 md5
 VERIFIED + 強化 pin 込み最終版へ fmt 正準適用 (差分 54 行→0)。
 固定版 md5 bc5357b49ccfdef5c782cdf0add2e24b。lib 警告 8 維持。
+
+## DX. binary_greedy_meshing.rs (wave 124, 2026-07-26)
+
+原版 1591 行・md5 25e17dd53927b603d27269394d6d715a。消費者 10+ ファイル
+(census 実 grep)。既存 10 テスト (pull 対照 fuzz・bitcols 対照 fuzz 等)。
+
+- **DX-1 [低]** greedy_merge_2d_pull の分類整理: lib dead 警告の実体は
+  mod tests の**オラクル参照** (:1264/1283/1302)。#[cfg(test)] 付与で
+  is_opaque 系同型のテスト専用保持へ (削除せず directive⑦整合)。
+  lib 警告 8→7 機械照合、(b) 属性外しで警告 8 復活も対偶確認。
+- **DX-2 [低]** idx 厳密 pin +1: (15,15,15)=4095・全 4096 単射走査・
+  roundtrip (rq dx_idx.rq assert 2 通過)。消費者共有規約の固定。
+- **DX-3 [観]** 消費者形状: 本番 render_pipeline:427/438、参照系
+  frame_reference:564/575/879・gpu_vertex_pull:52・chunk_mesh:182・
+  frame_reuse:344。
+- **DX-4 [観]** オラクル資産棚卸し 10 テスト維持、(c) 変異で 5 RED の
+  現役検出力を機械実証。mesh 出力不変 (digest ゲートで裏付け)。
+
++1 strict テスト (11/11) で 1109 全緑。adversarial: (a) idx y 係数改変
+→ 2 RED (pin+連鎖)・(b) cfg(test) 外し → 警告 8 復活機械確認 (対偶)・
+(c) bits 版ブロック判定反転 → 5 RED (fuzz 4+flat_layer 1、オラクル
+検出力実証)。検出不能ゼロ。復元 md5 VERIFIED 2 回。fmt 正準適用
+(差分 14→0)。固定版 md5 e1655861f3cd27a3dcaaf35b14a96639。
+lib 警告 7、digest 004c1cf5 不変、台帳 464。

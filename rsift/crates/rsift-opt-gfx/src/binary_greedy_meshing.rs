@@ -1,5 +1,25 @@
 //! Binary Greedy Meshing — tri-axis face culling + quad merging (cgerikj-style).
 //! RLE-empty layers skipped; all 6 face directions use correct slice axes.
+//!
+//! # 監査 2026-07-26 (wave 124 DX) — 契約公表
+//!
+//! - **DX-1**: `greedy_merge_2d_pull` (u16 mask 版) を `#[cfg(test)]`
+//!   テスト専用オラクルとして分類整理 (削除せず保持)。live は
+//!   `greedy_merge_2d_pull_bits` のみ (等価性証明コメント :520+)。lib 警告
+//!   8→7。警告カウントは build 照合で pin 代替。
+//! - **DX-2**: `idx(x,y,z) = x + 16y + 256z` の厳密 pin: idx(15,15,15)=4095
+//!   (最大・排他的終端)、全 4096 引数での単射性完全走査 + 座標復元
+//!   (x=i&15, y=(i>>4)&15, z=(i>>8)&15) — 消費者 10+ ファイル (svo/
+//!   section_rle/section_compress/noise_upsample/voxel_cone_tracing/
+//!   world_column_store/leaf_fast_path 等) が共有する座標規約の固定。
+//! - **DX-3**: 消費者形状の公表: 本番経路は render_pipeline:427
+//!   (mesh_chunk_column)・:438 (mesh_chunk_column_pull_world、
+//!   mesh_section_y0=402 由来の実引数)。frame_reference (3 箇所)・
+//!   gpu_vertex_pull・chunk_mesh・frame_reuse は参照レンダ/テスト経路。
+//! - **DX-4**: 等価性オラクル資産の棚卸し: 10 テスト体制 (pull u16 対照
+//!   fuzz・bitcols face_visible 対照 fuzz (100+ seeds)・edge 断面一致・
+//!   12B 経路同系) は既存維持。本 wave は doc+1 pin+属性整理のみで
+//!   mesh 出力 (digest) は完全不変。
 
 use crate::chunk_mesh::{BuiltChunkMesh, Quantized12ByteVertex};
 use crate::packed4::{face_index as pull_face_index, PackedPullQuad};
@@ -360,6 +380,13 @@ fn emit_pull_quad(
     ));
 }
 
+/// **wave 124 DX-1 (2026-07-26)**: `#[cfg(test)]` 化で「テスト専用オラクル保持」
+/// を is_opaque 系 (:21-23) と同型に分類整理。live 消費者は
+/// `greedy_merge_2d_pull_bits` (`:520` 等価性証明コメント「出力完全同一」) のみ
+/// で、本関数の呼出は mod tests (旧実装対照 fuzz) に限定される — 削除ではなく
+/// 保持 (directive: 消費者ゼロ=lib 本線、でもテスト・オラクルとして有効)。
+/// lib ビルドの dead_code 警告 (9 件目) を根治し lib 警告 8→7。
+#[cfg(test)]
 fn greedy_merge_2d_pull(
     mask: &mut [[u16; SECTION_SIZE]; SECTION_SIZE],
     quads: &mut Vec<PackedPullQuad>,
@@ -1143,6 +1170,30 @@ pub fn extract_bitboard_span(mut row_mask: u64) -> Option<(u32, u32)> {
 mod tests {
     use super::*;
 
+    /// DX-2 (wave 124): idx 座標規約の厳密 pin。消費者 10+ ファイルが
+    /// 共有する基底写像 (rq dx_idx.rq で全 4096 roundtrip assert 事前導出)。
+    #[test]
+    fn idx_layout_exact_and_injective_full_space() {
+        assert_eq!(idx(0, 0, 0), 0);
+        assert_eq!(idx(1, 0, 0), 1);
+        assert_eq!(idx(0, 1, 0), 16);
+        assert_eq!(idx(0, 0, 1), 256);
+        assert_eq!(idx(15, 15, 15), 4095, "最大・排他的終端");
+        // 全 4096 引数で単射 + 座標復元 roundtrip (dq 導出と同構成)
+        let mut seen = [false; 4096];
+        for z in 0..16 {
+            for y in 0..16 {
+                for x in 0..16 {
+                    let i = idx(x, y, z);
+                    assert!(!seen[i], "衝突は単射違反 ({x},{y},{z})→{i}");
+                    seen[i] = true;
+                    assert_eq!((i % 16, (i / 16) % 16, i / 256), (x, y, z));
+                }
+            }
+        }
+        assert!(seen.iter().all(|&s| s), "全 4096 を過不足なく被覆");
+    }
+
     #[test]
     fn solid_voxel_produces_faces() {
         let mut p = [0u16; SECTION_SIZE * SECTION_SIZE * SECTION_SIZE];
@@ -1211,8 +1262,18 @@ mod tests {
             ([u64::MAX; 4], [0; 4]),
             ([u64::MAX; 4], [u64::MAX; 4]),
             (
-                [0x00FF_00FF_00FF_00FF, 0xAAAA_AAAA_AAAA_AAAA, 0x1234_5678_9ABC_DEF0, 1],
-                [0x000F_000F_000F_000F, 0x5555_5555_5555_5555, 0xFEDC_BA98_7654_3210, 1],
+                [
+                    0x00FF_00FF_00FF_00FF,
+                    0xAAAA_AAAA_AAAA_AAAA,
+                    0x1234_5678_9ABC_DEF0,
+                    1,
+                ],
+                [
+                    0x000F_000F_000F_000F,
+                    0x5555_5555_5555_5555,
+                    0xFEDC_BA98_7654_3210,
+                    1,
+                ],
             ),
             (
                 [0xDEAD_BEEF_CAFE_F00D, 42, u64::MAX, 0x0101_0101_0101_0101],

@@ -522,6 +522,10 @@
 | DW-3 | 低 | canonical 一意性の経路非依存 pin: orbit {oct0,1,4,5} の 3 メンバー (5,1,4) どれから挿入しても同 ID・同 canonical 形 (mask=1/children[0]=42、solo インスタンスでも一致) — insert_node dedup + orbit 閉包 + strict-min 列挙順決定性の連鎖を機械固定 (各 tag は permute 適用で canonical に到達する契約整合付) |
 | DW-4 | 低 | y ビット不変性の直接 pin: y=1 octant (2,3,6,7) は全 16 変換で mask が y=1 領域に閉じ occupancy 保存、y=0 側も対称。領域 mask は rq dw_mask.rq で機械導出 (y=1=0b1100_1100=204/y=0=0b0011_0011=51、cover=255・disjoint=0 の assert 通過)。**捕捉 48 件目**: 初版は y=1 を 0b0100_0100 (oct2,6 のみ) と誤記 → テスト赤が捕捉 (実装は正しかった) → rq 導出 mask で根治 |
 | DW-5 | 低 | **検出空白補完強化 pin** (wave 113/118/120 に続く 4 件目): adversarial (b) compose apply の作用順交換 (mirror 先行化) が全既存 pin で検出不能 (involution/4乗 pin は作用解釈不感) → **非可換ケース R90∘mirror_x の厳密 pin** (列挙順最初表現 (1,T,F)、手検算 (x,z)→(z,!x)→(!z,!x) 照合) + permute_node 2 段/1 段整合 pin + mirror 先行の別作用非一致 pin を追設し再 RED 達成 |
+| DX-1 | 低 | **binary_greedy_meshing::greedy_merge_2d_pull (u16 mask 版) の分類整理**: 警告は lib ビルド dead_code だが実体は **テスト専用オラクルとして生存** (mod tests の旧実装対照 fuzz が参照、:520+ 等価性証明コメント「出力完全同一」) → 削除ではなく `#[cfg(test)]` 付与で is_opaque 系 (:21-23) と同型の「テスト専用保持」に整理、lib 警告 8→7 (directive⑦保持明記に整合) |
+| DX-2 | 低 | idx(x,y,z)=x+16y+256z 厳密 pin: idx(15,15,15)=4095 (排他的終端)・全 4096 引数単射完全走査・座標復元 roundtrip (i%16,(i/16)%16,i/256) — svo/section_rle/section_compress/noise_upsample/voxel_cone_tracing/world_column_store/leaf_fast_path 等 10+ ファイルが共有する座標規約を固定 (全値 rq dx_idx.rq で assert 事前導出) |
+| DX-3 | 観 | 消費者形状公表: 本番経路は render_pipeline:427 (mesh_chunk_column)・:438 (mesh_chunk_column_pull_world、mesh_section_y0 由来実引数)。frame_reference (3 箇所)・gpu_vertex_pull:52・chunk_mesh:182・frame_reuse:344 は参照レンダ/テスト経路 (census 実 grep 照合) |
+| DX-4 | 観 | 等価性オラクル資産の棚卸し公表: 10 テスト体制 (pull u16 対照 fuzz・bitcols face_visible 対照 fuzz・edge 断面一致・12B 経路同系) は既存維持 — adversarial (c) で 5 RED (fuzz 4+flat_layer 1) を確認し検出力の現役性を機械実証。本 wave は doc+1 pin+属性整理のみで mesh 出力 (digest) は完全不変 |
 
 ---
 
