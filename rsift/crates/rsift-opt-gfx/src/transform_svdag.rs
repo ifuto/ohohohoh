@@ -3,6 +3,24 @@
 //! SVDAG の繰り返し構造統合をさらに拡張し、回転 (`90°, 180°, 270°` around Y) や
 //! 鏡映対称 (`X-mirror, Z-mirror`) なサブツリーも同一の正規化ノード (`CanonicalSubtree`)
 //! と変換タグ (`TransformTag`) で統合。ノード数をさらに半減させる。
+//!
+//! # 監査 2026-07-26 (wave 123 DW) — 契約公表
+//!
+//! - **DW-1**: `permute_node` の `let mut y` 不用 mut 警告を根治 (y ビットは
+//!   Y 面変換で不変のため読み取り専用、opt-gfx lib 警告 9→8)。警告の機械
+//!   pin は枠外のため、根治は cargo build 警告カウント照合で検証。
+//! - **DW-2**: wiring 構造公表 — `full_graph_wiring:908-916` は SVDAG 再構築
+//!   条件 (`svdag.is_none() || tick % 600 == 0`) の内側で `take(16)` のみ
+//!   `insert_transform_aware` し返り値を `let _ =` で破棄。「決定破棄・
+//!   副作用 (canonical pool / base_dag 成長) のみ」構造 (DU-3 同型) +
+//!   先頭 16 ノードへの**部分列挙制限** (全ノードでない) を誇張せず公表。
+//! - **DW-3**: canonical 一意性の実証 pin: orbit {oct0/1/4/5} 内 3 メンバー
+//!   (5,1,4) のどれから挿入しても同 ID・同 canonical 形 (mask=1,
+//!   children[0]=42) — insert_node dedup + orbit 閉包 + strict-min 列挙順
+//!   決定性の連鎖で「経路非依存」を機械固定 (既存は 2 メンバーのみ)。
+//! - **DW-4**: y ビット不変性の直接 pin: y=1 octant (index 2,3,6,7) ノードは
+//!   全 16 変換 (rot×mx×mz) で mask が y=1 領域 (0b0100_0100) に閉じる
+//!   ことを全走査で pin (従前はテストコメントでの間接記述のみ)。
 
 use crate::svdag::{SparseVoxelDag, SvdagNodeData};
 use std::collections::HashMap;
@@ -100,7 +118,8 @@ impl TransformAwareSvdag {
 
         let id = self.base_dag.insert_node(best_node.clone());
         self.canonical_pool.insert(node.clone(), (id, best_tag));
-        self.canonical_pool.insert(best_node, (id, TransformTag::default()));
+        self.canonical_pool
+            .insert(best_node, (id, TransformTag::default()));
         (id, best_tag)
     }
 
@@ -157,7 +176,7 @@ impl TransformAwareSvdag {
         for i in 0..8 {
             if (node.child_mask & (1 << i)) != 0 {
                 let mut x = (i & 1) != 0;
-                let mut y = (i & 2) != 0;
+                let y = (i & 2) != 0;
                 let mut z = (i & 4) != 0;
 
                 for _ in 0..(rot_y % 4) {
@@ -165,8 +184,12 @@ impl TransformAwareSvdag {
                     x = z;
                     z = !old_x;
                 }
-                if mx { x = !x; }
-                if mz { z = !z; }
+                if mx {
+                    x = !x;
+                }
+                if mz {
+                    z = !z;
+                }
 
                 let new_i = (x as usize) | ((y as usize) << 1) | ((z as usize) << 2);
                 new_mask |= 1 << new_i;
@@ -188,17 +211,44 @@ mod tests {
     #[test]
     fn test_transform_aware_canonicalization() {
         let mut tdag = TransformAwareSvdag::new();
-        let n1 = SvdagNodeData { child_mask: 0b0000_0001, children: [1, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX] };
+        let n1 = SvdagNodeData {
+            child_mask: 0b0000_0001,
+            children: [
+                1,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+            ],
+        };
         // 注: permute_node は rotate_y_90 (xz 面回転) + mirror_x + mirror_z のみで
         // y ビット (mask の bit1) は不変。よって y octant (mask 0b100) から
         // y=0 octant (mask 0b001) へは到達不能。x octant (mask 0b010) なら
         // mirror_x で octant 0 (= n1) に一致できる。旧テストの 0b100 は y octant で
         // 恒等的に不一致となるテスト入力のミス (実装は設計通り)。
-        let n2 = SvdagNodeData { child_mask: 0b0000_0010, children: [u32::MAX, 1, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX] };
+        let n2 = SvdagNodeData {
+            child_mask: 0b0000_0010,
+            children: [
+                u32::MAX,
+                1,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+                u32::MAX,
+            ],
+        };
 
         let (id1, _) = tdag.insert_transform_aware(n1);
         let (id2, _) = tdag.insert_transform_aware(n2);
-        assert_eq!(id1, id2, "Rotated/mirrored subtrees must canonicalize to same node ID");
+        assert_eq!(
+            id1, id2,
+            "Rotated/mirrored subtrees must canonicalize to same node ID"
+        );
     }
 
     fn node_at(octant: usize, child: u32) -> SvdagNodeData {
@@ -304,6 +354,64 @@ mod tests {
         );
     }
 
+    /// DW-5 (強化 pin, wave 120 系同型 4 件目): adversarial (b) — compose
+    /// apply の作用順交換 (mirror 先行化) — が全既存 pin で検出不能だった
+    /// 検出空白の補完。**非可換**ケース R90∘mirror_x で厳密値を固定:
+    /// 手検算 (x,z)--R90-->(z,!x)--mirror_x-->(!z,!x)、列挙順最初の一致は
+    /// rot=1,mx=T,mz=F (交換後解釈では (1,F,T) になり pin で RED)。
+    /// さらに permute_node 契約整合 (2 段適用 == 合成 tag 1 段適用) も固定。
+    #[test]
+    fn compose_noncommutative_exact_tag_and_permute_consistency() {
+        let r90 = TransformTag {
+            rotate_y_90_count: 1,
+            mirror_x: false,
+            mirror_z: false,
+        };
+        let mx = TransformTag {
+            rotate_y_90_count: 0,
+            mirror_x: true,
+            mirror_z: false,
+        };
+        let c = TransformAwareSvdag::compose_tags(r90, mx);
+        assert_eq!(
+            (c.rotate_y_90_count, c.mirror_x, c.mirror_z),
+            (1, true, false),
+            "R90∘mirror_x の列挙順最初表現は (1,T,F) (非可換で厳密)"
+        );
+        // permute 契約整合: 2 段適用 == 合成 tag の 1 段適用 (mask+children)
+        for octant in [0usize, 5] {
+            let n = node_at(octant, 9);
+            let two_stage = TransformAwareSvdag::permute_node(
+                &TransformAwareSvdag::permute_node(&n, 1, false, false),
+                0,
+                true,
+                false,
+            );
+            let composed = TransformAwareSvdag::permute_node(&n, 1, true, false);
+            assert_eq!(
+                two_stage.child_mask, composed.child_mask,
+                "oct{octant} mask"
+            );
+            assert_eq!(
+                two_stage.children, composed.children,
+                "oct{octant} children"
+            );
+            // 交換解釈 (mirror 先行、adversarial (b) の作用) とは**異なる**
+            let swapped = {
+                // mirror 先行: permute では rot も同時指定のため、別順序作用を
+                // 明示構成して一致しないことを pin
+                let step = TransformAwareSvdag::permute_node(&n, 0, true, false);
+                TransformAwareSvdag::permute_node(&step, 1, false, false)
+            };
+            if octant == 5 {
+                assert_ne!(
+                    swapped.child_mask, composed.child_mask,
+                    "mirror 先行 (変体 (b) の解釈) とは非可換で別作用"
+                );
+            }
+        }
+    }
+
     #[test]
     fn repeated_insert_is_deterministic_and_contract_preserving() {
         // 同一ノードの再挿入: 初回 (pool 登録) と 2 回目 (直接ヒット) で
@@ -348,5 +456,99 @@ mod tests {
             canonical.children[2], 7,
             "child 値は octant 移動と共に運ばれる"
         );
+    }
+
+    // ================= wave 123 DW: 厳密契約ピン群 =================
+
+    /// DW-3: canonical 一意性の経路非依存 pin — orbit {oct0,1,4,5} の
+    /// 3 メンバー (5,1,4) どれから挿入しても同 ID・同 canonical 形。
+    /// (insert_node dedup + orbit 閉包 + strict-min 列挙順決定性の連鎖)。
+    #[test]
+    fn canonical_is_path_independent_across_orbit_members() {
+        let mut tdag = TransformAwareSvdag::new();
+        let members = [node_at(5, 42), node_at(1, 42), node_at(4, 42)];
+        let mut ids = Vec::new();
+        for m in &members {
+            ids.push(tdag.insert_transform_aware(m.clone()).0);
+        }
+        assert!(ids.iter().all(|&id| id == ids[0]), "orbit 3 経路で ID 一致");
+        let canonical = &tdag.base_dag.nodes[ids[0] as usize];
+        assert_eq!(canonical.child_mask, 1, "canonical は octant0 (mask 最小)");
+        assert_eq!(canonical.children[0], 42, "child 値は octant0 に輸送");
+        // 各メンバー挿入の返却 tag は契約を満たす (適用→canonical 一致)
+        for (i, m) in members.iter().enumerate() {
+            let td = TransformAwareSvdag::new();
+            let _ = td; // 独立インスタンス比較は下で実施
+            let tag = {
+                let mut fresh = TransformAwareSvdag::new();
+                fresh.insert_transform_aware(m.clone()).1
+            };
+            let applied = TransformAwareSvdag::permute_node(
+                m,
+                tag.rotate_y_90_count % 4,
+                tag.mirror_x,
+                tag.mirror_z,
+            );
+            assert_eq!(
+                applied.child_mask, canonical.child_mask,
+                "メンバー {i} の tag 適用→同 canonical mask"
+            );
+            assert_eq!(
+                applied.children, canonical.children,
+                "メンバー {i} の tag 適用→同 canonical children"
+            );
+        }
+        // 独立インスタンス (n_c 単独挿入) でも canonical 形は一致
+        let mut solo = TransformAwareSvdag::new();
+        let solo_id = solo.insert_transform_aware(node_at(4, 42)).0;
+        let solo_canonical = &solo.base_dag.nodes[solo_id as usize];
+        assert_eq!(solo_canonical.child_mask, canonical.child_mask);
+        assert_eq!(solo_canonical.children, canonical.children);
+    }
+
+    /// DW-4: y ビット不変性の直接 pin — y=1 octant (index 2,3,6,7) の
+    /// ノードは全 16 変換で mask が y=1 領域に閉じ、occupancy も保存
+    /// される (Y 面 D4 は y 軸を固定)。
+    /// 領域 mask は rq dw_mask.rq で機械導出: y=1 = 0b1100_1100 (204)、
+    /// y=0 = 0b0011_0011 (51)、cover=255・disjoint=0 の assert 通過。
+    /// (捕捉 48: 初版は y=1 を 0b0100_0100 と誤記 → テスト赤が捕捉。
+    /// oct2,6 しか含まない誤 mask で、実装は正しかった)
+    #[test]
+    fn y_bit_is_invariant_under_all_16_transforms() {
+        const Y1: u8 = 0b1100_1100; // oct2,3,6,7 (rq 導出 204)
+        const Y0: u8 = 0b0011_0011; // oct0,1,4,5 (rq 導出 51)
+        assert_eq!(Y1 | Y0, 0xFF);
+        assert_eq!(Y1 & Y0, 0);
+        for octant in [2usize, 3, 6, 7] {
+            let n = node_at(octant, 11);
+            for rot in 0..4u8 {
+                for mx in [false, true] {
+                    for mz in [false, true] {
+                        let p = TransformAwareSvdag::permute_node(&n, rot, mx, mz);
+                        assert_ne!(
+                            p.child_mask & Y1,
+                            0,
+                            "oct{octant} rot{rot} mx{mx} mz{mz}: y=1 領域を離れない"
+                        );
+                        assert_eq!(
+                            p.child_mask & Y0,
+                            0,
+                            "oct{octant} rot{rot} mx{mx} mz{mz}: y=0 領域へは出ない"
+                        );
+                        assert_eq!(
+                            p.child_mask.count_ones(),
+                            1,
+                            "oct{octant}: occupancy 保存 (単一 octant 維持)"
+                        );
+                    }
+                }
+            }
+        }
+        // 対側 (y=0 octant) も y=0 領域に閉じる (対称 pin)
+        for octant in [0usize, 1, 4, 5] {
+            let p = TransformAwareSvdag::permute_node(&node_at(octant, 3), 3, true, true);
+            assert_eq!(p.child_mask & Y1, 0, "y=0 は y=1 領域へ出ない");
+            assert_ne!(p.child_mask & Y0, 0, "y=0 領域内に留まる");
+        }
     }
 }

@@ -517,6 +517,11 @@
 | DV-2 | 低 | wiring packed_key 厳密 bit レイアウト pin (cx 10bit<<20/cz 10bit<<10/sy 10bit): rq 導出値 ((0,3,4095)=4095・(5,1,5)=5243909=0x500405・cx=-1=0x3FF00000=1072693248) + 折り畳み衝突公表 (cx=1024≡0・sy=-1≡1023・cz=-1 の drive=3072) + **patch 駆動値 packed&0xFFF は cz 下位 2bit と sy 10bit の混在** (CI-2 誠実注記の pin 化、patch_for_block 契約 <4096 を構造的に満たす全領域走査 pin 付) |
 | DV-3 | 観 | dirty map の値 (generation) は書込まれるが take_dirty 経路で**消費者ゼロ** (キーのみ返却) の保持明記 pin: map 内部値=直近 generation を実在確認の上、返却に値が現れない設計を誠実公表 (世代カウンタ自体は wave 69 BS で pin 済) |
 | DV-4 | 観 | diff_section live 消費者ゼロの継続追認 (census 2026-07-26: full_graph_wiring は patch_for_block のみ呼出、BS-1 候補記録の更新) + 決定性 pin 強化 (全 4096 差異列挙は index 昇順 identity、境界 0/4095 厳密) |
+| DW-1 | 低 | transform_svdag `permute_node` の unused_mut 警告根治: y ビットは Y 面 D4 変換で不変のため読み取り専用 (let mut y → let y)。opt-gfx lib 警告 9→8 機械照合 (警告 pin は枠外のため build 警告カウント照合で検証) |
+| DW-2 | 観 | wiring 構造公表: full_graph_wiring:908-916 は SVDAG 再構築条件 (svdag.is_none() \|\| tick%600==0) 内で take(16) のみ insert_transform_aware し返り値を let _ = で破棄 — 「決定破棄・副作用 (canonical pool/base_dag 成長) のみ」構造 (DU-3 同型) + 先頭 16 ノード部分列挙制限の公表 (全ノードでない) |
+| DW-3 | 低 | canonical 一意性の経路非依存 pin: orbit {oct0,1,4,5} の 3 メンバー (5,1,4) どれから挿入しても同 ID・同 canonical 形 (mask=1/children[0]=42、solo インスタンスでも一致) — insert_node dedup + orbit 閉包 + strict-min 列挙順決定性の連鎖を機械固定 (各 tag は permute 適用で canonical に到達する契約整合付) |
+| DW-4 | 低 | y ビット不変性の直接 pin: y=1 octant (2,3,6,7) は全 16 変換で mask が y=1 領域に閉じ occupancy 保存、y=0 側も対称。領域 mask は rq dw_mask.rq で機械導出 (y=1=0b1100_1100=204/y=0=0b0011_0011=51、cover=255・disjoint=0 の assert 通過)。**捕捉 48 件目**: 初版は y=1 を 0b0100_0100 (oct2,6 のみ) と誤記 → テスト赤が捕捉 (実装は正しかった) → rq 導出 mask で根治 |
+| DW-5 | 低 | **検出空白補完強化 pin** (wave 113/118/120 に続く 4 件目): adversarial (b) compose apply の作用順交換 (mirror 先行化) が全既存 pin で検出不能 (involution/4乗 pin は作用解釈不感) → **非可換ケース R90∘mirror_x の厳密 pin** (列挙順最初表現 (1,T,F)、手検算 (x,z)→(z,!x)→(!z,!x) 照合) + permute_node 2 段/1 段整合 pin + mirror 先行の別作用非一致 pin を追設し再 RED 達成 |
 
 ---
 

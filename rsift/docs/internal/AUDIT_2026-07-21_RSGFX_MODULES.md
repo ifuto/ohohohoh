@@ -6534,3 +6534,36 @@ DynamicBlockEntity と誤記 (実装は正しく Static 復帰: dist>3.5 で近�
 generation 系 3 RED・(c) diff 条件反転 → 2 RED・(d) assert 4096→4095 →
 境界受理 pin RED。検出不能ゼロ。復元 md5 VERIFIED 4 回。
 fmdiff 現逸脱 0 (初版から正準形)。原版からの差分は doc+tests のみ。
+
+## DW. transform_svdag.rs (wave 123, 2026-07-26)
+
+原版 352 行・md5 d0bad280120da9028ebbf92c8b95cb6a (BX-1 D4 合成根治済の
+再 census)。消費者: full_graph_wiring:113/255/914 のみ。WGSL なし。
+
+- **DW-1 [低]** permute_node unused_mut 根治 (let mut y → let y、y は Y 面
+  D4 で不変)。opt-gfx lib 警告 9→8 (generated カウント機械照合)。
+  引継ぎ 9 件の内訳再確認: gpu_culling:6 DeviceExt・persistent_vbo_pool
+  (6/8/11)・lib.rs:88 ambiguous re-export・aokana:46 mut dag・
+  occlusion_query OccVertex private・binary_greedy_meshing:363 dead fn +
+  本件 (根治) — api 側 13 件は別枠棚卸し。
+- **DW-2 [観]** wiring: 908-916、svdag none or tick%600==0 の内側で
+  take(16) のみ挿入・返破棄。決定破棄+副作用 (pool/base_dag 成長) 構造
+  (DU-3 同型) + 部分列挙 (16 制限) 公表。
+- **DW-3 [低]** canonical 一意性の経路非依存 pin: orbit {0,1,4,5} の
+  3 メンバー (5,1,4) 全経路で同 ID・同形 (mask=1/children[0]=42)、
+  solo インスタンスでも一致。insert_node dedup 確認 (svdag.rs:48)。
+- **DW-4 [低]** y 不変性直接 pin: 領域 mask rq 導出 (y=1=204=0xCC/
+  y=0=51=0x33、cover/disjoint assert 通過)、16 変換全走査+occupancy
+  保存+対称側。**捕捉 48**: 初版 mask 0b0100_0100 誤記 (oct2,6 のみ)
+  → テスト赤捕捉 → rq 導出値で根治。
+- **DW-5 [低]** **検出空白補完強化 pin (4 件目)**: (b) compose apply の
+  作用順交換が全既存 pin で検出不能 (群公理 pin は作用解釈不感) →
+  非可換 R90∘mirror_x 厳密 pin ((1,T,F)、(x,z)→(z,!x)→(!z,!x) 手検算)
+  + permute 2段/1段整合+mirror 先行別作用非一致 pin 追設で再 RED 達成。
+
++3 strict テスト (7/7) で 1108 全緑。adversarial: (a) strict<→<= → 2 RED・
+(b) apply 順序交換 → 初回 6 全緑 (検出不能) → DW-5 追設で再 RED 1・
+(c) new_i y/z 交換 → 2 RED・(d) mut 戻し → 警告 9 復活機械確認・テスト
+不変 (誠実記録: 警告根治は build カウント照合が pin 代替)。復元 md5
+VERIFIED + 強化 pin 込み最終版へ fmt 正準適用 (差分 54 行→0)。
+固定版 md5 bc5357b49ccfdef5c782cdf0add2e24b。lib 警告 8 維持。
