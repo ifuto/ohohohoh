@@ -547,6 +547,9 @@
 | EB-4 | 観 | meshlet_cone の法線は i%6 巡回の 6 軸**合成**列 (実メッシュ面法線未接続、件数のみ chunk_materials 由来) — 旧コメント「実面法線クラスタ錐体カリング」の虚偽部分を誠実訂正 (錐体ビルド/visible 評価は実演のまま) |
 | EB-5 | 低 | 消費者不在ローカルメトリクス 2 件削除: frb_above (camera 高さ比較カウント、集計後 `let _` 破棄のみ)・slab_base (確保前 used_bytes スナップショット、同) — slab_slots 削除前例と同型、挙動中立コンパイル照合 (gpu_arena.used_bytes は vram_used_bytes 集計で引続き実評価) |
 | EB-6 | 中 | **ゼロデイ級 tools 欠陥 RB-1**: rspeed rq 字句解析の `&src[i..i+3]`/`&src[i..i+2]` **str スライス** が文法外マルチバイト文字 (日本語等) の char 境界でハードパニックし、設計上の fail-loud エラー「解釈できない文字」を bypass (orig 版で "panicked … byte index 35 is not a char boundary" を機械再現済、rq スクリプトに日本語 `//` コメントを初めて書いた実地で発見) → byte スライス比較に根治 (演算子は全て ASCII のため結果完全一致の挙動中立) + selftest ピン 3 件追加 (51→**54**: 日本語コメント受理/非 ASCII 字句エラー rc=2 帰還/日本語文字列受理)、`rspeed selftest` 0 FAIL・RQ.md 文法不変 |
+| EC-1 | 低 | **BA-3 解消**: render_pipeline::frame の quad_budget 経路で cast_bytes_to_slice の失敗 (ラギッド/非整列) に `.map(to_vec).unwrap_or_default()` が被さり **全 quad を静寂空化して書き戻す** データ損失パス → pure 部 `apply_quad_budget_bytes` 抽出 (失敗時 bytes 無変更保持で bool 返却)+呼出側 fail-loud warn。生成規約上ほぼ到達不能だが「到達不能」を理由に損失を許容しない。+1 strict テスト (4→2 切詰め順序保持・budget 内不変・ラギッド 8n+1 で false+bytes 無変更)、adversarial 旧式戻しで **1 RED** 機械確認・復元 MD5-VERIFIED |
+| EC-2 | 観 | DRS `internal_size` の評価結果は読み捨て (`let _internal`) — 内部解像度の変更は未還元で、ヘッダ行「(no resolution scaling)」の現行効果と整合する計測実演として誠実注記 (将来の解像度スケーリング接続用結合点として保持、directive⑦) |
+| EC-3 | 観 | 材料引き当ては chunk_keys × pull_meshes の線形 find = O(n·m) — 両者とも数百スケールで現害は小さい (支配 tex 決定用途)。HashMap 化は冗長メモリとの実効見合いを要検討として棚卸し公表 |
 
 ---
 

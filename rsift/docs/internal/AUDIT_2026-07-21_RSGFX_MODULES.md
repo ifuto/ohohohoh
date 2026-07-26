@@ -6770,3 +6770,33 @@ a096609c) → 全緑確認。教訓: 復元コマンドは必ず md5 照合と�
 手術 (ブロック退避→行削除→接頭復元→EA-6 後へ再挿入) で EA-1..6/EB-1..6
 の時系列順に完全修復 (backup /tmp/registry_before_repair.md 保持)。
 教訓: 台帳追記の old_text は直前行末尾のみに絞る。
+
+---
+
+## EC. render_pipeline 重点監査 (wave 129, 2026-07-26) — BA-3 解消
+
+棚卸し BA-3 (render_pipeline unwrap_or_default 静寂空化) の本丸解消 +
+周辺観察。ベースライン: opt-gfx 1113 全緑 (wave 128 後)・lib 警告 0。
+
+- **EC-1 [低] BA-3 解消**: frame() の quad_budget 経路で
+  `cast_bytes_to_slice(...).map(to_vec).unwrap_or_default()` — cast 失敗
+  (ラギッド/非整列、M-4 で Option 化された拒否パス) を**空 Vec に倒して
+  全 quad を静寂空化し書き戻す**データ損失パスを保持していた (棚卸し
+  BA-3)。pure 部 `apply_quad_budget_bytes` (:1138 前後) へ抽出し、失敗時は
+  bytes **無変更保持**で bool 返却、呼出側は fail-loud
+  `tracing::warn` して budget 適用をスキップ。gpu_quad_bytes の生成規約
+  (cast_slice_to_bytes 由来・非空ガード) 上ほぼ到達不能だが、到達不能を
+  理由に損失を許容しない。+1 strict テスト (4 quad → budget 2 の切詰め
+  順序保持・budget 内不変・ラギッド 8n+1 で false+bytes 無変更 — 旧式
+  なら空化で RED)、adversarial 旧式戻しで **1 RED** 機械確認、
+  fmt 正準済で復元 MD5-VERIFIED (0a9b3ee2)。
+- **EC-2 [観]** DRS `internal_size` (:567 の `let _internal`) は評価結果
+  読み捨て — 内部解像度の変更は未還元で、ヘッダ「(no resolution
+  scaling)」と整合する計測実演として誠実注記。結合点保持 (directive⑦)。
+- **EC-3 [観]** 材料引き当て (:1068 前後) は chunk_keys × pull_meshes の
+  線形 find = O(n·m)。両者数百スケールで現害小 (支配 tex 決定用途)、
+  HashMap 化は実効見合い要検討として棚卸し公表。
+
+本 wave は捕捉なし (52/53 は EB 節)。HEAD 原生 fmt 逸脱 29 行相当を含め
+正準適用 (現逸脱 0・自己起因逸脱は初版 5 行を捕捉→正準で根治)。digest
+不変を seal ゲート 5 で担保。

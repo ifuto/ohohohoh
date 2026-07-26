@@ -564,6 +564,10 @@ impl RsiftRenderPipeline {
         let _render_alpha = self.tick_clock.render_alpha();
         // DRS: feed frame time so scale can adapt (used by internal_size callers / stats).
         self.drs.push_frame_ms(delta_time * 1000.0);
+        // 【誠実注記 wave 129 EC-2】internal_size の評価結果は読み捨て —
+        // 内部解像度の変更はどこにも還元されず、ヘッダ行「(no resolution
+        // scaling)」の現行効果と整合する計測実演。DRS 自体は将来の解像度
+        // スケーリング接続用の結合点として保持 (directive⑦)。
         let _internal = self.drs.internal_size(screen_w, screen_h);
 
         // Prefer live camera from Minecraft ingest; fall back to stable origin for demo.
@@ -879,14 +883,17 @@ impl RsiftRenderPipeline {
         }
 
         if self.low_spec.quad_budget > 0 && !self.gpu_quad_bytes.is_empty() {
-            let mut quads: Vec<crate::packed4::PackedPullQuad> =
-                crate::zerocopy_cast::cast_bytes_to_slice::<crate::packed4::PackedPullQuad>(
-                    &self.gpu_quad_bytes,
-                )
-                .map(|q| q.to_vec())
-                .unwrap_or_default();
-            truncate_quad_budget(&mut quads, self.low_spec.quad_budget);
-            self.gpu_quad_bytes = crate::zerocopy_cast::cast_slice_to_bytes(&quads).to_vec();
+            // 【wave 129 EC-1 / BA-3 解消】旧実装は cast 結果に
+            // `unwrap_or_default()` を被せ、cast 失敗 (ラギッド/非整列) 時に
+            // **全 quad を静寂空化して書き戻す** データ損失パスを持っていた
+            // (棚卸し BA-3)。失敗時は budget 適用を諦め bytes を無変更保持
+            // + fail-loud warn へ根治。None は gpu_quad_bytes の生成規約上
+            // ほぼ到達不能だが、到達不能を理由に損失を許容しない。
+            if !apply_quad_budget_bytes(&mut self.gpu_quad_bytes, self.low_spec.quad_budget) {
+                tracing::warn!(
+                    "[render_pipeline] quad_budget: quad bytes の cast 失敗 (ラギッド/非整列) — budget 適用をスキップし元バイトを保持 (BA-3)"
+                );
+            }
         }
 
         if self.low_spec.triple_buffer_upload && !self.gpu_quad_bytes.is_empty() {
@@ -1065,6 +1072,10 @@ impl RsiftRenderPipeline {
                         .unwrap_or(0)
                 })
                 .collect();
+            // 【wave 129 EC-3 棚卸し】上の材料引き当ては chunk_keys ×
+            // pull_meshes の線形 find で O(n·m)。両者とも数百スケールで
+            // 現害は小さい (支配 tex の決定用途) — HashMap 化は冗長メモリ
+            // との実効見合いを要検討とし現状維持、本節で公表する。
             let mut quad_positions: Vec<[f32; 3]> = Vec::new();
             let mut quad_materials: Vec<u32> = Vec::new();
             'quads: for p in &self.pull_meshes {
@@ -1134,6 +1145,24 @@ impl RsiftRenderPipeline {
 /// (mesh_origin[1] 基点の 64 ブロック帯) に整合させる。旧実装の固定 0..64 は
 /// live ワールド帯 (例: origin.y=48) と 48 ブロックずれで、HZB 統計
 /// (visible_chunks/cpu_culled) が系統的に誤帯域で計測されていた。
+/// BA-3 (wave 129 EC-1): quad_budget をバイト列へ適用する pure 部。
+/// cast 成功時は切詰めて `true`、cast 失敗 (ラギッド/非整列) 時は **bytes
+/// を無変更で保持** して `false` — 呼出側が warn して継続する。旧実装の
+/// `unwrap_or_default()` は None を空 Vec に倒して全 quad を静寂空化
+/// したうえ書き戻していた (実害: 到達時にフレーム全描画内容が無警告で
+/// 消失)。
+fn apply_quad_budget_bytes(bytes: &mut Vec<u8>, budget: usize) -> bool {
+    match crate::zerocopy_cast::cast_bytes_to_slice::<crate::packed4::PackedPullQuad>(bytes) {
+        Some(q) => {
+            let mut quads = q.to_vec();
+            truncate_quad_budget(&mut quads, budget);
+            *bytes = crate::zerocopy_cast::cast_slice_to_bytes(&quads).to_vec();
+            true
+        }
+        None => false,
+    }
+}
+
 fn hzb_boxes_for(meshes: &[BuiltChunkMesh], y0: f32) -> Vec<ChunkBoundingBox> {
     meshes
         .iter()
@@ -1362,6 +1391,32 @@ mod tests {
     }
 
     #[test]
+    fn apply_quad_budget_bytes_truncates_and_preserves_on_cast_failure() {
+        use crate::packed4::PackedPullQuad;
+        // 4 クアッド (32 bytes) → budget 2 で先頭 2 クアッド (16 bytes) へ
+        // 切詰め + 順序保持、返り値 true。
+        let quads: Vec<PackedPullQuad> = (0..4u32)
+            .map(|i| PackedPullQuad::new(i, 0, 0, 7, 3, 2, 1, 1))
+            .collect();
+        let mut bytes = crate::zerocopy_cast::cast_slice_to_bytes(&quads).to_vec();
+        assert!(apply_quad_budget_bytes(&mut bytes, 2));
+        assert_eq!(bytes.len(), 16, "2 quads * 8 bytes");
+        let back: &[PackedPullQuad] = crate::zerocopy_cast::cast_bytes_to_slice(&bytes).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(PackedPullQuad::unpack_x(back[0].word0), 0);
+        assert_eq!(PackedPullQuad::unpack_x(back[1].word0), 1, "先頭順序保持");
+        // budget 超過なし → バイト列不変で true。
+        let mut unchanged = bytes.clone();
+        assert!(apply_quad_budget_bytes(&mut unchanged, 8));
+        assert_eq!(unchanged, bytes, "budget 内は不変");
+        // BA-3 核心: ラギッド (8n+1 bytes) で cast None → false かつ
+        // **バイト列無変更** (旧 unwrap_or_default なら空化して本 assert で RED)。
+        let mut ragged = vec![0xABu8; 9];
+        assert!(!apply_quad_budget_bytes(&mut ragged, 0));
+        assert_eq!(ragged, vec![0xABu8; 9], "cast 失敗でバイト列は無変更保持");
+    }
+
+    #[test]
     fn vanilla_hook_counters_are_monotonic_deltas() {
         // 絶対値ではなくデルタで検証 (他テストや将来のフック経路と並列安全)。
         let (g0, c0) = vanilla_render_hook_hits();
@@ -1481,13 +1536,23 @@ mod tests {
             assert_eq!(sa.empty_culled, sb.empty_culled, "empty_culled");
             assert_eq!(sa.visgraph_culled, sb.visgraph_culled, "visgraph_culled");
             assert_eq!(sa.range_culled, sb.range_culled, "range_culled");
-            assert_eq!(sa.rle_palette_bytes, sb.rle_palette_bytes, "rle_palette_bytes");
+            assert_eq!(
+                sa.rle_palette_bytes, sb.rle_palette_bytes,
+                "rle_palette_bytes"
+            );
             assert_eq!(sa.svo_nodes_built, sb.svo_nodes_built, "svo_nodes_built");
-            assert_eq!(sa.wiring_subsystems, sb.wiring_subsystems, "wiring_subsystems");
+            assert_eq!(
+                sa.wiring_subsystems, sb.wiring_subsystems,
+                "wiring_subsystems"
+            );
             // 仕様値の固定: 60 サブシステム配線。
             assert_eq!(sa.wiring_subsystems, 60, "wiring_subsystems spec");
             // M-1: デモ静止カメラでは実速度は厳密 0.0 (旧実装 ~375 固定ではない)。
-            assert_eq!(a.last_camera_speed.to_bits(), 0.0f32.to_bits(), "M-1 static cam");
+            assert_eq!(
+                a.last_camera_speed.to_bits(),
+                0.0f32.to_bits(),
+                "M-1 static cam"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
@@ -1504,7 +1569,10 @@ mod tests {
             let sa = a.frame(&coords, 640, 360, 0.016);
             let sb = b.frame(&coords, 640, 360, 0.016);
             assert_eq!(sa.frame_reuse_hits, sb.frame_reuse_hits, "frame_reuse_hits");
-            assert_eq!(sa.frame_reuse_misses, sb.frame_reuse_misses, "frame_reuse_misses");
+            assert_eq!(
+                sa.frame_reuse_misses, sb.frame_reuse_misses,
+                "frame_reuse_misses"
+            );
             assert_eq!(sa.pull_quads_built, sb.pull_quads_built, "pull_quads_built");
             assert_eq!(sa.pull_verts_drawn, sb.pull_verts_drawn, "pull_verts_drawn");
             assert_eq!(sa.pull_ssbo_bytes, sb.pull_ssbo_bytes, "pull_ssbo_bytes");
