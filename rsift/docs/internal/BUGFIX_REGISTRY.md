@@ -558,6 +558,11 @@
 | EF-2 | 観 | **CI c6e838c run 紅の機械記録**: 45 連緑 (ea5387c..bb79031) の後 lib tests 失敗 (exit code 101 のみ機械判明、ログは results-receiver 接続遮断で取得不能・gh run rerun は "workflow file may be broken" 応答)。同 commit はローカル seal 全 6 ゲート PASS (1116/1116) で差分は simd ガードのみ → 環境/フレーク以外の説明根拠なし。根因帰属は「最も可能性の高い唯一パターン (EF-1)」に限定して誇張なく公表。のちの新 push run で帰納確認へ |
 | EG-1 | 観 | restir::estimate の推定構造誠実公表: 真の RIS 推定 radiance·(w_sum/m)·(1/p̂(sel)) に対し本実装は **1/p̂ 正規化省略の簡約形** (p̂=target_pdf ∝ radiance 設計前提の輝度比近似)・単一流は厳密 RIS 選択確率 (w_i/w_sum) に従う・`combine` は受信側 p̂ 再評価なしの naive merge (文献上の実用近似・結合後推定は biased)・wiring 実消費は計測破棄のみ (full_graph_wiring let _restir_estimate、census grep) — doc 明記のみでコード不変 |
 | EG-2 | 観 | micro_lod::downsample_palette 宛先写像の単射性公表+注入性ピン: サンプル点 k·f 限定で dst=x/f は一意 (衝突は構造的不出・「最終書込み勝ち」は仕様外)・実引数 {1,2,4,8} (census: full_graph_wiring 経路)・非出力域 (factor 非約数) は捨て近似・max_quads 消費者ゼロ保持 (directive⑦) — +1 strict テスト (充填セル数 f=2/4/8 → 512/64/8・f=3 → 216・値 7/0 のみ、rq eg2_downsample.rq 事前導出)・adversarial (a) step_by 変異 2 RED・(b) AO 閾値 3000→3001 変異 1 RED・復元 MD5-VERIFIED 2 回・捕捉 53 同型 2 件目 (edit アンカの fn 尾部飲み込み重複定義を grep 構造検査で即捕捉・修復、採番なし同型再発運用) |
+| EH-1 | 中 | clustered_lighting wiring 座標フレーム不一致の構造公表+ヘッダ虚偽訂正: 旧「view frustum」主張 vs 実装は正規化単位立方体 [0,1]³ 一様分割の様式化参照実装、wiring はセクション局所 [0,16) 座標×輝度半径 1..15 をそのまま供給 (集計破棄のみ消費、DY-2 同型の中間構造) — soak ピン ((2,2,2) r=15 → 全 128,640 帰属/(15,15,15) r=1 → 全域ミス、rq 導出) + WGSL 件数集計パス注記、正規化実配線は設計引継ぎ |
+| EH-2 | 低 | ClusterGrid::new fail-loud 契約化: 零次元は全クエリ静寂空化の堕落形 (aabb が 1.0/0=inf 経由 NaN 座標を返しうる) → dims>=1 assert + 総数 u64 事前検査で index の u32 wrap 折り畳み衝突を構造排除 (wrap 不出証明は積保証に帰着)・wiring 実引数は契約内で無影響 + should_panic 4 件 (S-3 同型) |
+| EH-3 | 低 | ClusterGrid::index 範囲 assert (他クラスタへの静寂折り畳み拒否、内部呼出は常に範囲内でコスト無視級) + 非対称 3×5×7 全 105 掃引単射 + index(2,4,6)=104 の rq 導出ピン |
+| EH-4 | 観 | aabb 厳密 bit 契約 (1/6=0x3E2AAAAB・5*(1/6)=0x3F555556←暗算禁止の実効例・6*(1/6)=厳密 1.0)・tangent 包含両方向 bits pin (r 1ulp 低下で反転)・境界面ライト両隣帰属 conservative pin (ちょうど 2 クラスタ)・非有限 drop / r*r=inf 全域支配 (inf<=inf) |
+| EH-5 | 観 | assign_lights O(L×N) 全走査 (wiring 形状 ≈4.1M 球判定/tick) の棚卸し公表 — 範囲制限走査化は f32 境界判定 bit 同一性証明を伴う設計判断のため引継ぎ (EC-3 同型) |
 
 ---
 

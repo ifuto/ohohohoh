@@ -6928,3 +6928,64 @@ lib (非 test) 警告は 0 維持。test 側警告掃除は別 wave 候補とし
 opt-gfx **1117 全緑** (net +1、全量再実行 203.36s 機械値)・api 49 全緑・
 lib 警告 0・fmdiff 自己起因逸脱 0。
 digest 004c1cf5fb17bfe8 rows=357 不変は seal ゲートで担保。
+
+---
+
+## EH. clustered_lighting.rs (wave 134, 2026-07-26)
+
+135 行・既存 4 テスト。未監査 23 モジュール (registry/AUDIT 双方で言及ゼロ、
+機械列挙) のうちの 1 件目。モジュール自体の数学は健全 (球-AABB 最近接
+距離二乗判定は標準手法) だが、wiring 構造と契約管理に課題を検出。
+
+- **EH-1 [中] wiring 座標フレーム不一致の構造公表 + ヘッダ虚偽訂正**:
+  旧ヘッダは「Subdivides the view frustum」と主張するが実装は**正規化
+  単位立方体 [0,1]³ の一様分割** (透視分割・指数 z スライスの無い様式化
+  参照実装)。さらに wiring の実供給 (full_graph_wiring) は**セクション
+  局所ボクセル座標 [0,16) と輝度レベル半径 1..15** をそのまま流すため、
+  空間割当は座標フレーム不一致のまま計算される。消費者は
+  `_max_cluster_load` 集計破棄のみ = 「評価実効・消費は集計型」中間構造
+  (DY-2 と同型)。soak ピンで構造を機械固定: wiring 実引数形状
+  (120×67×16 = 128,640 クラスタ) に (2,2,2) r=15 を供給すると全点まで
+  sqrt(12)<15 で**全 128,640 クラスタに氾濫帰属**、(15,15,15) r=1 は
+  最近隅 (1,1,1) まで sqrt(588)>1 で**全域ミス** (rq eh_clustered.rq
+  導出)。view/NDC 正規化の実配線は設計判断として引継ぎ。WGSL 側は
+  同一式の件数集計のみの参照パスであることも明記。
+- **EH-2 [低] new() の fail-loud 契約化**: 零次元は全クエリを静寂に
+  空化する堕落形 (aabb は 1.0/0=inf 経由で NaN 座標を返しうる) ので
+  dims >= 1 を assert。さらに総クラスタ数の u64 事前検査 (<= u32::MAX)
+  で `index` の u32 wrap 折り畳み衝突を**構造的に排除** (cz<=slices-1
+  なら cz*ty*tx <= total < 2^32、wrap 不出の証明は積保証に帰着)。
+  wiring 実引数 ((w/16).max(1) 等) は契約内のため無影響 + should_panic
+  4 件。frame_pacing S-3 と同型の契約明示。
+- **EH-3 [低] index() 範囲 assert + 全掃引ピン**: 範囲外座標は他クラスタ
+  スロットへの静寂折り畳みとなるため fail-loud 拒否 (assign_lights 内部
+  呼出は常に範囲内、コストは 3 比較で球判定に対し無視級)。非対称グリッド
+  3×5×7 の全 105 掃引単射 + index(2,4,6)=104 を rq 導出で固定。
+- **EH-4 [観] 厳密 bit 契約ピン群**: aabb は乗算 1 発のため丸め 1 回に
+  確定 — 1/6 = 0x3E2AAAAB、**5*(1/6) = 0x3F555556** (0x3F555555 では
+  ない、rq 実導出。暗算禁止規律の実効例)、6*(1/6) は丸めで厳密 1.0。
+  tangent 包含境界の両方向 pin (d=r²=0.25 で真、r を 1 ulp 低下
+  (0x3EFFFFFF) で偽)。境界面ライトの**両隣帰属** conservative pin
+  (x 共有面上 → ちょうど 2 クラスタ、y,z は内部固定で限定)。非有限の
+  drop 契約 (NaN 位置/半径 → false) と r*r=inf の全域支配 (inf<=inf 真)。
+- **EH-5 [観] O(L × N) 全走査の棚卸し公表**: wiring 形状では
+  ≤32 ライト × 128,640 クラスタ ≈ 4.1M 球判定/tick。範囲制限走査への
+  置換は f32 境界判定の bit 同一性証明 (ulp マージン付き帰納) を伴う
+  設計判断のため EC-3 と同型の棚卸しとして引継ぎ。
+
+**adversarial 4 系統全て RED**: (a) index assert 除去 → 1 RED・
+(b) `d <= r*r` → `<` → **2 RED** (tangent 包含 + inf 支配の inf<inf
+偽化)・(c) 零次元 assert 除去 → 3 RED・(d) 積域 assert 除去 → 1 RED。
+復元 md5 照合 MD5-VERIFIED (42c7c9b7654a8a1cacc9ca5cfd6230d7) 4 回。
+**全厳密値を rq で事前導出** (eh_clustered.rq、全 assert 通過)。
+
+**捕捉 40 同型 (復元手順系・採番なし)**: adversarial 初手で (a) の変異
+注入が構文破壊 + 検出 grep が compile error を FAIL と誤認できず、
+続く `git checkout --` が **未コミットの EH 編集全体を HEAD へ巻戻し**
+た → md5 記録値との照合で即捕捉し、編集適用スクリプト (決定的文字列
+置換) を再実行して **md5 bit 同一 (42c7c9b7) に完全復元**。未検証
+worktree への git checkout 禁止・実体コピー先行を手順へ明文化。
+
+opt-gfx **1128 全緑** (net +11、全量再実行 199.53s 機械値)・既存 4
+テスト不変・lib 警告 0・api 49 全緑・fmdiff 自己起因逸脱 0。
+digest 004c1cf5fb17bfe8 rows=357 不変は seal ゲートで担保。
