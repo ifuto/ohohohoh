@@ -495,6 +495,12 @@
 | DR-3 | 低 | 短絡順序の厳密契約公表+pin: 総数予算超過時はカテゴリ予算を**バイパス** (1/8 通過ならカテゴリ満杯でも AllowDecimated)・保護粒子も予算計上 (保護が far 粒子を飢えさせうる意図設計)・dist==max_d はカリングしない (厳密 `>`、ε 超過で CullTooFar・計上なし)・NaN 位置は両比較 false で**拒否しない通常予算評価**へ進む fail-visible |
 | DR-4 | 観 | FNV-1a 間引きの厳密ピン化: 独立 Python シムで事前導出 (keep(12345,50,8)=F・tick 0..4 系列 [F,F,F,F,T])・連続 640 ids で n=8→**厳密 80**・n=4→**厳密 160** (均質分布)・adversarial (b) で検出空白 (id=5/6 の 2 値標本では 1/8→1/16 変化が区別不可) を発見→**呼出側レート census pin 追設** (80 vs 40) で強化 |
 | DR-5 | 観 | 既存 kind_budget_enforcement の loose `matches!` を決定的着地点精緻化: keep(222,0,4)=false のため厳密 CullKindBudget・id=5 → AllowDecimated (FNV シム事前選定、fail-visible pin) + **捕捉 40 件目**: adversarial 復元手順の anchor が rustfmt による行分割で崩れ anchor assert 失敗のまま変体が golden へ流出しかけた → md5 で即時検知して完全修復 (復元 assert 二重化/流出後の即差替え手順へ強化) |
+| DS-1 | 中 | **smaa::edge/blend の wiring 恒等証明**: 唯一の Rust 側呼出 full_graph_wiring:1701 は同一色 (aa) を 5 引数に与え (contrast≡0 → strength=0 → smaa_w=0)、戻り値自体 `let _ = (is_edge, smaa_w)` で破棄 — FSR1 の CH-1 注記と同じ「定数色不変性の実演」形で本経路の SMAA は描画に一切寄与しない (DM-2/DQ-1 と同型の恒等クラス 3 件目)。実効化は近傍テクセル実配線の設計判断のため引継ぎ |
+| DS-2 | 低 | edge 厳密 bit pin 化: V/H strength=1.0 厳密・タイ (gx==gy) は厳密 `<` で horizontal=false・tie strength=|gx|=0x3ECCCCCC・lmax 厳密値・非タイ主勾配 0x3F4CCCCC (全て Python IEEE f32 シム=係数 f32 化で事前導出→照合) |
+| DS-3 | 低 | NaN 伝播の位置非対称公表+pin: min/max NaN 脱落により center/n/s の NaN は完全マスク (gy=NaN→比較 false→strength=|gx| 有限) だが、e/w NaN は gx 経由で strength へ伝播 (masked strength 0x3DCCCCD0 厳密) |
+| DS-4 | 低 | blend 境界契約厳密 pin: strength<=0 → 0.0 厳密・lm=0 で商=1 → clamp 0.5 (0x3F000000)・1/(1+0.5)→clamp 0.5・NaN strength → NaN 伝播 (clamp は比較 false で self 返却) |
+| DS-5 | 観 | 閾値 2 分岐 (A'=floor 0x3B800000 支配/contrast 0x3C1374BC で発動 → strength 0x3A831270 厳密、B'=relative 0x3DBA5E37 支配で不発) の DQ-4 同族対蹠 pin |
+| DS-6 | 観 | **contrast 通過でも strength=0 になりうる** directionless ケースの公表: 両軸ペアの内部差ゼロ (e==w ∧ n==s) なら全域 contrast が閾値超過でも (0.0, false, lmax) 返却 — doc「strength == 0 means no edge」との表現緊張を誠実化 (方向決定不能のため 0、blend は strength<=0 → 0 の安全側)。**捕捉 41 件目**: 初版シナリオ設計で両軸差ゼロを選んでしまい st_a==0 で失敗 (テスト赤が捕捉) → 公表 pin として昇華＋分岐 pin は aniso 場面に再設計 |
 
 ---
 

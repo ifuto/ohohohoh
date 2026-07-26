@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 154
+- count: 155
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -178,3 +178,5 @@
 - 2026-07-26 (count 153): wave 117 fxaa 監査 (DQ-1 [中] **wiring 恒等証明**: wiring:1694 が同一色 5 引数で contrast≡0 → shade は bit 厳密恒等 = 本経路 FXAA 実効ゼロの構造確定 (DM-2 bloom と同種、実効化はフレームバッファ近傍設計判断で引継ぎ)・DQ-2 [低] 勾配軸タイブレーク pin (0x3F1EB852)・DQ-3 [低] NaN 位置非対称公表+pin (n/s マスク/e/w/center 伝播)・DQ-4 [観] threshold 2 分岐 pin (floor/relative 対蹠+輝度シフト丸め変化 0x3BB43958↔0x3BB43980)・DQ-5 [観] Rec.601 厳密性+Rec.709 混在警告+捕捉 39 (bits 二重 typo) 計5項目、+5 strict テスト 1073 全緑・adversarial ((a) >=化→2 RED・(b) ペア交換→3 RED CE 対称標本は交換不変で誠実記録・(c) 床除去→2 RED zero-luma 0/0 NaN 連鎖・(d) 係数攪拌→4 RED)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変・固定版 md5 5ce9282d・台帳 428) の CI 緑確認用
 
 - 2026-07-26 (count 154): wave 118 particle_control 監査 (DR-1 [中] **wiring 二重カウント+単調累積根治**: allow() 内部計上+重複呼出 (実効半量予算) + reset_counts 未呼出 (tick 跨ぎ累積で恒久間引き支配化) をプロトコル strict 化 (begin_tick→reset_counts→allow 1 本) で根治・DR-2 [低] kind 静寂クランプ pin・DR-3 [低] 短絡順序厳密契約 pin (総数超過=kind bypass/保護計上/dist=境界非カリング/NaN 通常評価)・DR-4 [観] FNV 厳密 pin (分布 80/160) + 検出空白発見→呼出側レート census 追設・DR-5 [観] 決定的着地精緻化+捕捉 40 (復元 anchor 崩壊の golden 流出事故を md5 即検知で根治) 計5項目、**+7** strict テスト 1080 全緑・adversarial ((a) 順序交換→1 RED・(b) 1/8→1/16 初回検出不能→census 追設で再 RED=w113 と同型強化・(c) clamp 除去→1 RED panic fail-loud・(d) >=化→1 RED)・復元 md5 照合 VERIFIED・digest 004c1cf5 不変・固定版 md5 a966ad7d・台帳 433) の CI 緑確認用
+
+- 2026-07-26 (count 155): wave 119 smaa 監査 (DS-1 [中] wiring 恒等証明 (aa 同一色 5 引数+戻り値破棄 = 恒等クラス 3 件目、実効化は近傍配線設計判断で引継ぎ)・DS-2 [低] edge 厳密 bit pin (V/H 强度 1.0/tie→horiz=false/0x3ECCCCCC)・DS-3 [低] NaN 非対称 (center/n/s マスク 0x3DCCCCD0、e/w 伝播)・DS-4 [低] blend 境界厳密 pin・DS-5 [観] 閾値 2 分岐対蹠・DS-6 [観] directionless 公表 (contrast 通過∧両軸差ゼロ→strength=0)+捕捉 41 (シナリオ盲スポットをテスト赤が捕捉) 計6項目、+6 strict テスト 1086 全緑・adversarial ((a) <=化→3 RED・(b) 0.1→0.01→1 RED・(c) clamp 1.0→1 RED・(d) strength 交換→5 RED)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変・固定版 md5 a1063898・台帳 439) [w118 との 2 コミット集約 push] の CI 緑確認用

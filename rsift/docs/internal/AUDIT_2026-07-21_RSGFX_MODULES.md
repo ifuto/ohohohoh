@@ -6394,3 +6394,32 @@ rate 変化で検出)。(b) total 間引き 1/8→1/16 → **初回 11 全緑=�
 MD5-VERIFIED、(c) 前の版は rustfmt 変形で anchor 崩壊事故 (捕捉 40) 後に
 再採取 = 固定版 a966ad7dc4cd1584926cbb5c14fea10d (adv cache・rsift/bak/
 二重保存)。
+
+## DS. smaa.rs (wave 119, 2026-07-26)
+
+118 → 274 行 (rustfmt 後)。消費者照合: full_graph_wiring:322 (Smaa::new())・
+:1701 (aa 同一色 5 引数の edge)+:1709 (blend、戻り値破棄)。原版 md5
+e4c380ab...。bench digest 行なし。wiring 密度 7-同数残存 3 件から辞書順で
+機械選定。
+
+本 wave は DS-1 [中] 恒等クラス 3 件目の確定 (DM-2/DQ-1 と同型 — wiring の
+CPU 参照系は CH-1 (franken 色) 以後「定数色不変性の実演」に統一されており、
+「ゼロ効果」は検証可能な設計選択として誇張なく一貫記録)。
+
+| DS-1 | 中 | wiring 恒等証明 (aa 5 引数 + 戻り値破棄、4 点グリッド bit pin) |
+| DS-2 | 低 | edge 厳密 bit pin (V/H 强度 1.0・tie→horizontal=false/0x3ECCCCCC/主勾配厳密) |
+| DS-3 | 低 | NaN 伝播位置非対称 pin (center/n/s マスク 0x3DCCCCD0、e/w 伝播) |
+| DS-4 | 低 | blend 境界厳密 pin (負→0/lm=0→clamp 0.5=0x3F000000/NaN 伝播) |
+| DS-5 | 観 | 閾値 2 分岐対蹠 pin (A'=0x3A831270 発動・B'=不発、DQ-4 同族) |
+| DS-6 | 観 | directionless 公表 (contrast 通過∧両軸差ゼロ → strength=0) + 捕捉 41 (シナリオ盲スポットをテスト赤が捕捉→公表へ昇華) |
+
+検証: +6 strict テスト (wiring 恒等 4 点/edge 厳密+tie/NaN 非対称/blend
+境界/閾値対蹠/directionless 公表) でモジュール 10/10・既存 4 テスト不変。
+総数 **1086 全緑**。**adversarial 誠実記録**: (a) tie 厳密 `<`→`<=` →
+**3 RED** (tie pin+NaN contrast/gy=0 派生+DS-6 の |0|<=|0| で h 反転)。
+(b) 相対閾値 0.1→0.01 → **1 RED** (B' が発動側へ倒れ st_b≠0 = 分岐 pin
+選択が有効)。(c) blend clamp 0.5→1.0 → **1 RED** (0x3F000000→0x3F2AAAAB)。
+(d) strength 選択交換 → **5 RED** (既存 V/H 2 テストを含む broad 検出 =
+主勾配選択は深層の根幹)。復元 md5 照合 MD5-VERIFIED 4 回 (固定版
+a106389865fd47f74ee84a683d70a96b、adv cache・rsift/bak/ 二重保存)。
+fmt 初回差分 (行列の折り返し) を fmdiff 正準形へ忠実適用 (現逸脱 0)。
