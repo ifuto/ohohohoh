@@ -556,6 +556,8 @@
 | EE-2 | 観 | 同モジュール消費者形状公表: greedy_mask_avx2/face_visible_bitmask の実呼出は full_graph_wiring の面可視サンプル 1 系のみ (census grep)。全アーキテクチャ bit 同一の既存契約 (ヘッダ歴史注記) と fuzz オラクル (spec_masks 別ループ形状) は現役確認 |
 | EF-1 | 低 | async_chunk_io::lz4_roundtrip_store_load の**固定 sleep フレーク** (store→50ms→load→80ms 後に即 assert): CI 高負荷でワーカ (Store 書込/Load 読込) が未完了のまま判定に入り**断続失敗** (成功条件は「ready 非空 OR cached」だがワーカ未走なら両方空) → 5 秒 deadline ポーリング化 (成功条件不変・上限到達のみ失敗でワーカ異常の検出力維持、phase A は path.exists() 待機+Stored 排水、phase B は poll_ready ループ)。発見経路: c6e838c CI run 紅 (lib tests exit 101、4m51s) を受け時刻依存パターン走査で特定 (同 crate 唯一、ee 検証はローカルではフレーク再現不能 = adversarial 非検出として誠実記録、判定は新 push run の帰納確認) |
 | EF-2 | 観 | **CI c6e838c run 紅の機械記録**: 45 連緑 (ea5387c..bb79031) の後 lib tests 失敗 (exit code 101 のみ機械判明、ログは results-receiver 接続遮断で取得不能・gh run rerun は "workflow file may be broken" 応答)。同 commit はローカル seal 全 6 ゲート PASS (1116/1116) で差分は simd ガードのみ → 環境/フレーク以外の説明根拠なし。根因帰属は「最も可能性の高い唯一パターン (EF-1)」に限定して誇張なく公表。のちの新 push run で帰納確認へ |
+| EG-1 | 観 | restir::estimate の推定構造誠実公表: 真の RIS 推定 radiance·(w_sum/m)·(1/p̂(sel)) に対し本実装は **1/p̂ 正規化省略の簡約形** (p̂=target_pdf ∝ radiance 設計前提の輝度比近似)・単一流は厳密 RIS 選択確率 (w_i/w_sum) に従う・`combine` は受信側 p̂ 再評価なしの naive merge (文献上の実用近似・結合後推定は biased)・wiring 実消費は計測破棄のみ (full_graph_wiring let _restir_estimate、census grep) — doc 明記のみでコード不変 |
+| EG-2 | 観 | micro_lod::downsample_palette 宛先写像の単射性公表+注入性ピン: サンプル点 k·f 限定で dst=x/f は一意 (衝突は構造的不出・「最終書込み勝ち」は仕様外)・実引数 {1,2,4,8} (census: full_graph_wiring 経路)・非出力域 (factor 非約数) は捨て近似・max_quads 消費者ゼロ保持 (directive⑦) — +1 strict テスト (充填セル数 f=2/4/8 → 512/64/8・f=3 → 216・値 7/0 のみ、rq eg2_downsample.rq 事前導出)・adversarial (a) step_by 変異 2 RED・(b) AO 閾値 3000→3001 変異 1 RED・復元 MD5-VERIFIED 2 回・捕捉 53 同型 2 件目 (edit アンカの fn 尾部飲み込み重複定義を grep 構造検査で即捕捉・修復、採番なし同型再発運用) |
 
 ---
 

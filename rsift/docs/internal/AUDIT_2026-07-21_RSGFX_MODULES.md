@@ -6879,3 +6879,52 @@ toolchain/rspeed 消滅)→ 復旧手順再適用 (restore-env.sh → toolchain
 selftest 54 ピン 0 FAIL)→ FETCH_HEAD c6e838c へ update-ref+reset
 --mixed、worktree 無改変で整合)。捕捉 52 同型の cwd 相対パス誤り 1 件
 (影響ゼロ・即時読取、bak 複写の失敗を stderr 出力で捕捉)。
+
+---
+
+## EG. restir.rs / micro_lod.rs 誠実注記監査 (wave 133, 2026-07-26)
+
+両モジュールとも実装は数学的に妥当で、変更は**誠実注記 (doc) + 注入性
+ピン (厳密テスト)** のみ。構造的確定事項の言語化を優先した wave。
+
+- **EG-1 [観] restir::estimate の推定構造公表**: 真の RIS 推定は
+  radiance · (w_sum/m) · (1/p̂(selected)) だが、本実装は **1/p̂
+  正規化を省略した簡約形** (p̂ = target_pdf が radiance に比例する
+  設計前提で、輝度比の近似として機能)。単一流では選択確率が厳密 RIS
+  (w_i/w_sum) に従う一方、`combine` は隣接 reservoir の sample を
+  **受信側 p̂ で再評価しない naive merge** (文献上の実用近似であり、
+  結合後の推定は biased) と、限度付きの性質を doc に明記。wiring 実消費
+  は計測破棄のみ (full_graph_wiring の let _restir_estimate、census grep)。
+- **EG-2 [観] micro_lod::downsample_palette 宛先写像の単射性公表**:
+  サンプル点は (k·f) 限定で宛先 x/f は**単射** (x = k·f ⟹ x/f = k 一意)
+  — 複数ソースの同一宛先衝突は構造的に起きず「最終書込み勝ち」は
+  仕様外 (空 dst への 1 書込みのみ)。実引数は lod_for_distance 由来の
+  {1,2,4,8} (census: full_graph_wiring 経路)、非出力域 (factor 非約数の
+  余り側) は捨てる近似方式。max_quads フィールドの外部消費者は現状ゼロ
+  (census grep) — 将来のクアッド制約計測用に保持 (directive⑦)。
+  +1 strict テスト `downsample_injective_dst_extents_exact`: 全マス充填で
+  非零宛先セル数は (16/f)·(16/f)·(16/f) に厳密等しい (f=2/4/8 →
+  **512/64/8** — 衝突/添字崩れは個数減少として必ず現れる注入性の
+  観測可能ピン)、値は 7 か 0 のみ、f=3 は (6)·(6)·(6)=**216** (x =
+  0,3,..,15 → dst 0..5 の余り捨て近似固定)。rq 導出 eg2_downsample.rq
+  全 assert 通過 (軸サンプル数 ceil 式・f=3 商最大 5・AO 閾値全域
+  4097 ストライド走査の事前導出照合)。
+
+**adversarial**: (a) `step_by(factor as usize)` → `step_by((factor+1)…)`
+変異で **2 RED** (新規注入性ピン + 既存 identity_and_mapping が連鎖)、
+(b) AO 閾値 3000→3001 変異で **1 RED** (bake 境界テスト)。
+復元 md5 照合 MD5-VERIFIED (182d729f261f2c62ceb88e834e4f25cc) 2 回。
+
+**捕捉 53 同型・2 件目**: wave 133 編集中、edit アンカが
+`bake_impostor_ao_thresholds` の fn 尾部を飲み込み本体 2 重化 (E0428
+級の重複定義) を誘発 → grep 構造検査で即捕捉し、不完全フラグメント
+除去で修復 (採番なし同型再発として記録、捕捉 132cwd 件と同運用)。
+
+棚卸し: lib test プロファイルのみの警告 4 件 (aces_tonemap:137 unused・
+half_vertex:309 unused_mut・meshlet_cone:146 unused・fsr3_fg:207
+unused_mut) は **HEAD 原生を stash 対照で機械確定** (wave 133 非起因)。
+lib (非 test) 警告は 0 維持。test 側警告掃除は別 wave 候補として記録。
+
+opt-gfx **1117 全緑** (net +1、全量再実行 203.36s 機械値)・api 49 全緑・
+lib 警告 0・fmdiff 自己起因逸脱 0。
+digest 004c1cf5fb17bfe8 rows=357 不変は seal ゲートで担保。

@@ -148,6 +148,14 @@ impl Reservoir {
     }
 
     /// Unbiased estimator of the summed radiance contribution.
+    /// 【誠実注記 wave 133 EG-1】真の RIS 推定は
+    /// radiance · (w_sum/m) · (1/p̂(selected)) だが、本実装は
+    /// **1/p̂ 正規化を省略した簡約形** (p̂ = target_pdf が radiance に比例
+    /// する設計前提で、輝度比の近似として機能)。単一流では選択確率が
+    /// 厳密 RIS (w_i/w_sum) に従い、`combine` は隣接 reservoir の sample を
+    /// **受信側 p̂ で再評価しない naive merge** (文献上の実用近似、結合後の
+    /// 推定は biased)。なお wiring 実消費は計測破棄のみ
+    //  (full_graph_wiring の let _restir_estimate、census grep)。
     pub fn estimate(&self) -> Vec3 {
         if self.m == 0 {
             return Vec3::new(0.0, 0.0, 0.0);
