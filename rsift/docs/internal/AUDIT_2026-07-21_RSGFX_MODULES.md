@@ -6461,3 +6461,52 @@ fmt fmdiff 正準形忠実適用 (現逸脱 0)。
 **捕捉 45 件目**: `rustfmt --emit stdout` の出力は第 1 行に filename を含む仕様
 → naïve 全量適用で ssr.rs 先頭を破壊、compile エラーで即捕捉 → 「第 1 行除去」
 手順に正式化 (fmdiff 内部も同処理であることを実装照合済)。
+**捕捉 46 件目**: RQ v2 selftest のピン挿入位置が (rc,out) タプルを被覆 →
+selftest 1 FAIL が機械捕捉 → 精密修復で 51 全 PASS 復帰。
+
+## DU. static_be.rs (wave 121, 2026-07-26)
+
+原版 183 行・md5 f0dea5585bcc90ae988ed3907dc224ab。消費者 census:
+full_graph_wiring.rs (be_policy 167/313、be_entries 168/314、呼出 1369-1387)
++ examples/wide_static_bench (bench) のみ、WGSL 対応なし。
+
+- **DU-1 [低]** tick() 境界契約の厳密 pin 群: 昇格猶予 40 (39→動的/40→昇格)・
+  interact 鮮度窓 160=40*4 (159→降格/160→通過)・近距離 3.5 inclusive
+  (0x40600000 降格=Static→Dynamic 降格実証 / 0x40600001=3.5000002 escape→
+  昇格復帰)・burst 間隔 20 inclusive 累積 / 21 リセット / guard 恒久動的・
+  非開閉 tick で score 維持・時計逆行 saturating→0 安全側化・
+  **NaN camera_distance は近距離降格不発で昇格側 (fail-safe ではない公表)**。
+  全 f32/整数厳密値は rq (du_bounds.rq、RQ.md v2) で事前導出。
+- **DU-2 [低]** pos_pack 厳密 pin: x 63-38 / z 37-12 / y 11-0 排他 (射影復元)、
+  rq (du_pospack.rq) 導出値 5 件 ((1,64,2)=274877915200=0x0000004000002040・
+  (-1,0,0)=0xFFFF_FFC0_0000_0000・(0,-1,0)=4095・(7,100,9)=1924145385572・
+  x=2^25 有効 0x8000000000000000) + 領域外折り畳み衝突公表 (x=2^26≡0・
+  y=±2048≡2048)。世界境界 ±30M<2^25 内は単射。u64 10進表示のみ基盤 printf
+  (18446743798831644672、rq i64 ビット列照合付)。
+- **DU-3 [観]** wiring 構造公表: full_graph_wiring:1369-1387 は take(4)・
+  kind 常時 Chest・引数 (false,false,…,true) 固定・戻り値 `let _mode` 破棄
+  — ただし be_entries HashMap 副作用は永続 = **「決定破棄・状態機械のみ
+  進行」構造** (恒等クラス DM-2/DQ-1/DS-1、常時 miss DT-1 と別型: 状態機械
+  自体は実進行する)。dist 欠損 unwrap_or(0.0) は近距離側安全既定だが
+  interact 無しでは鮮度窓不発で昇格を妨げない。wiring 同型 soak pin
+  (200 tick で 4 エントリ全静昇格・4 区画 distinct) で実証。
+- **DU-4 [観]** static_mesh_ready=false は現 mode 保持 (Dynamic 維持・
+  Static 維持の両方向 pin)。Static からの降格経路は burst/anim/interact
+  3 系統のみで「メッシュ喪失」降格は不存在。
+- **DU-5 [観]** promote_after_ticks*4 u64 乗算の debug overflow panic 領域
+  (2^62 超) を契約記録。既定 40→160 で到達不能。
+- **DU-6 [観]** closed_model_id 全表 pin + Other→chest フォールバック公表。
+
++9 strict テストで 1102 全緑 (module 13/13)。adversarial 6/6 RED:
+(a) since_anim `<`→`<=` → promote_boundary RED・(b) dist `<=`→`<` →
+inclusive pin RED・(c) burst 間隔 `<=`→`<` → interval pin RED・
+(d) z `<<12`→`<<11` → pos_pack 厳密 pin RED・(e) リセット削除 →
+burst interval pin RED・(f) ready ガード無効化 → mesh_not_ready pin RED。
+検出不能ゼロ (強化追設不要)。復元 md5 照合 MD5-VERIFIED 6 回。
+fmt fmdiff 正準形忠実適用 (現逸脱 0、`--emit stdout` は filename+空行の
+2 行除去 = 捕捉 45 手順の精密化)。
+
+**捕捉 47 件目**: DU-1 初版テストの 3.5+ulp 復帰ケース期待値を
+DynamicBlockEntity と誤記 (実装は正しく Static 復帰: dist>3.5 で近距離
+ルール不発・since_anim>=40 で昇格) → 初回実行テスト赤が捕捉・実装一致へ
+修正。捕捉 46 件目は RQ v2 の記録 (selftest ピン被覆、前節参照)。

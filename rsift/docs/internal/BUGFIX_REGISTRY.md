@@ -507,6 +507,12 @@
 | DT-4 | 観 | Vec4 消費者ゼロの意図的保持を明記 (WGSL パリティ API 面、bloom/fxaa/atmospheric 他モジュールと同方針) |
 | DT-5 | 観 | Rust/WGSL 表現差の公表+走査 pin: 空マーカーは Rust is_infinite() (±∞) vs WGSL SSR_INF=1e30 有限比較 (1e30 有限深度は Rust でも diff 経路不発で帰結同等だが判定経路差を記録)・WGSL uv 写像 pos.xy/res*0.5+0.5 は真の投影でない様式化・surf (view 線形深度) を along-ray 距離として扱う近似 — 消費者警告 |
 | DT-6 | 観 | hit 窓が**一方向符号付き** [0, thickness] であることの公表: 典型 SSR の両側 \|diff\| 窓と異なり表面通過後 (diff<0) の再接近は拾わない — step=2.0/surf=5.5 で \|diff\|=0.5 を跨ぐ構成を miss pin として固定 (WGSL 側も同型であることを走査 pin で担保) |
+| DU-1 | 低 | static_be::tick 境界契約の厳密 pin 群: 昇格猶予 40 tick (39→動的 / 40→昇格、初期 last_anim=0 基準)・interact 鮮度窓 = promote_after_ticks\*4 = 160 (159→降格 / 160→通過→昇格)・近距離 3.5 は inclusive (0x40600000 で降格=**Static→Dynamic 降格経路の実証**を兼備 / 0x40600001=3.5000002 で escape→昇格復帰、全値 rq 導出)・burst 間隔 20 inclusive 累積 (t=0/20/40 → score=3、間隔 21 でリセット 0、guard 到達で恒久動的)・**非開閉 tick では score 維持** (時間減衰なし設計の pin)・時計逆行 (now<last) は saturating_sub→0 で安全側動的化・**NaN camera_distance は全比較 false で近距離降格が不発し昇格側へ** (SSR の NaN miss fail-safe とは逆側 = fail-safe ではない旨誠実公表) |
+| DU-2 | 低 | pos_pack レイアウト厳密 pin (x: bit63-38 / z: 37-12 / y: 11-0 の排他 3 領域、射影復元 pin 付): rq 導出厳密値 5 件 ((1,64,2)=274877915200=0x0000004000002040・(-1,0,0)=0xFFFF_FFC0_0000_0000 (u64 18446743798831644672)・(0,-1,0)=4095・(7,100,9)=1924145385572・x=2^25 は有効で 0x8000000000000000=2^63) + **領域外折り畳み衝突の公表 pin** (x=2^26≡0・y=±2048≡2048、MC 世界境界 ±30M < 2^25 内では単射だが契約として固定)。**捕捉 47 件目**: 初版テストで 3.5+ulp 復帰ケースの期待値を DynamicBlockEntity と誤記 (実装は正しく Static 復帰) → 初回実行のテスト赤が捕捉・実装一致へ修正 |
+| DU-3 | 観 | wiring 構造公表: 唯一の Rust 側呼出 full_graph_wiring:1369-1387 は take(4)・kind 常時 Chest固定・opened=false, interacted=false, static_mesh_ready=true 固定・戻り値は let _mode で破棄 — ただし be_entries: HashMap への副作用 (mode 遷移) は永続するため恒等クラス (DM-2/DQ-1/DS-1)・常時 miss+破棄 (DT-1) とも別型の**「決定破棄・状態機械のみ進行」構造** (wiring 同型 soak pin: 200 tick 無操作で 4 エントリ全静昇格・4 区画キー全 distinct・dist 欠損エントリも昇格)。dist 欠損の unwrap_or(0.0) は近距離側 (0.0<=3.5) の安全既定だが、interact 無しでは鮮度窓が不発のため昇格は妨げない挙動の公表 |
+| DU-4 | 観 | static_mesh_ready=false 時の契約公表: 現 mode を**保持**して返す (Dynamic 維持だけでなく **Static→Static 維持**もピン、捕捉 47 修正後の実装一致)。Static からの降格経路は burst/anim/interact の 3 系統のみで「メッシュ喪失による降格」経路は設計上存在しない旨の公表 |
+| DU-5 | 観 | promote_after_ticks\*4 は u64 直接乗算: 既定 40→160 で不発だが、policy を 2^62 超に変更すると debug ビルドで overflow panic (release では wrap)。既定設定では到達不能のため契約記録のみ (fail-loud 文化に反しない self-contained な前倒し検討として公表) |
+| DU-6 | 観 | closed_model_id 全表の完全 pin (6/6 種) + Other→chest フォールバック公表: 汎用 BE の closed モデル id はリソースパックに存在しないため chest に寄せる近似 — promoted_model が kind のみに依存する契約と併せて固定 |
 
 ---
 
