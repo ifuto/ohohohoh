@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 150
+- count: 151
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -170,3 +170,5 @@
 - 2026-07-26 (count 149): wave 113 bloom 監査 (DM-1 [中] prefilter 相対ゲイン意味論公表 (f=(l-T)/T.max(1e-4)、l>2T で入力超過増幅 T=1,l=4→出力 12・小閾値 f≈999 発散級、luma 保存形との違いを誠実化、l=2T bit 恒等・l=T 境界 0・厳密値 pin、呼出側契約 threshold≫1e-4)・DM-2 [中] **wiring の bloom 実効ゼロ証明**: wiring:1671 は tonemap_display 後の値 (linear_to_srgb 1.0 clamp で mapped∈[0,1]³) に適用するため luma≤1.0=threshold → ゲート常真→bloom≡0→composite は bit 厳密な恒等写像 (729+1 点 to_bits pin)、閾値再調整は 美的判断=ユーザー設計領域で引継ぎ・DM-3 [低] blur 二項核 [1,4,6,4,1]/16 全て二進厳密・和厳密 1.0→定数保存 bit 厳密・半径 0 恒等・dst<src panic・edge-clamp doc・DM-4 [観] luma 3 系統 bit 一致 256 色 pin・DM-5 [観] NaN 伝播/clamp 64 契約+捕捉 34 (Vec4 Mul Vec3::new 同一零デイ再犯 E0061/E0308 即捕捉)・35 (closure &mut の let f を E0596 が捕捉) 計5項目、+6 strict テスト 1054 全緑・adversarial ((a) ゲート反転→3 RED、wiring 恒等 pin は knee>0 の smoothstep(0) 崩壊で bloom≡0 保持=正しい不発を誠実記録・(b) 重み 0.376→2 RED・(c) knee 乗算除去→新設 knee pin 1 RED (pin 前は検出不能、adversarial 設計で空白発見=強化点)・(d) edge clamp 除去→2 RED index OOB panic fail-loud)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変 (bench 行なし)・固定版 md5 80bb678a・台帳 408) の CI 緑確認用
 
 - 2026-07-26 (count 150): wave 114 cpu_saver 監査 (DN-1 [低] 未使用 bytemuck import 除去 (lib 警告 11→10)+ヘッダ誠実化 (完全撲滅の静的保証不可/DDA 本体は branchless_dda/64B 一致はレイアウト依存)・DN-2 [低] select 契約 pin (200 組厳密一致・NaN ペイロード/-0.0/±inf bit 保持・|/+/^ 等価証明 DK-1 同型)・DN-3 [低] stepper 境界 pin (-0.0→0・NaN→0・343 網羅排他+タイ優先 x>y>z)・DN-4 [観] タイル bijection 閉形式+到達順 spot pin・prefetch セマンティクス非観測契約+smoke・DN-5 [観] 消費者ゼロ保持明記 計5項目、+5 strict テスト 1059 全緑・adversarial ((a) neg 除去→2 RED・(b) タイ非包含化→1 RED 排他網羅は正しく不発・(c) 内回り交換→1 RED 網羅 pin は正しく不発・(d) prefetch 除去→7 全緑=検出不能・証明済み中性)・復元 md5 照合 VERIFIED 4 回・実コード差分は use 行除去のみ byte 検証・digest 004c1cf5 不変・固定版 md5 050e1136 (fmdiff 忠実適用後)・台帳 413) の CI 緑確認用
+
+- 2026-07-26 (count 151): wave 115 out_of_core_paging 監査 (DO-1 [低] unused mut 根治 (lib 警告 10→9)・DO-2 [中] **部分書換え残滓曝露の契約公表** (8B wiring 書込でページ残部に旧占有者のバイトが残存、read 側は同一ページ内残滓を返す=長さ帳簿は呼出側責務の生ストレージ確定、現消費者 read 未使用=観測者不在を誠実記録、100..256 残滓厳密値 pin)・DO-3 [観] Ok(0) 2 義性公表+pin・DO-4 [低] シャドウモデル差分ファズ 1000 オペ+1:1 構造不変量 pin・DO-5 [観] 境界 pin (idx<cap/offset 算術/backing len 固定/u32 拒否/再起動 orphan) 計5項目、+4 strict テスト 1063 全緑・adversarial ((a) L-1 逆戻し→2 RED・(b) read touch 除去→2 RED・(c) min 除去→1 RED 只 oversize で検出・(d) MRU→2 RED)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変・固定版 md5 2aa7b828・台帳 418) の CI 緑確認用

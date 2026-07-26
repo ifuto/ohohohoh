@@ -6259,3 +6259,36 @@ doc 挿入による LCS 位置混同が「自己起因」判定を誘発)。fmdi
 根治 — cfg グルーピング内の use 順は意味に無影響 (論理的自己同一) で
 adversarial 結論全て不変。ad hoc rustfmt の版不一致が差止められた記録として
 誠実に残す。
+
+## DO. out_of_core_paging.rs (wave 115, 2026-07-26)
+
+247 → 446 行。消費者照合: full_graph_wiring:123/124 (Option 保持)・:226 (max_pages
+=4096 = 256 MiB backing 生成)・:747 (`&tick.to_le_bytes()` **8 byte 書込みのみ**、
+read_chunk_page 呼出は wiring 内ゼロ — live だが読み側未使用)。L 節 (2026-07-22)
+の L-1 (新旧エイリアス破壊) / L-2 (剰余ゼロ) 根治済みの流れで、本 wave は
+**警告由来選定** (最後の未監査警告保持モジュール、`unused_mut` :57)。原版 md5
+9e1baba6290a5873941cdd850e7ae483。lib 警告 **10 → 9**。
+
+本 wave の中核は **DO-2 [中] 部分書換えの残滓曝露契約の公表**: 8 byte 書込み
+(wiring 現行) ではページ残り 65,528 byte が旧占有者の残滓を含み得るが、
+実装はゼロ潰ししない (長さ帳簿=呼出側責務)。読み側は `min(PAGE_SIZE)` で
+隣接ページへは侵入しないが**同一ページ内の残滓は返す**。現消費者は read を
+一切呼ばないため観測者不在 = 深刻度は [中] の構造確定であり、差し替え・
+スパース潰し等の破壊的変更は行わず契約を doc 化+厳密 pin した。
+
+| DO-1 | 低 | `let mut file` の unused mut 根治 (警告 10→9) |
+| DO-2 | 中 | 部分書換え残滓曝露の契約公表+厳密 pin (100..256 に旧 0xA1 残存を厳密値で pin、wiring の read 未使用を誠実記録) |
+| DO-3 | 観 | `Ok(0)` 2 義性の公表+pin (未登録/空白 out の区別は contains_key) |
+| DO-4 | 低 | シャドウモデル差分ファズ (1000 オペ・被害者選択/idx 割当厳密一致) + 1:1 構造不変量 pin |
+| DO-5 | 観 | 境界 pin (idx<cap・offset 算術・backing 524,288 byte 固定・u32 境界拒否・再起動 orphan) |
+
+検証: +4 strict テスト (残滓契約厳密値/ok0 多義/シャドウ 1000 オペ+不変量/
+境界+orphan) でモジュール 8/8・既存 4 テスト不変。総数 1059 → **1063 全緑**。
+**adversarial 誠実記録**: (a) L-1 逆戻し (page_table 除去省略) → **2 RED**
+(既存 lru 回帰ピン + 新設 shadow ファズが ghost エントリの件数分裂で連鎖
+検出)。(b) read の touch 除去 → **2 RED** (read 最新化の被害者決定が変わる
+既存 lru pin + shadow ファズの双方)。(c) 読出し min 打止め除去 → **1 RED**
+(oversize で隣接ページ侵入を読出し — 打止めが働く唯一のケースで正しく検出、
+他 7 テストは領域不足で不発=設計通り)。(d) pop_front→pop_back (MRU) →
+**2 RED** (既存 lru pin + shadow)。復元 md5 照合 MD5-VERIFIED 4 回 (固定版
+2aa7b828db4c6c2785d4e6e84e00cafd、adv cache・rsift/bak/ 二重保存)。

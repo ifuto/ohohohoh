@@ -475,6 +475,11 @@
 | DN-3 | 低 | BranchlessVoxelStepper 契約公表+厳密 pin: step_direction は +>0→1/-<0→-1/else 0 の境界で -0.0→0 (IEEE で -0.0<0.0 は false)・**NaN→0** (両比較 false)・±inf→±1。advance_axis は {vals}³=343 網羅で**ちょうど 1 軸 true** (異常値含む排他選択)・同値タイ優先 x>y>z・全 NaN→z フォールバックの厳密 pin |
 | DN-4 | 低 | LoopTiledVoxelScanner: 到達 index 閉形式 (y>>2)·1024+(z>>2)·256+(x>>2)·64+(y&3)·16+(z&3)·4+(x&3) の **bijection 性** (2bit フィールド置換) + 先頭 8/末尾 4/index64 spot の到達順厳密 pin。CacheLinePrefetcher: prefetch はセマンティクス非観測 (値に無影響のヒント)・x86 では無効アドレス非フォールト (アーキテクチャ保証) の契約 + smoke pin |
 | DN-5 | 観 | 消費者ゼロ (lib.rs re-export 経由の公開 API 面のみ) の保持明記 (削除せず将来ホットループ向けプリミティブとして契約ピン化) — 「消費者いなくても消さない」方針踏襲。**捕捉 36 件目**: 私の ad hoc `rustfmt --edition 2024` 走査と seal の fmdiff 正準形 (fg-gated `use` の並べ替え規則) が不一致となり seal ゲート 2 が自己起因逸脱 2 行を差止め → fmdiff 出力を忠実適用 (x86/x86_64 ペアで _mm_prefetch を _MM_HINT_T0 より先に) して根治 (cfg ゲート別グルーピングで意味的自己同一、adversarial 結論は不変) |
+| DO-1 | 低 | out_of_core_paging `new()` の未使用 `mut file` 除去 (set_len は &self のため、むしろ write/seek の無い構造) — lib 警告 10→9 |
+| DO-2 | 中 | **部分書換えの残滓曝露契約を公表**: write が 64 KiB 未満の場合ページ残部は無改変で、剥奪で譲受したページの尾には旧占有者の残滓が残り、長めの `out` (≦64 KiB) で呼出側はそれを読み得る。ゼロ潰ししない生ストレージ設計 (長さ帳簿は呼出側責務) と確定訂正の上で厳密 pin (100B 書込み後の 100..256 が旧 0xA1 残滓)。**観測リスクは現時点で不在**を誠実記録: 唯一消費者 wiring:747 は 8 byte 書込みのみで read を一切呼ばない |
+| DO-3 | 観 | read 側 `Ok(0)` の 2 義性を公表+pin (未登録キー/登録済みで out 空の区別は `page_table.contains_key`、未登録読出しは out 無改変) |
+| DO-4 | 低 | 真 LRU の被害者選択・page_idx 割当を独立実装のシャドウモデル (別形態の参照実装) と 1,000 オペ差分ファズで厳密一致を実証 + page_table/lru_order の 1:1 構造不変量を op 毎 50 間引き pin。既存 lru_evicts テストに続く第 2 層網として adversarial (a)(b)(d) の連鎖検出に寄与 |
+| DO-5 | 観 | 運用契約 pin: 全 handle の idx < max_pages (剥奪で超過しない)・offset=idx·65536 の算術・バッキングファイルは set_len(cap) で固定 (伸縮しない・再起動時は新 cap で切詰)・**再起動は再装着しない** (物理残存も到達不能、Ok(0) pin)・u32 境界 (u32::MAX+1 を open 前に拒否) |
 
 ---
 
