@@ -513,6 +513,10 @@
 | DU-4 | 観 | static_mesh_ready=false 時の契約公表: 現 mode を**保持**して返す (Dynamic 維持だけでなく **Static→Static 維持**もピン、捕捉 47 修正後の実装一致)。Static からの降格経路は burst/anim/interact の 3 系統のみで「メッシュ喪失による降格」経路は設計上存在しない旨の公表 |
 | DU-5 | 観 | promote_after_ticks\*4 は u64 直接乗算: 既定 40→160 で不発だが、policy を 2^62 超に変更すると debug ビルドで overflow panic (release では wrap)。既定設定では到達不能のため契約記録のみ (fail-loud 文化に反しない self-contained な前倒し検討として公表) |
 | DU-6 | 観 | closed_model_id 全表の完全 pin (6/6 種) + Other→chest フォールバック公表: 汎用 BE の closed モデル id はリソースパックに存在しないため chest に寄せる近似 — promoted_model が kind のみに依存する契約と併せて固定 |
+| DV-1 | 観 | temporal_mesh_diff wiring 駆動形状の公表: full_graph_wiring:782-790 は毎フレーム chunk_keys **全件**を無条件 mark_dirty (sy=i%4) — 「変更検出」の本来フィルタは wiring に無く全件 dirty 駆動 (時分割キュー供給源としては一貫、BS-1 の責務範囲と整合)。同型 soak pin (3 フレーム×全件 mark→sorted drain→packed 変換) で実証 |
+| DV-2 | 低 | wiring packed_key 厳密 bit レイアウト pin (cx 10bit<<20/cz 10bit<<10/sy 10bit): rq 導出値 ((0,3,4095)=4095・(5,1,5)=5243909=0x500405・cx=-1=0x3FF00000=1072693248) + 折り畳み衝突公表 (cx=1024≡0・sy=-1≡1023・cz=-1 の drive=3072) + **patch 駆動値 packed&0xFFF は cz 下位 2bit と sy 10bit の混在** (CI-2 誠実注記の pin 化、patch_for_block 契約 <4096 を構造的に満たす全領域走査 pin 付) |
+| DV-3 | 観 | dirty map の値 (generation) は書込まれるが take_dirty 経路で**消費者ゼロ** (キーのみ返却) の保持明記 pin: map 内部値=直近 generation を実在確認の上、返却に値が現れない設計を誠実公表 (世代カウンタ自体は wave 69 BS で pin 済) |
+| DV-4 | 観 | diff_section live 消費者ゼロの継続追認 (census 2026-07-26: full_graph_wiring は patch_for_block のみ呼出、BS-1 候補記録の更新) + 決定性 pin 強化 (全 4096 差異列挙は index 昇順 identity、境界 0/4095 厳密) |
 
 ---
 

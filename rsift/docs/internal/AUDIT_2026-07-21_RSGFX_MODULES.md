@@ -6510,3 +6510,27 @@ fmt fmdiff 正準形忠実適用 (現逸脱 0、`--emit stdout` は filename+空
 DynamicBlockEntity と誤記 (実装は正しく Static 復帰: dist>3.5 で近距離
 ルール不発・since_anim>=40 で昇格) → 初回実行テスト赤が捕捉・実装一致へ
 修正。捕捉 46 件目は RQ v2 の記録 (selftest ピン被覆、前節参照)。
+
+## DV. temporal_mesh_diff.rs (wave 122, 2026-07-26)
+
+原版 186 行・md5 5d71c7e9995ad4bf22d565a2df1e3173 (wave 69 BS 監査済の
+再 census)。消費者: full_graph_wiring (mark_dirty:784・patch_for_block:806)
+のみ、WGSL なし。wire 形状: 780-811 (mark→take_dirty→packed_key→time_slice)。
+
+- **DV-1 [観]** wiring 駆動形状: 毎フレーム chunk_keys 全件を無条件
+  mark_dirty (sy=i%4、変更フィルタ無し)。時分割キュー供給源として一貫。
+  同型 soak pin (3F×全件→sorted drain→packed→drive<4096) で実証。
+- **DV-2 [低]** packed_key 厳密 pin: (0,3,4095)=4095・(5,1,5)=5243909=
+  0x500405・cx=-1=0x3FF00000、折り畳み (cx=1024≡0・sy=-1≡1023・cz=-1
+  drive=3072) 公表、**packed&0xFFF は cz 下位 2bit+sy 混在** (CI-2 pin 化)。
+  全値 rq dv_packed.rq 導出 (assert 2 通過)、sy=i%4 系列検算 1230123。
+- **DV-3 [観]** dirty map 値 (generation) は書込むが消費者ゼロの保持明記
+  (map 内部値=2 実在、take_dirty 返却はキーのみ pin)。
+- **DV-4 [観]** diff_section live 消費者ゼロ継続追認 + 全 4096 差異列挙の
+  identity 順 pin 強化。
+
++4 strict テストで 1106 全緑 (module 11/11)。adversarial 4/4 RED:
+(a) sort_unstable 削除 → sorted pin RED・(b) generation += 1 削除 →
+generation 系 3 RED・(c) diff 条件反転 → 2 RED・(d) assert 4096→4095 →
+境界受理 pin RED。検出不能ゼロ。復元 md5 VERIFIED 4 回。
+fmdiff 現逸脱 0 (初版から正準形)。原版からの差分は doc+tests のみ。
