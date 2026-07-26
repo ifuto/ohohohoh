@@ -90,6 +90,12 @@ pub struct FrameWiringReport {
     /// 【非決定】電源モード判定が壁時計 (`init_time.elapsed()`) を要求する仕様のため
     /// フレーム間・実行間で揺らぐ。決定性検証の比較対象からは除外する (監査 K-4)。
     pub power_skip_extra: bool,
+    /// Clustered 付きライトの最大クラスタ荷重 (実 index リストからの集計)。
+    /// 【wave 135 EI-1】旧 `_max_cluster_load` 破棄から実フィールドへ配線
+    /// (新指令 §7 消費者なし禁止の消化)。
+    pub cluster_max_load: u32,
+    /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
+    pub cluster_lit_clusters: u32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -1058,15 +1064,20 @@ impl FullGraphWiring {
             (inputs.screen_h / 16).max(1),
             16,
         );
+        // 【wave 135 EI-1】セクション局所 [0,16) を /16 で [0,1) へ正規化
+        // (2 の冪除算のため f32 無丸め)。半径も同尺度化し wave 134 EH-1 の
+        // 座標フレーム不一致を根治。集計は破棄せず report へ実配線 (新指令 §7)。
         let cluster_lights: Vec<crate::clustered_lighting::Light> = emissive_lights
             .iter()
             .map(|l| crate::clustered_lighting::Light {
-                position: l.pos,
-                radius: l.radius,
+                position: [l.pos[0] / 16.0, l.pos[1] / 16.0, l.pos[2] / 16.0],
+                radius: l.radius / 16.0,
             })
             .collect();
         let cluster_members = cluster_grid.assign_lights(&cluster_lights);
-        let _max_cluster_load = cluster_members.iter().map(|c| c.len()).max().unwrap_or(0);
+        report.cluster_max_load = cluster_members.iter().map(|c| c.len()).max().unwrap_or(0) as u32;
+        report.cluster_lit_clusters =
+            cluster_members.iter().filter(|c| !c.is_empty()).count() as u32;
         let mut rs = crate::restir::Reservoir::new();
         for (i, l) in emissive_lights.iter().enumerate() {
             let s = crate::restir::LightSample {
@@ -2598,6 +2609,14 @@ mod strict_tests {
             "{ctx}: lockfree_cache_hits"
         );
         assert_eq!(a.lbvh_culled, b.lbvh_culled, "{ctx}: lbvh_culled");
+        assert_eq!(
+            a.cluster_max_load, b.cluster_max_load,
+            "{ctx}: cluster_max_load"
+        );
+        assert_eq!(
+            a.cluster_lit_clusters, b.cluster_lit_clusters,
+            "{ctx}: cluster_lit_clusters"
+        );
         assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"

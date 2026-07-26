@@ -563,6 +563,8 @@
 | EH-3 | 低 | ClusterGrid::index 範囲 assert (他クラスタへの静寂折り畳み拒否、内部呼出は常に範囲内でコスト無視級) + 非対称 3×5×7 全 105 掃引単射 + index(2,4,6)=104 の rq 導出ピン |
 | EH-4 | 観 | aabb 厳密 bit 契約 (1/6=0x3E2AAAAB・5*(1/6)=0x3F555556←暗算禁止の実効例・6*(1/6)=厳密 1.0)・tangent 包含両方向 bits pin (r 1ulp 低下で反転)・境界面ライト両隣帰属 conservative pin (ちょうど 2 クラスタ)・非有限 drop / r*r=inf 全域支配 (inf<=inf) |
 | EH-5 | 観 | assign_lights O(L×N) 全走査 (wiring 形状 ≈4.1M 球判定/tick) の棚卸し公表 — 範囲制限走査化は f32 境界判定 bit 同一性証明を伴う設計判断のため引継ぎ (EC-3 同型) |
+| EI-1 | 中 | **新指令 §7 消化 1**: clustered wiring の座標正規化根治 (セクション局所 [0,16) → /16 で [0,1) へ f32 無丸め) + `_max_cluster_load` 破棄から FrameWiringReport 実フィールド 2 件 (cluster_max_load/cluster_lit_clusters、決定性比較集合入り) への**実消費者配線** — EH-1 の「評価実効・集計破棄」中間構造を解消、正規化形状ピン (実在クラスタ帰属 + 機械導出 golden 95,608) |
+| EI-2 | 中 | **新指令 §7 消化 2**: assign_lights を O(L×N) 全走査から axis_range 範囲制限走査へ置換 (出力完全同一を 4 条件包含証明 (pad 包絡/飽和域/非有限/inf 飽和退化) で構造化、f32 端丸め 2^-22 包絡・i64 飽和は f64 予備 clamp 根絶・旧実装オラクル fuzz 突合で機械固定) — **全量スイート 199.53s → 11.08s の機械実測改善** (全走査が suite 支配コストだった実測証左、帰属は範囲制限+正規化の組、単独寄与未分解として誇大主張回避)・**捕捉 54**: r*r inf 飽和クラスの真の乖離 (naive 全域 vs 27) をテスト赤が事前捕捉→(iv) ガード根治・face ピン aabb 添字誤りも同時捕捉 (採番なし同型)・adversarial (e) 1 RED・(f) 2 RED・wiring /16→/8 は決定性不変で**非検出**の誠実記録 |
 
 ---
 

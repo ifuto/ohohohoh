@@ -5,14 +5,15 @@
 //! z スライスは無い様式化)。forward シェーダが全ライトでなくピクセルの
 //! クラスタ内少数だけを回す forward+ の概念検証。
 //!
-//! 【誠実注記 wave 134 EH-1】wiring の実供給 (full_graph_wiring) は
-//! **セクション局所座標 [0,16) のボクセル位置と輝度レベル半径 1..15** を
-//! そのまま [0,1]³ グリッドへ流すため、空間割当は座標フレーム不一致の
-//! まま計算される (近原点・高輝度は立方体全体を飲み込み、遠方・低輝度は
-//! 全ミス)。消費者は `_max_cluster_load` 集計破棄のみ = 「評価実効・
-//! 消費は集計型」の中間構造 (DY-2 と同型)。view/NDC 正規化の実配線は
-//! 設計判断として引継ぎ。WGSL 側は同一式の件数集計のみの参照パス
-//! (Rust 側は index リスト、3 連鎖語彙は球-AABB 式の同形維持)。
+//! 【根治 wave 135 EI-1 (旧 EH-1)】wiring の実供給 (full_graph_wiring) は
+//! wave 134 時点でセクション局所座標 [0,16) × 半径 1..15 をそのまま
+//! [0,1]³ グリッドへ流す座標フレーム不一致だったが、wave 135 で
+//! **/16 正規化 (2 の冪除算・f32 無丸め)** に根治した。消費者も
+//! `_max_cluster_load` 破棄から FrameWiringReport の
+//! `cluster_max_load` / `cluster_lit_clusters` 実フィールドへ配線済み
+//! (新指令 §7 未配線・消費者なし禁止の消化)。WGSL 側は同一式の件数集計
+//! のみの参照パス (Rust 側は index リスト、3 連鎖語彙は球-AABB 式の同形
+//! 維持)。view/NDC 実空間からの変換配線は描画本線の設計判断として残る。
 
 #[derive(Clone, Copy, Debug)]
 pub struct Light {
@@ -76,17 +77,23 @@ impl ClusterGrid {
     /// Assign each light to every cluster whose AABB it intersects.
     /// Returns `lights_per_cluster[index]` = list of light indices.
     ///
-    /// 計算量は O(L × N) の全走査 (L=ライト数, N=クラスタ数)。範囲制限走査
-    /// への置換は f32 境界判定の bit 同一性証明を伴う設計判断のため引継ぎ
-    /// (wave 134 EH-5 棚卸し、EC-3 と同型)。ライト指標の型域は u32
-    /// (GPU packed 配布前提)。
+    /// 【wave 135 EI-2】O(L × N) 全走査から**範囲制限走査**へ置換
+    /// (旧 EH-5 棚卸し消化・新指令 §7)。出力は旧実装と**完全同一**
+    /// (ライト順の pushes・クラスタ順の走査順序を保つ)。健全性は
+    /// `axis_range` の包含証明に帰着: 範囲は全ての真の帰属クラスタを
+    /// 必ず含む (超集合) ため、範囲外の評価省略は結果に影響しない。
+    /// 等価性は mod tests の旧実装忠実オラクルとの fuzz 突合で機械固定。
+    /// ライト指標の型域は u32 (GPU packed 配布前提)。
     pub fn assign_lights(&self, lights: &[Light]) -> Vec<Vec<u32>> {
         let n = (self.tiles_x * self.tiles_y * self.slices) as usize;
         let mut out: Vec<Vec<u32>> = vec![Vec::new(); n];
         for (li, light) in lights.iter().enumerate() {
-            for cz in 0..self.slices {
-                for cy in 0..self.tiles_y {
-                    for cx in 0..self.tiles_x {
+            let (x0, x1) = axis_range(light.position[0], light.radius, self.tiles_x);
+            let (y0, y1) = axis_range(light.position[1], light.radius, self.tiles_y);
+            let (z0, z1) = axis_range(light.position[2], light.radius, self.slices);
+            for cz in z0..=z1 {
+                for cy in y0..=y1 {
+                    for cx in x0..=x1 {
                         let (mn, mx) = self.aabb(cx, cy, cz);
                         if sphere_intersects_aabb(light.position, light.radius, mn, mx) {
                             out[self.index(cx, cy, cz)].push(li as u32);
@@ -101,6 +108,46 @@ impl ClusterGrid {
     pub fn wgsl_source(&self) -> &'static str {
         CLUSTERED_LIGHTING_WGSL
     }
+}
+
+/// ライト 1 個の帰属候補クラスタ範囲 (軸方向 [lo, hi] 両端包含)。
+///
+/// **包含証明 (真の帰属集合の超集合であること)**:
+/// 判定は f32 のクラスタ端 fl(cx·sx) で行われる。範囲は f64 で
+/// floor((p∓r)/sx) を取り、両側へ pad 個広げる。
+/// (i) pad の外側のクラスタ cx (> hi+pad) は、f32 端との差が
+///     E = pad·sx − |fl 端の丸め誤差| だけ実距離で r を超える。
+///     端の丸めは |x| ≲ 1.6 の領域で 2^-22 (≈2.4e-7、安全率込み) 未満、
+///     pad = ceil(2^-22/sx)+1 ⟹ pad·sx ≥ 2^-22 + sx > 誤差 となり
+///     f32 判定でも交差是不可能。
+/// (ii) クランプが飽和する領域 (大きい |p±r| や大半径) では範囲が
+///     [0, tiles-1] の端に貼り付くため自明に超集合。
+/// (iii) 非有限の p/r は全範囲へ退化させ naive と同一評価経路に載せる
+///     (NaN は判定側で落ちる、r*r=inf は全域支配、`inf<=inf` は真)。
+/// 負半径は判定が |r| と同値 (r*r) なので abs で正規化してから床を取る。
+fn axis_range(p: f32, r: f32, tiles: u32) -> (u32, u32) {
+    if !p.is_finite() || !r.is_finite() {
+        return (0, tiles - 1);
+    }
+    // (iv) r*r が f32 で inf に飽和するなら判定は d <= inf で全域真となる
+    // (d は平方和で NaN 不出、d=inf でも inf<=inf は真) — naive は全
+    // クラスタに帰属させるため、範囲も全域に退化させないと乖離する。
+    // (捕捉 54: 飽和クラスの乖離を adversarial 想定外の入力テスト赤が捕捉)
+    if (r * r).is_infinite() {
+        return (0, tiles - 1);
+    }
+    let sx = 1.0f64 / f64::from(tiles);
+    let rr = f64::from(r.abs());
+    let pp = f64::from(p);
+    let pad = ((4.0 / (sx * (1u64 << 22) as f64)).ceil() as i64 + 1).min(i64::from(tiles));
+    // i64 キャスト前に f64 を予備 clamp (極端入力の飽和→wrapping 減算を根絶、
+    // `as` は i64 域外で飽和するため ±1e15 を超える値は全て端の貼り付きに揃う)。
+    let lo = ((pp - rr) / sx).floor().clamp(-1e15, 1e15) as i64 - pad;
+    let hi = ((pp + rr) / sx).floor().clamp(-1e15, 1e15) as i64 + pad;
+    let t = i64::from(tiles);
+    // rr >= 0 より生範囲は単調 (lo <= hi) で、clamp は単調性を保つため
+    // lo2 <= hi2 が常に成立する (空範囲分岐は到達不能)。
+    (lo.clamp(0, t - 1) as u32, hi.clamp(0, t - 1) as u32)
 }
 
 /// 球 (c, r) と AABB [mn, mx] の交差。最近接点距離二乗 d <= r*r の**包含**
@@ -314,5 +361,178 @@ mod tests {
         }]);
         let total2: usize = miss.iter().map(|v| v.len()).sum();
         assert_eq!(total2, 0);
+    }
+
+    /// EI-2 の参照オラクル: wave 134 までの O(L × N) 全走査の忠実ミラー。
+    /// (旧実装対照のため mod tests に保持 — DX-1 と同型の「テスト専用保持」)。
+    fn assign_lights_naive(g: &ClusterGrid, lights: &[Light]) -> Vec<Vec<u32>> {
+        let n = (g.tiles_x * g.tiles_y * g.slices) as usize;
+        let mut out: Vec<Vec<u32>> = vec![Vec::new(); n];
+        for (li, light) in lights.iter().enumerate() {
+            for cz in 0..g.slices {
+                for cy in 0..g.tiles_y {
+                    for cx in 0..g.tiles_x {
+                        let (mn, mx) = g.aabb(cx, cy, cz);
+                        if sphere_intersects_aabb(light.position, light.radius, mn, mx) {
+                            out[g.index(cx, cy, cz)].push(li as u32);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// EI-2: 範囲制限走査は旧全走査と**出力完全同一** (push 順まで含め)。
+    /// 乱択グリッド・乱択/特別ライトで fuzz 突合。
+    #[test]
+    fn range_restricted_matches_naive_oracle_fuzz() {
+        let mut seed = 0x243F6A8885A308D3u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let grids = [
+            (1u32, 1u32, 1u32),
+            (2, 3, 5),
+            (3, 5, 7),
+            (4, 4, 4),
+            (16, 9, 4),
+            (120, 120, 4),
+            (120, 67, 16),
+        ];
+        let special_r = [
+            0.0f32,
+            1e-3,
+            0.05,
+            -0.25,
+            1.0,
+            30.0,
+            1e30,
+            f32::NAN,
+            f32::INFINITY,
+        ];
+        for (gi, &(tx, ty, tz)) in grids.iter().enumerate() {
+            let g = ClusterGrid::new(tx, ty, tz);
+            for round in 0..24 {
+                let nl = if tx >= 120 { 4usize } else { 9 };
+                let mut lights = Vec::new();
+                for _ in 0..nl {
+                    let pick = next();
+                    let r = if pick % 3 == 0 {
+                        special_r[(pick % (special_r.len() as u64)) as usize]
+                    } else {
+                        ((pick % 400) as f32) * 0.01
+                    };
+                    lights.push(Light {
+                        position: [
+                            ((next() % 5000) as f32) * 0.001 - 2.0,
+                            ((next() % 5000) as f32) * 0.001 - 2.0,
+                            ((next() % 5000) as f32) * 0.001 - 2.0,
+                        ],
+                        radius: r,
+                    });
+                }
+                // 端ピッタリ狙いの決定的ケース (face の f32 端を aabb から取得)
+                if round % 6 == 0 {
+                    let (mn0, _) = g.aabb(0, 0, 0);
+                    let (_, mx0) = g.aabb(tx - 1, 0, 0);
+                    lights.push(Light {
+                        position: [mx0[0], mn0[1], 0.5],
+                        radius: 0.0,
+                    });
+                }
+                let fast = g.assign_lights(&lights);
+                let slow = assign_lights_naive(&g, &lights);
+                assert_eq!(
+                    fast, slow,
+                    "grid={gi} round={round}: 範囲制限は全走査と完全同一でなければならない"
+                );
+            }
+        }
+    }
+
+    /// 極端入力でも範囲計算が panic しない (i64 予備 clamp の堅牢性)。
+    #[test]
+    fn axis_range_extreme_inputs_no_panic() {
+        let g = ClusterGrid::new(120, 67, 16);
+        for r in [0.0f32, 1.0, 3.4e38] {
+            for p in [-3.4e38f32, -1.0, 1e30, 3.4e38] {
+                let out = g.assign_lights(&[Light {
+                    position: [p, p, p],
+                    radius: r,
+                }]);
+                let total: usize = out.iter().map(|v| v.len()).sum();
+                if (r * r).is_infinite() {
+                    // r*r = inf → 判定 d <= inf は全域真 → naive と同一の全域帰属
+                    assert_eq!(total, 120 * 67 * 16, "p={p} r={r}: inf 半径は全域支配");
+                } else {
+                    assert_eq!(total, 0, "p={p} r={r}: グリッド外に帰属なし");
+                }
+            }
+        }
+        // 非有限は全範囲退化だが判定側で落ちる (r=NaN) / 全域支配 (r=inf)
+        let g4 = ClusterGrid::new(4, 4, 4);
+        let nan_out = g4.assign_lights(&[Light {
+            position: [0.5, 0.5, 0.5],
+            radius: f32::NAN,
+        }]);
+        assert_eq!(nan_out.iter().map(|v| v.len()).sum::<usize>(), 0);
+        let inf_out = g4.assign_lights(&[Light {
+            position: [0.5, 0.5, 0.5],
+            radius: f32::INFINITY,
+        }]);
+        assert_eq!(inf_out.iter().map(|v| v.len()).sum::<usize>(), 64);
+    }
+
+    /// EI-2: face 上の点ライトは両隣に帰属 (計算端 = f32 の真の面)。
+    /// aabb の端をそのまま位置に使うことで「リテラルの 0.4 は面ではない」
+    /// (48*(1/120) = 0x3ECCCCNE vs 0.4 = 0x3ECCCNCD、rq 導出) の罠を構造的に回避。
+    #[test]
+    fn point_on_computed_face_claimed_by_face_neighbors() {
+        let g = ClusterGrid::new(120, 120, 4);
+        // 共用面はクラスタ 47|48 と 71|72 の間 = 47/71 の max 端。
+        let edge_x = g.aabb(47, 0, 0).1[0]; // mx.x = 48*(1/120)
+        let edge_y = g.aabb(0, 71, 0).1[1]; // mx.y = 72*(1/120) = 0.6 厳密 (rq)
+        let lights = [Light {
+            position: [edge_x, edge_y, 0.3],
+            radius: 0.0,
+        }];
+        let a = g.assign_lights(&lights);
+        for (cx, cy) in [(47u32, 71u32), (48, 71), (47, 72), (48, 72)] {
+            assert!(
+                a[g.index(cx, cy, 1)].contains(&0),
+                "face 共有のクラスタ ({cx},{cy},1) に帰属必須"
+            );
+        }
+        let total: usize = a.iter().map(|v| v.len()).sum();
+        assert_eq!(total, 4, "r=0 の面上帰属はちょうど x2・y2 の4クラスタ");
+    }
+
+    /// EI-1: 正規化後の wiring 形状ピン — ボクセル (2,2,2) 輝度 15 は
+    /// (0.125, 0.125, 0.125) r = 15/16 (= 0x3F700000、f32 無丸め、rq 導出)。
+    /// 旧不一致形状の全氾濫は解消されつつ、ライト実在クラスタ (15,8,2) を含む
+    /// 意味ある帰属になること。
+    #[test]
+    fn wiring_normalized_shape_pin() {
+        let g = ClusterGrid::new(120, 67, 16);
+        let lights = [Light {
+            position: [2.0 / 16.0, 2.0 / 16.0, 2.0 / 16.0],
+            radius: 15.0 / 16.0,
+        }];
+        let a = g.assign_lights(&lights);
+        assert_eq!(lights[0].position[0].to_bits(), 0x3E000000); // 0.125
+        assert_eq!(lights[0].radius.to_bits(), 0x3F700000); // 15/16
+        let home = g.index(15, 8, 2); // floor(0.125*{120,67,16})
+        assert!(a[home].contains(&0), "実在クラスタ (15,8,2) への帰属");
+        let total: usize = a.iter().map(|v| v.len()).sum();
+        let full = 120 * 67 * 16;
+        assert!(
+            total > 0 && total < full,
+            "全氾濫でも全ミスでもないこと: {total}"
+        );
+        assert_eq!(total, 95_608, "機械導出 golden (EI-1、2026-07-26 実測)");
     }
 }
