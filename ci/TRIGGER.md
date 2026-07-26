@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 155
+- count: 156
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -180,3 +180,5 @@
 - 2026-07-26 (count 154): wave 118 particle_control 監査 (DR-1 [中] **wiring 二重カウント+単調累積根治**: allow() 内部計上+重複呼出 (実効半量予算) + reset_counts 未呼出 (tick 跨ぎ累積で恒久間引き支配化) をプロトコル strict 化 (begin_tick→reset_counts→allow 1 本) で根治・DR-2 [低] kind 静寂クランプ pin・DR-3 [低] 短絡順序厳密契約 pin (総数超過=kind bypass/保護計上/dist=境界非カリング/NaN 通常評価)・DR-4 [観] FNV 厳密 pin (分布 80/160) + 検出空白発見→呼出側レート census 追設・DR-5 [観] 決定的着地精緻化+捕捉 40 (復元 anchor 崩壊の golden 流出事故を md5 即検知で根治) 計5項目、**+7** strict テスト 1080 全緑・adversarial ((a) 順序交換→1 RED・(b) 1/8→1/16 初回検出不能→census 追設で再 RED=w113 と同型強化・(c) clamp 除去→1 RED panic fail-loud・(d) >=化→1 RED)・復元 md5 照合 VERIFIED・digest 004c1cf5 不変・固定版 md5 a966ad7d・台帳 433) の CI 緑確認用
 
 - 2026-07-26 (count 155): wave 119 smaa 監査 (DS-1 [中] wiring 恒等証明 (aa 同一色 5 引数+戻り値破棄 = 恒等クラス 3 件目、実効化は近傍配線設計判断で引継ぎ)・DS-2 [低] edge 厳密 bit pin (V/H 强度 1.0/tie→horiz=false/0x3ECCCCCC)・DS-3 [低] NaN 非対称 (center/n/s マスク 0x3DCCCCD0、e/w 伝播)・DS-4 [低] blend 境界厳密 pin・DS-5 [観] 閾値 2 分岐対蹠・DS-6 [観] directionless 公表 (contrast 通過∧両軸差ゼロ→strength=0)+捕捉 41 (シナリオ盲スポットをテスト赤が捕捉) 計6項目、+6 strict テスト 1086 全緑・adversarial ((a) <=化→3 RED・(b) 0.1→0.01→1 RED・(c) clamp 1.0→1 RED・(d) strength 交換→5 RED)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変・固定版 md5 a1063898・台帳 439) [w118 との 2 コミット集約 push] の CI 緑確認用
+
+- 2026-07-26 (count 156): wave 120 ssr 監査 (DT-1 [中] wiring 常時 miss 証明 (sampler 0.0/∞ → diff<0 永不発+戻り値破棄 = 恒等クラスと別型のゼロ効果)・DT-2 [低] hit 窓 [0,thickness] 両端 inclusive/max_dist 厳密 >/NaN fail-safe/退化境界の厳密 pin 群・DT-3 [低] reflect 厳密 bit+ゼロ法線パススルー+末尾 normalize drift pin (検出空白補完)・DT-4 [観] Vec4 保持明記・DT-5 [観] Rust/WGSL 空マーカー表現差+uv 様式化公表・DT-6 [観] 一方向符号付き窓公表 計6項目、+7 strict テスト 1093 全緑・adversarial ((a) 下端 strict→1 RED・(b) 上端 strict→1 RED・(c) max_dist 等価化→1 RED・(d) 両側窓→2 RED・(e) normalize 除去→初回検出不能 (全 pin ∥pre∥≡1.0) → 1 ulp ずれ drift pin 追設で再 RED = w113/118 と同型強化)・復元 md5 照合 VERIFIED 6 回・digest 004c1cf5 不変・固定版 md5 c8c84e11・台帳 445) と **rspeed 新言語 rq 導入** (AI 記述最優先の静的型付き小言語: f32 IEEE 厳密計算を libm FFI で保証、Python struct+ctypes エミュレートの全面移行先。selftest 24→32 ピン・全値 python 対照 bit 一致検証済。構文書 docs/internal/RQ.md) [w119・w120・rq の 3 コミット集約 push] の CI 緑確認用

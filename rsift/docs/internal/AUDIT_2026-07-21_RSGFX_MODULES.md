@@ -6423,3 +6423,41 @@ CPU 参照系は CH-1 (franken 色) 以後「定数色不変性の実演」に�
 主勾配選択は深層の根幹)。復元 md5 照合 MD5-VERIFIED 4 回 (固定版
 a106389865fd47f74ee84a683d70a96b、adv cache・rsift/bak/ 二重保存)。
 fmt 初回差分 (行列の折り返し) を fmdiff 正準形へ忠実適用 (現逸脱 0)。
+
+## DT. ssr.rs (wave 120, 2026-07-26)
+
+187 → 461 行 (rustfmt 後)。消費者照合: full_graph_wiring:1537-1568
+(depth_sampler=march/reflect_dir、戻り値 `let _ssr_hit` 破棄)・gpu_runtime:60
+(ssr.wgsl 登録)・Vec4 消費者ゼロ (保持明記)。原版 md5 41feb5c1...。
+bench digest 行なし。wiring 密度 7-同数残存の辞書順タイブレークで機械選定。
+
+本 wave は恒等クラス (DM-2/DQ-1/DS-1) とは別型の「常時 miss+破棄」ゼロ効果
+構造 (DT-1) を構造証明した。同時に **rspeed 内蔵の新言語 rq
+(docs/internal/RQ.md) を本格適用した初の wave** — Python (struct+ctypes
+libm) エミュレートを全面移行し、全厳密値を rq (--prelude の dot3/len3/ns)
+で事前導出 → 実測一発照合 (drift pin の 5 値含む)。
+
+| DT-1 | 中 | wiring 常時 miss 証明 (sampler 0.0/∞ → diff<0 永不発、戻り値破棄) |
+| DT-2 | 低 | hit 窓 [0,thickness] 両端 inclusive・max_dist 厳密 >・NaN fail-safe・退化境界の厳密 pin 群 |
+| DT-3 | 低 | reflect_dir 厳密 bit pin + ゼロ法線パススルー + 末尾 normalize drift pin (検出空白補完) |
+| DT-4 | 観 | Vec4 保持明記 (WGSL パリティ API 面) |
+| DT-5 | 観 | Rust/WGSL 表現差公表 (is_infinite vs 1e30・uv 様式化) + 走査 pin |
+| DT-6 | 観 | 一方向符号付き窓の公表 (両側窓と非等価) + WGSL 同型走査 pin |
+
+**adversarial 誠実記録**: (a) 下端 `>=`→`>` → **1 RED** (diff==0 pin)。(b) 上端
+`<=`→`<` → **1 RED** (diff==thickness pin)。(c) max_dist `>`→`>=` → **1 RED**
+(コール回数 pin)。(d) 片側窓→両側 `abs()` 窓 → **2 RED** (pass-through+
+wiring 構造 pin の連鎖検出)。(e) 末尾 normalize 除去 → 初回 10 全緑=
+**検出不能** (3 pin とも ∥pre∥≡1.0 の厳密構成のため出力不変) → ∥pre∥ が
+1 ulp ずれる構成 (i=(1,2,3),n=(0,1,0)、rq 導出) の drift pin 追設で再 RED
+**1** (wave 113/118 と同型の強化)。復元 md5 照合 MD5-VERIFIED 6 回。
+固定版 md5 c8c84e11cf4a5407fe907e0fd17474ce、adv cache・rsift/bak/ 二重保存。
+fmt fmdiff 正準形忠実適用 (現逸脱 0)。
+
+**捕捉 43 件目**: rq selftest ピン初版で i64 hex を 0x030F (=783) と誤記
+(正しくは 12345=0x3039) — 実行前の機械再計算で捕捉・訂正。
+**捕捉 44 件目**: rq 実装の edit_file が `fn main() {` 行を誤って飲み込み
+(new_text 末尾への復元書き忘れ) → rustc 波括弧エラーで即捕捉・復元。
+**捕捉 45 件目**: `rustfmt --emit stdout` の出力は第 1 行に filename を含む仕様
+→ naïve 全量適用で ssr.rs 先頭を破壊、compile エラーで即捕捉 → 「第 1 行除去」
+手順に正式化 (fmdiff 内部も同処理であることを実装照合済)。

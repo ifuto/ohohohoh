@@ -501,6 +501,12 @@
 | DS-4 | 低 | blend 境界契約厳密 pin: strength<=0 → 0.0 厳密・lm=0 で商=1 → clamp 0.5 (0x3F000000)・1/(1+0.5)→clamp 0.5・NaN strength → NaN 伝播 (clamp は比較 false で self 返却) |
 | DS-5 | 観 | 閾値 2 分岐 (A'=floor 0x3B800000 支配/contrast 0x3C1374BC で発動 → strength 0x3A831270 厳密、B'=relative 0x3DBA5E37 支配で不発) の DQ-4 同族対蹠 pin |
 | DS-6 | 観 | **contrast 通過でも strength=0 になりうる** directionless ケースの公表: 両軸ペアの内部差ゼロ (e==w ∧ n==s) なら全域 contrast が閾値超過でも (0.0, false, lmax) 返却 — doc「strength == 0 means no edge」との表現緊張を誠実化 (方向決定不能のため 0、blend は strength<=0 → 0 の安全側)。**捕捉 41 件目**: 初版シナリオ設計で両軸差ゼロを選んでしまい st_a==0 で失敗 (テスト赤が捕捉) → 公表 pin として昇華＋分岐 pin は aniso 場面に再設計 |
+| DT-1 | 中 | **ssr::march の wiring 常時 miss 証明**: 唯一の Rust 側呼出 full_graph_wiring:1537-1568 は sampler に「AABB 内=0.0/外=∞」を与え、surf=0.0 では diff=0-travelled<0 (travelled>0) で hit 条件 diff>=0 が構造的に永不発 → march は常に None、かつ戻り値 `let _ssr_hit` で破棄 — 恒等クラス (DM-2/DQ-1/DS-1) とは別型の「常時 miss+破棄」ゼロ効果構造。実効化は G-buffer 深度実サンプラ配線の設計判断のため引継ぎ (GPU は ssr.wgsl 別経路) |
+| DT-2 | 低 | march 境界契約の厳密 pin 群: hit 窓 [0, thickness] 両端 inclusive (上端 diff==thickness で hit (0,0,4.5)=0x40900000 / thickness 1 ulp 低下で下端 diff==0 hit (0,0,5.0)=0x40A00000)・max_dist は厳密 > (等値で sample 実行=コール 2 回 vs 1 ulp 低下で 1 回)・NaN ray fail-safe (全比較 false で誤 hit なし 32 走査)・step_size=0 原地判定/max_steps=0 無条件 None (全値 rq 事前導出照合) |
+| DT-3 | 低 | reflect_dir 厳密 pin + ゼロ法線パススルー公表: 軸 (0,0,-1) / 斜 (0.6,-0.8,0) は \|i\|²≡1.0 で全演算厳密 (0x3F19999A/0x3F4CCCCD、往復も厳密復元)・ゼロ法線は d=0 → 正規化済み入射そのもの (0x3F800000)・**末尾 normalize 検出空白の補完** (adversarial (e) で発見): \|pre\|=0x3F7FFFFF に 1 ulp ずれる構成 i=(1,2,3),n=(0,1,0) で normalize 実効を pin (rq 導出 0x3E88D678/0xBF08D678/0x3F4D41B4) |
+| DT-4 | 観 | Vec4 消費者ゼロの意図的保持を明記 (WGSL パリティ API 面、bloom/fxaa/atmospheric 他モジュールと同方針) |
+| DT-5 | 観 | Rust/WGSL 表現差の公表+走査 pin: 空マーカーは Rust is_infinite() (±∞) vs WGSL SSR_INF=1e30 有限比較 (1e30 有限深度は Rust でも diff 経路不発で帰結同等だが判定経路差を記録)・WGSL uv 写像 pos.xy/res*0.5+0.5 は真の投影でない様式化・surf (view 線形深度) を along-ray 距離として扱う近似 — 消費者警告 |
+| DT-6 | 観 | hit 窓が**一方向符号付き** [0, thickness] であることの公表: 典型 SSR の両側 \|diff\| 窓と異なり表面通過後 (diff<0) の再接近は拾わない — step=2.0/surf=5.5 で \|diff\|=0.5 を跨ぐ構成を miss pin として固定 (WGSL 側も同型であることを走査 pin で担保) |
 
 ---
 
