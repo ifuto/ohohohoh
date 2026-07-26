@@ -17,7 +17,7 @@
 
 ## カウンタ
 
-- count: 151
+- count: 152
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)
@@ -172,3 +172,5 @@
 - 2026-07-26 (count 150): wave 114 cpu_saver 監査 (DN-1 [低] 未使用 bytemuck import 除去 (lib 警告 11→10)+ヘッダ誠実化 (完全撲滅の静的保証不可/DDA 本体は branchless_dda/64B 一致はレイアウト依存)・DN-2 [低] select 契約 pin (200 組厳密一致・NaN ペイロード/-0.0/±inf bit 保持・|/+/^ 等価証明 DK-1 同型)・DN-3 [低] stepper 境界 pin (-0.0→0・NaN→0・343 網羅排他+タイ優先 x>y>z)・DN-4 [観] タイル bijection 閉形式+到達順 spot pin・prefetch セマンティクス非観測契約+smoke・DN-5 [観] 消費者ゼロ保持明記 計5項目、+5 strict テスト 1059 全緑・adversarial ((a) neg 除去→2 RED・(b) タイ非包含化→1 RED 排他網羅は正しく不発・(c) 内回り交換→1 RED 網羅 pin は正しく不発・(d) prefetch 除去→7 全緑=検出不能・証明済み中性)・復元 md5 照合 VERIFIED 4 回・実コード差分は use 行除去のみ byte 検証・digest 004c1cf5 不変・固定版 md5 050e1136 (fmdiff 忠実適用後)・台帳 413) の CI 緑確認用
 
 - 2026-07-26 (count 151): wave 115 out_of_core_paging 監査 (DO-1 [低] unused mut 根治 (lib 警告 10→9)・DO-2 [中] **部分書換え残滓曝露の契約公表** (8B wiring 書込でページ残部に旧占有者のバイトが残存、read 側は同一ページ内残滓を返す=長さ帳簿は呼出側責務の生ストレージ確定、現消費者 read 未使用=観測者不在を誠実記録、100..256 残滓厳密値 pin)・DO-3 [観] Ok(0) 2 義性公表+pin・DO-4 [低] シャドウモデル差分ファズ 1000 オペ+1:1 構造不変量 pin・DO-5 [観] 境界 pin (idx<cap/offset 算術/backing len 固定/u32 拒否/再起動 orphan) 計5項目、+4 strict テスト 1063 全緑・adversarial ((a) L-1 逆戻し→2 RED・(b) read touch 除去→2 RED・(c) min 除去→1 RED 只 oversize で検出・(d) MRU→2 RED)・復元 md5 照合 VERIFIED 4 回・digest 004c1cf5 不変・固定版 md5 2aa7b828・台帳 418) の CI 緑確認用
+
+- 2026-07-26 (count 152): wave 116 atmospheric 監査 (DP-1 [低] モデル形態誠実化 (一様 8km スラブ静近似/位相・Beer は物理式) + sky/位相の厳密 bit pin (Python IEEE f32+ctypes libm 独立シム事前導出→照合)・DP-2 [低] 球面正規化 ∫=1 中点 4096 + 床非発動解析証明・DP-3 [低] **WGSL PI 丸め根治** (3.14159265→3.14159274=f32 PI bit 一致、WGSL/CPU 非超越部 bit 一致) + 捕捉 37 (コメント自己衝突→言い換え根治)・DP-4 [観] normalize 境界/NaN 伝播 pin + 捕捉 38 (独立シム結合順誤り 1 ulp → 左結合訂正し 6/6 照合)・DP-5 [観] Vec4 ゼロ保持明記 計5項目、+5 strict テスト 1068 全緑・adversarial ((a) g 反転→1 RED 定性ピン非検出=Rayleigh 支配の誠実記録・(b) 右端点→1 RED・(c) 16π→4π→3 RED 3 層連鎖・(d) steps 16→1 RED 品質改善方向も決定性契約で検出・(e) WGSL PI 逆戻し→1 RED 走査 pin)・復元 md5 照合 VERIFIED 5 回・digest 004c1cf5 不変・固定版 md5 52464f66/4b734e96・台帳 423) の CI 緑確認用

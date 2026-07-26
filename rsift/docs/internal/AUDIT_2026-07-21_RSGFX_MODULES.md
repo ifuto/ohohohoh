@@ -6292,3 +6292,32 @@ read_chunk_page 呼出は wiring 内ゼロ — live だが読み側未使用)。
 他 7 テストは領域不足で不発=設計通り)。(d) pop_front→pop_back (MRU) →
 **2 RED** (既存 lru pin + shadow)。復元 md5 照合 MD5-VERIFIED 4 回 (固定版
 2aa7b828db4c6c2785d4e6e84e00cafd、adv cache・rsift/bak/ 二重保存)。
+
+## DP. atmospheric.rs (wave 116, 2026-07-26)
+
+186 → 349 行 / WGSL 34 → 37 行。消費者照合: full_graph_wiring:1457-1490
+(sun=(0.35,0.55,0.75).normalize_wrap()・cam_dir sky_color + 32 方向ドーム
+sky_color → exposure ヒストグラム (DL) と TAA YCoCg へ供給 = exposure warp
+の実生産者)。WGSL は gpu_runtime:64 collect_all_wgsl へ登録 (ピクセル還流は
+未追跡と誠実注記)。原版 md5 1d7e647e...。bench digest 行なし。wiring 密度
+7-同数 6 件から**辞書順タイブレーク**で機械選定。
+
+| DP-1 | 低 | モデル形態誠実化 (一様 8 km スラブ・8 段中点則・位相/Beer は物理式) + 厳密 bit pin (位相 6 値・sky 6 成分、Python IEEE f32+ctypes expf/powf 独立シム事前導出→照合) |
+| DP-2 | 低 | 位相関数球面正規化 ∫=1 を中点 4096 で数値確認 (min d=(1-g)²≫1e-4 の床非発動を解析追加証明) |
+| DP-3 | 低 | WGSL PI 丸め不足根治 (3.14159265→3.14159274=f32 PI bit 一致) + normalize 0 振舞差公表 + ソース走査 pin + 捕捉 37 (コメント自己衝突をテスト赤が捕捉) |
+| DP-4 | 観 | normalize 境界/NaN 伝播/transmittance 端点 pin + 捕捉 38 (独立シムの乗算結合順誤り=1 ulp 差、左結合に訂正し 6/6 照合) |
+| DP-5 | 観 | Vec4 系消費者ゼロの意図的保持明記 + WGSL ピクセル還流未追跡の誠実注記 |
+
+検証: +5 strict テスト (位相 bit pin×6/球面正規化/sky bit pin×6/対称+NaN+
+端点/normalize 境界+WGSL PI 走査) でモジュール 9/9・既存 4 テスト不変。総数
+**1068 全緑**。**adversarial 誠実記録**: (a) mie g 反転 (後方散乱化) →
+**1 RED** (sky 厳密 bit のみ — 既存の定性ピン sky_is_brighter_toward_sun は
+変位でも緑: phase 1.19366e-1 系の Rayleigh が mie に支配優位で大小関係が
+保存されるため。定性 smoke の検出域外を厳密 pin が埋める実例として誠実
+記録)。(b) 中点則→右端点則 → **1 RED** (sky bit のみ、定性緑)。(c) Rayleigh
+16π→4π → **3 RED** (位相 bit+球面正規化 4096+sky bit の 3 層連鎖)。(d)
+steps 8→16 (**精度改善方向の変更**) → **1 RED** — pin は「値が変われば
+意図的方向を問わず検出する」決定性契約であり、分割増のような意図的品質
+変更には再 pin (手続) が要ることを誠実に明記。(e) WGSL PI 逆戻し →
+**1 RED** (ソース走査 pin)。復元 md5 照合 MD5-VERIFIED 5 回 (固定版 rs
+52464f66・wgsl 4b734e96、adv cache・rsift/bak/ 二重保存)。

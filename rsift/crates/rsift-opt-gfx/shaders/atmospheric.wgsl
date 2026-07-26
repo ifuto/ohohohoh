@@ -1,5 +1,7 @@
 // rsift-opt-gfx :: analytic atmospheric scattering (single scattering)
-const PI: f32 = 3.14159265;
+// DP (監査 2026-07-26): 旧リテラル (8 桁丸め) は精度不足。f32::consts::PI
+// 相当へ揃え CPU 側 (std::f32::consts::PI) と bit 一致させた。
+const PI: f32 = 3.14159274;
 
 fn rayleigh_phase(c: f32) -> f32 {
   return 3.0 / (16.0 * PI) * (1.0 + c * c);

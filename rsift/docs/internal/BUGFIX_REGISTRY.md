@@ -480,6 +480,11 @@
 | DO-3 | 観 | read 側 `Ok(0)` の 2 義性を公表+pin (未登録キー/登録済みで out 空の区別は `page_table.contains_key`、未登録読出しは out 無改変) |
 | DO-4 | 低 | 真 LRU の被害者選択・page_idx 割当を独立実装のシャドウモデル (別形態の参照実装) と 1,000 オペ差分ファズで厳密一致を実証 + page_table/lru_order の 1:1 構造不変量を op 毎 50 間引き pin。既存 lru_evicts テストに続く第 2 層網として adversarial (a)(b)(d) の連鎖検出に寄与 |
 | DO-5 | 観 | 運用契約 pin: 全 handle の idx < max_pages (剥奪で超過しない)・offset=idx·65536 の算術・バッキングファイルは set_len(cap) で固定 (伸縮しない・再起動時は新 cap で切詰)・**再起動は再装着しない** (物理残存も到達不能、Ok(0) pin)・u32 境界 (u32::MAX+1 を open 前に拒否) |
+| DP-1 | 低 | atmospheric::sky_color のモデル形態誠実化: 位相関数 (Rayleigh/HG) と Beer-Lambert 透過率は物理式そのままだが光路は**天頂角に依らず一様 8 km スラブ** (8 段中点則) の静的スタイル化であり、Preetham/Hosek-Wilkie 系のスケール高度・地平伸長は非モデル — ヘッダに公表。厳密 bit pin 化: 位相関数 6 値・sky_color 2 構成 6 成分を Python IEEE f32+ctypes libm 独立シムで事前導出→照合 (rn=(3,4,0)→(0.6,0.8,0)、非変換対称 bit 厳密) |
+| DP-2 | 低 | 位相関数の球面正規化 ∫p dΩ=1 を中点 4096 で数値公表 (g=0.76 では max 床 1e-4 は非発動: min d=(1-g)²=0.0576 と解析証明も併記) |
+| DP-3 | 低 | **WGSL PI 定数の丸め不足を根治** (`3.14159265` → `3.14159274` = f32::consts::PI 0x40490FDB と bit 一致) — WGSL/CPU 位相関数の非超越部は bit 一致へ。pow(d,1.5) はドライバ依存のため bit 同値は構造不可・normalize 0 振舞差 (CPU self 返却/WGSL NaN) を差異公表 + ソース走査 pin。**捕捉 37 件目**: 修正コメント自身が旧リテラル文字列を含み自己衝突 (pin の negative-anchor 設計ミスをテスト赤が捕捉) → コメント言い換えで根治 |
+| DP-4 | 観 | normalize 境界契約 pin (閾 1e-8 内外・0 vec→self 返却・NaN ray→全成分 NaN 伝播・transmittance(0)=1/+inf=0)。**捕捉 38 件目**: Python 独立シムで内部貢献の乗算を右結合的に評価 (Rust 左結合と z 成分 1 ulp 差) → 左結合に訂正し 6/6 成分で実測照合完了 |
+| DP-5 | 観 | Vec4/sky_color_v4/Vec4 ops 消費者ゼロの意図的保持明記 (WGSL 側パリティ API 面、消さない方針)。Wgsl 登録 (gpu_runtime collect_all_wgsl) 経路は確認済だがピクセル還流は pipeline 未追跡と誠実注記 |
 
 ---
 
