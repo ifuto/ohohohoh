@@ -465,6 +465,11 @@
 | DL-3 | 低 | adapt 契約公表+厳密 pin: k=1-exp(-speed·dt) は de/dt=s(target−e) の**厳密離散解** (adapt(1,3,4,0.1)=1.659359908)・speed=0 恒等・負 speed/dt は反適応で 0.05 clamp・**NaN は 0.05 への静寂崩落でなく伝播** (clamp は比較 false で self 返却 = fail-visible) — adversarial (b) で max/min 連鎖化による NaN 崩落を 1 RED 検出 |
 | DL-4 | 観 | 分位境界契約 pin: lo/hi は `(total*pct/100) as u32` 切捨て・包含は bin 累積区間の整数中点 (bin 粒度依存)・low>hi/空ヒスト/全除外は 1.0 — adversarial (d) で中点→左端変体を 4 RED 検出 (既存定数 2 テストも連鎖検出) |
 | DL-5 | 観 | Vec4/Vec3 ops 消費者ゼロの意図的保持明記 (shader 側パリティ利用の API 面) + **捕捉 33 件目**: Vec4 の Mul が Vec3::new を呼ぶ転記 typo (E0061/E0308) — sandbox リセット後の初回コンパイルが捕捉 → 根治 (ゼロデイ記録: 2 度の作成で latent だった同 typo を apparatus が出荷前差止め) |
+| DM-1 | 中 | bloom::prefilter のゲイン意味論公表+厳密 pin: f = (l−T)/T.max(1e-4) は**相対ゲイン**で出力輝度 l·f — l>2T で**入力超過の増幅** (T=1,l=4→f=3→出力 12)、T≦1e-4 では発散級 (T=0.001,l=1→f≈999)。luma 保存形 (c·(l−T)/l、増幅しない標準形) とは異なる意図的強め bloom 規約と判定して変更せず (美的設計領域)、契約を doc 化 + l=2T で bit 厳密恒等・l=T 境界 0 (knee 無関係)・小閾値発散の厳密値 pin。呼出側契約: threshold ≫ 1e-4 を明示 |
+| DM-2 | 中 | **wiring の bloom 実効ゼロを数学的に確定**: full_graph_wiring:1671 は prefilter(mapped, threshold=1.0, knee=0.5) を **tonemap_display 後** (linear_to_srgb が x>=1.0→1.0 clamp で mapped∈[0,1]³) に適用するため luma ≦ 0.2126+0.7152+0.0722 = 1.0 = threshold → ゲート `l <= threshold` は**常真 → bloom ≡ 0**、composite = (m+0).clamp(0,64) = m の **bit 厳密な恒等写像** (729 点グリッド + (1,1,1) の to_bits 厳密 pin)。現行積分の bloom 段は描画に一切寄与しない (この事実を誇張せず構造的確定として記録)。閾値再調整 (例 0.7/knee 0.3 で実効化) はレンダ結果を変える美的判断のためユーザー設計領域として引継ぎ (私は値を変更しない) |
+| DM-3 | 低 | blur_row 契約公表+厳密 pin: 重み [0.0625,0.25,0.375,0.25,0.0625] = 二項核 [1,4,6,4,1]/16 は**全て二進厳密値**かつ和は f32 で厳密 1.0 → 定数保存は 1 ulp 誤差もない **bit 厳密** (to_bits 化)・radius=0 は bit 恒等・dst<src は panic (fail-loud、should_panic pin)・端は edge-clamp (adversarial (d) clamp 除去 → j OOB panic で 2 RED)。 |
+| DM-4 | 観 | luma Rec.709 式が 3 系統 (bloom / frame_postfx::luma_run_cpu / exposure 内蔵) で**bit 一致**を xorshift 256 色ランダムで厳密 pin (乗加順序差による 1 ulp 発散の将来混入を apparatus 化)。 |
+| DM-5 | 観 | composite/prefilter の NaN 伝播 pin (f32 比較 false で self 返却 = fail-visible、0 側への静寂崩落ではない)・composite 上限 64 clamp 公表・Vec4/Vec3 ops 消費者ゼロの意図的保持明記。**捕捉 34 件目**: Vec4 Mul の Vec3::new 転記 typo を 2 連続 wave で再犯 (捕捉 33 と同一零デイ、E0061/E0308 が即捕捉) → 根治。**捕捉 35 件目**: &mut 借用 closure を `let f` で宣言 (E0596: `let mut f` 必須) を初回コンパイルが捕捉 → 根治。 |
 
 ---
 

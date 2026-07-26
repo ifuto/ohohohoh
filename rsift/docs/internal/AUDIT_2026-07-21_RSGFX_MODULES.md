@@ -6176,3 +6176,44 @@ adv cache・rsift/bak/ 二重保存)。
 (2 度の作成で latent だった Vec3::new typo は捕捉 33 としてコンパイルが
 差止め = 消失が検証強化に転化した実例)。git reset --hard FETCH_HEAD で
 HEAD 0eaaddb 復帰後、rspeed 再ビルド selftest 0 FAIL。
+
+## DM. bloom.rs (wave 113, 2026-07-26)
+
+155 → 320 行。消費者照合: full_graph_wiring:1671 (`composite(mapped,
+prefilter(mapped, 1.0, 0.5), 0.08)` — ACES `tonemap_display` 後・CAS 前の
+唯一の実呼出)。bench digest 行なし (bench 参照ゼロ)。luma は
+frame_postfx::luma_run_cpu (:417) / exposure 内蔵式と同一の Rec.709
+乗加順 (3 系統 bit 一致 pin 化)。原版 md5 ce95f02b78d8367b155cfdf15f6fb7d3。
+
+本 wave の大物は **DM-2 [中] wiring の bloom 実効ゼロ証明**: 唯一の消費者
+wiring:1671 は `tonemap_display` **後の値**に prefilter を適用するが、
+linear_to_srgb の `x >= 1.0 → 1.0` clamp で mapped ∈ [0,1]³ となるため
+luma ≤ 0.2126+0.7152+0.0722 = 1.0 = threshold (等号は全 1 のみ) → ゲート
+`l <= threshold` は**常に真 → bloom ≡ 0**、composite は (m+0).clamp(0,64) =
+m の **bit 厳密な恒等写像** (729 点グリッド (0..=8/8)³ + (1,1,1) の
+to_bits 厳密 pin)。現行積分の bloom 段は描画に一切寄与していない — この
+事実を誇張せず「構造的確定」として記録する。閾値の再調整 (例: 0.7/
+knee 0.3 への変更で実効化) はレンダ結果が変わる**美的判断**のため、私は
+値を変更せずユーザー設計領域として引継ぎ棚卸しに登録する。
+
+| DM-1 | 中 | prefilter 相対ゲイン意味論の公表+厳密 pin: f=(l−T)/T.max(1e-4)、l>2T で入力超過増幅 (T=1,l=4→出力 12)、T≦1e-4 で発散級 (f≈999)。luma 保存形との違いを誠実化。l=2T bit 恒等・l=T 境界 0・小閾値発散の厳密値 pin、呼出側契約 threshold ≫ 1e-4 明示 |
+| DM-2 | 中 | wiring bloom 実効ゼロ証明 (上記)。729+1 点 to_bits 厳密 pin |
+| DM-3 | 低 | blur_row 契約公表+厳密 pin: 二項核 [1,4,6,4,1]/16 全て二進厳密・和 f32 厳密 1.0 → 定数保存 bit 厳密 (to_bits 化)・radius=0 bit 恒等・dst<src panic (fail-loud、should_panic pin)・edge-clamp doc |
+| DM-4 | 観 | luma 3 系統 (bloom/frame_postfx/exposure 内蔵) bit 一致を xorshift 256 色で厳密 pin (乗加順差の 1 ulp 発散混入を apparatus 化) |
+| DM-5 | 観 | composite/prefilter の NaN 伝播 pin (f32 比較 false で self 返却 = fail-visible)・composite 上限 64 公表 + 捕捉 34 (Vec4 Mul Vec3::new typo 再犯=同一零デイ 2 連続、E0061/E0308 即捕捉)・捕捉 35 (&mut 借用 closure の `let f` を E0596 が捕捉、let mut 化) |
+
+検証: +6 strict テスト (相対ゲイン厳密値/wiring 恒等 729+1 点 to_bits/
+重み二進厳密+定数保存 to_bits+半径 0 恒等+panic 契約 (should_panic)/
+luma 3 系統 bit 一致/Nan 伝播+clamp 64) でモジュール 10/10・既存 4 テスト
+全緑維持。**adversarial 誠実記録**: (a) ゲート反転 (l>=threshold) →
+**3 RED** (drops_dark/keeps_bright/relative_gain) — 誠実記録: wiring 恒等
+pin は変体下でも緑維持 (knee=0.5 を伴う反転ゲートでは soft=clamp(t,0,1)=0
+の掛算で prefilter が恒等的に 0 へ崩壊し、pin の主張 (bloom ≡ 0 →
+composite 恒等) が真のまま保存されるため。pin の欠陥ではなく性質保存の
+正しい不発)。(b) 重み 0.375→0.376 → **2 RED** (wsum to_bits pin +
+定数保存からの連鎖検出)。(c) knee 乗算除去 → **1 RED** (新設 knee pin
+0.375 が検出 — knee 帯の pin は設計段階の空白で、adversarial 設計フェーズで
+発見して追設 = pin 無しなら**検出不能**だったことを誇張せず記録、本 wave の
+apparatus 強化点)。(d) edge clamp 除去 → **2 RED** (index OOB panic で
+fail-loud)。復元 md5 照合 MD5-VERIFIED 4 回 (固定版
+80bb678a918c7901bb4350d0c393a754、adv cache・rsift/bak/ 二重保存)。
