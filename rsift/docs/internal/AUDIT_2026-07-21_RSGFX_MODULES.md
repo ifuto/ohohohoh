@@ -6845,3 +6845,37 @@ digest 不変を seal ゲート 5 で担保。
   (spec_masks 別ループ形状) と全 PF bit 同一契約は現役確認。
 
 本 wave は捕捉なし。digest 不変を seal ゲート 5 で担保。
+
+---
+
+## EF. CI 紅調査 + async_chunk_io フレーク堅牢化 (wave 132, 2026-07-26)
+
+**機械記録**: 45 連緑 (ea5387c..bb79031 success) の後、c6e838c run
+(30197391402) が lib tests ステップで **failure** (4m51s・annotations は
+"Process completed with exit code 101" のみ。詳細ログは results-receiver
+接続が本 sandbox から遮断され取得不能、`gh run rerun` は "workflow file
+may be broken" 応答)。c6e838c はローカル seal 全 6 ゲート PASS (1116/1116、
+digest 不変) で、直前 commit bb79031 との差分は simd ガード+doc のみ —
+コード起因を示す証拠はなく、環境/断続フレークの説明が有力。
+
+- **EF-1 [低]** **最有力候補の堅牢化**: async_chunk_io の
+  lz4_roundtrip_store_load は固定 sleep (store→50ms、load→80ms) 後に即
+  assert する時刻依存テストで、CI 高負荷時にワーカ未完了 (phase A: Store
+  書込が load 読込に間に合わず fs::read 失敗→Failed イベント / phase B:
+  Load が 80ms 内に未完了) なら**両条件が空で断続失敗**し得る。同 crate
+  で timing API (Instant/thread::sleep) をテスト内で持つのは本モジュール
+  のみ (機械走査)。成功条件を不変に保ったまま 5 秒 deadline ポーリングへ
+  堅牢化 (phase A: path.exists() 待機+Stored 排水、phase B: poll_ready
+  ループ、上限到達のみ失敗でワーカ異常の検出力は維持)。ローカルでは
+  フレーク再現不能のため adversarial 非検出を誇張せず誠実記録 (判定は
+  新 push run の帰納確認に委譲)。CRLF 原生ファイルの LF 正規化を併施
+  (san 適格、215 CR 行 eol のみ、捕捉 51 手順 4 件目)。
+- **EF-2 [観]** 上記 CI 紅の機械事実と「根因帰属は最有力候補に限定」
+  の誠実公表。過剰主張 (フレーク確定 等) を避ける。
+
+作業中メモ: 環境第 5 号リセットを検出 (git ref 64294c6 巻戻り+rust
+toolchain/rspeed 消滅)→ 復旧手順再適用 (restore-env.sh → toolchain
+1.94.1 e408947bf → tools/rspeed.rs から rspeed 再ビルド (RB-1 版・
+selftest 54 ピン 0 FAIL)→ FETCH_HEAD c6e838c へ update-ref+reset
+--mixed、worktree 無改変で整合)。捕捉 52 同型の cwd 相対パス誤り 1 件
+(影響ゼロ・即時読取、bak 複写の失敗を stderr 出力で捕捉)。

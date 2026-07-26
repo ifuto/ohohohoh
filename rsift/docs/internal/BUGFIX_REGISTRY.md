@@ -554,6 +554,8 @@
 | ED-2 | 観 | early_z_shaded / overdraw_saved の実消費者はテスト/計測のみ (本番呼出なし、census grep) — 計算量 O(width × spans) 棚卸し、計測器+WGSL 実コンパイル検証資産として保持 (directive⑦) |
 | EE-1 | 低 | simd_kernels_avx2::face_visible_bitmask の **x 未ガード** (z は :42 でガード済みの非対称) — `1u32 << x` が **x >= 32 で debug パニック / release では静寂にビット巻付き (x % 32)** → bit0 立ちの mask に対し誤 true を返し得た → `x >= 16 → false` ガード追加 (x ∈ [16,32) は旧結果も false で bitwise 同一、挙動変更域は x>=32 のみ、M-4/DU-5 系堅牢化と同型)。+1 strict テスト (x=16/17/31 false + x=32/33/64/usize::MAX 無 panic false + 有効域不変)、adversarial ガード除去で **実 panic RED** (:52) 機械確認・復元 MD5-VERIFIED。消費者 census: full_graph_wiring:1000/1002 (定数 3,4,5) のみ |
 | EE-2 | 観 | 同モジュール消費者形状公表: greedy_mask_avx2/face_visible_bitmask の実呼出は full_graph_wiring の面可視サンプル 1 系のみ (census grep)。全アーキテクチャ bit 同一の既存契約 (ヘッダ歴史注記) と fuzz オラクル (spec_masks 別ループ形状) は現役確認 |
+| EF-1 | 低 | async_chunk_io::lz4_roundtrip_store_load の**固定 sleep フレーク** (store→50ms→load→80ms 後に即 assert): CI 高負荷でワーカ (Store 書込/Load 読込) が未完了のまま判定に入り**断続失敗** (成功条件は「ready 非空 OR cached」だがワーカ未走なら両方空) → 5 秒 deadline ポーリング化 (成功条件不変・上限到達のみ失敗でワーカ異常の検出力維持、phase A は path.exists() 待機+Stored 排水、phase B は poll_ready ループ)。発見経路: c6e838c CI run 紅 (lib tests exit 101、4m51s) を受け時刻依存パターン走査で特定 (同 crate 唯一、ee 検証はローカルではフレーク再現不能 = adversarial 非検出として誠実記録、判定は新 push run の帰納確認) |
+| EF-2 | 観 | **CI c6e838c run 紅の機械記録**: 45 連緑 (ea5387c..bb79031) の後 lib tests 失敗 (exit code 101 のみ機械判明、ログは results-receiver 接続遮断で取得不能・gh run rerun は "workflow file may be broken" 応答)。同 commit はローカル seal 全 6 ゲート PASS (1116/1116) で差分は simd ガードのみ → 環境/フレーク以外の説明根拠なし。根因帰属は「最も可能性の高い唯一パターン (EF-1)」に限定して誇張なく公表。のちの新 push run で帰納確認へ |
 
 ---
 
