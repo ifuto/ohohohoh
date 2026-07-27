@@ -7088,3 +7088,41 @@ opt-gfx **1144 全緑** (net +12 = async_compute +3・deinterleave_ao +4・
 wiring +5 (ej golden ×2+step ×2+heightfield golden)、実値機械検算済)、既存
 テスト全不変・lib 警告 0・api 49 全緑・fmdiff 自己起因逸脱 0・digest
 不変・seal 全 6 ゲート PASS。固定版 md5 二重保存 (bak/src 三重一致)。
+
+## EK. location_encoded_occupancy.rs / full_graph_wiring.rs (wave 137, 2026-07-27)
+
+新指令 §7 第 3 段消化。対象選定は機械: 未監査残 20 モジュール中最小行の
+LEO (59 行) を選択 — ただし census grep で wiring refs=3 の見せかけ配線
+を検出: allocate+VecDeque 最大 4096 窓 ring で pop_front **だけ**で ring
+内容も payload も全未参照の中間構造 (§7「実装済み未配線」残形)。
+
+- **EK-1 [中] LEO 実消費者配線**: ring 維持と同期した tag 8 スロット集計
+  (`leo_tag_dist`、pop は decode 側との対称減算、Σ==ring len 不変式の
+  debug_assert 常時検査。wiring 2 instance det 601 tick でも分布 601
+  一致の構造天然化) + payload(=tick) を Option 版 `get_payload` で
+  実読出し → report 実フィールド 2 件 + det 比較集合。供給関数を
+  pure fn `leo_occupancy_tag` に抽出し u8 wrap (256→1 等) boundary
+  確定値を pin 表形式で lock。
+- **EK-2 [低] get_payload Option 化**: OOB 静寂 0 (有効 payload 0 と
+  混同可能) を「None」と明確分離、wiring `expect` で fail-loud 契約化
+  (S-3 同型)。消費構造: wiring は alloc 直後の index のみ読み、恒に
+  pool 範囲内 (expect 恒真)。
+- **EK-3 [観] LEO 誠実注記 4 項目**: while ループ高々 7 回終了証明・
+  payload は index から decode 不能 (アドレス埋込みの正しい言明)・
+  **padding と tag=0 の index 非区別性 = 曖昧性公表** (wiring が
+  tag=0 を供給しない契約で構造補完、tag=0=未占用予約)・pool 非
+  shrink の cumulative model 明示。4 strict テスト (tag 8 種正規性・
+  padding <=7 (7,0,1,7,0,2) fuzz・decode payload 非依存代数・Option OOB)。
+- **EK-4 [低] ring 削除経路の検出空白補完**: ring>4096 飽和 strict
+  (4,097 tick) 新設で pop decode 対称減算の削除経路を golden 化
+  (adversarial (b) 1 RED = 本経路のみの検出空白を新 pin が正確埋め)。
+- adversarial 5 系統: (a) dist 維持脱落 **10 RED**・(b) pop 減算脱落
+  **1 RED**・(c) min(7)→6 **1 RED**・(d) decode %8→/8 **3 RED**・
+  (e) Option→unwrap_or(0) revert **1 RED**。復元 MD5-VERIFIED 各系、
+  **(e) の変異復元忘れ 1 件を md5 照合が即捕捉** (790c5ff2 vs
+  87666092 相違機械捕捉、採番なし同型)。
+
+opt-gfx **1151 全緑** (net +7 = LEO 3 新規 + wiring 4 新規、機械検算
+1144+3+4=1151、全量 22.29s 機械値)・lib 警告 0・api 49 全緑・
+fmdiff 自己起因逸脱 0 (LEO HEAD 原生 1 行据置)・digest 004c1cf5
+不変・seal 全 6 ゲート PASS。固定版 md5 二重保存。

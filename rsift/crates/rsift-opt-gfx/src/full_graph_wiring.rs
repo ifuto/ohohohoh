@@ -120,6 +120,14 @@ pub struct FrameWiringReport {
     pub async_pipelined_proxy_ms: f32,
     /// 同、(naive-pipelined)/naive の見積削減率 [%] (比率のため意味あり)。
     pub async_saved_pct: f32,
+    /// LEO ring (最大 4096 ノード、pop_front 窓) の tag 8 スロット分布。
+    /// Σ==ring len の不変式で wiring が maintain する実消費値。【wave 137
+    /// EK-1】旧は allocate のみで ring 内容も payload も未消費の中間構造
+    /// だったものを、分布集計と decode mirror で実消費者に接続 (§7 消化)。
+    pub leo_tag_dist: [u32; 8],
+    /// LEO ring 最後に登録されたノードの payload (= tick 値) を実読出し
+    /// したもの (`get_payload` Option 版の真の消費地)。
+    pub leo_latest_tick: u64,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -154,6 +162,9 @@ pub struct FullGraphWiring {
     page_handles: HashMap<(i32, i32), crate::out_of_core_paging::PageHandle>,
     leo: crate::location_encoded_occupancy::LocationEncodedOccupancy,
     leo_nodes: VecDeque<usize>,
+    /// 【wave 137 EK-1】ring と一致を保証する tag の 8 スロット集計
+    /// (push/pop の decode で対称加減、Σ==ring len の不変式)。
+    leo_tag_dist: [u32; 8],
     frb: crate::fragment_ray_box::FragmentRayBoxIntersect,
     gigavoxels: crate::gigavoxels::GigaVoxelsBrickStreaming,
     tdl: crate::tiled_deferred::TiledDeferredLighting,
@@ -296,6 +307,7 @@ impl FullGraphWiring {
             page_handles: HashMap::new(),
             leo: crate::location_encoded_occupancy::LocationEncodedOccupancy::new(),
             leo_nodes: VecDeque::new(),
+            leo_tag_dist: [0; 8],
             frb: crate::fragment_ray_box::FragmentRayBoxIntersect::new(1 << 20),
             gigavoxels: crate::gigavoxels::GigaVoxelsBrickStreaming::new(2048),
             tdl: crate::tiled_deferred::TiledDeferredLighting::new(1920, 1080),
@@ -842,16 +854,41 @@ impl FullGraphWiring {
         let _ = (dirty_sections, processed_this_frame, patch_quads_removed);
 
         // LEO: 3bit ロケーションエンコードに収まるよう tag を 1..=7 に丸めて実登録。
-        let occupancy_tag = ((inputs.section_palettes.len() as u8).max(1)).min(7);
+        let occupancy_tag = leo_occupancy_tag(inputs.section_palettes.len());
         let idx_leo = self.leo.allocate_tagged_node(occupancy_tag, self.tick);
         self.leo_nodes.push_back(idx_leo);
+        // 【wave 137 EK-1】実消費者配線: ring 維持と同期して tag を 8 スロット
+        // 集計 (pop は decode した旧 tag をデクリメント) → report 実フィールド化。
+        self.leo_tag_dist[occupancy_tag as usize] += 1;
         if self.leo_nodes.len() > 4096 {
-            self.leo_nodes.pop_front();
+            let old_idx = self
+                .leo_nodes
+                .pop_front()
+                .expect("len > 4096 checked above");
+            let old_tag = crate::location_encoded_occupancy::LocationEncodedOccupancy::decode_occupancy_from_location(old_idx)
+                as usize;
+            debug_assert!(
+                self.leo_tag_dist[old_tag] > 0,
+                "ring 不変式: pop した tag のカウント正定"
+            );
+            self.leo_tag_dist[old_tag] -= 1;
         }
+        debug_assert_eq!(
+            self.leo_tag_dist.iter().sum::<u32>() as usize,
+            self.leo_nodes.len(),
+            "Σ leo_tag_dist == ring len (ring maintain 不変式)"
+        );
         debug_assert_eq!(
             crate::location_encoded_occupancy::LocationEncodedOccupancy::decode_occupancy_from_location(idx_leo),
             occupancy_tag
         );
+        report.leo_tag_dist = self.leo_tag_dist;
+        // 【wave 137 EK-2】payload (=tick) を get_payload(Option 版) で実読出し
+        // する真の消費地 — 割当直後 index は範囲内なので expect 恒真保持。
+        report.leo_latest_tick = self
+            .leo
+            .get_payload(idx_leo)
+            .expect("wave 137 EK-2: 割当直後 index は pool 範囲内 (範囲外は None/昨日 0 静寂返却を Option 化して根治)");
 
         if let Some(palette) = inputs.section_palettes.first() {
             let pallet = *palette;
@@ -2223,6 +2260,17 @@ pub const WIRING_AO_PARAMS: crate::deinterleave_ao::AoParams = crate::deinterlea
     depth_epsilon: 0.06,
 };
 
+/// 【wave 137 EK-1】LEO occupancy tag の pure 化 (wiring から pin 目的で
+/// 抽出): sections 数 → 3bit 表現可能な 1..=7 に丸める。usize→u8 は
+/// truncating (mod 256) のため len≥256 でラップする構造は契約として確定
+/// (発生しない引数域だが厳密ピンとして留める: len=256 → 0 → max(1)=1)。
+/// `tag=0` の allocation は idx%8==0 が padding と区別不能な曖昧性を
+/// 持つため本関数は 0 を返さない設計 (§: `1..=7`) — モジュール doc 内
+/// 空区画予約規約と整合。
+pub fn leo_occupancy_tag(palettes_len: usize) -> u8 {
+    ((palettes_len as u8).max(1)).min(7)
+}
+
 /// 【EJ-2】draw 1 件あたりの gbuffer 作業量 proxy (仮係数、実機校正前設計)。
 pub const PROXY_GBUFFER_PER_DRAW: f32 = 0.008;
 /// 【EJ-2】shadow 解像度から人手時間 proxy への除数 (2 冪で無丸め、機械確定)。
@@ -2787,6 +2835,11 @@ mod strict_tests {
             b.async_saved_pct.to_bits(),
             "{ctx}: async_saved_pct (bit)"
         );
+        assert_eq!(a.leo_tag_dist, b.leo_tag_dist, "{ctx}: leo_tag_dist");
+        assert_eq!(
+            a.leo_latest_tick, b.leo_latest_tick,
+            "{ctx}: leo_latest_tick"
+        );
         assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
@@ -3254,5 +3307,94 @@ mod strict_tests {
             section_heightfield_depth(&[0u16; 4096], &lut)[10 * 16 + 10].to_bits(),
             0
         );
+    }
+
+    /// 【wave 137 EK-1】LEO ring maintain strict golden: palettes 空 → tag=1
+    /// のみ累積し、payload(tick) を get_payload で実読出しする report 値。
+    #[test]
+    fn tick_world_leo_tag_dist_strict_golden() {
+        let (dir, mut w) = unique_wiring("leo_ek");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        for t in 1..=6u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            let want = [0, t as u32, 0, 0, 0, 0, 0, 0];
+            assert_eq!(
+                r.leo_tag_dist, want,
+                "tick {t}: palettes 空 → tag=1 のみ累積"
+            );
+            assert_eq!(r.leo_latest_tick, t, "payload(=tick) の実読出し golden");
+            assert_eq!(
+                r.leo_tag_dist.iter().sum::<u32>() as usize,
+                t as usize,
+                "Σ dist == ring len 不変式"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 137 EK-1】palettes=3 → tag=3 の分布 pin (mixed 分布検出感度)。
+    #[test]
+    fn tick_world_leo_tag_dist_mixed_palettes_strict() {
+        let (dir, mut w) = unique_wiring("leo_mixed");
+        let sec = [1u16; 4096];
+        let mut inputs = chunked_inputs();
+        inputs.section_palettes = vec![sec, sec, sec];
+        for t in 1..=3u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            let want = [0, 0, 0, t as u32, 0, 0, 0, 0];
+            assert_eq!(
+                r.leo_tag_dist, want,
+                "tick {t}: palettes 3 → tag=3 のみ累積"
+            );
+            assert_eq!(r.leo_latest_tick, t);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 137 EK-1】ring>4096 飽和: pop_front が走っても decode 対称
+    /// 減算で分布は 4096 に飽和維持 (削除経路の不変式検証: 本経路のみでは
+    /// 未検証だった機能を strict でカバー → 検出空白補完)。
+    #[test]
+    fn tick_world_leo_ring_4096_saturation_strict() {
+        let (dir, mut w) = unique_wiring("leo_sat");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        for t in 1..=4097u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            if t == 4097 {
+                assert_eq!(
+                    r.leo_tag_dist,
+                    [0, 4096, 0, 0, 0, 0, 0, 0],
+                    "ring 満杯後の分布飽和 (pop の decode 対称減算)"
+                );
+                assert_eq!(r.leo_latest_tick, 4097);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 137 EK-1】`leo_occupancy_tag` の境界純粋 pin (u8 wrap 255/256
+    /// 跨ぎの確定値: usize as u8 は mod 256 truncate 静 semantics)。
+    #[test]
+    fn leo_occupancy_tag_bounds_strict() {
+        let cases: [(usize, u8); 10] = [
+            (0, 1),
+            (1, 1),
+            (3, 3),
+            (7, 7),
+            (8, 7),
+            (255, 7),
+            (256, 1),        // 256 mod 256 = 0 → max(1) → 1 (wrap の確定文書化)
+            (258, 2),        // 258 mod 256 = 2
+            (65535, 7),      // 65535 mod 256 = 255 → min(7) = 7
+            (usize::MAX, 7), // MAX mod 256 = 255 → 7
+        ];
+        for (len, want) in cases {
+            assert_eq!(leo_occupancy_tag(len), want, "len={len} → tag {want}");
+        }
     }
 }
