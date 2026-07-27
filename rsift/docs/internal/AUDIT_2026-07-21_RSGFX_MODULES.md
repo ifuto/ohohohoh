@@ -7653,3 +7653,64 @@ opt-gfx **1207 全緑** (21.42s/21.30s/21.80s 3 回実測、net +9、
 f32 フィールド・renderer.rs に MotionBlurAccumulator 実体あり)。
 節純度のため本 wave には混ぜず、wave 146 で本実装か不可能証明
 付き削除かを設計判断する専用 wave とする。
+
+## ET. depth_of_field.rs (wave 147, 2026-07-28)
+
+対象 148→約 215 行。census grep 機械確定: circle_of_confusion/gather_blur/
+DofParams は full_graph_wiring.rs:1793-1800 実消費 (coc =
+|chunk_dists.first().unwrap_or(32.0) - 10| × 0.05・identity sampler
+|c| Vec4::new(c.x,c.y,c.z,1.0)、dof_color は taa_ycocg 経由と
+checkerboard (let _cb 破棄側) で消費・report 構造体フィールド非属)、
+wgsl_source は gpu_runtime.rs:72 登録、Vec3/Vec4 Sub impl は
+crate+workspace 消費者ゼロ (本体は Add/Mul のみ)。wiring 変更なし
+(identity 恒等変換で検出空白 → module pin 充足、ES 同型方針)。
+
+- ET-1 [小] **捕捉 60 [小]**: 8-tap ディスクの旧配置順で Σdy の f32
+  逐次和が 2^-24 (0x33800000) 非ゼロ = ブラー重心 y 偏位 (uv=0/coc=1
+  identity 経路 out.y=2^-27=0x32000000、rq et_dof 機械導出、捕捉 59
+  同型の ulp 級非中心化 — 視覚害 ≦ coc16×2^-24≈9.5e-7px だが数学的
+  非正)。対称ペア順 [(1,0),(-1,0),(S,S),(-S,-S),(0,1),(0,-1),(-S,S),
+  (S,-S)] へ並べ替えて連続相殺 Σdx=Σdy=0 exact に根治。TDD 修正前
+  RED 1 件 (centroid got 0x32000000)。Σdx は旧順でも exact 0
+  (rq 確認) で y のみの非対称。定数/identity sampler の復元値は
+  加算順不変で既存 golden 非侵蝕、全量 1216 緑で波及なし機械確定。
+- ET-2 [低] Vec3/Vec4 Sub impl 削除 (census 確定) + use {Add, Mul} 統合
+  + Add/Mul/Default 型契約 pin (ES-2 同型)。
+- ET-3 [観] 誠実注記 5 項目 (module doc): (1) CoC 前後対称簡易モデル、
+  (2) 捕捉 60 経緯、(3) identity gather 8v×(1/8) は非 2 冪段 (3v/5v)
+  丸めで exact 復元されず (0.1→+1ulp=0x3DCCCCCE・0.3→-1ulp・0.7→
+  -1ulp・1.5→exact、rq golden 5 値)・wiring identity sampler では DoF
+  は ±1ulp 実質恒等変換で chunk_dists→coc 変動の観測経路なし、(4)
+  NaN depth 透過 (捕捉 57 規律)・NaN coc は NaN<1e-3=false でブラー
+  経路・max_coc<0 (min>max)/max_coc NaN (引数 NaN) は clamp panic、
+  (5) Sub 削除経緯。
+- ET-4 [低] strict 9 件: 捕捉 60 golden (out.x/out.y==0)・identity
+  gather ulp pin (bits 2 値)・coc 値 bits (d=20→0.5/d=32→1.1/d=10.02
+  →0x3A831333 — 直感 0.001 ちょうどは f32 逐次で 0.0010000229 と
+  rq 訂正)・境界 call count Cell pin (5e-4→1・0.5→8・1e-3 inclusive
+  ブラー)・NaN 透過 + NaN coc 全 8 tap NaN 座標 pin・should_panic 2・
+  contract (wgsl identity は &str 内容比較 — **私の初 pin は
+  std::ptr::eq で const 参照の metadata 不一致 RED → 内容比較へ
+  訂正の誠実記録**・FRAC_1_SQRT_2==(0.5f32).sqrt()・1/8 exact・型契約)・
+  abs 対称性補完 pin (d=2/d=18→0x3ECCCCCD、adversarial 設計で検出
+  空白を事前補完)。
+
+adversarial 5 系統: (a) 捕捉 60 revert 旧順序 **1 RED** (centroid の
+み)・(b) Sub impl 復活 revert **非検出** (13 緑・警告 0、ES-2(d)
+同型誠実記録=装飾削除は検証非強化の整理)・(c) `<`→`<=` **1 RED**
+(call count inclusive pin のみ=補完正確)・(d) abs 除去 **1 RED**
+(対称性 pin のみ=補完正確、abs なしでは近景 d<10 が 0 クランプ
+center 化)・(e) clamp 除去 **3 RED** (coc_is_clamped+panic 系 2、
+clamp 消滅で min>max/NaN panic も同時消失=正確)。変異前実体コピー
+/tmp+rsift/bak 先行・毎回復元 MD5-VERIFIED 5 回。
+
+opt-gfx **1216 全緑** (21.44s 最終全量実測、net +9、機械検算
+1207+9=1216 — 暫定 1215 記述を symmetry pin 追加後の確定値に
+訂正)・lib 本編/test 警告 0・全厳密値 rq et_dof 事前導出 (sqrt(0.5)
+==FRAC_1_SQRT_2・Σdx=0/Σdy=2^-24・ペア順全 0・2^-27=0x32000000 vs
+私の初 bits 読み違い 0x33000000=2^-24 誤りの rq 自己訂正・identity
+±1ulp 5 値・coc bits・d=2/18 対称値、python 引退継続)・fmt 私起因逸脱 4→0 正準化 (symmetry pin を正準化後に追記した自己起因で seal 初回 fmdiff FAIL 3 行 → 該当 3 assert 折り返し手術で復帰・誠実記録)・固定版 md5 三重保存 (depth_of_field
+367a3a9acd9411f6a1d5cfaecf58b175、rsift/bak/+/tmp+src 三重照合)・
+上記手術後の再 seal で全 6 ゲート PASS (san 0 findings・fmdiff 自己起因
+0・digest 004c1cf5fb17bfe8 rows=357 不変、/tmp/w147_seal2.log)・
+台帳 554・TRIGGER 184。
