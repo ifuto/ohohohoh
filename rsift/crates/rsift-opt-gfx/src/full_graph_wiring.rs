@@ -177,6 +177,15 @@ pub struct FrameWiringReport {
     /// (back-to-front) にソートした先頭 = 最遠クワッドの元 index
     /// (空 → 0、実消費の観測値)。
     pub translucent_back_first: u32,
+    /// 【wave 148 EU-2】`parallax_occlusion` は wiring 内で実呼出されていた
+    /// ものの結果消費者ゼロ (`let _parallax_hit` 評価後破棄、§7 消化 13) の
+    /// 中間構造だったものを実フィールド化: 監視点 uv=(0.5,0.5)・view は
+    /// camera_dir 写像 (x→x, z→y, |y|.max(0.2)→z) で衝突した POM 層深度
+    /// (パレット高さ場の層格子 [0,1]、パレットなし → 0.0)。
+    pub parallax_layer_depth: f32,
+    /// 【wave 148 EU-2】同上: POM 最終 uv の y オフセット (final_uv.y - 0.5、
+    /// 負 = 高さ場の奥方向シフト)。golden は rq eu_pom 全導出 (bit 一致 pin)。
+    pub parallax_uv_offset_y: f32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -1706,7 +1715,7 @@ impl FullGraphWiring {
                 })
                 .unwrap_or(0.0)
         };
-        let _parallax_hit = crate::parallax::parallax_occlusion(
+        let parallax_hit = crate::parallax::parallax_occlusion(
             crate::parallax::Vec3::new(0.5, 0.5, 0.0),
             crate::parallax::Vec3::new(
                 inputs.camera_dir[0],
@@ -1716,6 +1725,12 @@ impl FullGraphWiring {
             &heights,
             &crate::parallax::ParallaxParams::default(),
         );
+        // EU-2 (§7 消化 13): 旧 `_parallax_hit` 評価後破棄の中間構造を実
+        // 消費者フィールドへ根治。lattice 退化 (パレット高さ y/16 と層格子
+        // 1/16 が同相) で補間重み w=0 → final=cur_uv となることは rq eu_pom
+        // で機械確定済 (捕捉 61 修正と wiring golden は直交)。
+        report.parallax_layer_depth = parallax_hit.1;
+        report.parallax_uv_offset_y = parallax_hit.0.y - 0.5;
         let depth_sampler = |p: crate::ssr::Vec3| -> f32 {
             let mut best = f32::INFINITY;
             for (mn, mx) in &inputs.chunk_aabbs {
@@ -3002,6 +3017,17 @@ mod strict_tests {
             a.translucent_back_first, b.translucent_back_first,
             "{ctx}: translucent_back_first"
         );
+        // EU-2: POM 実消費フィールドの cross-instance 決定性 pin。
+        assert_eq!(
+            a.parallax_layer_depth.to_bits(),
+            b.parallax_layer_depth.to_bits(),
+            "{ctx}: parallax_layer_depth"
+        );
+        assert_eq!(
+            a.parallax_uv_offset_y.to_bits(),
+            b.parallax_uv_offset_y.to_bits(),
+            "{ctx}: parallax_uv_offset_y"
+        );
         assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
@@ -3133,6 +3159,18 @@ mod strict_tests {
             // ER-2 golden: quads 空 → translucent 0/0。
             assert_eq!(r.translucent_total, 0, "tick {t}: translucent 0");
             assert_eq!(r.translucent_back_first, 0, "tick {t}: 空 → 0");
+            // EU-2 golden (rq eu_pom): palettes 空 → heights≡0 → 層前進なし
+            // cur_layer=0、final_uv=(0.5,0.5) 不動 → offset_y +0.0 (rq 導出)。
+            assert_eq!(
+                r.parallax_layer_depth.to_bits(),
+                0x0000_0000,
+                "tick {t}: 空 → 層深度 0 (rq eu_pom)"
+            );
+            assert_eq!(
+                r.parallax_uv_offset_y.to_bits(),
+                0x0000_0000,
+                "tick {t}: 空 → オフセット +0.0 (rq eu_pom)"
+            );
             assert_eq!(r.vram_used_bytes, 0, "tick {t}: 実アロケーションなし");
             assert_eq!(
                 r.subsystems_active, 60,
@@ -3234,6 +3272,43 @@ mod strict_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// EU-2 補完 strict: camera_dir を振ると POM 配線値が変化する (実経路
+    /// 稼働 pin)。chunked golden は既定 dir=[0,0,1] の 1 点のみのため振動
+    /// 供給。[0,1,1] → view=(0,1,1)、step_y=0x3BCCCCCD (rq eu_pom 導出)。
+    #[test]
+    fn tick_world_parallax_varies_with_camera_dir() {
+        let (dir_a, mut a) = unique_wiring("eu_pom_a");
+        let (dir_b, mut b) = unique_wiring("eu_pom_b");
+        let mut ia = chunked_inputs();
+        let mut ib = chunked_inputs();
+        ia.camera_dir = [0.0, 0.0, 1.0]; // view=(0,1,0.2) → step_y 0.03125
+        ib.camera_dir = [0.0, 1.0, 1.0]; // view=(0,1,1.0) → step_y 0x3BCCCCCD
+        ia.frame_index = 1;
+        ib.frame_index = 1;
+        let ra = a.tick_world(&ia);
+        let rb = b.tick_world(&ib);
+        assert_eq!(
+            ra.parallax_uv_offset_y.to_bits(),
+            0xBEF0_0000,
+            "dir=[0,0,1] → -0.46875 (rq eu_pom)"
+        );
+        assert_eq!(
+            rb.parallax_uv_offset_y.to_bits(),
+            0xBDBF_FFF4,
+            "dir=[0,1,1] → 15 逐次減算後 -0.09374991 (rq eu_pom)"
+        );
+        assert_ne!(
+            ra.parallax_uv_offset_y.to_bits(),
+            rb.parallax_uv_offset_y.to_bits(),
+            "camera_dir 振動で POM オフセットが変化 (実経路稼働)"
+        );
+        // 層深度は高さ場のみ決定 (camera 非依存、lattice 退化 0.9375)。
+        assert_eq!(ra.parallax_layer_depth.to_bits(), 0x3F70_0000);
+        assert_eq!(rb.parallax_layer_depth.to_bits(), 0x3F70_0000);
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
     #[test]
     fn tick_world_chunked_inputs_exact_and_cross_instance_deterministic() {
         let (dir_a, mut a) = unique_wiring("chunk_a");
@@ -3285,6 +3360,21 @@ mod strict_tests {
             assert_eq!(ra.depth_pass_cost, 15, "tick {t}: low cost 15");
             assert_eq!(ra.translucent_total, 0, "tick {t}: mat%7=1 → 0");
             assert_eq!(ra.translucent_back_first, 0, "tick {t}: 空 → 0");
+            // EU-2 golden (rq eu_pom): 全 1 パレット → heights≡15/16=0.9375。
+            // 15 層前進で cur_layer=0.9375 (layer_depth=1/16 と高さ格子 y/16
+            // が同相の lattice 退化 → 補間 w=0 → final=cur_uv)。camera_dir
+            // =[0,0,1] → view=(0,1,0.2)、step_y=0.03125 → final_uv.y=0.03125
+            // → offset_y=-0.46875。全値 rq 導出 bit pin。
+            assert_eq!(
+                ra.parallax_layer_depth.to_bits(),
+                0x3F70_0000,
+                "tick {t}: 層深度 0.9375 (rq eu_pom)"
+            );
+            assert_eq!(
+                ra.parallax_uv_offset_y.to_bits(),
+                0xBEF0_0000,
+                "tick {t}: offset_y -0.46875 (rq eu_pom)"
+            );
             // EO-1 golden (rq eo_shadow 機械列挙): 24 クアッド (x,z) ノルム
             // proxy で culled=8 (i=0..7 ノルム<4.0)、cast=16 は全て
             // ノルム<16 (max sqrt(138.5)=0x413C4C32) → lod 3 バケット集中。

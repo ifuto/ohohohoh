@@ -7714,3 +7714,89 @@ opt-gfx **1216 全緑** (21.44s 最終全量実測、net +9、機械検算
 上記手術後の再 seal で全 6 ゲート PASS (san 0 findings・fmdiff 自己起因
 0・digest 004c1cf5fb17bfe8 rows=357 不変、/tmp/w147_seal2.log)・
 台帳 554・TRIGGER 184。
+
+## EU. parallax.rs / full_graph_wiring.rs (wave 148, 2026-07-28)
+
+対象 parallax.rs 159→約 289 行、full_graph_wiring.rs 3721→3811。
+census grep 機械確定: parallax_occlusion は full_graph_wiring.rs:1709
+で実呼出されるが結果は `let _parallax_hit` で評価後破棄 (wave 141 型
+中間構造残存、§7 消費者なし禁止に該当)、wgsl_source は
+gpu_runtime.rs:73 経由の WGSL 登録のみ、Vec4 (型+Add/Sub/Mul) は
+本体・テスト・wiring 全消費者ゼロ。Vec3 は `cur_uv - p_step` で本体
+使用。
+
+- EU-1 [中] **捕捉 61 [中]**: POM 補間式 2 点。一次情報 LearnOpenGL
+  Parallax Mapping (https://learnopengl.com/Advanced-Lighting/
+  Parallax-Mapping): beforeDepth = texture(depthMap, prevTexCoords).r
+  - currentLayerDepth + layerDepth、weight = afterDepth/(afterDepth -
+  beforeDepth)、finalTexCoords = prev*weight + current*(1-weight)。
+  (1) 旧 `before = prev_depth - (cur_layer + layer_depth)` は符号
+  誤りで直前層参照が 2*layer_depth ずれ → (cur_layer - layer_depth)
+  へ根治。(2) 旧 `w = after/(after - before).max(1e-4)`: 正しい式
+  では denom = after - before ≤ 0 が構造保証 (before は未衝突 prev
+  層 ≥ 0、after は衝突層 ≤ 0) ゆえ負分母を 1e-4 に置換し w を
+  発散させ得る (rq eu_pom: sloped 条件で修正版 w=0x3EE7D94E
+  (0.45282978)/final=0x3EF1826B (0.47169814、解析真値 0.47169811
+  の 1 ulp) に対し旧版 w=0xBF02B928 (-0.51063776)/final=0x3EEFA8DC
+  と深度格子への戻り量が非正確 = 視差シフトの定量的誤り、発散は
+  条件依存でより大きくなり得る) → `denom.abs() < 1e-6 なら w=0
+  (退化: 層に正確に載る)、else after/denom` へ根治 (denom≠0 は
+  構造保証)。TDD 修正前 RED 3 件機械実証 (pom_interpolation_
+  exact_golden got 0x3EEFA8DC・layers=0 退化・z 底上げ発散)。
+- EU-2 [中] §7 消化 13: `let _parallax_hit` 破棄 → report 実フィールド
+  `parallax_layer_depth` (= hit.1 衝突層深度 [0,1]) +
+  `parallax_uv_offset_y` (= hit.0.y - 0.5、負 = 高さ場の奥シフト)
+  実配線。det_subset cross-instance pin 2 追加。golden は rq eu_pom
+  全導出: empty (palettes 空 → heights≡0 → 層前進なし、ld +0.0/
+  offset +0.0)・chunked 全 1 パレット (heights≡15/16=0.9375、
+  **lattice 退化**: パレット高さ格子 y/16 と層格子 1/16 が同相で
+  after=0 exact → w=0 → final=cur_uv、ゆえ捕捉 61 修正は wiring
+  golden 非侵蝕と機械確定: ld=0x3F700000/offset=0xBEF00000=
+  -0.46875)・カメラ振動 strict (chunked inputs に dir=[0,1,1] →
+  view=(0,1,1.0)、step_y=0x3BCCCCCD、15 逐次減算の f32 蓄積後
+  offset=0xBDBFFFF4、dir 間 assert_ne で実経路稼働 pin)。
+- EU-3 [低] Vec4 (型+Add/Sub/Mul) 完全削除 (census 消費者ゼロ確定、
+  EN-2/EP-2/ET-2 同型)、Vec3 型+Add/Sub/Mul 維持 + contract pin
+  (Sub 本体使用明記・**私の初 pin 誤り m.z==3.0 を RED 捕捉→
+  m.z==5.0 へ訂正の誠実記録入り**)。残存 "Vec4" 字句は doc 注記と
+  pin コメントの 2 行のみ。
+- EU-4 [観] module doc 誠実注記 5 項: (1) view_dir.z の 1e-3 底上げは
+  p_step を無制約巨大化し得る (z=1e-4 → step 0x40700001=3.7500002 →
+  uv.x=-2.8333335=0xC0355556 発散 rq 実値、正規化 view_dir z>0 は
+  呼出側契約・NaN z は f32::max 規律で 1e-3 化)、(2) 捕捉 61 経緯、
+  (3) lattice 退化で wiring は補間式不問 (捕捉 61 と golden 直交)、
+  (4) NaN height_scale/height は静寂伝播 (G-buffer 側品質契約、
+  fail-loud しない設計)・layers=0 は max(1) 退化、(5) Vec4 削除経緯。
+- EU-5 [低] strict 8 件: module 7 (捕捉 61 golden 0x3EF1826B・layers=
+  0→1 退化 final=0x3EF1826A (16 層と 1 ulp 差)・z 底上げ発散
+  0xC0355556・flat lattice h≡0.5 で 0x3EF851E8・height 呼出回数
+  Cell pin (初期 1+march 8+prev 1=10)・NaN height_scale 静寂伝播
+  (final NaN + ld=1.0)・contract: ld exact 1/16・wgsl &str 内容比較
+  (ET 規律)・default (16, 0.1=0x3DCCCCCD)・Vec3 契約) + wiring
+  カメラ振動 strict 1。
+
+adversarial 5 系統: (a) 捕捉 61(1) revert (符号逆転) **3 RED**
+(golden 三兄妹: interpolation/layers0/z_floor)・(b) 捕捉 61(2) revert
+(max(1e-4) 化) **3 RED** (同三兄妹) + 変異下 wiring chunked/vibration
+3 テスト緑維持 = lattice 退化による非侵蝕の in-vivo 裏付け・(c) Vec4
+復活 revert **非検出** (39 緑、ES-2(d)/ET-2(b) 同型誠実記録 = dead
+code 復活はテスト系で検出不能、contract pin コメントに完全削除を明記
+済)・(d) wiring 配線 revert (`_parallax_hit` 化+代入撤去) **2 RED**
+(chunked golden + カメラ振動 strict、empty golden は変異下も緑 =
+未配線と空パレットを区別不能の静寂構造、検出は chunked+振動 pin が
+担う誠実注記)・(e) z 底上げ除去 (`view_dir.z.max(1e-3)` → `view_dir.z`)
+**1 RED** (z_floor 発散 pin のみ=補完正確)。変異前実体コピー /tmp+
+rsift/bak 先行・grep -c で変異適用確認後に計測・毎回復元
+MD5-VERIFIED 5 回。
+
+opt-gfx **1224 全緑** (最終全量実測 20.89s・adversarial 後再実測でも
+1224 緑、net +8、機械検算 1216+8=1224)・api 49 全緑・replay 16 全緑・
+lib 本編警告 0・全厳密値 rq eu_pom 事前導出 (step/w/after/before/
+final/wiring chunked golden/カメラ振動/empty/layers=0/flat lattice/z
+発散、全 assert 通過、python 引退継続)・fmt: HEAD 両ファイル原生逸脱
+ゼロ (先頭空行 artifact のみ) に対し追記コードで新規逸脱発生 →
+in-place rustfmt 正準化で復帰 (修正後 md5 変化: 再記録)・固定版 md5
+三重保存 (parallax 443a3dec6dcf43fb188c7ba704546555・wiring
+20ba281915d1db31dfd96415f1db4bee、src+/tmp+rsift/bak 三重照合)・
+digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
+台帳 559・TRIGGER 185。
