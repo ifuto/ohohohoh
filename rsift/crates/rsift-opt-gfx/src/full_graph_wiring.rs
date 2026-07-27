@@ -128,6 +128,15 @@ pub struct FrameWiringReport {
     /// LEO ring 最後に登録されたノードの payload (= tick 値) を実読出し
     /// したもの (`get_payload` Option 版の真の消費地)。
     pub leo_latest_tick: u64,
+    /// EN-1】旧 `_subgroup_mask` は評価後 `_` 破棄の中間構造だったものを
+    /// 実フィールド化 (§7 消化): intensity > 8.0 の emissive light の
+    /// ballot mask (bit j = lane j 充足、subgroup_ballot は 64 lane 超を
+    /// 静寂切捨て — subgroup.rs 誠実注記 EN-3 参照)。
+    pub emissive_high_mask: u64,
+    /// EN-1】旧 `_subgroup_reduced` 同様: emissive intensity の wave
+    /// (32 lane) 集約 sum の最大。空入力は None → +0.0、全 -0.0 経路も
+    /// +0.0 正規化 (捕捉 55 同型の f32 .max(0.0) 正規化)。
+    pub subgroup_wave_sum_max: f32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -1156,8 +1165,18 @@ impl FullGraphWiring {
         ));
         let _ = probe;
         let intensities: Vec<f32> = emissive_lights.iter().map(|l| l.intensity).collect();
-        let _subgroup_reduced = crate::subgroup::subgroup_reduce_add(&intensities);
-        let _subgroup_mask = crate::subgroup::subgroup_ballot(
+        // EN-1: wave 集約・ballot を report 実フィールドへ接続 (旧 `_` 破棄
+        // 中間構造 = §7「評価実効・消費なし」の根治)。空 intensities の
+        // reduce は None → +0.0 にフォールバック、全 -0.0 経路も .max(0.0)
+        // で +0.0 正規化 (捕捉 55 と同型、report 値は常に +0.0 域)。
+        let subgroup_wave_sums = crate::subgroup::subgroup_reduce_add(&intensities);
+        report.subgroup_wave_sum_max = subgroup_wave_sums
+            .iter()
+            .copied()
+            .reduce(f32::max)
+            .unwrap_or(0.0)
+            .max(0.0);
+        report.emissive_high_mask = crate::subgroup::subgroup_ballot(
             &emissive_lights
                 .iter()
                 .map(|l| l.intensity > 8.0)
@@ -2841,6 +2860,15 @@ mod strict_tests {
             "{ctx}: leo_latest_tick"
         );
         assert_eq!(
+            a.emissive_high_mask, b.emissive_high_mask,
+            "{ctx}: emissive_high_mask"
+        );
+        assert_eq!(
+            a.subgroup_wave_sum_max.to_bits(),
+            b.subgroup_wave_sum_max.to_bits(),
+            "{ctx}: subgroup_wave_sum_max (bit)"
+        );
+        assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
         );
@@ -3106,6 +3134,14 @@ mod strict_tests {
                 0x4063_2920,
                 "tick {t}: saved = (2.0736-2.0)/2.0736*100 bits = 0x40632920 (rq ej_async)"
             );
+            // EN-1: lights 0 (パレット空) → ballot=0・reduce 空で +0.0
+            // (None フォールバック + .max(0.0) 正規化の両経路を golden で固定)
+            assert_eq!(r.emissive_high_mask, 0, "tick {t}: lights 0 → ballot 0");
+            assert_eq!(
+                r.subgroup_wave_sum_max.to_bits(),
+                0x0000_0000,
+                "tick {t}: lights 0 → reduce 空 → +0.0"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3150,6 +3186,18 @@ mod strict_tests {
                 r.async_saved_pct.to_bits(),
                 0x416B_E40B,
                 "tick {t}: saved = (13.5656−11.5656)/13.5656*100 = 14.743175 (rq golden)"
+            );
+            // EN-1 golden: パレット全 id=1 → light=1%16=1>0 で全ボクセル
+            // 発光、上限 32 灯 × intensity 1.0 → 単一 wave sum=32.0
+            // (rq 導出 32×1.0=32.0=0x42000000)。lvl=1 ≤ 8.0 → ballot 全 0。
+            assert_eq!(
+                r.emissive_high_mask, 0,
+                "tick {t}: lvl=1 ≤ 8.0 threshold → ballot 全 0"
+            );
+            assert_eq!(
+                r.subgroup_wave_sum_max.to_bits(),
+                0x4200_0000,
+                "tick {t}: 32 灯×1.0 = wave sum 32.0 (rq 導出)"
             );
         }
         let _ = std::fs::remove_dir_all(&dir);

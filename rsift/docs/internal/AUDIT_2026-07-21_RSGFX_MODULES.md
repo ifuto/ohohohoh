@@ -7256,3 +7256,62 @@ san/trailws 0・全厳密値 rq 事前導出 (em_vram.rq: sentinel 全 1 ペア�
 非衝突 3 境界・FIFO 0,1,0,1,0・gen 2・2^32、全 assert 通過)・
 digest 004c1cf5 不変見込 (wide_static_bench 非経由)・api 49 全緑
 (seal で再検証)・seal 全 6 ゲート PASS 後 push。台帳 519。
+
+## EN. subgroup.rs / full_graph_wiring.rs (wave 140, 2026-07-27)
+
+census grep で wiring `_subgroup_reduced`/`_subgroup_mask` の `_` 破棄
+連鎖 (評価実効・消費なし中間構造) と **subgroup::Vec3/Vec4+Add/Sub/Mul
+trait 実装の crate+workspace 消費者完全ゼロ** (EJ-2 完全同型) を
+機械検出。
+
+- **EN-1 [中] `_` 破棄中間構造の §7 消化 7**: reduce_add/ballot 評価結果を
+  FrameWiringReport 実フィールド 2 件へ接続 — `emissive_high_mask: u64`
+  (intensity>8.0 の ballot) + `subgroup_wave_sum_max: f32` (wave 集約 sum
+  の max)。消費設計: 空 intensities の reduce は None → +0.0 フォール
+  バック、全 -0.0 経路も .max(0.0) で +0.0 正規化 (捕捉 55 同型) →
+  report 値は常に +0.0 域。det 比較集合 2 assert 追加。golden pin:
+  empty inputs → mask=0・max=+0.0=0x00000000、chunked (パレット全
+  id=1 → light=1%16=1>0 で全ボクセル発光・cap 32 停止で 32 灯×1.0)
+  → 単一 wave sum 32.0=0x42000000 (rq 導出)・lvl=1≤8.0 で mask=0
+  (EJ golden 2 テストへ追記)。
+- **EN-2 [中] subgroup::Vec3/Vec4+trait 実装 完全装飾削除** (~60 行、
+  workspace grep 使用 0 機械確定、EJ-2 先例準拠・保持不可能証明:
+  消費者ゼロの純粋データ型で配線価値なく wgsl 等価表現も存在)。
+- **EN-3 [観] 誠実注記 4 項目** (module doc): (1) reduce は f32 非結合の
+  wave 内 index 順逐次 — GPU subgroup reduce の順序は実装依存で CPU
+  シミュレーションと bit 一致保証なし (rq 機械導出 pin: [1e20;32] 逐次
+  0x632D78EB は一括乗算 0x632D78EC と **1 ulp 差異**、1e20 wave では
+  1.0×31 個加えても ulp 未満で全消失 0x60AD78EC 不変)。(2) ballot は
+  **j≥64 を静寂切捨て** (u64 写像域外・GPU wave ≤64 lane と整合するが
+  CPU シミュレーション固有) — pin 済、現行 wiring 供給は emissive cap
+  32 で切捨て経路未到達。(3) WAVE_WIDTH=32 固定 (AMD wave64 は別定数
+  要)。(4) Vec3/Vec4 削除経緯。
+- **EN-4 [低] strict 5 件**: reduce golden bits 部分 wave 境界
+  (496.0=0x43F80000/32.0=0x42000000/1520.0=0x44BE0000/64.0=0x42800000
+  全 rq 導出・33/64/65 要素・空)・**逐次丸め順序 pin** ([1e20;32]=
+  0x632D78EB≠一括 0x632D78EC)・**順序消失 pin** (1e20+1.0×31≡1e20)・
+  ballot 65 lane 切捨て pin (u64::MAX/0/index63=1<<63)・WAVE_WIDTH
+  契約 pin。
+
+adversarial 6 系統: (a) wave_end min 除去 **2 RED** (部分 wave OOB・
+既存含む)・(b) ballot j<64 ガード除去 **1 RED** (1u64<<64 shift
+overflow panic を pin が捕捉)・(c) 初期値 0→1.0 **3 RED**・
+(d) wiring reduce max→min **非検出 (全量 1168 緑のまま)** = wiring
+供給が cap 32 単一 wave → reduce out 全要素同一値で max≡min の
+**構造的非検出** (wave 全 lane 同一値性は subgroup strict pin で
+担保・誠実公表)・(e) .max(0.0) 正規化除去 **非検出 (全量緑)** =
+intensity=lvl as f32 (u8≥0) で -0.0 構造不出・防衛仕様として公表・
+(f) threshold 8.0→0.5 **1 RED** (chunked golden mask 0→0xFFFFFFFF のみ、
+empty lights 0 不変で検出範囲正確)。採番外 2 件: (e) perl 複数行置換
+未適用 (wave 138 同型) と (f) sed インデント不一致未適用を grep 構造
+検査で各々即捕捉し edit_file で整流。復元 MD5-VERIFIED 5 回
+(subgroup 5b47277c・wiring 8d93abeb、三重照合)。
+
+opt-gfx **1168 全緑** (net +5 = subgroup 5、機械検算 1163+5=1168、
+全量 21.37s 機械値)・lib 警告 0・fmdiff 自己起因逸脱 0 (正準形手術
+1 箇所: assert_eq! 折り返し、rustfmt --emit stdout 正準との機械一致)・
+san/trailws 0・digest 004c1cf5 不変見込 (wide_static_bench 非経由
++wiring 変更は report フィールドのみ)・api 49 全緑 (seal で再検証)・
+全厳密値 rq 事前導出 (en_subgroup.rq+ワンライナ: 各 golden bits・
+32×1.0=32.0・1 ulp 差・消失・2^64 境界、python 引退継続)・
+seal 全 6 ゲート PASS 後 push。台帳 523。
