@@ -7194,3 +7194,65 @@ gpu_runtime 登録 4 行形→1 行折畳み、fmdiff は git root 相対パス�
 再確認)・san/trailws 0・digest 004c1cf5 rows=357 不変見込
 (all_wgsl_sources 内容は同一 &str・wide_static_bench 非経由)・
 seal 全 6 ゲート PASS 後に push。台帳 515。
+
+## EM. lockfree_vram_cache.rs (wave 139, 2026-07-27)
+
+census grep で wiring refs=3 (フィールド保有/new(1<<16)/lookup_or_insert)。
+消費は existed→report.lockfree_cache_hits 集計のみで handle の
+(slot_idx, chunk_key, generation) は `_h` 破棄 (CG-6 同型構造、EM-3 公表)。
+strict 読解で**真バグを数学導出により発見**:
+
+- **EM-1 [中] 捕捉 56: sentinel 衝突バグ** — 空スロット初期値 u64::MAX と
+  pack_key(-1,-1) = ((-1 as u32) | ((-1 as u32)<<32)) ≡ 0xFFFFFFFFFFFFFFFF
+  が**同一ビット列** (rq 事前導出: lo/hi 両方 0xFFFFFFFF で一致確定。
+  (-1 as u32) は reinterpret=0xFFFFFFFF)。結果、空キャッシュで
+  lookup_or_insert(-1,-1) が **Hit=true を誤報** (gen=0 スロットの
+  hits+1・挿入 skip) — Minecraft チャンク座標は負も通常出現するため
+  (-1,-1) チャンクのメッシュが欠落したまま hit 扱いになりうる実害。
+  TDD: strict テスト追加で**修正前 RED を機械実証** (空キャッシュで
+  existed_first=true 誤報、panic at assert) → `occupied: Vec<AtomicBool>`
+  独立占有ビットで根治 (pack_key 写像不変・sentinel 初期値も不変で
+  衝突不感に。key 書込み Release 後に occupied true 化・読側 Acquire で
+  true 観測 ⇒ key 確定、単一 writer 順序で linearizable)。修正後全緑。
+ 根治により key 値域 u64 全 2^64 が利用可能 (旧設計は (-1,-1) が実質
+  予約値)。wiring 影響: 実運用チャンク列に (-1,-1) が含まれる場合の
+  hits 統計値が真値に変化しうる (報告値の誠実化、構造不変)。
+- **EM-2 [低] new() fail-loud 契約化**: max_slots=0 は miss 経路の
+  `head.fetch_add(1) % 0` で**ゼロ除算 panic** (EH-2 同型堕落形) 、
+  max_slots>u32::MAX は `slot_idx: u32` の truncate 折り畳み衝突 →
+  new() 先頭 assert 2 件 (割当前に評価、>u32::MAX は 48GB 級割当を
+  試さない位置) + should_panic 2 件。TDD: new_zero_slots_panics は
+  修正前 RED (現行 new(0) は構築自体は成功し lookup で初めて panic) 。
+- **EM-3 [観] 誠実注記 4 項目** (module doc 明記): (1) Hit 探索 O(N)
+  線形 (wiring 65,536 スロット × chunks/tick、未計測の構造的必然推測・
+  handle は `_h` 破棄で GPU 経路未配線=CG-6 同型)。(2) 「lock-free」
+  の精確化: CAS ループなし・fetch_add round-robin は wait-free、
+  複数 writer は同一 slot 同時選択で write-write race benign
+  (一意性保証なし)・wiring は単スレッド駆動で安全。(3) generation
+  hit 不変・evict +1 (ABA 検知)・u32 wrap は 2^32 evict で一周
+  (実害域外 pin)。(4) hits/misses Relaxed 統計 (報告目的適合)。
+- **EM-4 [低] strict pin 群 6 件**: pack_key 単射 4 境界
+  ((-1,-1)/(0,0)/(MIN,MIN)/(MAX,MAX) 相異・(-1,-1)≡u64::MAX rq 導出・
+  (1,0)=1/(0,1)=1<<32 配置・(-1,0)vs(0,-1) 非対称)・FIFO evict 順
+  (rq 導出 new(2) head=0,1,0,1,0・再参照 miss→再挿入 evict 連鎖・
+  hits 0/misses 6 golden)・generation hit 不変/evict +1・
+  hits/misses 集計 pin。
+
+adversarial 5 系統**全 1 RED** (= 各 pin が検出範囲正確に独立):
+(a) occupied チェック除去 revert → minus1_minus1 のみ・(b) evict slot
+%max→%1 固定 → fifo pin のみ・(c) hit 時 generation fetch_add 化 →
+gen 不変 pin のみ・(d) pack << 32→16 折り畳み → pack 単射 pin のみ・
+(e) max_slots>=1 assert 除去 → should_panic のみ。(a) 初回 sed は
+コメント+if 行を 3 行まとめ削除で**構文破壊** → grep 構造検査で即捕捉・
+edit_file で変異形態整流 (捕捉 40 同型の変異整流手順、採番なし同型)。
+復元 MD5-VERIFIED 5 回 (lvc 3363896e、三重照合)。**new_over_u32 系は
+修正前 RED 実証を意図的に非実施** (現行 new() は assert 不在で
+with_capacity(4,294,967,296)≒48GB 割当試行・OOM/abort 危険のため、
+根治後 assert で割当前停止する形でのみ GREEN 実証、判断経緯を誠実記録)。
+
+opt-gfx **1163 全緑** (net +7、機械検算 1156+7=1163、全量 21.61s
+機械値)・lib 警告 0・fmdiff 自己起因逸脱 0 (HEAD 逸脱 0)・
+san/trailws 0・全厳密値 rq 事前導出 (em_vram.rq: sentinel 全 1 ペア・
+非衝突 3 境界・FIFO 0,1,0,1,0・gen 2・2^32、全 assert 通過)・
+digest 004c1cf5 不変見込 (wide_static_bench 非経由)・api 49 全緑
+(seal で再検証)・seal 全 6 ゲート PASS 後 push。台帳 519。
