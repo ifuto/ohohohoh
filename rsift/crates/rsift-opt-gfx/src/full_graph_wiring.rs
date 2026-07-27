@@ -216,6 +216,13 @@ pub struct FrameWiringReport {
     /// 総数。cross 不変式 == quad_materials.len() を debug_assert で検算
     /// (全 quad が一意に bin される完全性)。捕捉 65 根治 assert の観測面。
     pub material_binned_quads: u32,
+    /// 【wave 153 EY-2】FSR2 reproject 結果 uv (`let _ = reprojected` 破棄
+    /// を根治、§7 消化 16)。監視点 uv=(0.5,0.5)、mv は jitter_uv (dims
+    ///   消費の px→uv 正規化、旧 0.002 ハードコード撲滅)。
+    pub fsr2_reproj_uv: [f32; 2],
+    /// 【wave 153 EY-2】FSR2 アップスケール率 (output/input、GPU Uniforms
+    /// inRes/outRes と同一次元の監視値 — 捕捉 67 の output dims 消費者)。
+    pub fsr2_scale: [f32; 2],
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -2013,10 +2020,12 @@ impl FullGraphWiring {
             0.5,
             0.5,
         );
-        let jitter = self.fsr2_inst.jitter(inputs.frame_index as u32);
-        let reprojected = self
-            .fsr2_inst
-            .reproject((0.5, 0.5), (jitter.0 * 0.002, jitter.1 * 0.002));
+        // EY-2 (wave 153): mv は jitter_uv (px→uv 正規化で dims 実消費、
+        // 捕捉 67)。旧 `*0.002` ハードコード (1/500、640px 基準で 25% 過大) を根治。
+        let reprojected = self.fsr2_inst.reproject(
+            (0.5, 0.5),
+            self.fsr2_inst.jitter_uv(inputs.frame_index as u32),
+        );
         let fsr2_out = self.fsr2_inst.resolve(
             crate::fsr2::Vec3::new(fsr_color[0], fsr_color[1], fsr_color[2]),
             crate::fsr2::Vec3::new(
@@ -2026,7 +2035,13 @@ impl FullGraphWiring {
             ),
             0.0,
         );
-        let _ = reprojected;
+        // EY-2 (wave 153): `let _ = reprojected` 破棄を根治 (§7 消化 16) —
+        // reprojected uv とアップスケール率を report へ実配線。
+        report.fsr2_reproj_uv = [reprojected.0, reprojected.1];
+        report.fsr2_scale = [
+            self.fsr2_inst.output_w as f32 / self.fsr2_inst.input_w as f32,
+            self.fsr2_inst.output_h as f32 / self.fsr2_inst.input_h as f32,
+        ];
         self.prev_frame_color = [fsr2_out.r, fsr2_out.g, fsr2_out.b];
         let shim = inputs.camera_speed.min(4.0) / 4.0;
         let vrs_sel = self.vrs_inst.select(shim, (sg.x + sg.y + sg.z) / 3.0);
@@ -3182,6 +3197,27 @@ mod strict_tests {
             "{ctx}: clp_lit_fraction (bit)"
         );
         assert_eq!(a.frb_billboards, b.frb_billboards, "{ctx}: frb_billboards");
+        // EY-2 (wave 153): fsr2 実配線の det pin (f32 は bit 比較)
+        assert_eq!(
+            a.fsr2_reproj_uv[0].to_bits(),
+            b.fsr2_reproj_uv[0].to_bits(),
+            "{ctx}: fsr2_reproj_uv[0]"
+        );
+        assert_eq!(
+            a.fsr2_reproj_uv[1].to_bits(),
+            b.fsr2_reproj_uv[1].to_bits(),
+            "{ctx}: fsr2_reproj_uv[1]"
+        );
+        assert_eq!(
+            a.fsr2_scale[0].to_bits(),
+            b.fsr2_scale[0].to_bits(),
+            "{ctx}: fsr2_scale[0]"
+        );
+        assert_eq!(
+            a.fsr2_scale[1].to_bits(),
+            b.fsr2_scale[1].to_bits(),
+            "{ctx}: fsr2_scale[1]"
+        );
         // EX-1 (wave 152): material draw 件数系の det pin (§7 消化 15 配線の観測面)
         assert_eq!(
             a.material_opaque_draws, b.material_opaque_draws,
@@ -3493,6 +3529,68 @@ mod strict_tests {
         assert_eq!(r.material_opaque_draws, 0, "empty: opaque 0");
         assert_eq!(r.material_translucent_draws, 0, "empty: translucent 0");
         assert_eq!(r.material_binned_quads, 0, "empty: binned 0");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 153 EY-2】chunked の fsr2_reproj_uv bit golden (rq ey_fsr2):
+    /// jitter_uv (dims 正規化 640×360) → reproject(0.5,0.5)。
+    /// frame1: (0x3EFFCCCD, 0x3F001E57)、frame2: (0x3F00199A, 0x3EFF7269)。
+    /// fsr2_scale は (1280/640, 720/360) = (2.0, 2.0) exact。
+    #[test]
+    fn tick_world_fsr2_reproj_chunked_golden_strict() {
+        let (dir, mut w) = unique_wiring("ey_fsr2_chunked");
+        let mut inputs = chunked_inputs();
+        inputs.frame_index = 1;
+        let r1 = w.tick_world(&inputs);
+        assert_eq!(
+            (
+                r1.fsr2_reproj_uv[0].to_bits(),
+                r1.fsr2_reproj_uv[1].to_bits()
+            ),
+            (0x3EFF_CCCDu32, 0x3F00_1E57u32),
+            "frame1 uv (rq ey_fsr2)"
+        );
+        assert_eq!(
+            (r1.fsr2_scale[0].to_bits(), r1.fsr2_scale[1].to_bits()),
+            (0x4000_0000u32, 0x4000_0000u32),
+            "scale 2.0×2.0 exact"
+        );
+        inputs.frame_index = 2;
+        let r2 = w.tick_world(&inputs);
+        assert_eq!(
+            (
+                r2.fsr2_reproj_uv[0].to_bits(),
+                r2.fsr2_reproj_uv[1].to_bits()
+            ),
+            (0x3F00_199Au32, 0x3EFF_7269u32),
+            "frame2 uv (halton 系列が実駆動、rq ey_fsr2)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 153 EY-2】empty frame0 golden: jx=0 → u=0.5 exact
+    /// (0x3F000000)、jy=−0.16666666 → v=0x3EFFC352 (rq ey_fsr2)。
+    /// frame1 は chunked と同値 (uv は入力内容非依存、det 構造の pin)。
+    #[test]
+    fn tick_world_fsr2_reproj_empty_golden_strict() {
+        let (dir, mut w) = unique_wiring("ey_fsr2_empty");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 0;
+        let r0 = w.tick_world(&inputs);
+        assert_eq!(
+            (
+                r0.fsr2_reproj_uv[0].to_bits(),
+                r0.fsr2_reproj_uv[1].to_bits()
+            ),
+            (0x3F00_0000u32, 0x3EFF_C352u32),
+            "frame0 uv (rq ey_fsr2)"
+        );
+        assert_eq!(
+            r0.fsr2_scale[0].to_bits(),
+            0x4000_0000u32,
+            "scale は empty でも dims 由来 2.0 exact"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

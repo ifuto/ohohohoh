@@ -48,9 +48,13 @@ fn main(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
     // Neighborhood clamp to suppress ghosting on disocclusions.
     hist = clamp(hist, mn, mx);
 
-    // On reset (camera cut) use pure current frame.
-    let a = select(0.95, 1.0, u.reset > 0.5);
-    let resolved = mix(hist, cur, a);
+    // 【wave 153 EY-1 捕捉 66 根治】history-dominant blend: 既定 a=0.9 で
+    // hist 90% (GPUOpen FSR2 標準 = current は low blend factor、CPU
+    // 参照 resolve の history_blend=0.9 と同形)。旧式 a=0.95 で cur 95%
+    // は doc「temporal stability」と正反対だった。reset (camera cut) →
+    // a=0 で pure current (CPU disocclusion=1 と整合)。
+    let a = select(0.9, 0.0, u.reset > 0.5);
+    let resolved = mix(cur, hist, a);
 
     // Cheap perceptual dither to break up 8-bit banding on iGPUs.
     let dith = (fract(sin(dot(pos.xy, vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;

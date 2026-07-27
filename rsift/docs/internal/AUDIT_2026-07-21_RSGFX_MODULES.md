@@ -8079,3 +8079,63 @@ artifact のみ)、wiring 追記分 2 箇所手術で自己起因 0・固定版 
 0e64eb609635e8f27cb8ca691e42a62a、src+/tmp+rsift/bak 三重照合)・
 digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・台帳 577・
 TRIGGER 189。
+
+## EY. fsr2.rs / shaders/fsr2.wgsl / full_graph_wiring.rs (wave 153, 2026-07-28)
+
+対象 fsr2.rs 197 行 (CR 0、既に LF)、shaders/fsr2.wgsl (blend 同形化)、
+full_graph_wiring.rs (jitter_uv 消費 + let _ 根治 + report 2 フィールド +
+det pin 4)。census grep 機械確定: Fsr2 は wiring:312 保持・463 構築
+(640×360→1280×720 固定)、実消費は jitter/reproject/resolve のみ
+(2016-2030)。**neighborhood_clamp (fsr2 版、taa 同名とは別物)・
+wgsl_source メソッド (gpu_runtime:102 は const FSR2_WGSL 参照)・
+Vec3::clamp・Vec3 Sub は crates/ 全体で消費者ゼロ**、加えて in/out dims
+4 フィールドは new で格納されるのみ全経路未消費 (捕捉 67)、
+`let _ = reprojected;` 破棄で reproject→jitter→halton は結果非消費の
+decoy 連鎖だった (resolve のみ prev_frame_color 帰還に実消費)。
+
+- EY-1 [中] **捕捉 66 [中] (blend 反転・三方不一致)**: 旧 `resolve` は
+  `current*a + history*(1-a)` (a=max(blend,disoc)) で current 90% —
+  doc「Higher = more temporal stability」と GPUOpen FSR2 公式「current
+  は relatively low blend factor」(一次情報、Reproject & accumulate 章)
+  の双方と正反対、WGSL も cur 95% 同型逆転。根治: `history*h +
+  current*(1-h)` (h=blend*(1−disoc)、既定 0.9=history 90%、disocc=1 →
+  h=0=current reset 整合) + WGSL `select(0.9, 0.0, reset); mix(cur,
+  hist, a)` 同形化。TDD RED 4 機械記録 (dominant/stable/mid/NaN)。
+- EY-2 [低] **捕捉 67 [小] (dims 4 dead + let _ 破棄)**: §7 消化 16 —
+  `jitter_uv` で input dims 実消費 (旧 0.002 ハードコード=1/500、640px
+  基準 25% 過大を根治)、reprojected → report.fsr2_reproj_uv、scale →
+  report.fsr2_scale (output dims 消費) 実配線 + det pin 4。dims 4 全てに
+  消費者創出 (一律削除ではなく配線第一選択、指令⑦整合)。
+- EY-3 [観] 注記 5 項: (1) 捕捉 66 経緯+一次情報、(2) dims 消化経緯、
+  (3) 不可能証明削除 (neighborhood_clamp は 3x3 AABB 実データ源不在で
+  擬似接続が vacuous=偽装抵触、WGSL clamp は真経路残存 / wgsl_source・
+  Vec3::clamp・Sub 消費者ゼロ)、(4) NaN 規律変更 (max 吸収→clamp 透過
+  伝播) + halton(0)→1 + frame wrap 到達不可 + jitter 片側非対称、
+  (5) WGSL parity + GPU のみ dither=既知系統差 + content pin 財産化。
+- EY-4 [低] strict module 15 (+8 net) + wiring 2: 全 golden rq ey_fsr2
+  事前導出 (bits 厳密、halton/inv640=0x3ACCCCCD/inv360=0x3B360B61/
+  resolve 系列、python 引退継続)。+10 net **1266 全緑** (機械検算
+  1256+8+2、adversarial 後 23.31s 再実測)。
+
+adversarial 5 系統: (a) 捕捉 66 旧式 revert **4 RED** (dominant/stable/
+mid/NaN、above_one/uses_current は新旧一致の構造的緑)・(b) 削除系 4
+構造 (neighborhood_clamp/wgsl_source/Vec3::clamp/Sub+vec_min/max) 復活
+**非検出構造** (dead code 復活で 1266 緑・dead_code 警告 0 を機械記録、
+consumer ゼロ pub item の既知検出空白、EX-2(b) 同型 5 連続目、誠実記録。
+検出責務は census 事前確定)・(c) halton `f /= base`→`*=` **7 RED**
+(halton 2+jitter 2+jitter_uv 1+wiring uv 2、halton(0)pin は新旧一致
+構造で緑)・(d) wiring mv を 0.002 ハードコード revert **2 RED**
+(empty+chunked uv golden)・(e) WGSL `select(0.95, 1.0)+mix(hist,cur,a)`
+revert **1 RED** (wgsl contract pin、GPU 経路は naga validate 緑のまま
+content pin が検出責務、ES/ET/EW/EX 同型)。変異前実体コピー /tmp+
+rsift/bak 先行・grep -c/python assert で適用確認後計測・毎回復元
+MD5-VERIFIED 5 回。
+
+opt-gfx **1266 全緑** (事後全量再実測 23.31s、net +10、機械検算
+1256+10=1266)・api 49 全緑・replay 16 全緑・lib 本編警告 0・fmt: HEAD
+両 rs ファイル原生逸脱 0、追記分 (wiring 4 箇所折返し) を in-place
+rustfmt 全量適用で自己起因 0 (fsr2.rs は初版から正準一致)・固定版 md5
+三重保存 (fsr2 0b0cd931b0b5ba2173402209fd6ce9c0・wiring
+f2525e4a7a89aea301fd2fe8d630245f・wgsl b16b80e81b84a883e03e383d1e0b7085、
+src+/tmp+rsift/bak 三重照合)・digest 004c1cf5fb17bfe8 rows=357 不変・
+seal 全 6 ゲート PASS・台帳 581・TRIGGER 190。
