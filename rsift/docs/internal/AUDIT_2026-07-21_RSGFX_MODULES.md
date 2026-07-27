@@ -7455,3 +7455,67 @@ meshlet 7a8ecf08369f04c6ebbe5a4285ffa7d9 (seal 初回 FAIL: 追加 assert 長行
 1 行逸脱 → 正準手術後全 PASS)・fsr3 d6b8b5de21846fe0e17b48ca90680efb)。
 seal 全 6 ゲート PASS (san/fmdiff 自己起因 0/trailws/1179 全緑/digest
 004c1cf5fb17bfe8 rows=357 不変/env-check)。台帳 534・TRIGGER 179。
+## EQ. tiled_deferred.rs / full_graph_wiring.rs (wave 143, 2026-07-27)
+
+census grep 機械確定: wiring は clear_lights/add_light/cull_lights_for_tiles
+を実呼出 (1141-1145) するが **cull 結果 (tiles/light_indices) の消費者
+ゼロ** (clustered_lighting は配線済みなのに対照的、§7 未配線)。
+加えて view_proj 規約照査で **残存転置バグ (CG-1 同型)** を捕捉。
+
+- **EQ-1 [中] §7 消化 10 cull 結果実配線**: report 実フィールド
+  `tdl_max_tile_load`/`tdl_lit_tiles: u32` (cluster_* 同型ホットスポット
+  指標) へ接続 + det 比較集合 2 assert + empty/chunked golden。
+  chunked golden **4/8160** (rq eq_tiled 機械列挙): emissive scan
+  (y,z,x 順 32 cap) は z=0/1 平面の 32 灯、ID VP で ndc_x=x (0..15)、
+  sx=960x+960、sr=960px → x≥2 は min_tx=60x≥120>119=max_tx の**逆転
+  空ループ**で消失 (影響球左端が画面右端超の物理的正しい除外)、
+  x=0 (列 0..119 全行 +2) ・x=1 (列 60..119 +2) の 4 灯のみ残存 →
+  列 0..59 load 2・列 60..119 load 4 → max=4 / lit=8160。
+- **EQ-2 [高] 捕捉 58 view_proj 転置読み (CG-1 同型残存)**: 本番規約
+  は行ベクトル p×M (clip_j=Σ_i p_i·M[i][j]、平行移動 row 3、wave 83
+  CG-1 記述) だが旧実装は列ベクトル M·p の行内積で読み = 平行移動
+  (row 3) を完全無視、w は row3·p で意味破壊 (T=(0,0,-50) で w=-49
+  → 光源消失、rq 導出)。IDENTITY_VP 対称で両規約一致 → golden 潜伏
+  (CG-1 と同一の顕在化経路)。現実害ゼロ (結果未消費だった) だが
+  配線前提の真バグとして修正。TDD: 修正前 RED 6 件機械実証
+  (T=0.5 平行移動 pin・z=-50 消失 pin・ww 規約 pin・should_panic 3)。
+  修正: clip_x = p·col(0) / clip_y = p·col(1) / clip_w = p·col(3)。
+- **EQ-3 [中] fail-loud assert 3 本**: view_proj/light 全成分 finite
+  + radius≥0。旧来 NaN pos は `as i32`=0 飽和でタイル (0,0) へ静寂
+  割当 (照明局地破壊) — 契約明文化で panic 化。wiring 入力は
+  uint as f32 + light_branchless∈0..15 + IDENTITY_VP で全 finite =
+  非発火の機械裏付け済。
+- **EQ-4 [観] 誠実注記 4 項目** (module doc、cull 契約節): (a) ww≤0.1
+  skip は背後・超近接光源の**完全除外** (近平面跨ぎ巨大半径光源の
+  影響見逃し)、(b) screen_radius 円錐近似 (radius≪距離で正確)、
+  (c) cap 64 静寂切捨て (照度欠損上限)、(d) ndc_z 非使用 (深度
+  カリングなし保守形)。
+- **EQ-5 [低] strict 11 件 + 境界閉区間 pin**: ww≤0.1 の境界を
+  w=0.1f32 (0x3DCCCCCD) skip / 1 ulp 上 (0x3DCCCCCE) 残存で閉区間
+  固定 (rq eq_tiled_c、adversarial `<` 変異の検出線補完)。自己捕捉:
+  T=10 平行移動 pin 初版は光源を min_tx=600>119 の画面外へ飛ばし
+  消失 (rq eq_tiled で min_tx=600 まで出したが逆転空ループ帰結の
+  assert 化を失念) → RED 実測で捕捉 → T=0.5 (f32 exact sx=1440、
+  min_tx=30) + 画面外排除 pin 2 本へ分割 (誠実記録)。
+
+adversarial 5 系統 (全変異 MD5-VERIFIED 復元 5 回、tiled
+301c4bfd・wiring 48a5dd75 三重照合): (a) 捕捉 58 revert (p×M→M·p
+旧転置読み) **4 RED** (translation/offscreen/z_no_vanish/ww_threshold)
+・(b) `ww <= 0.1`→`<` **1 RED** (EQ-5 boundary pin のみ検出=補完
+正確)・(c) cap 64→65 **1 RED** (cap pin)・(d) tiles_x cap clamp 除去
+**6 RED** (index 8160 OOB panic 系、cap が配列安全性の必須要件と
+実証)・(e) fail-loud 3 assert 撤去 **3 RED** (3 should_panic)。
+**非検出ゼロ** — 全 pin が変異感受性を持つことを機械確定。
+
+opt-gfx **1190 全緑** (21.44s 機械値、net +11 = tiled strict 11、
+機械検算 1179+11=1190)・lib 本編/test 警告 0 (pxM 命名 non_snake
+2 件を px_m へ自己修正)・api 49 全緑・fmdiff 自己起因逸脱 0・
+全厳密値 rq 事前導出 (eq_tiled/eq_tiled_b/eq_tiled_c:b(u32) from_bits
+は RQ.md 一次情報確認、f() 数値キャストとの誤用を初回 RED で捕捉)
+・固定版 md5 三重保存 (tiled 5a696c160b946e4604b5c344b900325f・
+wiring c92e9a704f965279a888b4896730809a)・seal 初回 fmdiff FAIL
+(自己起因 wiring 4 行・tiled 6 行) → 正準手術 5 箇所 (det assert
+収束行化・x/y/ww 式折り・PointLight 展開・filter チェーン・empty
+assert 折り) で現逸脱 3 行=HEAD 原生包含へ復帰 (tiled HEAD 6 ⊇
+現 3、row 44/118/120 は orig 原生据置)・seal 全 6 ゲート PASS
+(digest 004c1cf5fb17bfe8 rows=357 不変)・台帳 539・TRIGGER 180。

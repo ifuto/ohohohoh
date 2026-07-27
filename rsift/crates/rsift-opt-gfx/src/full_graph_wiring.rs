@@ -151,6 +151,13 @@ pub struct FrameWiringReport {
     /// gaze は camera_dir (x,z) の ×0.5+0.5 NDC→uv 写像 (定数
     /// radius=0.2・min_rate=0.5 供給)。
     pub foveated_center_rate: f32,
+    /// 【wave 143 EQ-1】`cull_lights_for_tiles` は wiring:1145 で実実行される
+    /// が結果の消費者ゼロだった中間構造を根治 (§7 消化 10): タイルあたり
+    /// 最大光源数 (ホットスポット指標、cluster_max_load 同型)。
+    pub tdl_max_tile_load: u32,
+    /// 【wave 143 EQ-1】同上: 非空 (1 灯以上割当) タイル数
+    /// (cluster_lit_clusters 同型)。
+    pub tdl_lit_tiles: u32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -1143,6 +1150,20 @@ impl FullGraphWiring {
             self.tdl.add_light(l.clone());
         }
         self.tdl.cull_lights_for_tiles(&inputs.view_proj);
+        // EQ-1: cull 結果の実消費 (旧: 実行のみで結果未読 = §7 未配線)。
+        report.tdl_max_tile_load = self
+            .tdl
+            .tiles
+            .iter()
+            .map(|t| t.light_indices.len())
+            .max()
+            .unwrap_or(0) as u32;
+        report.tdl_lit_tiles = self
+            .tdl
+            .tiles
+            .iter()
+            .filter(|t| !t.light_indices.is_empty())
+            .count() as u32;
         let cluster_grid = crate::clustered_lighting::ClusterGrid::new(
             (inputs.screen_w / 16).max(1),
             (inputs.screen_h / 16).max(1),
@@ -2912,6 +2933,11 @@ mod strict_tests {
             "{ctx}: foveated_center_rate (bit)"
         );
         assert_eq!(
+            a.tdl_max_tile_load, b.tdl_max_tile_load,
+            "{ctx}: tdl_max_tile_load"
+        );
+        assert_eq!(a.tdl_lit_tiles, b.tdl_lit_tiles, "{ctx}: tdl_lit_tiles");
+        assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
         );
@@ -3033,6 +3059,9 @@ mod strict_tests {
                 0x3F00_0000,
                 "tick {t}: dir=[0,0,1] → 0.5 (rq ep_foveated)"
             );
+            // EQ-1 golden (rq eq_tiled): palettes 空 → lights 0 → 0/0。
+            assert_eq!(r.tdl_max_tile_load, 0, "tick {t}: lights 空 → 0");
+            assert_eq!(r.tdl_lit_tiles, 0, "tick {t}: lights 空 → 0");
             assert_eq!(r.vram_used_bytes, 0, "tick {t}: 実アロケーションなし");
             assert_eq!(
                 r.subsystems_active, 60,
@@ -3139,6 +3168,20 @@ mod strict_tests {
                 ra.foveated_center_rate.to_bits(),
                 0x3F00_0000,
                 "tick {t}: foveated = min_rate 0.5 (rq 導出)"
+            );
+            // EQ-1 golden (rq eq_tiled 導出): 全 1 パレット → z=0/1 平面
+            // の 32 灯 (radius=1.0, sr=960px)。IDENTITY_VP 対称で新旧
+            // 読み一致。x≥2 は min_tx≥120>119 逆転空ループで消失 (物理的
+            // に正しい画面外排除) → x=0 (列 0..119 全行) + x=1 (列
+            // 60..119) の 4 灯のみ → max=4 (列 60..119) / lit=8160 (x=0
+            // 灯が全タイル被覆)。
+            assert_eq!(
+                ra.tdl_max_tile_load, 4,
+                "tick {t}: 列 60..119 は x=0/1 の 4 灯 (rq eq_tiled)"
+            );
+            assert_eq!(
+                ra.tdl_lit_tiles, 8160,
+                "tick {t}: 120x68 全タイル被覆 (rq eq_tiled)"
             );
             // EO-1 golden (rq eo_shadow 機械列挙): 24 クアッド (x,z) ノルム
             // proxy で culled=8 (i=0..7 ノルム<4.0)、cast=16 は全て
