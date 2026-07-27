@@ -7035,3 +7035,56 @@ digest 004c1cf5fb17bfe8 rows=357 不変は seal ゲートで担保。
 opt-gfx **1132 全緑** (net +4、全量再実行 11.08s 機械値)・既存テスト
 全て不変・lib 警告 0・api 49 全緑 (api 無関係)・fmdiff 自己起因逸脱 0。
 digest 004c1cf5fb17bfe8 rows=357 不変は seal ゲートで担保。
+
+## EJ. deinterleave_ao.rs / async_compute.rs / full_graph_wiring.rs (wave 136, 2026-07-26)
+
+新指令 §7 (「スタブ・ToDo残し・消費者なし・実装済み未配線一切禁止」)
+の 2 段目消化。対象選定は機械: 未監査 22 モジュールの wiring 参照数を
+grep 全列挙した結果 **depth_prepass/async_compute/deinterleave_ao が
+参照 0** を確定し、そのうち crate 全体の消費者まで調査:
+depth_prepass は `render_pipeline.rs` が消費 (§7 非違反で除外)、
+`**async_compute** は `wgsl_source()` のみ消費で Rust ロジック消費者ゼロ、
+**deinterleave_ao は crate 全体で外部参照完全ゼロ (最重係離脱)** →
+後二者を本 wave 対象に確定。census: Vec3/Vec4 は lib/tests/全 crate で
+使用 0 (planner 本体も非使用 = 完全装飾)。
+
+- **EJ-1 [中] AO セクション二重中間構造の根治 + deinterleave_ao 実配線**:
+  旧版は `opaque_ratio` 合成スライス (全サンプル高≤center で遮蔽が常に
+  非発生の定数退化 gtao_occ≡1.0) + `_ = gtao_occ` 破棄 (EH-1 同型)。
+  真のパレット高さ場断面 (`section_heightfield_depth`: 列不透明最上
+  y+1 の 16 正規化、f32 無丸め) に根治し report 実フィールド 3 件へ、
+  deinterleave_ao を半解像度 AO パイプラインの品質監視として実配線
+  (低スペック AO 半解像度化判断の継続監視に接続)。GTAO 逆段差閉形式
+  golden は rq 導出 1−atan2(2,1)/(π/2)=0x3E972028 が wiring 実測と
+  bit 一致 (間接 libm 差異の非混入を機械確定)。
+- **EJ-2 [中] async_compute 経済モデル配線 + Vec3/Vec4 削除 + 捕捉 55**:
+  planner を作業量 proxy 写像で実配線 (係数表 PROXY_* 定数、絶対 ms
+  非解釈・saved_pct 比率のみ意味を持つ誠実注記)。捕捉 55: 空
+  `Iterator::sum::<f32>` は **-0.0 (0x80000000) を透過** (rustc 1.94.1
+  zeroprobe 機械確定、maxnum(-0,-0)=-0) — plan/overlap 全結果に
+  .max(0.0) +0.0 正規化で根治 (テスト bits pin 赤が捕捉)。
+- **EJ-3 [観] deinterleave_ao 誠実注記 4 項目**: 片側 2 方向 horizon
+  非対称・境界 1px 帯未加工透過・奇数寸法 index 安全証明・
+  cost_ratio 単純積名目見積。module strict 4 件追加 (奇数寸法安全・
+  境界透過/内部 0.3125=0x3EA00000 rq 導出 golden・eps tight/loose
+  差分検出・全エア 1.0 bits exact)。
+- **EJ-4 [低] AO 検出空白の pin 強化**: adversarial (a) uniform shift
+  は AO horizon の差分オペレータ性により構造的非検出を誠実確定 →
+  ヘルパ出力レベル golden (census+頂上+空列) で RED 化 (再変異 1 RED
+  実証)。
+- adversarial 6 系統総括: (a) 0→強化後 1 RED・(b) PROXY 係数 2 RED・
+  (c) planner post 脱落 5 RED・(d) AO radius 2 RED・(e) denoise
+  center 脱落 2 RED。復元 MD5-VERIFIED 3 回 (wiring f974863c52d59c…・
+  ac 708b47de90…・dao e848349000…)。sed 2 行除去による構文破壊の作業
+  事故を grep/construct 検査で即捕捉 → 孤立 `}` 1 行のみ削除で変異形態
+  整流 (捕捉 40/52 同型の複雑化版、採番なし)。
+- 作業中メモ: **環境第 7 号リセット**検出 (~/rust+~/bin 消失 + git ref
+  が base 64294c6 巻戻り、wave 136 編集中に発生) → 定石復旧手順再適用
+  (restore-env.sh → rspeed RB-1 再ビルド selftest 0 FAIL → fetch +
+  reset --mixed FETCH_HEAD、作業ファイル損失ゼロ=async_compute.rs のみ
+  の差分に収束、HEAD 891404e 一致を照合)。
+
+opt-gfx **1144 全緑** (net +12 = async_compute +3・deinterleave_ao +4・
+wiring +5 (ej golden ×2+step ×2+heightfield golden)、実値機械検算済)、既存
+テスト全不変・lib 警告 0・api 49 全緑・fmdiff 自己起因逸脱 0・digest
+不変・seal 全 6 ゲート PASS。固定版 md5 二重保存 (bak/src 三重一致)。

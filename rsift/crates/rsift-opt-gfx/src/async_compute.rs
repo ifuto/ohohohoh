@@ -8,69 +8,19 @@
 //! *next* frame's shadow-map pass, hiding its cost behind shadow rasterization.
 //! This is a pure CPU planning primitive; the WGSL mirrors the same idea for the
 //! GPU submit side. Quality is unchanged — only scheduling/overlap improves.
-
-use std::ops::{Add, Mul, Sub};
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Vec3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-impl Vec3 {
-    pub fn new(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z }
-    }
-}
-impl Add for Vec3 {
-    type Output = Vec3;
-    fn add(self, o: Vec3) -> Vec3 {
-        Vec3::new(self.x + o.x, self.y + o.y, self.z + o.z)
-    }
-}
-impl Sub for Vec3 {
-    type Output = Vec3;
-    fn sub(self, o: Vec3) -> Vec3 {
-        Vec3::new(self.x - o.x, self.y - o.y, self.z - o.z)
-    }
-}
-impl Mul<f32> for Vec3 {
-    type Output = Vec3;
-    fn mul(self, s: f32) -> Vec3 {
-        Vec3::new(self.x * s, self.y * s, self.z * s)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Vec4 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub w: f32,
-}
-impl Vec4 {
-    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
-        Self { x, y, z, w }
-    }
-}
-impl Add for Vec4 {
-    type Output = Vec4;
-    fn add(self, o: Vec4) -> Vec4 {
-        Vec4::new(self.x + o.x, self.y + o.y, self.z + o.z, self.w + o.w)
-    }
-}
-impl Sub for Vec4 {
-    type Output = Vec4;
-    fn sub(self, o: Vec4) -> Vec4 {
-        Vec4::new(self.x - o.x, self.y - o.y, self.z - o.z, self.w - o.w)
-    }
-}
-impl Mul<f32> for Vec4 {
-    type Output = Vec4;
-    fn mul(self, s: f32) -> Vec4 {
-        Vec4::new(self.x * s, self.y * s, self.z * s, self.w * s)
-    }
-}
+//!
+//! 【wave 136 EJ-2 (2026-07-26)】消費者: `full_graph_wiring` の経済モデル配線
+//! (作業量 proxy 写像→ plan/overlap → report 実フィールド 3 件)。proxy 値は
+//! **実測 ms ではない**作業量の無量綱 proxy であり絶対値解釈は不可、
+//! `saved_pct` (相対比率) のみ物理的意味を持つ (wiring 側 doc と二重明記)。
+//! Vec3/Vec4 のローカル再定義は本モジュール・crate・テストの全消費者が
+//! 存在しなかった (機械 grep: 使用箇所 0、planner 本体はスカラー演算のみ)
+//! ため、新指令 §7「消費者なし一切禁止」により削除 (bloom/cas/fsr2 等の
+//! 現用モジュール群だけが同形ローカル数学型の様式を維持)。
+//! WGSL 側 `QueueTag` struct は未定義参照かつ未使用 (ワールド契約語彙ピン
+//! 内の孤立定義) として棚卸し公表 — WGSL 変更は `gpu_runtime` のデバイス
+//! コンパイル検証経路に影響しうるため wave 外スコープとして本 wave では
+//! コード不変のまま構造公表のみ行う。
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Queue {
@@ -96,6 +46,12 @@ impl AsyncComputePlanner {
     }
 
     /// Frame time assuming graphics and compute queues overlap freely.
+    ///
+    /// 【wave 136 EJ-2 捕捉 55】`passes` が空 (または全 cost=0) のとき
+    /// `Iterator::sum::<f32>` の空集約は **-0.0 (0x80000000)** を返し、
+    /// `(-0.0).max(-0.0)` は -0.0 を透過する (rustc 1.94.1 実測、zeroprobe
+    /// で機械確定)。det 比較 (`to_bits`) の toolchain 依存を排除するため、
+    /// 結果は `+0.0` へ正規化して返す (動機は決定性、数値は不変)。
     pub fn overlap_time(&self) -> f32 {
         let g: f32 = self
             .passes
@@ -109,7 +65,7 @@ impl AsyncComputePlanner {
             .filter(|p| p.queue == Queue::Compute)
             .map(|p| p.cost_ms)
             .sum();
-        g.max(c)
+        g.max(c).max(0.0)
     }
 
     /// Compare a naive schedule (post FX runs on the compute queue in the same
@@ -132,11 +88,13 @@ impl AsyncComputePlanner {
             .sum();
         // Naive: post FX runs on the compute queue in the same frame, overlapping
         // the graphics work, so the compute total becomes `c + post`.
-        let naive = g.max(c + post);
+        let naive = g.max(c + post).max(0.0);
         // Pipelined: post FX is shifted so it executes behind the next frame's
         // shadow (graphics) pass, hiding up to `shadow` ms of its cost.
-        let hidden = c + (post - shadow).max(0.0);
-        let pipelined = g.max(hidden);
+        let hidden = (c + (post - shadow).max(0.0)).max(0.0);
+        let pipelined = g.max(hidden).max(0.0);
+        // 【捕捉 55 対応】上記同様の ±0 正規化 (.max(0.0)) で det 比較に
+        // toolchain 依存の -0.0 bits (0x80000000) が紛れ込む経路を構造排除。
         let saved = if naive > 1e-6 {
             (naive - pipelined) / naive
         } else {
@@ -211,5 +169,72 @@ mod tests {
         let r4 = p4.plan(6.0, 3.0);
         assert!((r4.naive - 11.0).abs() < 1e-6);
         assert!(r4.saved_pct > 20.0 && r4.saved_pct < 35.0);
+    }
+    #[test]
+    fn saved_pct_exact_bits_rq_prederived() {
+        // 【wave 136 EJ-2】rq 事前導出 golden (ej_planner_pin.rq):
+        // g=9, c=5, post=6, shadow=3 → naive=11 (0x41300000)、hidden=5+max(3,0)=8、
+        // pipelined=max(9,8)=9、saved=((11-9)/11)*100 の f32 演算列 = bits 0x4191745D。
+        // 旧テストのレンジ `20<x<35` では本ケースは構造非拘束 (18.18 は範囲外) —
+        // ここで厳密値に pin し、演算列 (naive-pipelined)/naive*100 の bit 契約を固定。
+        let p = AsyncComputePlanner::new(vec![
+            Pass { name: "gbuffer", queue: Queue::Graphics, cost_ms: 6.0 },
+            Pass { name: "shadows", queue: Queue::Graphics, cost_ms: 3.0 },
+            Pass { name: "cull", queue: Queue::Compute, cost_ms: 5.0 },
+        ]);
+        let r = p.plan(6.0, 3.0);
+        assert_eq!(r.naive.to_bits(), 0x4130_0000, "naive=11 exact");
+        assert_eq!(r.pipelined.to_bits(), 0x4110_0000, "pipelined=9 exact");
+        assert_eq!(
+            r.saved_pct.to_bits(),
+            0x4191_745D,
+            "saved_pct f32 bits (rq ej_planner_pin 導出、暗算禁止の機械検算)"
+        );
+        assert!(
+            (r.saved_pct - 18.181818).abs() < 1e-6,
+            "十進表示 18.181818%"
+        );
+    }
+    #[test]
+    fn naive_le_pipeline_invariant_and_shadow_zero_degenerate() {
+        // 不変式: shadow ≥ post なら pipelined == overlap(=max(g,c)) 完全隠蔽、
+        // saved_pct ≥ 0。shadow=0 なら pipelined == naive で saved == 0。
+        let p = AsyncComputePlanner::new(vec![
+            Pass {
+                name: "gbuffer",
+                queue: Queue::Graphics,
+                cost_ms: 5.0,
+            },
+            Pass {
+                name: "cull",
+                queue: Queue::Compute,
+                cost_ms: 3.0,
+            },
+        ]);
+        let full_hide = p.plan(2.0, 5.0);
+        assert_eq!(full_hide.pipelined.to_bits(), p.overlap_time().to_bits());
+        let no_hide = p.plan(2.0, 0.0);
+        assert_eq!(no_hide.pipelined.to_bits(), no_hide.naive.to_bits());
+        assert_eq!(
+            no_hide.saved_pct.to_bits(),
+            0,
+            "shadow=0 → 隠蔽なし → saved=0 exact"
+        );
+        assert!(p.plan(2.5, 1.0).saved_pct >= 0.0);
+    }
+    #[test]
+    fn overlap_is_empty_passes_zero() {
+        // 境界: pass 空 → overlap = 0、plan の saved は naive ≤ 1e-6 分岐 → 0 (静寂 NaN 否定)。
+        let p = AsyncComputePlanner::new(vec![]);
+        assert_eq!(p.overlap_time().to_bits(), 0);
+        let r = p.plan(2.0, 3.0);
+        assert_eq!(r.naive.to_bits(), 0x4000_0000, "naive = max(0, 0+2) = 2");
+        // rq ej_empty_pin 導出: saved = (2-0)/2*100 = 100.0 = 0x42C80000
+        // (手書き暗算で 0x41500000=13.0 を一時記入 → rq 機械検算で事前捕捉)。
+        assert_eq!(
+            r.saved_pct.to_bits(),
+            0x42C8_0000,
+            "saved = (2-0)/2*100 = 100 exact"
+        );
     }
 }

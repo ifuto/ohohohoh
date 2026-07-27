@@ -11,6 +11,22 @@
 //!
 //! 実機 GPU 結線は `crate::gtao` の WGSL をそのまま半解像度ターゲットで
 //! 動かし、このモジュールの再合成カーネルでフル解像度へ戻す。
+//!
+//! 【wave 136 EJ-1 (2026-07-26)】以下の構造を誠実注記 (全て機械検証済):
+//! 1. `ao_pixel` の horizon 探索は回転直交ベクトル **(rx,ry), (−ry,rx) の
+//!    片側 2 方向のみ** (反対位相の −(rx,ry), −(−ry,rx) は未探索) =
+//!    方向非対称の簡易形 (文献 GTAO/XeGTAO の全周多重方向積分ではない)。
+//!    `rot_for` は決定論的ハッシュ (x,y,variant → 16bit 量子化角度)
+//!    なので同一入力は bit 同一だが、オクルージョン近似はバイアスを持つ。
+//! 2. `reinterleave_denoise` のエッジ保持 3x3 は**画像境界 1px 帯を処理
+//!    せず**（`1..=h-2` ループ）再インリーブ直値をそのまま透過（構造
+//!    契約としてピン、"最外周はデノイズ無し"の真値仕様化）。
+//! 3. 奇数寸法でも index は安全: x∈[0,hw) に対し 2x+u ≤ 2hw−1 ≤ w−1 が
+//!    hw = w/2 (切捨) で恒成立 (hw = (w−1)/2 の場合 2hw−1 = w−2 でも
+//!    w−1=2hw でも w−1 到達) — panic は depth バッファ長不足のみ
+//!    (Rust index 規約で fail-loud)。
+//! 4. `cost_ratio_vs_full` は半解像度=画素 1/4 × サンプル数比の**単純積
+//!    モデル** (レイアウト・キャッシュ・SIMD 効果は無視の名目見積)。
 
 /// AO パラメータ。
 #[derive(Debug, Clone, Copy)]
@@ -244,5 +260,154 @@ mod tests {
         }
         let full = reinterleave_denoise(&halves, &d, w, h, &AoParams::default());
         assert_eq!(full.len(), w * h);
+    }
+
+    /// 【wave 136 EJ-1】奇数寸法 7x5 での index 安全と形状性。
+    #[test]
+    fn odd_dimensions_index_safe_and_shaped() {
+        let w = 7;
+        let h = 5;
+        let d = flat_depth(w, h, 1.0);
+        let halves = deinterleaved_ao(&d, w, h, &AoParams::default());
+        for hbuf in &halves {
+            assert_eq!(hbuf.len(), 6, "hw=3, hh=2 → 6 cells");
+        }
+        let full = reinterleave_denoise(&halves, &d, w, h, &AoParams::default());
+        assert_eq!(full.len(), 35, "7x5");
+    }
+
+    /// 【wave 136 EJ-1】境界 1px 帯は denoise が書き換えず再インタリーブ
+    /// 直値 (variant raw) を透過する構造契約の機械ピン。
+    #[test]
+    fn denoise_boundary_rows_kept_as_variant() {
+        let w = 8;
+        let h = 8;
+        let hw = 4;
+        let hh = 4;
+        // halves を非均一化 (variant ごとに区別可能な値)、内部も構成分解できる形。
+        let mut halves: [Vec<f32>; 4] = [
+            vec![0.0; hw * hh],
+            vec![0.25; hw * hh],
+            vec![0.5; hw * hh],
+            vec![0.75; hw * hh],
+        ];
+        // 内部セルも均一 (denoise の平均にも同値が供給される形) にして区別を明瞭化。
+        halves[1][0] = 0.8125; // (u=1,v=0) 行 0 列 0 — full[(0,1)] に当たる
+        let d = flat_depth(w, h, 1.0);
+        let p = AoParams::default();
+        let out = reinterleave_denoise(&halves, &d, w, h, &p);
+        // 境界 (y=0 行, y=h-1 行, x=0 列, x=w-1 列) は variant 値のまま。
+        assert_eq!(
+            out[0 * w + 0].to_bits(),
+            0.0f32.to_bits(),
+            "(0,0) ← v0u0=0.0"
+        );
+        assert_eq!(
+            out[0 * w + 1].to_bits(),
+            0.8125f32.to_bits(),
+            "(0,1) ← v0u1=0.8125 raw"
+        );
+        assert_eq!(
+            out[1 * w + 0].to_bits(),
+            0.5f32.to_bits(),
+            "(1,0) ← v1u0=0.5"
+        );
+        // (1,1) は 8x8 ではループ範囲 [1,w-2]×[1,h-2] 内の「内部ピクセル」で
+        // denoise 平均の対象: (2y+v)=1 → v=1、(2x+u)=1 → u=1、center=0.75 に
+        // 隣接 8 セル [0,0.8125,0,0.5,0.5,0,0.25,0] を加算 → 2.8125/9 =
+        // 0.3125 = 5/16 exact (rq 導出 bits 0x3EA00000、実測 1050673152 と一致)。
+        assert_eq!(
+            out[1 * w + 1].to_bits(),
+            0x3EA0_0000,
+            "(1,1) 内部: denoise 平均 0.3125 exact (rq golden、初版は境界誤認で赤捕捉)"
+        );
+        assert_eq!(out[(h - 1) * w + 0].to_bits(), 0.5f32.to_bits(), "(h-1,0)");
+        // (0,w-1) ← v0u1 サブ (y=0,x=3) = halves[1][3]、改造は [0] のみなので 0.25
+        assert_eq!(
+            out[0 * w + (w - 1)].to_bits(),
+            0.25f32.to_bits(),
+            "(0,w-1) ← halves[1][3]=0.25"
+        );
+    }
+
+    /// 【wave 136 EJ-1】`depth_epsilon` のエッジ保持が真に働くこと:
+    /// Δz=0.125 > 0.06 のスパイク近傍は平均から排除され (tight)、
+    /// eps=1e6 では全 8 近傍を平均に含める (loose)。同一 halves でも
+    /// 両設定で out が厳密に変わる (排除契約の検出感度 pin)。
+    #[test]
+    fn eps_edge_keep_rejects_depth_zigma_neighbors_contract() {
+        let w = 4;
+        let h = 4;
+        let hw = 2;
+        let hh = 2;
+        // halves: 全 0.5、但し v0u0 の (0,0) セル (full 位置 (0,0)) の近傍に
+        // 影響を与える (1,1)(full) へ mod。検査対象は内部 (y=1,x=1) セル:
+        // それは v1u1 halves[3][(1*2+1)... wait v1u1 → index 3、サブ座標
+        // (y*hw + x) = 0*2+0 = 0] から full[(1,1)] = 0.9 を供給する形。
+        let mut halves: [Vec<f32>; 4] = [
+            vec![0.5; hw * hh],
+            vec![0.5; hw * hh],
+            vec![0.5; hw * hh],
+            vec![0.5; hw * hh],
+        ];
+        halves[3][0] = 0.9; // v1u1 のサブ (0,0) → full (2*0+1, 2*0+1) = (1,1) セル
+        let mut d = flat_depth(w, h, 0.125);
+        d[1 * w + 1] = 0.25; // (1,1) が深度スパイク Δz=0.125 > 0.06
+        let tight = AoParams {
+            depth_epsilon: 0.06,
+            ..Default::default()
+        };
+        let loose = AoParams {
+            depth_epsilon: 1e6,
+            ..Default::default()
+        };
+        let out_t = reinterleave_denoise(&halves, &d, w, h, &tight);
+        let out_l = reinterleave_denoise(&halves, &d, w, h, &loose);
+        // tight: (1,1) は z0=0.25、全 8 近傍 z1=0.125 で |Δ|=0.125>0.06 →
+        // 全隣接 reject → out = raw = 0.9 (bits exact)
+        assert_eq!(
+            out_t[1 * w + 1].to_bits(),
+            0.9f32.to_bits(),
+            "eps tight: 近傍全 excluded → raw 0.9"
+        );
+        // loose: 全 8 近傍 0.5 を受容 → out = (0.9 + 8*0.5)/9 = 4.9/9
+        // (sum=0.9+0.5*8=4.9, w=1+8=9 の fixed 加算順序列、rq 導出 golden)
+        assert_eq!(
+            out_l[1 * w + 1].to_bits(),
+            (4.9f32 / 9.0f32).to_bits(),
+            "eps loose: 全 8 近傍受容 → (0.9+8*0.5)/9"
+        );
+        assert!(
+            out_l[1 * w + 1] < out_t[1 * w + 1],
+            "loose は近傍平均に沈む"
+        );
+        // 逆側中心 (z0=0.125 の (1,2) セル) は tight では 0.9 隣接を排除:
+        // centers 0.125 同土のみ平均。v 行の詳細値は half 供給的に 0.5 統一 →
+        // out = 0.5 (スパイク排除が効いていることの contravariant pin)
+        assert_eq!(
+            out_t[1 * w + 2].to_bits(),
+            0.5f32.to_bits(),
+            "tight: (1,2) はスパイク excluded → 同高 0.5 平均"
+        );
+    }
+
+    /// 【wave 136 EJ-1】全エア (z=0) 断面では ao_pixel が early return 1.0
+    /// で全域 1.0 bits exact、かつ denoise も不変 (Δz=0 ≤ eps 全受容だが
+    /// 全員同値のため平均も 1.0)。wiring 空入力との整合契約。
+    #[test]
+    fn all_air_section_gives_exact_1_bits() {
+        let d = flat_depth(16, 16, 0.0);
+        let halves = deinterleaved_ao(&d, 16, 16, &AoParams::default());
+        for buf in &halves {
+            assert!(
+                buf.iter().all(|v| v.to_bits() == 1.0f32.to_bits()),
+                "全エア → 全 1.0 exact"
+            );
+        }
+        let full = reinterleave_denoise(&halves, &d, 16, 16, &AoParams::default());
+        assert!(
+            full.iter().all(|v| v.to_bits() == 1.0f32.to_bits()),
+            "denoise 後も全 1.0 exact"
+        );
     }
 }

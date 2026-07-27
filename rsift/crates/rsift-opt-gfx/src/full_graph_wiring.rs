@@ -96,6 +96,30 @@ pub struct FrameWiringReport {
     pub cluster_max_load: u32,
     /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
     pub cluster_lit_clusters: u32,
+    /// GTAO オクルージョン (実パレット高さ場の中央断面スライス由来、[0,1]、
+    /// 1=遮蔽なし)。【wave 136 EJ-1】旧実装は全サンプル高 ≤ center の合成
+    /// スライスで定数 1.0 に退化 + `_ = gtao_occ` 破棄の中間構造 (EH-1 同型)
+    /// だったものを、真の高さ場断面化+実フィールド書出しへ根治 (新指令 §7
+    /// 配線実用化の消化)。パレットなしも 1.0 (遮蔽評価対象なし)。
+    pub gtao_occ: f32,
+    /// deinterleave 半解像度 AO パイプライン (デフォルト 1/4 コスト) の
+    /// フル解像度再合成後の平均 AO。低スペック AO 半解像度化の品質監視。
+    /// 【wave 136 EJ-1】モジュール全消費者ゼロだった deinterleave_ao の
+    /// 実消費者配線 (新指令 §7 「接続か削除か」の前者を選択)。
+    pub ao_halfres_mean: f32,
+    /// 同、最小 AO (そのフレームで最も遮蔽が効いた観測点)。
+    pub ao_halfres_min: f32,
+    /// async compute 経済モデルの overlap 見積 (pass 作業量 proxy 写像、
+    /// **実測 ms ではない**絶対値解釈不可の proxy、`async_saved_pct` の
+    /// 比率のみ意味を持つ)。【wave 136 EJ-2】planner 全消費者ゼロ
+    /// (wgsl_source 経由の WGSL 登録のみ) だった async_compute への
+    /// 実消費者配線。係数表は PROXY_* 定数に固定文書化 (低スペック実機
+    /// 計測後に校正する設計の仮係数、誠実注記)。
+    pub async_overlap_proxy_ms: f32,
+    /// 同、pipelined スケジュールの見積。
+    pub async_pipelined_proxy_ms: f32,
+    /// 同、(naive-pipelined)/naive の見積削減率 [%] (比率のため意味あり)。
+    pub async_saved_pct: f32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -1758,33 +1782,93 @@ impl FullGraphWiring {
         let vrs_sel = self.vrs_inst.select(shim, (sg.x + sg.y + sg.z) / 3.0);
         let _vrs_code = vrs_sel.as_code();
         let _vrs_area = vrs_sel.pixel_area();
-        // GTAO: 実パレットの不透明ボクセル率由来のオクルージョン標本。
-        // 【wave 83 CG-8】旧実装は `(0..len).filter(|_| true).count()` (素直に
-        // len) を「近傍不透明率由来」と偽って供給していた。実セクション
-        // パレットの不透明率を直接計算する真の実測に根治 (出力値 gtao_occ は
-        // 現行読み捨てのため挙動影響ゼロの誠実化+実質化)。
-        let opaque_ratio = inputs
-            .section_palettes
-            .first()
-            .map(|p| {
-                p.iter()
-                    .filter(|&&b| self.block_lut.is_opaque_branchless(b))
-                    .count() as f32
-                    / (p.len().max(1) as f32)
-            })
-            .unwrap_or(0.0);
-        let mut slice = Vec::with_capacity(8);
-        for i in 0..8 {
-            slice.push((i as f32 * 0.125, opaque_ratio.min(1.0)));
-        }
-        let gtao_occ = self.gtao_inst.occlusion(1.0, &[slice]);
-        let _ = gtao_occ;
+        // 【wave 136 EJ-1 (2026-07-26)】GTAO 真断面化 + deinterleave_ao 実配線。
+        // 旧版 (wave 83 CG-8 由来) は合成スライス (全サンプル高 = opaque_ratio
+        // .min(1.0) ≤ center=1.0) で遮蔽が常に非発生 (gtao_occ ≡ 1.0 の定数
+        // 退化) + `_ = gtao_occ` 破棄の「評価実効・消費なし」中間構造
+        // (EH-1 同型) だった。新指令 §7 消化: 真のパレット高さ場断面に根治
+        // し、gtao 再評価と半解像度 AO パイプラインの品質監視値を report へ
+        // 実フィールド書出し (`determinism_pin_set` 比較集合入り)。パレット
+        // 無しは (1.0,1.0,1.0) = 遮蔽評価対象なしの仕様値を明記。
+        let (gtao_occ, ao_mean, ao_min) = match inputs.section_palettes.first() {
+            Some(palette) => {
+                let depth = section_heightfield_depth(palette, &self.block_lut);
+                // 中央断面 (z=8 行): offset は高さ場単位系 |x−8|/16 (x=8 の
+                // off=0 は slice_occlusion 内で skip される規約で明記)。
+                let s = crate::binary_greedy_meshing::SECTION_SIZE;
+                let center = depth[8 * s + 8];
+                let slice: Vec<(f32, f32)> = (0..s)
+                    .map(|x| (((x as f32) - 8.0).abs() / s as f32, depth[8 * s + x]))
+                    .collect();
+                let gtao = self.gtao_inst.occlusion(center, &[slice]);
+                let halves =
+                    crate::deinterleave_ao::deinterleaved_ao(&depth, s, s, &WIRING_AO_PARAMS);
+                let full = crate::deinterleave_ao::reinterleave_denoise(
+                    &halves,
+                    &depth,
+                    s,
+                    s,
+                    &WIRING_AO_PARAMS,
+                );
+                let sum: f32 = full.iter().sum();
+                let min = full.iter().copied().fold(1.0f32, f32::min);
+                (gtao, sum / full.len() as f32, min)
+            }
+            None => (1.0, 1.0, 1.0),
+        };
+        report.gtao_occ = gtao_occ;
+        report.ao_halfres_mean = ao_mean;
+        report.ao_halfres_min = ao_min;
         let shadow_res = self
             .shadow_lod_inst
             .shadow_map_resolution(report.draw_command_count as f32 + 16.0);
         let _casts = self.shadow_lod_inst.casts_shadow(24.0);
         let _caster = self.shadow_lod_inst.caster_lod(24.0);
         let _ = shadow_res;
+        // 【wave 136 EJ-2 (2026-07-26)】async compute 経済モデル配線:
+        // wiring の決定的作業量指標から proxy cost パス集合を構築し planner
+        // で overlap/pipelined/saved を計算 → report 実フィールドへ
+        // (async_compute 全消費者ゼロの §7 消化)。絶対 ms 解釈は不可で
+        // saved_pct の相対比率のみ物理的意味 (係数表 PROXY_* は
+        // 低スペック実機計測後に校正する仮係数として固定文書化)。
+        {
+            use crate::async_compute::{AsyncComputePlanner, Pass, Queue};
+            let gbuffer_cost = report.draw_command_count as f32 * PROXY_GBUFFER_PER_DRAW;
+            // 現行供給 coverage = draw+16 ≥ 16 → clamp(1) → shadow_res ≡
+            // max_resolution=2048 確定 (wave 136 検直済) → shadow_cost ≡ 2.0。
+            let shadow_cost = shadow_res as f32 / PROXY_SHADOW_RES_DIV;
+            let cull_cost = inputs.chunk_keys.len() as f32 * PROXY_CULL_PER_CHUNK;
+            let cl_cost = report.cluster_lit_clusters as f32 * PROXY_CLUSTER_PER_LIT;
+            let post_cost =
+                (inputs.screen_w as f32 * inputs.screen_h as f32) * PROXY_POST_PER_PIXEL;
+            let planner = AsyncComputePlanner::new(vec![
+                Pass {
+                    name: "gbuffer",
+                    queue: Queue::Graphics,
+                    cost_ms: gbuffer_cost,
+                },
+                Pass {
+                    name: "shadows",
+                    queue: Queue::Graphics,
+                    cost_ms: shadow_cost,
+                },
+                Pass {
+                    name: "cull",
+                    queue: Queue::Compute,
+                    cost_ms: cull_cost,
+                },
+                Pass {
+                    name: "cluster_light",
+                    queue: Queue::Compute,
+                    cost_ms: cl_cost,
+                },
+            ]);
+            let plan = planner.plan(post_cost, shadow_cost);
+            report.async_overlap_proxy_ms = planner.overlap_time();
+            report.async_pipelined_proxy_ms = plan.pipelined;
+            report.async_saved_pct = plan.saved_pct;
+        }
+
         let fos = crate::foveated::shading_rate(
             crate::foveated::Vec3::new(0.5, 0.5, 0.0),
             crate::foveated::Vec3::new(
@@ -2095,6 +2179,62 @@ fn out_sign(face: u32) -> i32 {
         _ => -1,
     }
 }
+
+// ---------------------------------------------------------------------------
+// 【wave 136 EJ】AO 高さ場断面 + async compute 経済モデル (wiring 配線)
+// ---------------------------------------------------------------------------
+
+/// 【EJ-1】セクションパレットから X-Z 高さ場を取り線形正規化深度 [0,1] に
+/// 写像する pure ヘルパ。列 (x,z) について不透明ボクセル最上 y+1 を列高とし
+/// `/ SECTION_SIZE` で正規化 (16 は 2 冪のため f32 無丸め、高さ刻み =
+/// 0.0625 = 0x3D800000 機械確定: rq ej_ao.rq)。空列=0.0 は ao_pixel の
+/// 「z0<=0 → AO=1.0 (遮蔽対象なし)」規約と整合する (全エア断面 → 全 1.0
+/// exact、module テスト pin 済)。数学的に horizon AO は任意の高さプロ
+/// ファイルに正準に定義できる (単位系は一貫してボクセル断面単位、画面
+/// 深度セマンティクスとは区別 —「断面プロファイル AO 評価」と明記)。
+pub fn section_heightfield_depth(
+    palette: &SectionPalette,
+    block_lut: &crate::branchless_block::BlockLut,
+) -> Vec<f32> {
+    let s = crate::binary_greedy_meshing::SECTION_SIZE;
+    let mut depth = vec![0.0f32; s * s];
+    for z in 0..s {
+        for x in 0..s {
+            let mut col: u32 = 0;
+            for y in 0..s {
+                if block_lut.is_opaque_branchless(palette[section_idx(x, y, z)]) {
+                    col = (y as u32) + 1;
+                }
+            }
+            depth[z * s + x] = col as f32 / s as f32;
+        }
+    }
+    depth
+}
+
+/// 【EJ-1】wiring 配線の固定 AO パラメータ (rq 機械検算済):
+/// radius*16 = 16 px で 16x16 高さ場全域に到達 (s=1 変位 2.0px/
+/// s=8 変位 16.0px 機械確定)、samples=8、eps=0.06 < 刻み 0.0625 で
+/// 1 ブロック段差を真に reject するエッジ保持 (denoise 契約 module pin 済)。
+pub const WIRING_AO_PARAMS: crate::deinterleave_ao::AoParams = crate::deinterleave_ao::AoParams {
+    radius: 1.0,
+    samples: 8,
+    intensity: 1.0,
+    depth_epsilon: 0.06,
+};
+
+/// 【EJ-2】draw 1 件あたりの gbuffer 作業量 proxy (仮係数、実機校正前設計)。
+pub const PROXY_GBUFFER_PER_DRAW: f32 = 0.008;
+/// 【EJ-2】shadow 解像度から人手時間 proxy への除数 (2 冪で無丸め、機械確定)。
+pub const PROXY_SHADOW_RES_DIV: f32 = 1024.0;
+/// 【EJ-2】chunk 1 件あたりのカリング調査 proxy 作業量 (列挙基数基準、
+/// カリング「排除数」ではなく「対象総数」に比例させるのが真の仕事量契約)。
+pub const PROXY_CULL_PER_CHUNK: f32 = 0.002;
+/// 【EJ-2】点灯クラスタ 1 件あたりの clustered light 集約 proxy 作業量。
+pub const PROXY_CLUSTER_PER_LIT: f32 = 0.01;
+/// 【EJ-2】ピクセル 1 個あたりの post-FX chain proxy 作業量 (ワックス
+/// パス群を画素単位に一括正規化した名目見積)。
+pub const PROXY_POST_PER_PIXEL: f32 = 0.000001;
 
 /// HUD 統計バーのレイヤー色。【EB-1 (2026-07-26 修正)】旧式は
 /// `0xFF30_8040 + (i as u32) << 4` — Rust は `<<` より `+` が強く結合
@@ -2618,6 +2758,36 @@ mod strict_tests {
             "{ctx}: cluster_lit_clusters"
         );
         assert_eq!(
+            a.gtao_occ.to_bits(),
+            b.gtao_occ.to_bits(),
+            "{ctx}: gtao_occ (bit)"
+        );
+        assert_eq!(
+            a.ao_halfres_mean.to_bits(),
+            b.ao_halfres_mean.to_bits(),
+            "{ctx}: ao_halfres_mean (bit)"
+        );
+        assert_eq!(
+            a.ao_halfres_min.to_bits(),
+            b.ao_halfres_min.to_bits(),
+            "{ctx}: ao_halfres_min (bit)"
+        );
+        assert_eq!(
+            a.async_overlap_proxy_ms.to_bits(),
+            b.async_overlap_proxy_ms.to_bits(),
+            "{ctx}: async_overlap_proxy_ms (bit)"
+        );
+        assert_eq!(
+            a.async_pipelined_proxy_ms.to_bits(),
+            b.async_pipelined_proxy_ms.to_bits(),
+            "{ctx}: async_pipelined_proxy_ms (bit)"
+        );
+        assert_eq!(
+            a.async_saved_pct.to_bits(),
+            b.async_saved_pct.to_bits(),
+            "{ctx}: async_saved_pct (bit)"
+        );
+        assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
         );
@@ -2840,5 +3010,249 @@ mod strict_tests {
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    /// 【wave 136 EJ】empty inputs golden — 全値を rq 事前導出で閉じて導出
+    /// (ej_async.rq: PROXY bits・shadow_res≡2048→2.0・post=2.0736 (0x4004B5DD)・
+    /// naive=post, pipelined=2.0, saved=3.549385 (0x40632920))。
+    #[test]
+    fn tick_world_empty_inputs_ej_golden() {
+        let (dir, mut w) = unique_wiring("empty_ej");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        for t in 1..=4u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            assert_eq!(
+                r.gtao_occ.to_bits(),
+                0x3F80_0000,
+                "tick {t}: パレットなし → gtao=1.0"
+            );
+            assert_eq!(
+                r.ao_halfres_mean.to_bits(),
+                0x3F80_0000,
+                "tick {t}: ao mean=1.0"
+            );
+            assert_eq!(
+                r.ao_halfres_min.to_bits(),
+                0x3F80_0000,
+                "tick {t}: ao min=1.0"
+            );
+            assert_eq!(
+                r.async_overlap_proxy_ms.to_bits(),
+                0x4000_0000,
+                "tick {t}: overlap = max(g=2.0, c=0) (rq ej_async)"
+            );
+            assert_eq!(
+                r.async_pipelined_proxy_ms.to_bits(),
+                0x4000_0000,
+                "tick {t}: pipelined = g = 2.0 (rq ej_async)"
+            );
+            assert_eq!(
+                r.async_saved_pct.to_bits(),
+                0x4063_2920,
+                "tick {t}: saved = (2.0736-2.0)/2.0736*100 bits = 0x40632920 (rq ej_async)"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 136 EJ】chunked (全不透明パレット: 高さ場 16/16=1.0 全域)'
+    /// フラット高さ場 → gtao/AO は 1.0 exact の pin + async 値 probe。
+    #[test]
+    fn tick_world_chunked_inputs_ej_golden() {
+        let (dir, mut w) = unique_wiring("chunk_ej");
+        let mut inputs = chunked_inputs();
+        for t in 1..=3u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            assert_eq!(
+                r.gtao_occ.to_bits(),
+                0x3F80_0000,
+                "tick {t}: 全高 16 フラット高さ場 → gtao=1.0"
+            );
+            assert_eq!(
+                r.ao_halfres_mean.to_bits(),
+                0x3F80_0000,
+                "tick {t}: ao mean=1.0"
+            );
+            assert_eq!(
+                r.ao_halfres_min.to_bits(),
+                0x3F80_0000,
+                "tick {t}: ao min=1.0"
+            );
+            // EJ_CHUNK probe → rq ej_chunked.rq で再演 bit 一致を照合後 pin:
+            // draw=1, lit=1149 → g=2.008 (0x40008312) / c=11.492 (0x4137DF3B)
+            assert_eq!(
+                r.async_overlap_proxy_ms.to_bits(),
+                0x4137_DF3B,
+                "tick {t}: overlap = max(2.008, 11.492) (rq 再演照合済 golden)"
+            );
+            assert_eq!(
+                r.async_pipelined_proxy_ms.to_bits(),
+                0x4139_0CB2,
+                "tick {t}: pipelined = c+(post−shadow).max(0) (rq golden)"
+            );
+            assert_eq!(
+                r.async_saved_pct.to_bits(),
+                0x416B_E40B,
+                "tick {t}: saved = (13.5656−11.5656)/13.5656*100 = 14.743175 (rq golden)"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 136 EJ】段差パレット (x<8: 列高 2、x>=8: 列高 4) で AO/GTAO が
+    /// 真に変動する特性 pin + golden probe: フラットの定数 1.0 退化からの
+    /// 脱却が存在する場に対して遮蔽が発生することを強制 (検出空白回避)。
+    #[test]
+    fn tick_world_step_palette_ej_ao_varies() {
+        let (dir, mut w) = unique_wiring("step_ej");
+        let mut sec = [0u16; 4096];
+        for z in 0..16usize {
+            for x in 0..8usize {
+                for y in 0..2usize {
+                    sec[section_idx(x, y, z)] = 1;
+                }
+            }
+            for x in 8..16usize {
+                for y in 0..4usize {
+                    sec[section_idx(x, y, z)] = 1;
+                }
+            }
+        }
+        let mut inputs = chunked_inputs();
+        inputs.section_palettes = vec![sec];
+        for t in 1..=3u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            // 順方向章の probe 実測 (3 tick 全同一) → golden pin:
+            // gtao ≡ 1.0 (中央 x=8 が高側 z=0.25 で (h−c)≤0、GTAO 退化 = 構造明示)、
+            // ao mean=0.90624988 (0x3F67FFBA) / min=0.47019 (0x3EF083B1)。
+            assert_eq!(
+                r.gtao_occ.to_bits(),
+                0x3F80_0000,
+                "tick {t}: 順方向は GTAO 退化 (中央高側で occ 非発生) = 構造 pin"
+            );
+            assert_eq!(
+                r.ao_halfres_mean.to_bits(),
+                0x3F67_FFBA,
+                "tick {t}: 半解像度 AO 平均 golden (実測 probe 固定, 3 tick det 一致)"
+            );
+            assert_eq!(
+                r.ao_halfres_min.to_bits(),
+                0x3EF0_83B1,
+                "tick {t}: 半解像度 AO 最小 golden (段差遮蔽の真値)"
+            );
+            assert!(
+                r.ao_halfres_min.to_bits() != 0x3F80_0000 || r.gtao_occ.to_bits() != 0x3F80_0000,
+                "tick {t}: 段差断面で AO/GTAO の少なくとも一方が 1.0 未満を観測せよ"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 136 EJ】段差逆 (x<8: 列高 4、x>=8: 列高 2) では GTAO 中央断面
+    /// (x=8 = 低側 z=0.125) の左隣が高いため (h−c)/off > 0 → atan > 0 →
+    /// occ > 0 → gtao_occ < 1.0 が真に発生することを pin (順方向の step
+    /// では中央が高側にあり (h−c)≤0 で GTAO が退化=1.0 に留まる検出空白
+    /// を本逆向きで構造排除)。golden は実測 probe → rq 閉形式 window 照合。
+    #[test]
+    fn tick_world_step_palette_reverse_ej_gtao_varies() {
+        let (dir, mut w) = unique_wiring("step_rev_ej");
+        let mut sec = [0u16; 4096];
+        for z in 0..16usize {
+            for x in 0..8usize {
+                for y in 0..4usize {
+                    sec[section_idx(x, y, z)] = 1;
+                }
+            }
+            for x in 8..16usize {
+                for y in 0..2usize {
+                    sec[section_idx(x, y, z)] = 1;
+                }
+            }
+        }
+        let mut inputs = chunked_inputs();
+        inputs.section_palettes = vec![sec];
+        for t in 1..=3u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            assert_eq!(
+                r.gtao_occ.to_bits(),
+                0x3E97_2028,
+                "tick {t}: GTAO 閉形式 golden — 1−atan2(2,1)/(π/2) rq 導出 == 実測 bit 一致"
+            );
+            assert_eq!(
+                r.ao_halfres_mean.to_bits(),
+                0x3F67_F065,
+                "tick {t}: 逆段差 AO 平均 golden (実測 probe 固定)"
+            );
+            assert_eq!(
+                r.ao_halfres_min.to_bits(),
+                0x3F17_FB8C,
+                "tick {t}: 逆段差 AO 最小 golden (実測 probe 固定)"
+            );
+            assert!(
+                r.gtao_occ < 1.0,
+                "tick {t}: 逆向き段差で GTAO 真値変動 (occ > 0) を必須観測"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 136 EJ-1】高さ場ヘルパの直接 golden pin。
+    /// adversarial (a) (全列 −1 uniform shift) は AO horizon が差分オペレータ
+    /// であるため tick golden 系では構造的に非検出 (誠実記録) — 本テストで
+    /// 高さ場出力レベル自体を pin して変異を RED 化する検出空白補完。
+    #[test]
+    fn section_heightfield_depth_golden_levels() {
+        let lut = crate::branchless_block::BlockLut::new();
+        // 段差: x<8 列高 4、x>=8 列高 2 (理由: 逆段差テストと対称底盤)
+        let mut sec = [0u16; 4096];
+        for z in 0..16usize {
+            for x in 0..8usize {
+                for y in 0..4usize {
+                    sec[section_idx(x, y, z)] = 1;
+                }
+            }
+            for x in 8..16usize {
+                for y in 0..2usize {
+                    sec[section_idx(x, y, z)] = 1;
+                }
+            }
+        }
+        let depth = section_heightfield_depth(&sec, &lut);
+        let c4 = depth.iter().filter(|v| v.to_bits() == 0x3E80_0000).count();
+        let c2 = depth.iter().filter(|v| v.to_bits() == 0x3E00_0000).count();
+        assert_eq!(
+            c4, 128,
+            "列高 4/16=0.25 (0x3E800000) の列 census = 8*x * 16 z"
+        );
+        assert_eq!(c2, 128, "列高 2/16=0.125 (0x3E000000) の列 census");
+        assert_eq!(
+            depth[8 * 16 + 7].to_bits(),
+            0x3E80_0000,
+            "(x=7,z=8) 高 4 → 0.25 exact"
+        );
+        assert_eq!(
+            depth[8 * 16 + 9].to_bits(),
+            0x3E00_0000,
+            "(x=9,z=8) 高 2 → 0.125 exact"
+        );
+        // 上端スパイク (y=15) → 16/16 = 1.0 exact (col=y+1 オフセットの検出点)
+        let mut sec2 = [0u16; 4096];
+        sec2[section_idx(5, 15, 12)] = 1;
+        let depth2 = section_heightfield_depth(&sec2, &lut);
+        assert_eq!(
+            depth2[12 * 16 + 5].to_bits(),
+            0x3F80_0000,
+            "y=15 頂上 → 16/16 = 1.0 exact (off-by-one 捕捉点)"
+        );
+        // 全ゼロ → 空列 0.0 exact (z0<=0 early return 境界)
+        assert_eq!(
+            section_heightfield_depth(&[0u16; 4096], &lut)[10 * 16 + 10].to_bits(),
+            0
+        );
     }
 }
