@@ -7800,3 +7800,78 @@ in-place rustfmt 正準化で復帰 (修正後 md5 変化: 再記録)・固定�
 20ba281915d1db31dfd96415f1db4bee、src+/tmp+rsift/bak 三重照合)・
 digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
 台帳 559・TRIGGER 185。
+
+## GC. gui_composite.rs / full_graph_wiring.rs (wave 149, 2026-07-28)
+
+対象 gui_composite.rs 166→286 行 (全 rewrite)、full_graph_wiring.rs
+3811→4033。census grep 機械確定: `should_render_gui` は wiring:542 のみ
+`let _gui_decision` 破棄 (§7)、on_input_event/on_animation_window/
+surface_valid()/invalidate()/GuiBlit/GuiDecision 型名参照は全消費者
+ゼロ (本番構築は render_pipeline.rs:1101 の 1 系)、GuiRates は Default
+のみ、dead store last_gui_render_time は read ゼロ。
+
+- GC-1 [高] **捕捉 62 [高]**: `real_dt` 秒契約 (need=1/fps[s]・module
+  test dt=1/120 一次情報) に旧 wiring:542 は ms `inputs.delta_ms`
+  (16.0) を誤供給 → gui_accum 480 倍速蓄積で due 常時真 = 30fps デュ
+  アルレート GUI 機構の構造的全沈黙 (省電力機構の完全無効化)。旧
+  `_gui_decision` 破棄で観測経路ゼロ潜在化 = §7 配線と同時根治しない
+  と有効化直後に無効化状態で実害化する二重構造。call site
+  `delta_ms / 1000.0` 秒化に根治。TDD 修正前 RED 4/4 (cadence/カメラ/
+  screen/dt 振動 strict 全 RED 機械実証、新規 4 本 RED + 1224 filtered
+  = 1228 一致)。修正後 rq gc_gui 機械導出: dt=0x3C83126F
+  (0.01600000076)、need=0x3D088889、render 系列 t∈{1,4,6,8,10,12,14,
+  16} (16 tick で 8 回 ≒ 30 GUI fps vs 62.5 実 fps、f32 逐次蓄積の
+  非自明系列で単純交互模写不可 = pin 検出感度に寄与)。
+- GC-2 [中] §7 消化 14: report 実フィールド 5 配線 (gui_rendered_
+  surface/gui_target_fps/gui_invalidated/gui_reuse_cached_scene/
+  gui_surface_valid) + det_subset pin 5 (module から wall-clock 依存
+  `now` 引数撤去済で inputs のみ駆動の完全決定的機構 → det 正当)。
+  golden empty t∈{1,4}/chunked t∈{1,4,6,8}・fps 0x41F00000。
+- GC-3 [中] on_input_event 実駆動: camera_dir 変化 (視点操作=入力駆動)
+  prev 照合実検出 (prev_gui_camera_dir 新設・初回 None 非発火)。
+  振動 strict: due=false tick で invalidated=true+即 render、t3 では
+  クリア+非 due 復帰 (accum=0 起点 rq)。
+- GC-4 [低] 機構処置 (§7 接続か削除か): 配線 — invalidate() を
+  screen_w/h 変化 (= GUI 面実破棄事象) 実駆動 (prev_gui_screen)、
+  surface_valid() は report 観測面が真の消費地。削除 (census 不可能
+  証明) — anim 系 3+1 (GuiRates::anim_burst_fps/on_animation_window/
+  anim_active_until/`now: f64` 引数: inputs に GUI アニメ事件源不在、
+  捏造は偽装禁止抵触)・dead store last_gui_render_time (read ゼロ・
+  年齢配線は wall-clock 決定性汚染で設計不能)・GuiBlit+scale (src/dst
+  実データ源不在・恒等 1.0 退化配線は lattice 退化と異なり偽装)。
+  animation_window_boosts_rate テストは削除機構に連動除去 (−1)。
+- GC-5 [観] module doc 誠実注記 5 項 (GC-1..GC-4 経緯 + fps_now 生
+  レート報告契約/NaN・負 dt 静寂伝播設計/anti-stutter 追従 1 周期上限
+  (0.05 溜り残存 0x3D05CD7B・0.1 リセット rq 確定))。
+- GC-6 [低] strict 10: module 6 (dt=0.02 系列 [T,F,T,F,T,F,T,T,F,T]
+  — t7→t8 連続 render は境界 gap 2^-27 (need − accum=0x32000000) を
+  accum が 5 回目蓄積で跨ぐ f32 非自明挙動、**私の初予想「t5 due」は
+  rq で 5 ulp 未達と誤り訂正 (誠実記録)**・invalidated カウンタ消費+
+  accum 0 正規化・fps 底上げ契約 (need=1.0 / fps_now=0.0 生報告)・
+  NaN 2 系統 (fps→need max 規律 1.0/dt→accum 永久汚染不発伝播)・
+  anti-stutter リセット系列・Default 0x41F00000+reuse 常時 true) +
+  wiring 4 (16ms cadence golden/camera invalidate/screen resize/dt=20
+  振動 [T,F,T,F,T,F,T,T,F,T,F,T,T,F,T,F] 9/16・16ms 系列と assert_ne
+  構成的非等値)。
+
+adversarial 5 系統 (全検出・非検出ゼロ): (a) 捕捉 62 revert (ms 誤供給)
+**6 RED** (GUI strict 4 + empty/chunked golden の系列 pin)・(b)
+on_input_event 駆動撤去 **1 RED** (camera 振動のみ=補完正確)・(c)
+invalidate 駆動撤去 **1 RED** (screen_resize のみ)・(d) anti-stutter
+除去 **1 RED** (anti_stutter_reset のみ、通常系列の carry < need で
+golden 非侵蝕=設計通り)・(e) pending_invalidations reset 除去
+**2 RED** (module カウンタ pin + wiring camera 振動の二層検出)。
+変異前実体コピー /tmp+rsift/bak 先行・grep -c 適用確認後計測・
+毎回復元 MD5-VERIFIED 5 回。
+
+opt-gfx **1233 全緑** (最終全量実測 21.34s、net +9、機械検算
+1224+4(wiring)+6(module strict)−1(anim 連動削除)=1233)・api 49 全緑・
+replay 16 全緑・lib 本編警告 0・全厳密値 rq gc_gui 事前導出
+(dt/need bits・16ms/20ms 両系列・carry bits・stutter 境界・NaN 規律、
+全 assert 通過、python 引退継続)・fmt: HEAD native 原生存続逸脱 1 件
+(Self{gui_fps 30.0, anim_burst_fps 60.0} 行内) は rewrite 削除に伴い
+消滅・追記分は in-place rustfmt で自己起因 0・固定版 md5 三重保存
+(gui_composite 8768341eff0ced585853062ea437c385・wiring
+ad3c9256a4e1f212b3ce5cf26a8267ae、src+/tmp+rsift/bak 三重照合)・
+digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
+台帳 565・TRIGGER 186。

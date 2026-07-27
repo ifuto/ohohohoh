@@ -186,6 +186,25 @@ pub struct FrameWiringReport {
     /// 【wave 148 EU-2】同上: POM 最終 uv の y オフセット (final_uv.y - 0.5、
     /// 負 = 高さ場の奥方向シフト)。golden は rq eu_pom 全導出 (bit 一致 pin)。
     pub parallax_uv_offset_y: f32,
+    /// 【wave 149 GC-2】`should_render_gui` の判定は wiring:542 で実呼出
+    /// されていたものの `let _gui_decision` で全結果消費者ゼロ (§7 消化 14)
+    /// だったものを実フィールド化: この tick で GUI オフスクリーン面を
+    /// 再描画すべきか (デュアルレート・スケジューラの実効判定)。
+    pub gui_rendered_surface: bool,
+    /// 【wave 149 GC-2】同上: 判定時点の目標 GUI FPS (anim 経路撤去後は
+    /// GuiRates::gui_fps 定数、既定 30.0)。
+    pub gui_target_fps: f32,
+    /// 【wave 149 GC-2/GC-3】同上: この tick に入力イベント (wiring では
+    /// camera_dir 変化を視点操作=入力駆動として実検出) で即時無効化が
+    /// 発火したか (due 非依存の再描画トリガ)。
+    pub gui_invalidated: bool,
+    /// 【wave 149 GC-2】同上: 3D シーンは前回キャッシュ再利用か
+    /// (module 仕様では常に true、契約 pin)。
+    pub gui_reuse_cached_scene: bool,
+    /// 【wave 149 GC-2/GC-4】Tick 終了時点の GUI 面 valid (screen_w/h
+    /// 変化で invalidate() が実駆動される経路の観測面、
+    /// `GuiCompositeClock::surface_valid()` の真の消費地)。
+    pub gui_surface_valid: bool,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -262,6 +281,11 @@ pub struct FullGraphWiring {
     governor: crate::quality_governor::QualityGovernor,
     power: crate::power_policy::PowerPolicy,
     gui_clock: crate::gui_composite::GuiCompositeClock,
+    // 【wave 149 GC-3/GC-4】GUI 時計への実駆動イベント検出用 prev 値。
+    // camera_dir 変化 = 視点操作入力 (on_input_event 実駆動)、
+    // screen_w/h 変化 = GUI 面破棄事象 (invalidate 実駆動)。
+    prev_gui_camera_dir: Option<[f32; 3]>,
+    prev_gui_screen: Option<(u32, u32)>,
     particles: crate::particle_control::ParticleController,
     be_policy: crate::static_be::BeStaticPolicy,
     be_entries: HashMap<u64, crate::static_be::BePromotionEntry>,
@@ -407,6 +431,10 @@ impl FullGraphWiring {
             gui_clock: crate::gui_composite::GuiCompositeClock::new(
                 crate::gui_composite::GuiRates::default(),
             ),
+            // GC-3/GC-4: camera_dir/screen 変化の実検出用 prev (初回 None =
+            // 非発火、rq gc_gui の t1 系列前提と一致)。
+            prev_gui_camera_dir: None,
+            prev_gui_screen: None,
             particles: crate::particle_control::ParticleController::new(
                 crate::particle_control::ParticleBudget::default(),
             ),
@@ -539,7 +567,38 @@ impl FullGraphWiring {
         report.next_build_budget = Some(self.suggested_build_budget());
         let power_decision = self.power.mode_tick(now_secs, true, false);
         report.power_skip_extra = !power_decision.render;
-        let _gui_decision = self.gui_clock.should_render_gui(now_secs, inputs.delta_ms);
+        // GC-1 (捕捉 62 [高]): `real_dt` は秒契約 (need=1/fps [s]・module
+        // test 一次情報) なのに旧来は ms の `inputs.delta_ms` (16.0) を誤
+        // 供給 → gui_accum が 480 倍速蓄積で due 常時真 = 30fps デュアル
+        // レート機構の構造的全沈黙 (旧 `_gui_decision` 破棄で観測経路が
+        // 無く潜在化。§7 配線と同時根治しないと省電力機構が有効化直後に
+        // 無効化状態で実害化する二重構造)。/1000.0 で秒化に根治。
+        // GC-3: camera_dir 変化 (視点操作=入力駆動) を prev 照合で実検出し
+        // on_input_event を実駆動 (GUI 入力遅延ゼロ設計の真の消費者)。
+        if let Some(prev_dir) = self.prev_gui_camera_dir {
+            if prev_dir != inputs.camera_dir {
+                self.gui_clock.on_input_event();
+            }
+        }
+        self.prev_gui_camera_dir = Some(inputs.camera_dir);
+        // GC-4: screen_w/h 変化 (= GUI オフスクリーン面の実破棄事象) で
+        // invalidate() を実駆動。
+        let cur_screen = (inputs.screen_w, inputs.screen_h);
+        if let Some(prev_screen) = self.prev_gui_screen {
+            if prev_screen != cur_screen {
+                self.gui_clock.invalidate();
+            }
+        }
+        self.prev_gui_screen = Some(cur_screen);
+        let gui_decision = self.gui_clock.should_render_gui(inputs.delta_ms / 1000.0);
+        // GC-2 (§7 消化 14): 旧 `_gui_decision` 全消費者ゼロ破棄から実
+        // フィールド化。全値 inputs 系列のみ由来 (module 側で wall-clock
+        // 依存を撤去済、GC-5 注記 2) → det subset 登録が正当。
+        report.gui_rendered_surface = gui_decision.render_gui_surface;
+        report.gui_target_fps = gui_decision.fps_now;
+        report.gui_invalidated = gui_decision.invalidated;
+        report.gui_reuse_cached_scene = gui_decision.reuse_cached_scene;
+        report.gui_surface_valid = self.gui_clock.surface_valid();
 
         // DAG: 実フレームのパス依存グラフを構築・評価。
         let mut dag = crate::dag_scheduler::DagScheduler::new();
@@ -3028,6 +3087,29 @@ mod strict_tests {
             b.parallax_uv_offset_y.to_bits(),
             "{ctx}: parallax_uv_offset_y"
         );
+        // GC-2: GUI デュアルレート実消費フィールド (全値 inputs のみ由来の
+        // 完全決定的機構、GC-5 注記 2 — wall-clock 非依存)。
+        assert_eq!(
+            a.gui_rendered_surface, b.gui_rendered_surface,
+            "{ctx}: gui_rendered_surface"
+        );
+        assert_eq!(
+            a.gui_target_fps.to_bits(),
+            b.gui_target_fps.to_bits(),
+            "{ctx}: gui_target_fps"
+        );
+        assert_eq!(
+            a.gui_invalidated, b.gui_invalidated,
+            "{ctx}: gui_invalidated"
+        );
+        assert_eq!(
+            a.gui_reuse_cached_scene, b.gui_reuse_cached_scene,
+            "{ctx}: gui_reuse_cached_scene"
+        );
+        assert_eq!(
+            a.gui_surface_valid, b.gui_surface_valid,
+            "{ctx}: gui_surface_valid"
+        );
         assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
@@ -3171,6 +3253,18 @@ mod strict_tests {
                 0x0000_0000,
                 "tick {t}: 空 → オフセット +0.0 (rq eu_pom)"
             );
+            // GC-1/GC-2 golden (rq gc_gui): dt=0.016・need=1/30 の系列で
+            // render は t∈{1,4} (t1=未 valid・t4=due)。camera/screen 不変で
+            // invalidated 非発火、surface valid は t1 以降維持。
+            assert_eq!(
+                r.gui_rendered_surface,
+                t == 1 || t == 4,
+                "tick {t}: GUI デュアルレート系列 (rq gc_gui)"
+            );
+            assert_eq!(r.gui_target_fps.to_bits(), 0x41F0_0000, "tick {t}: 30.0");
+            assert!(!r.gui_invalidated, "tick {t}: 非発火");
+            assert!(r.gui_reuse_cached_scene, "tick {t}: 契約");
+            assert!(r.gui_surface_valid, "tick {t}: t1 render 後維持");
             assert_eq!(r.vram_used_bytes, 0, "tick {t}: 実アロケーションなし");
             assert_eq!(
                 r.subsystems_active, 60,
@@ -3375,6 +3469,15 @@ mod strict_tests {
                 0xBEF0_0000,
                 "tick {t}: offset_y -0.46875 (rq eu_pom)"
             );
+            // GC-1/GC-2 golden (rq gc_gui): t∈{1,4,6,8} (16ms 系列 8 tick)。
+            assert_eq!(
+                ra.gui_rendered_surface,
+                t == 1 || t == 4 || t == 6 || t == 8,
+                "tick {t}: GUI デュアルレート系列 (rq gc_gui)"
+            );
+            assert_eq!(ra.gui_target_fps.to_bits(), 0x41F0_0000, "tick {t}");
+            assert!(!ra.gui_invalidated, "tick {t}: camera/screen 不変 → 非発火");
+            assert!(ra.gui_surface_valid, "tick {t}");
             // EO-1 golden (rq eo_shadow 機械列挙): 24 クアッド (x,z) ノルム
             // proxy で culled=8 (i=0..7 ノルム<4.0)、cast=16 は全て
             // ノルム<16 (max sqrt(138.5)=0x413C4C32) → lod 3 バケット集中。
@@ -3389,7 +3492,126 @@ mod strict_tests {
         let _ = std::fs::remove_dir_all(&dir_b);
     }
 
-    /// CI-1: FIFO 被害者選択 (挿入順最古)、置換の順位不変、stale skip、
+    /// GC-1/GC-2 golden: 16ms (62.5Hz) 駆動での GUI デュアルレート系列。
+    /// rq gc_gui 確定: dt=0x3C83126F・need=0x3D088889、render は
+    /// t ∈ {1,4,6,8,10,12,14,16} (f32 蓄積の非自明系列、16 tick で 8 回
+    /// ≒ 30 GUI fps)。t1 は surface 未 valid、以降は due のみ駆動。
+    #[test]
+    fn tick_world_gui_dual_rate_cadence_golden() {
+        const EXPECT: [bool; 16] = [
+            true, false, false, true, false, true, false, true, false, true, false, true, false,
+            true, false, true,
+        ];
+        let (dir, mut w) = unique_wiring("gc_gui_cadence");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        for i in 0..16usize {
+            inputs.frame_index = i as u64 + 1;
+            let r = w.tick_world(&inputs);
+            assert_eq!(
+                r.gui_rendered_surface,
+                EXPECT[i],
+                "tick {}: rq gc_gui 導出系列との一致 (捕捉 62 ms 誤供給は全 true 化で RED)",
+                i + 1
+            );
+            assert_eq!(r.gui_target_fps.to_bits(), 0x41F0_0000, "30.0 定数");
+            assert!(!r.gui_invalidated, "camera/screen 不変 → 非発火");
+            assert!(r.gui_reuse_cached_scene, "契約: 常時キャッシュ再利用");
+            assert!(r.gui_surface_valid, "t1 render 後は常に valid");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// GC-3 稼働 pin: camera_dir 変化 (視点操作=入力駆動) で on_input_event
+    /// が実駆動 → due=false の tick でも即時 render + invalidated=true。
+    #[test]
+    fn tick_world_gui_camera_input_invalidates() {
+        let (dir, mut w) = unique_wiring("gc_gui_cam");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 1;
+        let r1 = w.tick_world(&inputs);
+        assert!(r1.gui_rendered_surface);
+        assert!(!r1.gui_invalidated, "初回 prev なし → 非発火 (rq)");
+        // t2: accum=0.016 < need で due 非成立の tick に camera 変更。
+        inputs.camera_dir = [0.0, 1.0, 1.0];
+        inputs.frame_index = 2;
+        let r2 = w.tick_world(&inputs);
+        assert!(
+            r2.gui_invalidated,
+            "camera_dir 変化で on_input_event 実駆動"
+        );
+        assert!(
+            r2.gui_rendered_surface,
+            "due 非依存で即時再描画 (入力遅延ゼロ設計)"
+        );
+        // t3: camera 再び不変 → invalidated クリア、due 未成立 → render なし。
+        inputs.frame_index = 3;
+        let r3 = w.tick_world(&inputs);
+        assert!(!r3.gui_invalidated);
+        assert!(!r3.gui_rendered_surface, "accum=0 起点 → t3 非 due (rq)");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// GC-4 稼働 pin: screen 寸法変化 (GUI 面の実破棄事象) で invalidate()
+    /// が実駆動 → 次 tick render=true・surface_valid 再確立。
+    #[test]
+    fn tick_world_gui_screen_resize_invalidates() {
+        let (dir, mut w) = unique_wiring("gc_gui_screen");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 1;
+        let r1 = w.tick_world(&inputs);
+        assert!(r1.gui_surface_valid);
+        assert!(r1.gui_rendered_surface);
+        // t2: 解像度変更 → invalidate() 実駆動 → この tick で即再描画。
+        inputs.screen_w = 1280;
+        inputs.frame_index = 2;
+        let r2 = w.tick_world(&inputs);
+        assert!(r2.gui_rendered_surface, "resize で GUI 面破棄 → 即再描画");
+        assert!(r2.gui_surface_valid, "render 後に valid 再確立");
+        // t3: 不変に戻す → due 未成立 → render なし。
+        inputs.frame_index = 3;
+        let r3 = w.tick_world(&inputs);
+        assert!(!r3.gui_rendered_surface, "resize 後は通常系列へ復帰 (rq)");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// GC-1 振動 pin: delta_ms=20 (50Hz) では cadence が真に変化する。
+    /// rq gc_gui 確定: render t ∈ {1,3,5,7,8,10,12,13,15} (9 回/16 tick、
+    /// 境界 gap 2^-27 で t8/t13 連続 render が発生する f32 非自明系列)。
+    #[test]
+    fn tick_world_gui_dt_varies_cadence() {
+        const EXPECT20: [bool; 16] = [
+            true, false, true, false, true, false, true, true, false, true, false, true, true,
+            false, true, false,
+        ];
+        let (dir, mut w) = unique_wiring("gc_gui_dt");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.delta_ms = 20.0;
+        let mut same_as_16ms = true;
+        const EXPECT16: [bool; 16] = [
+            true, false, false, true, false, true, false, true, false, true, false, true, false,
+            true, false, true,
+        ];
+        for i in 0..16usize {
+            inputs.frame_index = i as u64 + 1;
+            let r = w.tick_world(&inputs);
+            assert_eq!(
+                r.gui_rendered_surface,
+                EXPECT20[i],
+                "tick {} (rq gc_gui)",
+                i + 1
+            );
+            same_as_16ms &= r.gui_rendered_surface == EXPECT16[i];
+        }
+        assert!(
+            !same_as_16ms,
+            "delta_ms 振動で cadence が真に変化 (実経路稼働 pin)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     /// 単一 retry、retry 失敗時の潔い None + 被害者 1 件の bounded 挙動。
     #[test]
     fn gb_eviction_fifo_single_retry_and_stale_skip() {
