@@ -7126,3 +7126,71 @@ opt-gfx **1151 全緑** (net +7 = LEO 3 新規 + wiring 4 新規、機械検算
 1144+3+4=1151、全量 22.29s 機械値)・lib 警告 0・api 49 全緑・
 fmdiff 自己起因逸脱 0 (LEO HEAD 原生 1 行据置)・digest 004c1cf5
 不変・seal 全 6 ゲート PASS。固定版 md5 二重保存。
+
+## EL. tbdr_hints.rs / fragment_ray_box.rs / gpu_runtime.rs (wave 138, 2026-07-27)
+
+新指令 §7 消化 6。対象選定は census grep 機械確定 (残 19 モジュールから
+refs=2 上位 2 件を精査): **TbdrHints unit struct は crate 全体で消費者
+完全ゼロ** (TbdrPass/AttachmentUsage は wiring 初期化 info! 消費ありで
+§7 適合) ・**FRB wgsl_source(&self) は self 不使用の装飾レシーバで
+消費者がモジュール内テストのみ** の 2 件を同型抱き合わせ。精査過程で
+tbdr_hints.wgsl が「GPU シェーダーではない」と自身が宣言する 2 行
+コメントのみのファイルであること (実シェーダー一覧への非シェーダー
+混在) も機械発見。
+
+- **EL-1 [中] TbdrHints struct 消費者完全ゼロ (§7 違反) 根治**: 状態なし
+  unit struct・メソッドは pub const 参照を返すのみで付加価値ゼロ
+  (workspace 全体 grep 使用 0 機械確定) → free fn `wgsl_source()` 様式へ
+  統一 (ssr/bloom/cas 他 20+ モジュール同型) し struct 削除
+  (EJ-2 Vec3/Vec4 完全装飾削除先例準拠)。gpu_runtime:92 の登録を
+  `crate::tbdr_hints::wgsl_source()` 経由に一本化 = WGSL 取得の
+  単一公式アクセスポイント化。strict: free fn ≡ const 同一内容 pin +
+  "No GPU shader required"/"transient" 含有 pin (naga 空受理に代わる
+  内容担保)。
+- **EL-2 [低] TbdrPass 真理値表検出空白補完**: 旧テスト 3 行
+  ((T,F)/(T,T)/(F,F)) で **(F,T) 行が欠落** → strict
+  `truth_table_exhaustive` で bool 4 行全列挙 (rq 事前導出: or 変異は
+  (T,T)(F,F) の **2 行**差異・否定脱落変異は (T,F)(F,T) の 2 行差異。
+  初稿は or 変異 diff を「1 行」と暗算誤記 → **rq assert が事前捕捉**
+  (diff_count==1 失敗 → 正 2、rq 段階 self-catch 採番外)。
+  4 行網羅で両変異クラスを捕捉可能に)。
+- **EL-3 [観] 誠実注記 4 項目** (tbdr_hints module doc 明記):
+  (1) 判定は conservative (writes=false の load-op clear のみ
+  アタッチメントは TBDR 理論上 transient 化可能だが現契約は非対象
+  =Persistent 安全側)。(2) wiring 消費は初期化時固定 2 パターン定数入力
+  の info! 評価 (畳み込み可能なハードコード契約・実パス構造との動的
+  接続なし)。(3) **TBDR_HINTS_WGSL は GPU シェーダーではない** (自身が
+  "No GPU shader required" 宣言) にも関わらず all_wgsl_sources
+  (「実シェーダー一覧」) に登録 → naga 空モジュール受理で検証実効
+  ゼロ (分類実態公表・一覧からの除去は naga 経路と wiring 連結 pin
+  波及のため設計引継ぎ)。(4) lazy_allocated ≡ (recommended_usage()
+  ==Transient) の同値委托。
+- **EL-4 [低] FRB wgsl_source(&self) 装飾除去**: self 不使用レシーバ・
+  消費者テストのみの中間構造 → free fn 化 + gpu_runtime:113 を free fn
+  経由化 (構造体/new/Default は wiring が max_dynamic_voxels を保持・
+  wiring:952 cap 実消費のため維持)。strict: free fn ≡ const pin・
+  new(7)=7/Default=65536=2^16/new(1<<20)=1048576=2^20 pin (rq 導出)・
+  wiring cap 写像 (1048576→128, 65536→128, 7→7) pin・既存 1 テストは
+  呼出形のみ free fn へ機械追従 (検証意図不変)。誠実注記: Default
+  65536 vs wiring 1<<20 の差は意図的 (standalone フォールバック vs
+  明示上限・GPU 不送達構造は CG-6 公表どおり)。
+
+adversarial 5 系統: (a) or 変異 **3 RED** (truth_table+既存 2)・
+(b) 否定脱落 **3 RED** (truth_table+既存 2、(T,T) 偽陽性含む)・
+(c) lazy `==`→`!=` **4 RED** (lazy アサート全滅)・
+(d) gpu_runtime 参照 revert (free fn→const) **非検出** = 同一 &str の
+機能等価・参照様式差のみ → 検出空白として誠実記録 (census grep のみ
+検出経路、wave 135 /16→/8 非検出先例同型)・(e) free fn 返却 `""`
+破壊 **1 RED** (strict 内容 pin のみ検出経路、naga 空受理で他不変)。
+復元 MD5-VERIFIED 各系 (tbdr d59d37ee・frb fa24d9ba・gpu 7c7c6fb7、
+三重照合)。(e) 初回 perl 置換はエスケープ不整合で未適用のまま緑 →
+grep 構造検査で変異未注入を即捕捉し sed 範囲アドレスで再注入
+(採番なし同型: 変異検証前に grep で変異形態確認の手順再確認)。
+
+opt-gfx **1156 全緑** (net +5 = tbdr +2・frb +3、機械検算
+1151+2+3=1156、全量 22.01s 機械値)・lib 警告 0・api 49 全緑・
+fmdiff 自己起因逸脱 0 (3 ファイルとも HEAD 逸脱 0、正準形手術 1 箇所:
+gpu_runtime 登録 4 行形→1 行折畳み、fmdiff は git root 相対パス必須を
+再確認)・san/trailws 0・digest 004c1cf5 rows=357 不変見込
+(all_wgsl_sources 内容は同一 &str・wide_static_bench 非経由)・
+seal 全 6 ゲート PASS 後に push。台帳 515。

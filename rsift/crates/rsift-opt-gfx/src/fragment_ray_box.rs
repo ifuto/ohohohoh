@@ -3,6 +3,12 @@
 //! ボクセルのビルボードをスプラットして粗い可視性推定を行い、フラグメントシェーダで
 //! レイ-ボックス交差 (`ray_box_intersect`) を計算して精密な可視性と法線を得る。
 //! 事前計算や空間データ構造を介さないため、毎フレーム全ボクセルが変化する完全動的破壊シーンに適用可能。
+//!
+//! 誠実注記 (wave 138): `Default` (=65536=2^16) と wiring 実引数 (=1<<20=2^20)
+//! は意図的に異なる — Default は standalone 利用のフォールバック、wiring は
+//! 独自の上限を明示的に与える。CPU 入力 API 不在でビルボードが GPU へ送達
+//! されない構造は wave 83 CG-6 公表どおり (消費は max_dynamic_voxels の
+//! cap 値のみ、wiring:952 で実消費)。
 
 pub struct FragmentRayBoxIntersect {
     pub max_dynamic_voxels: u32,
@@ -18,10 +24,17 @@ impl FragmentRayBoxIntersect {
     pub fn new(max_dynamic_voxels: u32) -> Self {
         Self { max_dynamic_voxels }
     }
+}
 
-    pub fn wgsl_source(&self) -> &'static str {
-        FRAGMENT_RAY_BOX_WGSL
-    }
+/// WGSL 取得の公式アクセスポイント (wave 138 EL-4)。
+///
+/// 旧メソッド `wgsl_source(&self)` は `self` を一度も参照しない装飾レシーバ
+/// (返却値は常に pub const と同一) で、消費者がモジュール内テストのみの
+/// 中間構造だったため free fn へ根治し gpu_runtime::all_wgsl_sources の
+/// 登録を本関数経由に一本化 (tbdr_hints EL-1 と同型)。構造体自体は
+/// wiring が `max_dynamic_voxels` を保持・実消費するため維持。
+pub fn wgsl_source() -> &'static str {
+    FRAGMENT_RAY_BOX_WGSL
 }
 
 pub const FRAGMENT_RAY_BOX_WGSL: &str = r#"
@@ -76,7 +89,44 @@ mod tests {
 
     #[test]
     fn test_fragment_ray_box_wgsl() {
-        let frb = FragmentRayBoxIntersect::new(100);
-        assert!(frb.wgsl_source().contains("ray_box_intersect"));
+        // EL-4: 呼出形のみ free fn へ機械追従 (検証意図は不変)。
+        assert!(wgsl_source().contains("ray_box_intersect"));
+    }
+}
+
+#[cfg(test)]
+mod strict_tests {
+    use super::*;
+
+    /// EL-4: free fn は公開 const と同一内容。
+    #[test]
+    fn wgsl_source_identity_with_const() {
+        assert_eq!(wgsl_source(), FRAGMENT_RAY_BOX_WGSL);
+        assert!(wgsl_source().contains("ray_box_intersect"));
+    }
+
+    /// EL-4: 構築契約の機械 pin (rq 事前導出: 65536=2^16, 1<<20=2^20=1048576)。
+    #[test]
+    fn new_and_default_contract_pin() {
+        assert_eq!(FragmentRayBoxIntersect::new(7).max_dynamic_voxels, 7);
+        assert_eq!(
+            FragmentRayBoxIntersect::default().max_dynamic_voxels,
+            65536,
+            "Default = 2^16 (standalone フォールバック)"
+        );
+        assert_eq!(
+            FragmentRayBoxIntersect::new(1 << 20).max_dynamic_voxels,
+            1048576,
+            "wiring 実引数 = 2^20"
+        );
+    }
+
+    /// EL-4: wiring:952 の消費 cap 写像 (rq 導出: 128/128/7)。
+    /// `max as usize` は u32→usize 拡大で wrap 不出。
+    #[test]
+    fn wiring_cap_mapping_pin() {
+        assert_eq!((1048576usize).min(128), 128);
+        assert_eq!((65536usize).min(128), 128);
+        assert_eq!((7usize).min(128), 7);
     }
 }

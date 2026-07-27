@@ -89,7 +89,7 @@ pub fn all_wgsl_sources() -> Vec<(&'static str, &'static str)> {
             crate::vertex_cache_opt::VERTEX_CACHE_OPT_WGSL,
         ),
         ("mip_streaming", crate::mip_streaming::MIP_STREAMING_WGSL),
-        ("tbdr_hints", crate::tbdr_hints::TBDR_HINTS_WGSL),
+        ("tbdr_hints", crate::tbdr_hints::wgsl_source()),
         ("simd_frustum", crate::simd_frustum::SIMD_FRUSTUM_WGSL),
         ("frame_pacing", crate::frame_pacing::FRAME_PACING_WGSL),
         (
@@ -108,10 +108,7 @@ pub fn all_wgsl_sources() -> Vec<(&'static str, &'static str)> {
         ("taa", crate::taa::TAA_WGSL),
         ("aces_tonemap", crate::aces_tonemap::ACES_WGSL),
         ("wboit", crate::wboit::WBOIT_WGSL),
-        (
-            "fragment_ray_box",
-            crate::fragment_ray_box::FRAGMENT_RAY_BOX_WGSL,
-        ),
+        ("fragment_ray_box", crate::fragment_ray_box::wgsl_source()),
         (
             "compute_light_prop",
             crate::compute_light_prop::LIGHT_PROP_WGSL,
