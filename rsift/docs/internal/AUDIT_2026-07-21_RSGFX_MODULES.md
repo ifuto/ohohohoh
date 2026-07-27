@@ -7875,3 +7875,76 @@ replay 16 全緑・lib 本編警告 0・全厳密値 rq gc_gui 事前導出
 ad3c9256a4e1f212b3ce5cf26a8267ae、src+/tmp+rsift/bak 三重照合)・
 digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
 台帳 565・TRIGGER 186。
+
+## EV. volumetric_fog.rs (wave 150, 2026-07-28)
+
+対象 volumetric_fog.rs 181→355 行 + shaders/volumetric_fog.wgsl 同形化。
+census grep 機械確定: raymarch_fog は wiring:1742 実消費 (fog_trans →
+1853-1855 の sky×fog_trans×shadow 色合成で実使用、report 構造体フィー
+ルド非属 = ES/ET 同型の wiring 非侵蝕方針)、wgsl_source は
+gpu_runtime.rs:65 登録 (naga validate 自動網羅テストあり)、Vec3
+new/dot/length/normalize/Add/Mul は本体消費、**Vec4 全 impl・Vec3
+Sub impl は全消費者ゼロ**。変更面は module+WGSL のみ (wiring 無変更)。
+
+- EV-1 [低] 透過率評価の数学的改善: 積連鎖 Πexp(-d_k·seg) →
+  sum-then-exp exp(-seg·Σd_k) (実数厳密等価: exp(-a)exp(-b)≡exp(-a-b))。
+  f32 丸め構造: wiring 同定数 (wiring:1742 実入力 ro=[8,8,8]/rd=[0,0,1]
+  /dist=128/steps=16/base=0.02/scale=0.06/start=32/dither=0.5 → h 常
+  8<32 の定数密度退化) で旧 0x3D9E51EE (0.077304706) は解析参照
+  exp(-2.56)=0x3D9E51F3 より **−5 ulp 劣位** (rq ev_fog: err=
+  0xB3200000)、新形式は解析参照と f32 完全一致 (err=0.0) + exp 呼出
+  16 回→1 回 (低スペック実コスト削減、directive ②)。単調性
+  (farther_is_denser)・[0,1] 域・3 成分同値は両形式で保持、既存 3
+  テスト非侵蝕を rq で事前検証。WGSL も同形化 (var od + exp(-od*seg)
+  splat、gpu_runtime 経由 naga validate 自動 included = wgsl 51 全緑)。
+  【ID 体系誠実注記】wave 149 は E 系列 EV とすべき所をモジュール頭字
+  GC とした記名逸脱 — コミット済 95a7e0b で履歴固定、本 wave は E 系列
+  継続の EV (記名のみ、検証手順は全 wave 同一)。
+- EV-2 [低] Vec4 (型+new+Add/Sub/Mul) + Vec3 Sub impl 完全削除
+  (census 消費者ゼロ機械確定、§7 消化、EU-3/ET-2 同型)。Vec3 は消費
+  面のみ維持 + contract pin。
+- EV-3 [観] module doc 誠実注記 5 項: (1) sum-then-exp 根拠、(2)
+  Vec4/Sub 削除経緯、(3) WGSL/CPU 行対応パリティ + normalize(0) の
+  WGSL 仕様未定義 vs CPU length>1e-8 fallback の非対称 (rd≠0 前提の
+  呼出契約として記録)、(4) NaN/退化契約 (dist NaN → od·seg NaN →
+  全成分 NaN 伝播 fail-visible・dither NaN → clamp 透過 (捕捉 57
+  規律) → t=NaN → h=NaN → (NaN).max(0.0)=0.0 で密度 base mask →
+  T=exp(-Σbase·seg)=0x3EBC5AB3 有限静寂 (fail-loud しない設計)・
+  scale≤0 → max(1e-3) floor、h>start で d underflow 0 → T=1.0 exact
+  0x3F800000)、(5) dither 中心化: closed-form 0.16·(exp(-0.5)−exp
+  (−6.75))=0x3DC65D42 に対する quadrature 誤差 midpoint −0.00242 vs
+  端点 +0.0427/−0.0330 → **17.65×/13.62× 高精度** (捕捉 59 同型)。
+  【私の訂正記録 2 件】(i) 初閾値「µ 級一致 (1e-5)」は 8 層粗分割に
+  対し過剰期待で rq が assert 失敗で捕捉 → 誤差比 pin へ訂正、(ii)
+  初 NaN golden は od=0.08·12.5 の省略形で 0x3EBC5AB2 と 1 ulp 誤り
+  (逐次蓄積 od·12.5=0x3F7FFFFE vs 省略 1.0) → 実装 golden が捕捉、
+  rq 逐次シミュレーションで 0x3EBC5AB3 訂正。
+- EV-4 [低] strict 7 件: wiring 同定数 golden (0x3D9E51F3 + 3 成分
+  同値 + 旧比 −5 ulp 差分 pin)・midpoint 精度 golden (T(0.5)=
+  0x3F68EE32 + T 空間誤差比較)・rd=0 退化 (0x3F390803)・scale floor
+  exact・steps=1+dither 端 (0x3F794497 + dither=1.0 単位区間)・NaN
+  契約 2 系統・Vec3+wgsl 契約 (normalize 3-4-5 0x3F19999A/0x3F4CCCCD・
+  Add/Mul/Default・wgsl_source()==CONST 内容比較 (ET 規律) + sum 形
+  含有 pin)。
+
+adversarial 5 系統: (a) sum-exp revert (積連鎖化) **4 RED** (wiring_
+const/midpoint/zero_rd/nan_contracts、steps=1 は 1 因子で両形式一致=
+構造的緑・正確)・(b) Vec4+Vec4impl 復活 revert **非検出** (43 緑・
+警告 0、dead code 復活はテスト非可視、EU-3(c)/ET-2(b) 同型誠実記録)・
+(c) density の .max(0.0) 除去 **2 RED** (wiring_const: h<start で密度
+爆発 T≠golden・nan_contracts: dither mask がこの max 依存と構造特定)・
+(d) normalize guard 除去 (0 徐算 NaN 化) **1 RED** (zero_rd のみ=
+補完正確)・(e) t 進行 2seg 変異 (配置オフセット) **1 RED** (midpoint
+のみ: steps=1 は最終 sample 後の increment が dead で構造的緑、
+wiring_const は定数密度で緑 — 誠実記録)。変異前実体コピー /tmp+
+rsift/bak 先行・grep -c 適用確認後計測・毎回復元 MD5-VERIFIED 5 回。
+
+opt-gfx **1240 全緑** (最終全量実測 21.27s、net +7、機械検算
+1233+7=1240)・api 49 全緑・replay 16 全緑・wgsl 51 全緑 (naga 新構文
+合法)・lib 本編警告 0・全厳密値 rq ev_fog 事前導出 (新旧 trans/bits・
+解析参照一致・closed-form/quadrature 誤差比・全退化値・NaN 規律、
+全 assert 通過、python 引退継続)・fmt: HEAD 原生逸脱 0、追記分 1 件を
+in-place rustfmt で自己起因 0・固定版 md5 三重保存 (rs fd9720fcf8d48de
+1f51a821cc8d55846・wgsl ef1d4152f9c2305854d6bca65689e629、src+/tmp+
+rsift/bak 三重照合)・digest 004c1cf5fb17bfe8 rows=357 不変・seal
+全 6 ゲート PASS・台帳 569・TRIGGER 187。
