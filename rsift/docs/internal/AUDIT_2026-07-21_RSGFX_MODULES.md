@@ -7948,3 +7948,68 @@ in-place rustfmt で自己起因 0・固定版 md5 三重保存 (rs fd9720fcf8d4
 1f51a821cc8d55846・wgsl ef1d4152f9c2305854d6bca65689e629、src+/tmp+
 rsift/bak 三重照合)・digest 004c1cf5fb17bfe8 rows=357 不変・seal
 全 6 ゲート PASS・台帳 569・TRIGGER 187。
+
+## EW. screen_space_shadow.rs / full_graph_wiring.rs (wave 151, 2026-07-28)
+
+対象 screen_space_shadow.rs 182→409 行、full_graph_wiring.rs (closure 契約
+整合のみ小変更)。census grep 機械確定: cast_sss は wiring:1840 実消費
+(shadow → 1853 sky×fog_trans×shadow 色合成、report 非属=ES/ET/EU 同型
+の非侵蝕方針)、wgsl_source は gpu_runtime.rs:68 登録、Vec3 は全 op が
+本体消費 ((v−pos).length() で Sub も使用 = wave 148-150 系と違い削除
+不可)、**Vec4 全消費者ゼロ**。
+
+- EW-1 [高] **捕捉 63 [高]**: module 契約 (`sample_depth` = occluder 上の
+  点は pos からの進行距離、遮蔽判定 diff=surf−travelled∈[0,2·step]
+  の厚み接触影) に対し wiring の sss_depth closure は **AABB 内で定数
+  0.0 を供給** → diff=0.0−travelled<0 が全 16 step 連鎖 → **SSS は
+  wiring 経路で全入力で常時 lit=1.0 の構造的全沈黙** (接触影 quality
+  機構の完全無効化、捕捉 62 GUI の due 常時真と対称の供給値契約不一致。
+  旧 doc「nearest occluder までの進行距離」の曖昧性が温床)。closure を
+  `(p − sss_origin).length()` 返却へ契約整合 (cast 内 travelled と同式
+  同入力で diff==0.0 exact → 接触影が実効。AABB 包含=占有 proxy の
+  coarse 近似は注記 1 で誠実化: 16³ 空隙を無視する低スペック質 proxy、
+  精細 depth field は GPU WGSL 側 texture 供給)。shadow は色合成に実
+  消費されるが report 非属のため **wiring 層は検出空白構造** — 捕捉 63
+  の TDD 修正前 RED は構造的に不可能で、adversarial (a) の revert が
+  全量 1248 緑維持となることを機械記録 (検出は module dual pin で充足、
+  ES/ET 系先例)。
+- EW-2 [低] Vec4 完全削除 (census、EU-3/EV-2 同型)+ Vec3 全 op 維持
+  contract pin。【私の訂正記録】初 contract golden (4,6,8)→12 は
+  sqrt(116)=10.77… の暗算誤り (directive ⑤違反) で新テスト自身が RED
+  捕捉 → (0,3,4)→5 exact ピタゴラス triple へ訂正。
+- EW-3 [観] module doc 誠実注記 5 項: (1) sample_depth 契約明確化+
+  捕捉 63 経緯 (厚み窓・背面 lit・非接触 lit)、(2) Vec4 削除経緯、
+  (3) travelled f32 実系列 (chunked step1=0x3DF5C28E vs 解析 0.12·|ld|
+  =0x3DF4381B 不一致=成分個別丸め、閉形式置換せず同式対称で diff=0
+  exact 保証の核心)、(4) NaN/退化契約 (NaN depth→lit 側静寂 = 影が
+  消える向き・light=0 同点 16・step=0 同点・NaN 比較 false 連鎖 lit・
+  max_steps=0 即 lit・bias ライト方向 push 自己影抑制・負 bias 逆行)、
+  (5) WGSL/CPU パリティ (行対応同形、surf≥1e30≡is_infinite、境界
+  diff=0/2·step inclusive、travelled=max_dist 等値継続 0.30000001>
+  0.30000001=false、rq ew_sss)。
+- EW-4 [低] strict 8 件: chunked 同型 closure golden (step1 shadow=0.0
+  +sample 1 回 Cell、rq: ld bits/travelled 0x3DF5C28E/v.x 0x4100AD1E)・
+  捕捉 63 再現 pin (旧 0.0 → 全 16 非遮蔽 lit+sample 16、dual)・
+  max_dist 等値継続 sample 3・厚み窓 ±0.01 安全域 (0.19→0.0/0.21→1.0、
+  rq 0x3E428F5C/0x3E570A3C)・NaN depth→lit+16・退化 2 系統 (light=0/
+  max_steps=0 未打診 0)・bias 初回位置 2.75 exact (0x40300000)・
+  Vec3+wgsl 契約。
+
+adversarial 5 系統: (a) 捕捉 63 wiring closure revert **非検出構造**
+(変異適用 grep 確認後の全量 1248 緑維持を機械記録 = shadow report 非属
+の検出空白、補完は module dual pin 2 件が担う誠実記録)・(b) Vec4 復活
+**非検出** (44 緑、EU-3(c) 同型)・(c) travelled `>`→`>=` **1 RED**
+(boundary sample 3→2)・(d) `diff >= 0.0`→`> 0.0` **1 RED** (同値
+closure の diff=0 exact 契約検出、isomorphic のみ)・(e) bias 符号反転
+**1 RED** (bias 初回位置 2.75→2.25 pin)。変異前実体コピー /tmp+
+rsift/bak 先行・grep -c 適用確認後計測・毎回復元 MD5-VERIFIED 5 回。
+
+opt-gfx **1248 全緑** (最終全量実測 21.36s、net +8、機械検算
+1240+8=1248)・api 49 全緑・replay 16 全緑・lib 本編警告 0・全厳密値
+rq ew_sss 事前導出 (ld normalize bits・chunked step1 v/travelled・
+boundary 系列・厚み窓・bias 位置、全 assert 通過、python 引退継続)・
+fmt: HEAD 両ファイル原生逸脱 0、追記分を in-place rustfmt で自己起因 0・
+固定版 md5 三重保存 (sss 17416c5bbf1ea0c75746cec55d54a924・wiring
+60b6e8114b3274f23b8e033aa1332ad0、src+/tmp+rsift/bak 三重照合)・
+digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
+台帳 573・TRIGGER 188。

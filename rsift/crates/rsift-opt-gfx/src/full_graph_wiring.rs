@@ -1823,6 +1823,17 @@ impl FullGraphWiring {
             &crate::ssr::SsrParams::default(),
             &depth_sampler,
         );
+        // EW (捕捉 63 [高]): module 契約は「occluder 上の点は pos からの進行
+        // 距離」だが旧 closure は AABB 内で定数 0.0 を供給 → diff=−travelled
+        // <0 で全 16 step 常時非遮蔽 → SSS は全入力で常時 lit=1.0 の構造的
+        // 全沈黙 (捕捉 62 と対称)。(p−origin).length() で契約整合: cast 内
+        // travelled と同式同入力で diff==0.0 exact → AABB 内で接触影が実効
+        // (AABB 包含=占有 proxy の coarse 近似、screen_space_shadow 注記 1)。
+        let sss_origin = crate::screen_space_shadow::Vec3::new(
+            inputs.camera_pos[0],
+            inputs.camera_pos[1],
+            inputs.camera_pos[2],
+        );
         let sss_depth = |p: crate::screen_space_shadow::Vec3| -> f32 {
             for (mn, mx) in &inputs.chunk_aabbs {
                 if p.x >= mn[0]
@@ -1832,17 +1843,13 @@ impl FullGraphWiring {
                     && p.z >= mn[2]
                     && p.z <= mx[2]
                 {
-                    return 0.0;
+                    return (p - sss_origin).length();
                 }
             }
             f32::INFINITY
         };
         let shadow = crate::screen_space_shadow::cast_sss(
-            crate::screen_space_shadow::Vec3::new(
-                inputs.camera_pos[0],
-                inputs.camera_pos[1],
-                inputs.camera_pos[2],
-            ),
+            sss_origin,
             crate::screen_space_shadow::Vec3::new(0.35, 0.55, 0.75),
             &crate::screen_space_shadow::SssParams::default(),
             &sss_depth,
