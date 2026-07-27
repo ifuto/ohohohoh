@@ -356,10 +356,7 @@ pub struct RenderedFrame {
 impl RenderedFrame {
     pub fn write_tga(&self, path: &std::path::Path) -> Result<(), String> {
         let mut out = Vec::with_capacity(18 + self.rgba.len());
-        out.extend_from_slice(&[
-            0, 0, 2,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        ]);
+        out.extend_from_slice(&[0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]); // TGA 18B 標準ヘッダ (RP-2: 旧来 2B 過剰な 20B で w/h がずれ ffmpeg 復号不能の潜在バグ)
         out.extend_from_slice(&(self.width as u16).to_le_bytes());
         out.extend_from_slice(&(self.height as u16).to_le_bytes());
         out.push(24);
