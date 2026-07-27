@@ -7570,9 +7570,86 @@ opt-gfx **1198 全緑** (21.64s 機械値、net +8 = dp strict 7 + ER-2 1、
 判定列・dist2 golden、python 引退継続)・固定版 md5 三重保存
 (depth_prepass a7925daab4b9effd0cf3b16aef28fe5f・wiring
 0ef1595454f3012d783f1f1a9ff9e89b)・seal 初回 2 FAIL (san: 私の
-コメント簡体字「順(简)」混入 1 件→「順」修正・fmdiff 自己起因
+コメントへの「順」の簡体字版混入 1 件→「順」修正・fmdiff 自己起因
 5 行 → 正準手術 4 箇所: prepass assert 折り・dist2 assert 折り・
 let 収束行化・det assert 折り、dp HEAD 原生 5 行据置) → 再 seal
 全 6 ゲート PASS (digest 004c1cf5fb17bfe8 rows=357 不変)・
 台帳 543・TRIGGER 181。 
 
+
+## ES. motion_blur.rs (wave 145, 2026-07-27)
+
+前 wave 連鎖のモジュ厳密監査。対象 147→153 行区間は本 wave
+編集後 305 行ファイル全体を精読 (変更前 215 行 + strict 約 90
+行)。census grep で Vec3/Vec4 の Sub impl 消費者ゼロ・`wgsl_source`
+は gpu_runtime.rs:71 消費・motion_blur() 本体呼出は
+full_graph_wiring.rs:1783-1792 (MotionBlurParams::default() =
+samples 8・max_velocity 0.1f32=0x3DCCCCCD、velocity =
+camera_speed×camera_dir×0.02 (x,y 成分)、identity sampler) を機械
+確定。出力は frame_color→dof_color→fsr_color→fsr2_out→
+prev_frame_color 履歴のみで report 構造体フィールド非属 (wiring
+golden 非侵蝕を機械確認) のため wiring 変更なし。モーションブラー
+WGSL は include_str! で shaders/motion_blur.wgsl を参照 (identity
+pin 維持)。
+
+- ES-1 [中] **捕捉 59 [小] サンプル配置の非中心化**: 旧
+  `t = i*inv - 0.5` (i∈[0,n)) は位置の平均が `-0.5/n ≠ 0` で、
+  velocity≠0 のときブラー中心が速度と逆行方向へ
+  `max_velocity·velocity·0.5/n` だけ偏向する。camera 前進時に
+  ブレ像が後方へ寄る視覚的誤り。しかも旧式は **samples=1 でも
+  t=-0.5 の端点配置** (速度無関係に許容量いっぱい半幅ずれ) で
+  あった (一点サンプルのはずが uv-0.5v を読む)。TDD 修正前 RED
+  5 件を機械実証 (centered got=1056545178=0x3EF9999A=0.4875 は
+  samples=8 逆行偏向 1/16、rq es_mb 事前導出と完全一致・
+  samples_one 2 件・should_panic 3 件未発火)。修正は
+  `t = (i+0.5)*inv - 0.5` (区分化重心・± 対称配置)。平均
+  exact 0 は rq で機械検算 (samples=8 の対称ペア和は f32 加算
+  順でも exactly 0、2 冪分数経路)。新 golden は 0.5 =
+  0x3F000000 (右辺値 1056964608)。wiring golden 非侵蝕 (上記
+  消費経路由来)。
+- ES-2 [低] Vec3/Vec4 の **Sub impl 完全装飾削除** (crate+
+  workspace census grep で消費者ゼロ機械確定 — 本体は
+  `uv + v*t`/`acc + sample` で Add/Mul のみ使用、use を
+  `std::ops::{Add, Mul}` に統合)。型本体・Add/Mul/Default は
+  消費あり維持 + 削除による検証空洞を残さない契約 pin strict
+  (EN-2/EP-2 同型方針)。
+- ES-3 [観] 誠実注記 5 項目 (module doc): (1) 捕捉 59 新旧配置と
+  samples=1 端点逸脱の経緯、(2) inv=1/n の丸め許容帯 (n が 2 冪
+  なら exact、非 2 冪は f32 丸めを受容)、(3) samples=0 は旧来
+  inv=inf → acc(0)*inf=NaN 静寂出力・NaN velocity/max_velocity
+  の静寂伝播を ES-4 fail-loud で根治 (wiring default は非発火)、
+  (4) Sub 削除経緯、(5) sampler 契約 (G-buffer 回収コストは
+  呼び出し側責務)。
+- ES-4 [低] fail-loud assert 3 本 (params.samples >= 1・
+  max_velocity.is_finite()・velocity x/y finite) + strict 9 件:
+  捕捉 59 zero-bias golden bits (0.5=0x3F000000)・samples=1 は
+  t=0 exact の一点サンプル (zero blur、新旧差分直接 pin)・velocity=0
+  は新旧一致厳密 bits 1.5=0x3FC00000・should_panic 3・型契約
+  pin・wgsl identity・Default (8, 0x3DCCCCCD)。+9 strict。
+
+adversarial 5 系統: (a) t 式旧式 revert **2 RED**
+(centered・samples_one)・(b) samples assert 除去 **1 RED**・
+(c) max_velocity assert NaN 透過化 **1 RED**・(d) Sub impl 復活
+revert **非検出** (motion_blur 12 件全緑・警告 0 — EP-2(d) 同型
+の誠実記録、装飾削除は検証非強化の整理)・(e) velocity assert
+除去 **1 RED**。変異前実体コピー /tmp+rsift/bak 先行・毎回復元
+MD5-VERIFIED 5 回。誤編集 2 件 (module doc 注記 edit で use 行
+誤消去・adversarial(e) let 重複) をその場復元で整流し fixed 版
+md5 整合を機械確認後に継続。
+
+opt-gfx **1207 全緑** (21.42s/21.30s/21.80s 3 回実測、net +9、
+機械検算 1198+9=1207)・lib 本編/test 警告 0・api 49 全緑・
+全厳密値 rq es_mb 事前導出 (旧式 got 0x3EF9999A・新式
+0x3F000000・velocity 0x3E4CCCCD・対称ペア和 exact 0・samples=1
+の t=0・samples=0 の inv=inf 導出、python 引退継続)・adversarial
+完了後に rustfmt 正準化 2 箇所 (fail-loud assert 折り・strict assert
+折り) → 再全量 1207 緑確認・固定版 md5 三重保存
+(motion_blur 6132e1a906bbbf8f9a586885625d46e2、rsift/bak/ +
+/tmp + src 三重照合)・seal 初回 1 FAIL (san: 私の AUDIT 節への中国語語彙残留 1 件 (U+6837) + wave 144 節内の簡体字引用 1 件 (U+7B80 → 記述化) + WGSL 誤記 1 件 (WLSL) の 3 箇所手術) → 再 seal 全 6 ゲート PASS (san 0 findings・digest 004c1cf5fb17bfe8 rows=357 不変)・台帳 547・TRIGGER 182。
+
+副産物 (次 wave 対象): census grep 中に **rsift-replay
+`src/exporter.rs:145` の `pub fn apply_motion_blur(_frames, _strength) {}`
+が空関数スタブ (§7 該当)** を機械発見 (exporter に motion_blur:
+f32 フィールド・renderer.rs に MotionBlurAccumulator 実体あり)。
+節純度のため本 wave には混ぜず、wave 146 で本実装か不可能証明
+付き削除かを設計判断する専用 wave とする。
