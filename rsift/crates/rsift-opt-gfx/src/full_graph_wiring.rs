@@ -158,6 +158,25 @@ pub struct FrameWiringReport {
     /// 【wave 143 EQ-1】同上: 非空 (1 灯以上割当) タイル数
     /// (cluster_lit_clusters 同型)。
     pub tdl_lit_tiles: u32,
+    /// 【wave 144 ER-1】render_pipeline は depth_plan を保持・初期化
+    /// するのみで plan() 未消費だった状態 (§7 消化 11) から、wiring 側
+    /// に実消費者を追加: `DepthPrepassPlanner::for_low_spec().plan()`
+    /// の pass 数。【選択誠実注記】render_pipeline は tier≥High で
+    /// high_spec を選ぶが、wiring はプロジェクトの低スペック PC 制約
+    /// (UserSystemPrompt §2) に整合する low_spec 構成を固定選択。
+    pub depth_pass_count: u32,
+    /// 【wave 144 ER-1】同上: plan() の total_cost (静的推定定数、
+    /// 実測非接続 = module doc 注記 1)。
+    pub depth_pass_cost: u32,
+    /// 【wave 144 ER-2】`sort_translucent_indices` 消費者ゼロ (§7 消化
+    /// 12) からの実配線: 素材判定 `mat%7==5` (material_batcher 731 行
+    /// 既存規則と同一) の半透明クワッド総数。build_draws の
+    /// translucent_draws 件数と同一判定から再計算した cross 不変式。
+    pub translucent_total: u32,
+    /// 【wave 144 ER-2】同上: 半透明クワッドをクアッド中心の距離²降順
+    /// (back-to-front) にソートした先頭 = 最遠クワッドの元 index
+    /// (空 → 0、実消費の観測値)。
+    pub translucent_back_first: u32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -734,6 +753,36 @@ impl FullGraphWiring {
         }
         let (opaque_draws, translucent_draws) = self.material_batcher.build_draws();
         let _ = (opaque_draws.len(), translucent_draws.len());
+        // ER-2 (wave 144): sort_translucent_indices の実消費者追加
+        // (§7 消化 12)。translucent 判定は 731 行と同一規則で再収集し、
+        // build_draws 件数との cross 不変式でも検算。
+        let translucent_centers: Vec<[f32; 3]> = inputs
+            .quad_materials
+            .iter()
+            .enumerate()
+            .filter(|(_, mat)| (**mat as u16) % 7 == 5)
+            .map(|(i, _)| inputs.quad_positions.get(i).copied().unwrap_or([0.0; 3]))
+            .collect();
+        let mut translucent_order: Vec<u32> = (0..translucent_centers.len() as u32).collect();
+        crate::depth_prepass::sort_translucent_indices(
+            &translucent_centers,
+            inputs.camera_pos,
+            &mut translucent_order,
+        );
+        report.translucent_total = translucent_centers.len() as u32;
+        report.translucent_back_first = translucent_order.first().copied().unwrap_or(0);
+        debug_assert_eq!(
+            report.translucent_total as usize,
+            translucent_draws.len(),
+            "translucent 件数は material_batcher と同一規則で一致"
+        );
+
+        // ER-1 (wave 144): DepthPrepassPlanner::plan() の実消費者追加
+        // (§7 消化 11)。for_low_spec 固定選択 (低スペック制約整合、
+        // report フィールド doc 記載)。
+        let depth_plan = crate::depth_prepass::DepthPrepassPlanner::for_low_spec().plan();
+        report.depth_pass_count = depth_plan.len() as u32;
+        report.depth_pass_cost = depth_plan.iter().map(|p| p.estimated_cost).sum();
 
         // Instancing: フレームごとに実クアッド座標から再集積 (clear API 不在のためローカル生成)。
         let mut instanced = crate::instanced_draw::InstancedCollector::new();
@@ -2938,6 +2987,22 @@ mod strict_tests {
         );
         assert_eq!(a.tdl_lit_tiles, b.tdl_lit_tiles, "{ctx}: tdl_lit_tiles");
         assert_eq!(
+            a.depth_pass_count, b.depth_pass_count,
+            "{ctx}: depth_pass_count"
+        );
+        assert_eq!(
+            a.depth_pass_cost, b.depth_pass_cost,
+            "{ctx}: depth_pass_cost"
+        );
+        assert_eq!(
+            a.translucent_total, b.translucent_total,
+            "{ctx}: translucent_total"
+        );
+        assert_eq!(
+            a.translucent_back_first, b.translucent_back_first,
+            "{ctx}: translucent_back_first"
+        );
+        assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
         );
@@ -3062,6 +3127,12 @@ mod strict_tests {
             // EQ-1 golden (rq eq_tiled): palettes 空 → lights 0 → 0/0。
             assert_eq!(r.tdl_max_tile_load, 0, "tick {t}: lights 空 → 0");
             assert_eq!(r.tdl_lit_tiles, 0, "tick {t}: lights 空 → 0");
+            // ER-1 golden (rq er_dp): for_low_spec 固定 → 5/15 (定数)。
+            assert_eq!(r.depth_pass_count, 5, "tick {t}: low 5 passes");
+            assert_eq!(r.depth_pass_cost, 15, "tick {t}: low cost 15");
+            // ER-2 golden: quads 空 → translucent 0/0。
+            assert_eq!(r.translucent_total, 0, "tick {t}: translucent 0");
+            assert_eq!(r.translucent_back_first, 0, "tick {t}: 空 → 0");
             assert_eq!(r.vram_used_bytes, 0, "tick {t}: 実アロケーションなし");
             assert_eq!(
                 r.subsystems_active, 60,
@@ -3139,6 +3210,30 @@ mod strict_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 【wave 144 ER-2】ER-2 の検出空白補完: empty/chunked とも
+    /// translucent=0 (chunked は mat%7=1 全員非半透明) の**下限退化**
+    /// で golden が sort 経路変異を検出しない構造 (EP-5 同型) →
+    /// 半透明素材を供給する strict で golden 化 (rq er_dp 導出)。
+    #[test]
+    fn tick_world_translucent_sort_varies_with_materials() {
+        let (dir, mut w) = unique_wiring("er_translucent");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.camera_pos = [0.0, 0.0, -1.0];
+        inputs.quad_materials = vec![5, 12, 30]; // %7: 5 T, 5 T, 2 F
+        inputs.quad_positions = vec![[0.0, 0.0, 0.0], [0.0, 0.0, 10.0], [1.0, 1.0, 1.0]];
+        inputs.frame_index = 1;
+        let r = w.tick_world(&inputs);
+        assert_eq!(r.translucent_total, 2, "mat%7==5 の 2 個のみ");
+        assert_eq!(
+            r.translucent_back_first, 1,
+            "dist2: idx1=121 > idx0=1 → back-to-front 先頭は 1 (rq 導出)"
+        );
+        assert_eq!(r.depth_pass_count, 5);
+        assert_eq!(r.depth_pass_cost, 15);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn tick_world_chunked_inputs_exact_and_cross_instance_deterministic() {
         let (dir_a, mut a) = unique_wiring("chunk_a");
@@ -3183,6 +3278,13 @@ mod strict_tests {
                 ra.tdl_lit_tiles, 8160,
                 "tick {t}: 120x68 全タイル被覆 (rq eq_tiled)"
             );
+            // ER-1/ER-2 golden (rq er_dp): plan は定数 5/15。
+            // quad_materials=(0..24).map(i*7+1) → mat%7=1 全員非半透明
+            // → translucent 0/0 (下限退化、ER 補完 strict で振動供給)。
+            assert_eq!(ra.depth_pass_count, 5, "tick {t}: low 5 passes");
+            assert_eq!(ra.depth_pass_cost, 15, "tick {t}: low cost 15");
+            assert_eq!(ra.translucent_total, 0, "tick {t}: mat%7=1 → 0");
+            assert_eq!(ra.translucent_back_first, 0, "tick {t}: 空 → 0");
             // EO-1 golden (rq eo_shadow 機械列挙): 24 クアッド (x,z) ノルム
             // proxy で culled=8 (i=0..7 ノルム<4.0)、cast=16 は全て
             // ノルム<16 (max sqrt(138.5)=0x413C4C32) → lod 3 バケット集中。

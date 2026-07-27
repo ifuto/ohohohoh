@@ -7519,3 +7519,60 @@ wiring c92e9a704f965279a888b4896730809a)・seal 初回 fmdiff FAIL
 assert 折り) で現逸脱 3 行=HEAD 原生包含へ復帰 (tiled HEAD 6 ⊇
 現 3、row 44/118/120 は orig 原生据置)・seal 全 6 ゲート PASS
 (digest 004c1cf5fb17bfe8 rows=357 不変)・台帳 539・TRIGGER 180。
+## ER. depth_prepass.rs / full_graph_wiring.rs (wave 144, 2026-07-27)
+
+census grep 機械確定: render_pipeline.rs は DepthPrepassPlanner を
+フィールド保持 (122)・tier 条件付き初期化 (254-258) するのみで
+`plan()` 呼出ゼロ、`sort_translucent_indices` の消費者もゼロ
+(§7「実装済み未配線」2 系統)。workspace 直下 `rsift/rsift-opt-gfx`
+は workspace members 外の参照コピーで本監査対象外 (members 一覧
+機械確認、census の完全性記録)。
+
+- **ER-1 [中] §7 消化 11 plan() 実消費配線**: wiring で
+  `for_low_spec().plan()` (low_spec 固定選択: 低スペック PC 制約
+  UserSystemPrompt §2 整合、render_pipeline の tier≥High→high_spec
+  との差分はフィールド doc に誠実記載) を実評価 →
+  `depth_pass_count`/`depth_pass_cost: u32` report 実フィールド +
+  det 集合 2 assert。golden 5/15 (rq er_dp、empty/chunked 共通)。
+- **ER-2 [中] §7 消化 12 sort 実消費配線**: 半透明判定 `mat%7==5`
+  (731 行 batcher 既存規則と同一、cast u16) で center 再収集 →
+  `sort_translucent_indices` へ実供給 → `translucent_total`/
+  `translucent_back_first` report + batcher 件数の cross
+  debug_assert 不変式。empty/chunked 共に translucent=0 の下限
+  退化 (chunked は mat%7=1 全員) → 補完 strict (mat [5,12,30] +
+  centers 供給、最遠 index 1 golden) で検出線補完 (EP-5 同型
+  パターン、adversarial (e) で first→last 変異 1 RED 実証)。
+- **ER-3 [観] 誠実注記 5 項目**: (1) cost 静定数、(2) 中心のみ近似、
+  (3) NaN Equal fallback の**秩序橋崩壊**: NaN は任意要素と Equal
+  となり、挿入ソート系列の走査打止め (cmp(2,0) 非到達) で有限
+  要素間の降順を破壊 ([0,1,2] 維持実測、私の初 pin 予想 [2,0,1]
+  の誤りを RED で捕捉・訂正記録)、(4) dist2 sqrt-less 単調同値、
+  (5) render_pipeline 側 plan 未消費は wiring 消費者追加で充足。
+- **ER-4 [低] strict 7 件**: plan exhaustive (4 構成形 + writes 真理値
+  表: prepass 経路 Opaque writes_depth=false = early-Z 設計の核心)・
+  sort 無効 cost・new 既定・exact order golden・空/単一・NaN pin・
+  dist2 pin。
+
+adversarial 5 系統 (MD5-VERIFIED 5 回、dp b1b0606f・wiring 8ed53d39
+三重照合): (a) Translucent cost 4→3 **6 RED** (module exhaustive
+2・wiring golden 4)・(b) sort 方向反転 **3 RED** (module 2・ER-2
+strict 1、NaN pin は両方向不変で正確に不検出)・(c) batcher 判定
+`%7==5`→`%7==6` **1 RED** (cross debug_assert 経由 ER-2 strict、
+2 件規則のずれを不変式が捕捉)・(d) NaN Equal→Greater **非検出**
+(挿入ソート系列が両方向で同一帰結 [0,1,2]、NaN pin の構造的
+限界、wave 140/142 同型の誠実記録)・(e) back_first first→last
+**1 RED** (ER-2 strict のみ、empty/chunked は 0/0 退化で不変=
+補完正確)。
+
+opt-gfx **1198 全緑** (21.64s 機械値、net +8 = dp strict 7 + ER-2 1、
+機械検算 1190+8=1198)・lib 本編/test 警告 0・api 49 全緑・fmdiff
+自己起因逸脱 0・全厳密値 rq er_dp 事前導出 (cost 4 構成形・mat%7
+判定列・dist2 golden、python 引退継続)・固定版 md5 三重保存
+(depth_prepass a7925daab4b9effd0cf3b16aef28fe5f・wiring
+0ef1595454f3012d783f1f1a9ff9e89b)・seal 初回 2 FAIL (san: 私の
+コメント簡体字「順(简)」混入 1 件→「順」修正・fmdiff 自己起因
+5 行 → 正準手術 4 箇所: prepass assert 折り・dist2 assert 折り・
+let 収束行化・det assert 折り、dp HEAD 原生 5 行据置) → 再 seal
+全 6 ゲート PASS (digest 004c1cf5fb17bfe8 rows=357 不変)・
+台帳 543・TRIGGER 181。 
+
