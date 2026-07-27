@@ -137,6 +137,15 @@ pub struct FrameWiringReport {
     /// (32 lane) 集約 sum の最大。空入力は None → +0.0、全 -0.0 経路も
     /// +0.0 正規化 (捕捉 55 同型の f32 .max(0.0) 正規化)。
     pub subgroup_wave_sum_max: f32,
+    /// EO-1】旧 `_caster` 固定引数 24.0 の `_` 破棄中間構造を根治 (§7
+    /// 消化 8): 全クアッドを仮想 caster として (x,z) 平面ノルム proxy を
+    /// `caster_lod` に供給し lod 0..3 バケット件数を集計した分布
+    /// (leo_tag_dist 同型の [u32; N] 分布契約)。
+    pub shadow_caster_lod_dist: [u32; 4],
+    /// EO-1】同 proxy で `casts_shadow` が false (= culled) だった
+    /// クアッド件数。【誠実注記】proxy は真のスクリーン投影寸法ではなく
+    /// ワールド (x,z) ノルム (ビュー投影未接続)。
+    pub shadow_casters_culled: u32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -1878,8 +1887,23 @@ impl FullGraphWiring {
         let shadow_res = self
             .shadow_lod_inst
             .shadow_map_resolution(report.draw_command_count as f32 + 16.0);
-        let _casts = self.shadow_lod_inst.casts_shadow(24.0);
-        let _caster = self.shadow_lod_inst.caster_lod(24.0);
+        // EO-1: 旧 `_casts`/`_caster` (固定 24.0 引数の `_` 破棄中間構造)
+        // を根治 (§7 消化 8) — 全クアッドを仮想 caster として (x,z) 平面
+        // ノルム proxy を casts_shadow/caster_lod に供給し分布を実消費。
+        // 【誠実注記】proxy は真のスクリーン投影寸法ではなくワールド座標
+        // ノルム (ビュー投影未接続)、y は高さ情報を持たない設計入力もあり。
+        let mut lod_dist = [0u32; 4];
+        let mut culled = 0u32;
+        for p in &inputs.quad_positions {
+            let proxy = (p[0] * p[0] + p[2] * p[2]).sqrt();
+            if self.shadow_lod_inst.casts_shadow(proxy) {
+                lod_dist[self.shadow_lod_inst.caster_lod(proxy) as usize] += 1;
+            } else {
+                culled += 1;
+            }
+        }
+        report.shadow_caster_lod_dist = lod_dist;
+        report.shadow_casters_culled = culled;
         let _ = shadow_res;
         // 【wave 136 EJ-2 (2026-07-26)】async compute 経済モデル配線:
         // wiring の決定的作業量指標から proxy cost パス集合を構築し planner
@@ -2869,6 +2893,14 @@ mod strict_tests {
             "{ctx}: subgroup_wave_sum_max (bit)"
         );
         assert_eq!(
+            a.shadow_caster_lod_dist, b.shadow_caster_lod_dist,
+            "{ctx}: shadow_caster_lod_dist"
+        );
+        assert_eq!(
+            a.shadow_casters_culled, b.shadow_casters_culled,
+            "{ctx}: shadow_casters_culled"
+        );
+        assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
         );
@@ -2979,6 +3011,12 @@ mod strict_tests {
                 r.lockfree_cache_hits, 0,
                 "tick {t}: VRAM キャッシュ走査なし"
             );
+            assert_eq!(
+                r.shadow_caster_lod_dist,
+                [0, 0, 0, 0],
+                "tick {t}: クアッドなし → caster 評価なし (EO-1)"
+            );
+            assert_eq!(r.shadow_casters_culled, 0, "tick {t}: culled 0");
             assert_eq!(r.vram_used_bytes, 0, "tick {t}: 実アロケーションなし");
             assert_eq!(
                 r.subsystems_active, 60,
@@ -2993,6 +3031,36 @@ mod strict_tests {
             assert!(
                 r.ambient_light.is_finite(),
                 "tick {t}: IBL アンビエントは有限"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 141 EO-5】EO-1 proxy の検出空白補完: chunked_inputs では
+    /// |x| 変異 (z 成分除去) と真ノルムで culled 判定が 24 点全一致
+    /// (rq eo_adv_b 機械列挙 same=24/diff=0) し golden 非検出の構造
+    /// だった → z 寄与が判定を反転する点 ([3.9,1.0,1.5]:
+    /// |x|=3.9<4 だが sqrt(17.46)≈4.178≥4、rq bits 0x4085B668) で
+    /// proxy 式の成分構成を golden 化。
+    #[test]
+    fn tick_world_shadow_proxy_z_component_decides() {
+        let (dir, mut w) = unique_wiring("eo_z_proxy");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.quad_positions = vec![[3.9f32, 1.0, 1.5]];
+        inputs.quad_materials = vec![1];
+        inputs.quad_bytes = 64;
+        for t in 1..=2u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            assert_eq!(
+                r.shadow_casters_culled, 0,
+                "tick {t}: z 寄与でノルム≥4.0 → cast (rq 導出)"
+            );
+            assert_eq!(
+                r.shadow_caster_lod_dist,
+                [0, 0, 0, 1],
+                "tick {t}: cast 1 件・ノルム<16 → lod 3"
             );
         }
         let _ = std::fs::remove_dir_all(&dir);
@@ -3021,6 +3089,15 @@ mod strict_tests {
                 "tick {t}: 1 可視チャンク = 1 コマンド"
             );
             assert_eq!(ra.frb_billboards, 24, "tick {t}: 24 クアッドの実変換");
+            // EO-1 golden (rq eo_shadow 機械列挙): 24 クアッド (x,z) ノルム
+            // proxy で culled=8 (i=0..7 ノルム<4.0)、cast=16 は全て
+            // ノルム<16 (max sqrt(138.5)=0x413C4C32) → lod 3 バケット集中。
+            assert_eq!(
+                ra.shadow_caster_lod_dist,
+                [0, 0, 0, 16],
+                "tick {t}: cast 16 全 lod 3 (rq 導出)"
+            );
+            assert_eq!(ra.shadow_casters_culled, 8, "tick {t}: culled 8 (rq 導出)");
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);

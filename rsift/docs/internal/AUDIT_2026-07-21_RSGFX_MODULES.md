@@ -7315,3 +7315,63 @@ san/trailws 0・digest 004c1cf5 不変見込 (wide_static_bench 非経由
 全厳密値 rq 事前導出 (en_subgroup.rq+ワンライナ: 各 golden bits・
 32×1.0=32.0・1 ulp 差・消失・2^64 境界、python 引退継続)・
 seal 全 6 ゲート PASS 後 push。台帳 523。
+
+## EO. shadow_lod.rs / full_graph_wiring.rs / gpu_runtime.rs (wave 141, 2026-07-27)
+
+census grep で wiring `_casts`/`_caster` (固定引数 24.0) の `_` 破棄中間構造と
+`wgsl_source(&self)` self 不使用装飾 (gpu_runtime は const 直接参照、
+メソッド消費はテストのみ) を機械検出。shadow_map_resolution の他消費は
+EJ-2 で配線済 (coverage=draw+16≥16→clamp(1)→shadow_res≡2048 定数退化は
+wave 136 注記どおり)。
+
+- **EO-1 [中] `_casts`/`_caster` 中間構造の §7 消化 8**: 全クアッドを
+  仮想 caster として (x,z) 平面ノルム proxy (`sqrt(x²+z²)`) を
+  casts_shadow/caster_lod に供給し、lod 0..3 バケット分布
+  `shadow_caster_lod_dist: [u32;4]` + culled 件数
+  `shadow_casters_culled: u32` の report 実フィールド 2 件へ実消費
+  (leo_tag_dist 同型分布、不変式 Σdist+culled == クアッド数)。誠実
+  注記: proxy は真のスクリーン投影寸法ではなくワールド (x,z) ノルム
+  (ビュー投影未接続)。golden (rq eo_shadow 機械列挙): chunked 24 点
+  → culled=8 (i=0..7 ノルム<4.0: i=7 sqrt(12.5)=0x40624630<4)・
+  cast=16 全てノルム<16 (max sqrt(138.5)=0x413C4C32) → dist
+  [0,0,0,16]、empty → 全 0、det 比較集合 2 assert。
+- **EO-2 [低] wgsl_source(&self) free fn 化** + gpu_runtime:100 単一
+  公式経路化 (EL-4 同型、self 不使用装飾・WGSL は 33 行の実
+  @fragment シェーダーで tbdr 型非シェーダー問題は非該当を機械確認)。
+- **EO-3 [観] 誠実注記 4 項目** (module doc): (1) wiring coverage 供給
+  draw+16≥16 → clamp(1) → shadow_res≡2048 の**定数退化** (EJ-2 相互
+  参照)、(2) NaN coverage は clamp 透過 → round → clamp → `as u32`
+  飽和で **0** (契約域 [256,2048] 外の静寂退化) pin、NaN px は
+  casts_shadow=false→caster_lod=3 の一貫除外、(3) caster_lod 境界は
+  全 `>=` 閉区間・4≤px<16 は casts=true かつ lod=3 共存形、(4)
+  wgsl_source free fn 化経緯。
+- **EO-4 [低] strict 4 件**: 解像度 golden (704/1152/1600 = 256+448/
+  896/1344 全整数 exact rq 導出・端点 256/2048)・NaN 飽和 0 pin
+  (+Inf→2048・-Inf→256)・NaN/境界閉区間全閾値 pin (3.999_999 F/4.0 T
+  +lod3・15.999_999→3/16.0→2/63.999_996→2/64.0→1/255.999_98→1/
+  256.0→0)・new≡default+min_caster 4.0=0x40800000+wgsl identity。
+- **EO-5 [低] 検出空白補完 pin**: chunked_inputs では proxy の |x|
+  変異 (z 成分除去) が culled 判定 24 点全一致 (rq eo_adv_b same=24/
+  diff=0 機械列挙) で golden 非検出の構造 → z 寄与が判定を反転する
+  点 ([3.9,1.0,1.5]: |x|=3.9<4 だが sqrt(17.46)≈4.178≥4、rq bits
+  0x4085B668) を供給する新規 strict で proxy 成分構成を golden 化
+  (再変異で 1 RED 実証)。
+
+adversarial 5 系統: (a) min_caster_px 4.0→0.0 **4 RED** (boundary+
+new_default+既存 tiny_casters+chunked golden、EO-5 は不変で正確)・
+(b) proxy |x| 化 **1 RED** (EO-5 z_proxy のみ検出、chunked は rq
+予測どおり非検出=補完 pin が正確に機能)・(c) caster_lod >=256→128
+**1 RED** (boundary pin caster_lod(255.999_98): 1→0 のみ、wiring
+全 lod 3 で非検出 = module strict が検出経路)・(d) clamp→max/min
+の NaN 被覆 (f32::max/min は NaN 落とし) **1 RED** (NaN 飽和 0 pin)・
+(e) wgsl revert (free fn→const) **非検出 (全量 1173 緑)** = 同一 &str
+機能等価・EL-1 (d) 同型の誠実記録。復元 MD5-VERIFIED 5 回
+(shadow 3346220d・wiring ebeedc16・gpu 253d6798、三重照合)。
+
+opt-gfx **1173 全緑** (net +5 = shadow_lod strict 4 + EO-5 1、機械
+検算 1168+5=1173、全量 21.22s 機械値)・lib 警告 0・api 49 全緑・
+fmdiff 自己起因逸脱 0 (正準形手術 2 箇所: assert 折り・impl 閉じ前
+余分空行除去、残りは HEAD 原生 3 行据置)・san/trailws 0・
+digest 004c1cf5 不変見込・全厳密値 rq 事前導出 (eo_shadow/eo_adv_b:
+culled/cast 列挙・|x| 一致性 24 点・z 反転点 bits・解像度 golden、
+python 引退継続)・seal 全 6 ゲート PASS 後 push。台帳 528。

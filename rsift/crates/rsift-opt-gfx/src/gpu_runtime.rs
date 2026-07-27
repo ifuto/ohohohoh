@@ -97,7 +97,7 @@ pub fn all_wgsl_sources() -> Vec<(&'static str, &'static str)> {
             crate::clustered_lighting::CLUSTERED_LIGHTING_WGSL,
         ),
         ("sparse_texture", crate::sparse_texture::SPARSE_TEXTURE_WGSL),
-        ("shadow_lod", crate::shadow_lod::SHADOW_LOD_WGSL),
+        ("shadow_lod", crate::shadow_lod::wgsl_source()),
         ("fsr1", crate::fsr1::FSR1_WGSL),
         ("fsr2", crate::fsr2::FSR2_WGSL),
         ("fxaa", crate::fxaa::FXAA_WGSL),
