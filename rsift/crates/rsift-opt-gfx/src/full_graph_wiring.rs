@@ -205,6 +205,17 @@ pub struct FrameWiringReport {
     /// 変化で invalidate() が実駆動される経路の観測面、
     /// `GuiCompositeClock::surface_valid()` の真の消費地)。
     pub gui_surface_valid: bool,
+    /// 【wave 152 EX-1】`build_draws` の opaque draw 件数を実フィールド化:
+    /// 旧実装は `let _ = (opaque_draws.len(), translucent_draws.len());` で
+    /// draw 構造を丸ごと破棄していた (§7 消化 15 の中間構造破棄)。1 draw =
+    /// 同一 material の連続 quad run (BatchedDraw、texture bind 削減単位)。
+    pub material_opaque_draws: u32,
+    /// 【wave 152 EX-1】同上: translucent draw 件数。
+    pub material_translucent_draws: u32,
+    /// 【wave 152 EX-1】両リストの Σquad_count = batcher に bin された quad
+    /// 総数。cross 不変式 == quad_materials.len() を debug_assert で検算
+    /// (全 quad が一意に bin される完全性)。捕捉 65 根治 assert の観測面。
+    pub material_binned_quads: u32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -820,7 +831,20 @@ impl FullGraphWiring {
                 .push_quad(*mat as u16, i as u32, translucent);
         }
         let (opaque_draws, translucent_draws) = self.material_batcher.build_draws();
-        let _ = (opaque_draws.len(), translucent_draws.len());
+        // EX-1 (wave 152): `let _ = (…)` 破棄を根治 (§7 消化 15) — draw 件数系と
+        // bin 済 quad 総数を report に実配線し、完全性を cross 不変式で検算する。
+        report.material_opaque_draws = opaque_draws.len() as u32;
+        report.material_translucent_draws = translucent_draws.len() as u32;
+        report.material_binned_quads = opaque_draws
+            .iter()
+            .chain(translucent_draws.iter())
+            .map(|d| d.quad_count)
+            .sum::<u32>();
+        debug_assert_eq!(
+            report.material_binned_quads as usize,
+            inputs.quad_materials.len(),
+            "全 quad は batcher で一意に bin される (Σquad_count 完全性)"
+        );
         // ER-2 (wave 144): sort_translucent_indices の実消費者追加
         // (§7 消化 12)。translucent 判定は 731 行と同一規則で再収集し、
         // build_draws 件数との cross 不変式でも検算。
@@ -839,10 +863,15 @@ impl FullGraphWiring {
         );
         report.translucent_total = translucent_centers.len() as u32;
         report.translucent_back_first = translucent_order.first().copied().unwrap_or(0);
+        // EX-1 (wave 152) 捕捉 65 [中] 根治: 旧 assert は translucent **quads**
+        // 件数 (translucent_total) と draw **ranges** 件数 (translucent_draws
+        // .len()) を誤等置し、同一 mat の連続 translucent quad 2 個で debug
+        // 誤爆していた (TDD RED 機械記録: left=2, right=1)。正しい不変式は
+        // quads 件数 == Σ translucent quad_count (ranges≠quads の区別)。
         debug_assert_eq!(
-            report.translucent_total as usize,
-            translucent_draws.len(),
-            "translucent 件数は material_batcher と同一規則で一致"
+            report.translucent_total,
+            translucent_draws.iter().map(|d| d.quad_count).sum::<u32>(),
+            "translucent quads 件数 == batcher translucent bin の Σquad_count (同一規則一致)"
         );
 
         // ER-1 (wave 144): DepthPrepassPlanner::plan() の実消費者追加
@@ -3153,6 +3182,19 @@ mod strict_tests {
             "{ctx}: clp_lit_fraction (bit)"
         );
         assert_eq!(a.frb_billboards, b.frb_billboards, "{ctx}: frb_billboards");
+        // EX-1 (wave 152): material draw 件数系の det pin (§7 消化 15 配線の観測面)
+        assert_eq!(
+            a.material_opaque_draws, b.material_opaque_draws,
+            "{ctx}: material_opaque_draws"
+        );
+        assert_eq!(
+            a.material_translucent_draws, b.material_translucent_draws,
+            "{ctx}: material_translucent_draws"
+        );
+        assert_eq!(
+            a.material_binned_quads, b.material_binned_quads,
+            "{ctx}: material_binned_quads"
+        );
         assert_eq!(
             a.subsystems_active, b.subsystems_active,
             "{ctx}: subsystems_active"
@@ -3370,6 +3412,87 @@ mod strict_tests {
         );
         assert_eq!(r.depth_pass_count, 5);
         assert_eq!(r.depth_pass_cost, 15);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 152 EX-1 捕捉 65】同一 translucent mat の連続 quad 2 個で
+    /// 旧 debug_assert (translucent **quads** 件数 == translucent **draw ranges**
+    /// 件数という誤った等置) が debug ビルドで誤爆する構造を再現 → assert を
+    /// Σquad_count 不変式へ根治し draw 件数系を report 実配線 (§7 消化 15)。
+    /// golden は rq ex_mb 全導出 (整数厳密)。
+    #[test]
+    fn tick_world_material_translucent_same_mat_runs_capture65() {
+        let (dir, mut w) = unique_wiring("ex_capture65");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.quad_materials = vec![5, 5]; // %7==5 → 両方 translucent、同 mat・連続 index
+        inputs.quad_positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        inputs.frame_index = 1;
+        let r = w.tick_world(&inputs);
+        assert_eq!(
+            r.translucent_total, 2,
+            "translucent quads は 2 (ER-2 規則 pin、rq ex_mb)"
+        );
+        // 根治後 golden (rq ex_mb (4)): opaque 0 件 / translucent 1 run
+        // (first=0, count=2) / binned 2。「quads 2 個 = draw 1 件」の区別が
+        // report 観測面で厳密に分離されていることを pin する。
+        assert_eq!(r.material_opaque_draws, 0, "capture65: opaque 0");
+        assert_eq!(
+            r.material_translucent_draws, 1,
+            "capture65: translucent は 1 run (≠quads 2、捕捉 65 の区別 pin)"
+        );
+        assert_eq!(r.material_binned_quads, 2, "capture65: Σquad_count=2");
+        // 等値継続: 同一 inputs の再 tick で draw 構造は決定的同一。
+        // (det_subset 全体比較はしない — leo_tag_dist 等の蓄積系は設計上
+        // 同一インスタンス連続帧で増分するため、先行例 EU-2 同型の別インス
+        // タンス比較文脈専用。ここでは material 系 4 値のみ直接 pin。)
+        inputs.frame_index = 2;
+        let r2 = w.tick_world(&inputs);
+        assert_eq!(
+            r2.translucent_total, 2,
+            "frame2: translucent quads 等値継続"
+        );
+        assert_eq!(r2.material_opaque_draws, 0, "frame2: opaque 等値継続");
+        assert_eq!(
+            r2.material_translucent_draws, 1,
+            "frame2: translucent run 等値継続"
+        );
+        assert_eq!(r2.material_binned_quads, 2, "frame2: binned 等値継続");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 152 EX-1】chunked 素材 (0..24).map(i*7+1) の実配線 golden:
+    /// 全員 %7==1 → opaque 24 runs (全 mat 相異・各 1 quad) / translucent 0 /
+    /// binned 24 == quad_materials.len() (rq ex_mb (1) 導出、整数厳密)。
+    #[test]
+    fn tick_world_material_draws_chunked_golden_strict() {
+        let (dir, mut w) = unique_wiring("ex_chunked_draws");
+        let mut inputs = chunked_inputs();
+        for t in 1..=2u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            assert_eq!(r.material_opaque_draws, 24, "tick {t}: opaque 24 runs");
+            assert_eq!(
+                r.material_translucent_draws, 0,
+                "tick {t}: mat%7==1 全員非半透明 (mat=i*7+1 ⇒ %7==1)"
+            );
+            assert_eq!(r.material_binned_quads, 24, "tick {t}: Σquad_count=24");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 152 EX-1】empty 入力 golden: (0, 0, 0) — draw なしでも
+    /// batcher 配線は well-formed (rq ex_mb (2))。
+    #[test]
+    fn tick_world_material_draws_empty_golden_strict() {
+        let (dir, mut w) = unique_wiring("ex_empty_draws");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 1;
+        let r = w.tick_world(&inputs);
+        assert_eq!(r.material_opaque_draws, 0, "empty: opaque 0");
+        assert_eq!(r.material_translucent_draws, 0, "empty: translucent 0");
+        assert_eq!(r.material_binned_quads, 0, "empty: binned 0");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

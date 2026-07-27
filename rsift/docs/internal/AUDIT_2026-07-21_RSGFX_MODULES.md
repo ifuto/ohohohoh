@@ -8013,3 +8013,69 @@ fmt: HEAD 両ファイル原生逸脱 0、追記分を in-place rustfmt で自�
 60b6e8114b3274f23b8e033aa1332ad0、src+/tmp+rsift/bak 三重照合)・
 digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
 台帳 573・TRIGGER 188。
+
+## EX. material_batch.rs / full_graph_wiring.rs (wave 152, 2026-07-28)
+
+対象 material_batch.rs 187→251 行 (全行 CRLF→LF 一括正規化含む、wave 146
+exporter 判例)、full_graph_wiring.rs (build_draws 消費配線+assert 根治+
+report 3 フィールド+det pin 3)。wgsl なし。census grep 機械確定:
+MaterialBatcher は wiring:276 保持・816 clear・818-820 push_quad・822
+build_draws 実消費だが、draw 内容 (material_id/first_quad/quad_count の
+ranges 全て) は旧 `let _ = (opaque_draws.len(), translucent_draws.len());`
+で破棄されていた (debug_assert だけ translucent_draws.len() を誤用)。
+**FloraInstance/InstancedFloraRenderer/draw_call_count/
+split_opaque_transparent/decode_xyz/BatchedDraw 型名は crates/ 全体で
+消費者ゼロ** (stray コピー rsift/rsift/rsift-opt-gfx は build 対象外の
+ユーザ管理資産)。
+
+- EX-1 [中] **捕捉 65 [中]**: wiring debug_assert が translucent **quads**
+  件数 (translucent_total) と translucent **draw ranges** 件数
+  (translucent_draws.len()) を誤等置。同一 mat の連続 translucent quad
+  2 個 ([5,5]) で 2≠1 誤爆 (TDD RED 機械記録: left=2, right=1)。
+  根治: assert を Σquad_count 不変式へ修正 + **§7 消化 15** `let _ =`
+  破棄を根治 → report 実配線 material_opaque_draws /
+  material_translucent_draws / material_binned_quads (Σ==len 完全性を
+  debug_assert で cross 検算) + det_subset 3 pin。
+- EX-2 [低] **捕捉 64 [小]** (削除構造の数学逸脱として記録): 削除した
+  FloraInstance::new の量子化は位置 `(x*256).clamp(..) as u16`
+  (truncate、−0.5LSB 系統偏向、捕捉 59/60 同型の中心化欠落) vs yaw
+  `.round()` (最近傍) で**丸め規則不統一**。根治=構造除去: §7 消化 15
+  不可能証明削除 (census 全消費者ゼロ+wiring 供給点不在+fake 配線は
+  偽装禁止抵触、wave 149 GC-4 判例)。draw_call_count は加えて
+  build_draws 二重実行の無駄実装。
+- EX-3 [観] 注記 5 項: (1) 捕捉 64 経緯、(2) 捕捉 65 根治経緯、(3) 削除
+  不可能証明、(4) u32→u16 静寂 fold 契約 (block-state 実空間 ~2.6 万
+  <65535 で実害ゼロ、契約明記) + duplicate index 防御なし (wiring 到達
+  不可、重複 range golden pin) + `prev+1` u32::MAX debug wrap 到達不可
+  + empty ガード防御注記、(5) CRLF→LF 全量正規化記録。
+- EX-4 [低] strict 9 件 (+8 net: module 6・wiring 3、flora_roundtrip −1):
+  merge matrix golden [(5,0,2),(9,3,2),(9,7,2)] binned 6・dual-map 分割
+  golden+[5,5] 1 run quads≠ranges module pin・BTreeMap 昇順挿入順独立性・
+  duplicate 重複 range pin・clear-reuse・empty golden・wiring capture65
+  (0,1,2,total2)+frame2 等値継続 (leo_tag_dist 蓄積で det_subset 全体
+  比較は同一インスタンス連続帧に誤用不可 = **私の初版誤用 RED 自己
+  捕捉**、EU-2 同型の別インスタンス文脈専用を明記し 4 値直接 pin)・
+  chunked golden (24,0,24) 2 tick・empty golden (0,0,0)。全 golden
+  rq ex_mb 事前導出 (全て整数厳密: %7 表・Σmat=1956・run simulate・
+  duplicate、浮動小数なし、全 assert 通過、python 引退継続)。
+
+adversarial 5 系統: (a) 捕捉 65 旧 assert revert **1 RED** (capture65
+panic、chunked/empty は恒真緑の構造)・(b) Flora 系+split+draw_call_count
+復活 **非検出構造** (dead code 復活で 1256 緑維持を機械記録 — consumer
+ゼロ pub item は警告も発生しない検出空白、EU-3(c)/EV-2(b)/EW-2(b) 同型
+4 連続目、誠実記録。検出責務は census 事前確定が担う)・(c) merge 条件
+`== prev+1`→`>=` **2 RED** (matrix strict+既存 merges_runs)・(d) wiring
+規則 push 側のみ %7==5→6 **2 RED** (capture65 cross assert+ER-2 既存、
+chunked は mat%7==1 で両規則無関係の構造的緑)・(e) report 配線 revert
+(let _ 戻し) **2 RED** (chunked+capture65、empty は 0==0 構造的緑)。
+変異前実体コピー /tmp+rsift/bak 先行・grep -c 適用確認後計測・毎回復元
+MD5-VERIFIED 5 回。
+
+opt-gfx **1256 全緑** (adversarial 事後全量再実測 21.50s、net +8、機械
+検算 1248−1+6+3=1256)・api 49 全緑・replay 16 全緑・lib 本編警告 0・
+fmt: HEAD 両ファイル原生逸脱 0、mb 全量書換は正準一致 (先頭空行
+artifact のみ)、wiring 追記分 2 箇所手術で自己起因 0・固定版 md5 三重
+保存 (mb 00e437f074c96994303a0cf7ce621157・wiring
+0e64eb609635e8f27cb8ca691e42a62a、src+/tmp+rsift/bak 三重照合)・
+digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・台帳 577・
+TRIGGER 189。
