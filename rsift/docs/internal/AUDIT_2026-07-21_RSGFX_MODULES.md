@@ -8139,3 +8139,51 @@ rustfmt 全量適用で自己起因 0 (fsr2.rs は初版から正準一致)・�
 f2525e4a7a89aea301fd2fe8d630245f・wgsl b16b80e81b84a883e03e383d1e0b7085、
 src+/tmp+rsift/bak 三重照合)・digest 004c1cf5fb17bfe8 rows=357 不変・
 seal 全 6 ゲート PASS・台帳 581・TRIGGER 190。
+
+## EZ. power_policy.rs / full_graph_wiring.rs (wave 154, 2026-07-28)
+
+対象 power_policy.rs 197 行 (CR 0)、full_graph_wiring.rs (tick_frame
+legacy 削除 + gate 秒化実駆動 + report 3 フィールド + det pin 1 + on_input
+真接続)。wgsl なし。census grep 機械確定: PowerPolicy は wiring:300 保持・
+446 構築・586-587 mode_tick→`!render` のみ実消費 (render 恒 true で
+power_skip_extra 恒 false 退化=捕捉 70)、`frame_gate` は legacy tick_frame
+の `let _` 破棄のみ (ms 誤供給=捕捉 62 同型)、**tick_frame 消費者ゼロ
+(crates 全域)・on_input wiring 未接続・smoothed_dt 消費者ゼロ・
+hysteresis_fps dead field・with_frame_dt no-op**。
+
+- EZ-1 [中] **捕捉 70 [中] (render 恒 true 全沈黙)**: skip 真判定を
+  frame_gate へ一本化 (§7 消化 17、秒化+power_gate_acc 保有+report 3 配線
+  +on_input 真接続)。wiring Active 構造的限界 (focused=true 固定・60s
+  以内 Idle 未到達) で gate=true 恒 → 恒 false revert は検出不能
+  (adversarial (a) 非検出誠実記録)、検出責務は module sole-skip contract
+  pin (0.016×3 系列で gate false 到達)。
+- EZ-2 [中] **捕捉 69 [中] (ヒステリシス欠落)**: doc 機構を真実装
+  (上向き差<閾値=保留/境界==閾値=反映/無制限=即/下向き=即、TDD RED 1、
+  残 3 規則は構造的緑を正直列挙、default 非活性注記)。
+- EZ-3 [低] 捕捉 68 (with_frame_dt no-op) frame_dt 真保持 + smoothed_dt
+  dead state EMA 真更新 (det 登録正当=完全決定) + tick_frame/mode()
+  削除 (不可能証明) + det doc 誠実訂正。golden 全 rq ez_pp (EMA s1
+  0x3C87FCBA/gate 系列/hysteresis 整数規則、**私の初 contract pin 2 回
+  到達は 0.032<1/30 暗算誤り → rq (6) で 3 回到達に訂正自己捕捉**)。
+- EZ-4 [低] strict module 12 (+8) + wiring 2 + det pin 1。+10 net
+  **1276 全緑** (機械検算 1266+10、adversarial 後 21.77s 再実測)。
+
+adversarial 5 系統: (a) 恒 false revert **非検出構造** (Active 構造限界、
+全量 1276 緑機械記録、検出責務=module contract pin)・(b) 削除系 4 構造
+(render/with_frame_dt/mode()/tick_frame) 復活 **非検出** (dead code
+1276 緑、EY-3(b) 同型 6 連続目誠実記録)・(c) hysteresis `<`→`<=`
+**1 RED** (boundary pin)・(d) EMA 0.9↔0.1 swap **3 RED** (module
+smoothed+wiring 2)・(e) gate ε=1e-5 削除 **非検出構造** (golden は
+need−4·dt==0 bits 一致の ε 不発区間設計を rq 機械記録済、誠実記録)。
+変異前実体コピー /tmp+rsift/bak 先行・grep -c/python assert で適用確認
+後計測・毎回復元 MD5-VERIFIED (合計 6 照合、(b) は 2 ファイル)。
+
+opt-gfx **1276 全緑** (事後全量再実測 21.77s、net +10、機械検算
+1266+10=1276)・api 49 全緑・replay 16 全緑・lib 本編警告 0・fmt: HEAD
+pp 原生逸脱 15 行は全て私の mode_tick 改修区間内 (89/93-94 行の旧
+FrameDecision 構築+with_frame_dt) のみ → in-place rustfmt 全量適用で
+未触区間への整形波及ゼロ・自己起因 0 (wiring HEAD 原生 0)・固定版
+md5 三重保存 (pp 9c52433dd81a95db2be20e96ed269c5c・wiring
+3853688004c30344086915a5e01dbab4、src+/tmp+rsift/bak 三重照合)・
+digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
+台帳 585・TRIGGER 191。

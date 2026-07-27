@@ -223,6 +223,18 @@ pub struct FrameWiringReport {
     /// 【wave 153 EY-2】FSR2 アップスケール率 (output/input、GPU Uniforms
     /// inRes/outRes と同一次元の監視値 — 捕捉 67 の output dims 消費者)。
     pub fsr2_scale: [f32; 2],
+    /// 【wave 154 EZ-1】mode_tick 判決の frame_dt (1/target_fps [s]、
+    /// target=0=無制限 → 0.0 契約、捕捉 68 no-op 根治の観測面)。wall-clock
+    /// 由来 mode 経路の値のため det subset 非登録 (Active 内 pin で代替)。
+    pub power_frame_dt: f32,
+    /// 【wave 154 EZ-3】frame_gate 呼出毎の実 dt EMA (α=0.1、秒契約、
+    /// 捕捉 71 系 dead state 根治)。全値 delta_ms 系列のみ由来 = 完全
+    /// 決定的 → det subset 登録が正当 (GC-2 同型)。
+    pub power_smoothed_dt: f32,
+    /// 【wave 154 EZ-1】PowerMode の u8 符号 (Active=0/Unfocused=1/
+    /// Minimized=2/Idle=3)。mode() getter 冗長削除の代替観測面。
+    /// wall-clock 由来のため det subset 非登録 (grep 587 注記と同根拠)。
+    pub power_mode: u8,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -298,6 +310,9 @@ pub struct FullGraphWiring {
     // ---- quality / post reference chain ----
     governor: crate::quality_governor::QualityGovernor,
     power: crate::power_policy::PowerPolicy,
+    /// 【wave 154 EZ-1】frame_gate 貯金法 accumulator (wiring 保持契約、
+    /// 捕捉 70 根治で tick_world 実駆動へ移管)。
+    power_gate_acc: f32,
     gui_clock: crate::gui_composite::GuiCompositeClock,
     // 【wave 149 GC-3/GC-4】GUI 時計への実駆動イベント検出用 prev 値。
     // camera_dir 変化 = 視点操作入力 (on_input_event 実駆動)、
@@ -446,6 +461,7 @@ impl FullGraphWiring {
             power: crate::power_policy::PowerPolicy::new(
                 crate::power_policy::PowerLimits::default(),
             ),
+            power_gate_acc: 0.0,
             gui_clock: crate::gui_composite::GuiCompositeClock::new(
                 crate::gui_composite::GuiRates::default(),
             ),
@@ -539,17 +555,10 @@ impl FullGraphWiring {
         Some(h)
     }
 
-    /// 後方互換ラッパー (旧 API)。最小限の実作業: pacing + governor observe。
-    pub fn tick_frame(&mut self, delta_ms: f32, camera_pos: [f32; 3]) {
-        self.tick += 1;
-        self.pacer.record_frame(delta_ms as f64);
-        let _ = self.governor.observe((delta_ms * 1000.0) as u32);
-        let target = self.power.current_target_fps();
-        let mut acc = delta_ms;
-        let _ = self.power.frame_gate(&mut acc, delta_ms, target);
-        let _ = camera_pos;
-    }
-
+    // 【wave 154 EZ-4】旧 `tick_frame` legacy wrapper は削除 (消費者ゼロ
+    // census 全域確定 + `let _` 3 連・ms 誤供給=捕捉 62 同型の恒害構造、
+    // GC-4 判例の不可能証明削除。pacer/governor 経路は tick_world で実消費
+    // 持続、frame_gate は EZ-1 で tick_world に正規配線)。
     /// メイン配線: 1 フレーム分の全サブシステム実実行。
     pub fn tick_world(&mut self, inputs: &FrameWiringInputs<'_>) -> FrameWiringReport {
         self.tick += 1;
@@ -584,7 +593,20 @@ impl FullGraphWiring {
         }
         report.next_build_budget = Some(self.suggested_build_budget());
         let power_decision = self.power.mode_tick(now_secs, true, false);
-        report.power_skip_extra = !power_decision.render;
+        // EZ-1 (wave 154) 捕捉 70 [中] 根治: 旧 `report.power_skip_extra =
+        // !power_decision.render` は mode_tick が全経路 render:true 固定返却
+        // で **恒 false の定数退化** (全沈黙観測面) だった。skip の真判定は
+        // frame_gate (貯金法) — 秒化 (delta_ms/1000.0、捕捉 62 同型 ms
+        // 誤供給の構造的撲滅) で tick_world に実駆動して一本化。
+        let gate_render = self.power.frame_gate(
+            &mut self.power_gate_acc,
+            inputs.delta_ms / 1000.0,
+            power_decision.target_fps,
+        );
+        report.power_skip_extra = !gate_render;
+        report.power_frame_dt = power_decision.frame_dt;
+        report.power_smoothed_dt = self.power.smoothed_dt();
+        report.power_mode = power_decision.mode as u8;
         // GC-1 (捕捉 62 [高]): `real_dt` は秒契約 (need=1/fps [s]・module
         // test 一次情報) なのに旧来は ms の `inputs.delta_ms` (16.0) を誤
         // 供給 → gui_accum が 480 倍速蓄積で due 常時真 = 30fps デュアル
@@ -596,6 +618,9 @@ impl FullGraphWiring {
         if let Some(prev_dir) = self.prev_gui_camera_dir {
             if prev_dir != inputs.camera_dir {
                 self.gui_clock.on_input_event();
+                // EZ-1 (wave 154): power_policy.on_input も同一検出点に真接続
+                // (消費者ゼロだった §7 消化 — Idle 解除が実入力駆動になる)。
+                self.power.on_input(now_secs);
             }
         }
         self.prev_gui_camera_dir = Some(inputs.camera_dir);
@@ -3022,10 +3047,13 @@ mod strict_tests {
         (dir.clone(), FullGraphWiring::new(&dir))
     }
 
-    /// 監査 2026-07-22 K-4/K-5 の決定性比較集合: FrameWiringReport 全 17 pub
-    /// フィールドのうち非決定と doc 明記された 2 つ (vanilla_hook_hits_delta:
-    /// プロセス全域カウンタ由来、power_skip_extra: 壁時計由来) を除く 15 個を,
-    /// f32 は IEEE-754 ビット同一として全比較する。
+    /// 監査 2026-07-22 K-4/K-5 の決定性比較集合: FrameWiringReport の pub
+    /// フィールドのうち、非決定と doc 明記されたもの — vanilla_hook_hits_delta
+    /// (プロセス全域カウンタ由来)・power_skip_extra (壁時計由来 mode/gate
+    /// 経路)・【wave 154 EZ-1 追加】power_frame_dt/power_mode (同じく wall
+    /// 由来 mode 経路) — を除く全決定フィールドを、f32 は IEEE-754 ビット
+    /// 同一として全比較する (field 数の絶対記述は wave 毎に増えるため
+    /// 「群」で規定、wave 151 時点の「全 17/15」記述を誠実訂正)。
     fn assert_report_det_subset(a: &FrameWiringReport, b: &FrameWiringReport, ctx: &str) {
         assert_eq!(
             a.next_build_budget, b.next_build_budget,
@@ -3230,6 +3258,14 @@ mod strict_tests {
         assert_eq!(
             a.material_binned_quads, b.material_binned_quads,
             "{ctx}: material_binned_quads"
+        );
+        // EZ-3 (wave 154): EMA は delta_ms 系列のみ由来の完全決定値
+        // (wall-clock 非依存) → det pin 正当。power_frame_dt/power_mode は
+        // wall 由来 mode 経路のため非登録 (power_skip_extra と同グループ)。
+        assert_eq!(
+            a.power_smoothed_dt.to_bits(),
+            b.power_smoothed_dt.to_bits(),
+            "{ctx}: power_smoothed_dt (bit)"
         );
         assert_eq!(
             a.subsystems_active, b.subsystems_active,
@@ -3591,6 +3627,58 @@ mod strict_tests {
             0x4000_0000u32,
             "scale は empty でも dims 由来 2.0 exact"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 154 EZ-1/EZ-3】power gate 実駆動の Active 経路 golden:
+    /// Active (unlimited=0) → skip=false 恒 (真判定、旧恒 false 退化とは
+    /// 別物 = gate true 由来)、frame_dt=0.0 契約、mode=Active(0)。
+    /// smoothed_dt は EMA golden s1=0x3C87FCBA → s2=0x3C877EE6 (rq ez_pp、
+    /// delta_ms=16 → real_dt=0.016 秒化系列)。
+    #[test]
+    fn tick_world_power_gate_active_golden_strict() {
+        let (dir, mut w) = unique_wiring("ez_power_chunked");
+        let mut inputs = chunked_inputs();
+        inputs.frame_index = 1;
+        let r1 = w.tick_world(&inputs);
+        assert!(!r1.power_skip_extra, "Active → gate true (skip=false)");
+        assert_eq!(
+            r1.power_frame_dt.to_bits(),
+            0u32,
+            "target=0 → frame_dt 0.0 契約"
+        );
+        assert_eq!(r1.power_mode, 0, "Active=0");
+        assert_eq!(
+            r1.power_smoothed_dt.to_bits(),
+            0x3C87_FCBAu32,
+            "tick1 EMA s1 (rq ez_pp)"
+        );
+        inputs.frame_index = 2;
+        let r2 = w.tick_world(&inputs);
+        assert_eq!(
+            r2.power_smoothed_dt.to_bits(),
+            0x3C87_7EE6u32,
+            "tick2 EMA s2 (rq ez_pp)"
+        );
+        assert!(!r2.power_skip_extra, "tick2 も Active → skip=false");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 154 EZ-1】empty でも EMA 同系列 (real_dt は delta_ms 由来で
+    /// シーン非依存 = 完全決定の傍証、det pin の根拠)。
+    #[test]
+    fn tick_world_power_smoothed_empty_series_strict() {
+        let (dir, mut w) = unique_wiring("ez_power_empty");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 1;
+        let r = w.tick_world(&inputs);
+        assert_eq!(
+            r.power_smoothed_dt.to_bits(),
+            0x3C87_FCBAu32,
+            "empty tick1 EMA s1 (rq ez_pp、シーン非依存)"
+        );
+        assert_eq!(r.power_mode, 0, "empty も初期 Active");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
