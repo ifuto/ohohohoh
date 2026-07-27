@@ -137,15 +137,20 @@ pub struct FrameWiringReport {
     /// (32 lane) 集約 sum の最大。空入力は None → +0.0、全 -0.0 経路も
     /// +0.0 正規化 (捕捉 55 同型の f32 .max(0.0) 正規化)。
     pub subgroup_wave_sum_max: f32,
-    /// EO-1】旧 `_caster` 固定引数 24.0 の `_` 破棄中間構造を根治 (§7
+    /// 【wave 141 EO-1】旧 `_caster` 固定引数 24.0 の `_` 破棄中間構造は根治済 (§7
     /// 消化 8): 全クアッドを仮想 caster として (x,z) 平面ノルム proxy を
     /// `caster_lod` に供給し lod 0..3 バケット件数を集計した分布
     /// (leo_tag_dist 同型の [u32; N] 分布契約)。
     pub shadow_caster_lod_dist: [u32; 4],
-    /// EO-1】同 proxy で `casts_shadow` が false (= culled) だった
+    /// 【wave 141 EO-1】同 proxy で `casts_shadow` が false (= culled) だった
     /// クアッド件数。【誠実注記】proxy は真のスクリーン投影寸法ではなく
     /// ワールド (x,z) ノルム (ビュー投影未接続)。
     pub shadow_casters_culled: u32,
+    /// 【wave 142 EP-1】旧 `let _ = fos` で評価後 `_` 破棄の中間構造を根治 (§7
+    /// 消化 9): 画面中央 uv=(0.5,0.5) の foveated shading rate。
+    /// gaze は camera_dir (x,z) の ×0.5+0.5 NDC→uv 写像 (定数
+    /// radius=0.2・min_rate=0.5 供給)。
+    pub foveated_center_rate: f32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -1959,7 +1964,8 @@ impl FullGraphWiring {
             0.2,
             0.5,
         );
-        let _ = fos;
+        // EP-1: 旧 `let _ = fos` 破棄の中間構造を根治 (§7 消化 9)。
+        report.foveated_center_rate = fos;
         let quad_c = [
             crate::checkerboard::Vec3::new(mapped.r, mapped.g, mapped.b),
             crate::checkerboard::Vec3::new(sky.x, sky.y, sky.z),
@@ -2901,6 +2907,11 @@ mod strict_tests {
             "{ctx}: shadow_casters_culled"
         );
         assert_eq!(
+            a.foveated_center_rate.to_bits(),
+            b.foveated_center_rate.to_bits(),
+            "{ctx}: foveated_center_rate (bit)"
+        );
+        assert_eq!(
             a.aokana_visible_regions, b.aokana_visible_regions,
             "{ctx}: aokana_visible_regions"
         );
@@ -3017,6 +3028,11 @@ mod strict_tests {
                 "tick {t}: クアッドなし → caster 評価なし (EO-1)"
             );
             assert_eq!(r.shadow_casters_culled, 0, "tick {t}: culled 0");
+            assert_eq!(
+                r.foveated_center_rate.to_bits(),
+                0x3F00_0000,
+                "tick {t}: dir=[0,0,1] → 0.5 (rq ep_foveated)"
+            );
             assert_eq!(r.vram_used_bytes, 0, "tick {t}: 実アロケーションなし");
             assert_eq!(
                 r.subsystems_active, 60,
@@ -3066,6 +3082,34 @@ mod strict_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 【wave 142 EP-5】EP-1 の検出空白補完: 既定 camera_dir=[0,0,1]
+    /// では t≥1 で rate≡min_rate=0.5 の**下限退化**となり radius/
+    /// min_rate 変異が wiring golden 非検出の構造 → camera_dir を振り
+    /// t<1 域の変動値を golden 化 (rq ep_foveated 導出、f32 逐次丸め)。
+    #[test]
+    fn tick_world_foveated_rate_varies_with_camera_dir() {
+        let (dir, mut w) = unique_wiring("ep_fov_step");
+        let cases: [(f32, u32); 4] = [
+            (0.0, 0x3F80_0000),  // gaze=uv 一致 → 1.0
+            (0.2, 0x3F3F_FFFF),  // d=0.099999994 → 0.75 ではなく 1 ulp 下
+            (0.4, 0x3F00_0000),  // t=1 境界 → min_rate
+            (-0.4, 0x3F00_0000), // 対称
+        ];
+        for (dz, want) in cases {
+            let mut inputs = empty_inputs();
+            inputs.view_proj = IDENTITY_VP;
+            inputs.camera_dir = [0.0, 0.0, dz];
+            inputs.frame_index = 1;
+            let r = w.tick_world(&inputs);
+            assert_eq!(
+                r.foveated_center_rate.to_bits(),
+                want,
+                "camera_dir=[0,0,{dz}] → 0x{want:08X} (rq 導出)"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn tick_world_chunked_inputs_exact_and_cross_instance_deterministic() {
         let (dir_a, mut a) = unique_wiring("chunk_a");
@@ -3089,6 +3133,13 @@ mod strict_tests {
                 "tick {t}: 1 可視チャンク = 1 コマンド"
             );
             assert_eq!(ra.frb_billboards, 24, "tick {t}: 24 クアッドの実変換");
+            // EP-1 golden (rq ep_foveated 導出): camera_dir=[0,0,1] →
+            // gaze=(0.5,1.0), dy=-0.5 → t=2.5→clamp 1 → rate=0.5。
+            assert_eq!(
+                ra.foveated_center_rate.to_bits(),
+                0x3F00_0000,
+                "tick {t}: foveated = min_rate 0.5 (rq 導出)"
+            );
             // EO-1 golden (rq eo_shadow 機械列挙): 24 クアッド (x,z) ノルム
             // proxy で culled=8 (i=0..7 ノルム<4.0)、cast=16 は全て
             // ノルム<16 (max sqrt(138.5)=0x413C4C32) → lod 3 バケット集中。

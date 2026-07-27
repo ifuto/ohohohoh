@@ -134,7 +134,6 @@ mod tests {
     }
     #[test]
     fn monotonic_increasing() {
-        let a = AcesTonemap::new();
         let mut prev = -1.0f32;
         for i in 0..20 {
             let x = i as f32 * 0.5;

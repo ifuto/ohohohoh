@@ -306,7 +306,7 @@ mod tests {
             } else {
                 let hi = grid.partition_point(|&g| g < ax);
                 let mut best: (f64, u32) = (f64::INFINITY, 0);
-                let mut upd = |best: &mut (f64, u32), gv: f64, cw: u32| {
+                let upd = |best: &mut (f64, u32), gv: f64, cw: u32| {
                     let d = (gv - ax).abs();
                     if d < best.0 || (d == best.0 && (cw & 1) < (best.1 & 1)) {
                         *best = (d, cw);

@@ -7375,3 +7375,83 @@ fmdiff 自己起因逸脱 0 (正準形手術 2 箇所: assert 折り・impl 閉�
 digest 004c1cf5 不変見込・全厳密値 rq 事前導出 (eo_shadow/eo_adv_b:
 culled/cast 列挙・|x| 一致性 24 点・z 反転点 bits・解像度 golden、
 python 引退継続)・seal 全 6 ゲート PASS 後 push。台帳 528。
+## EP. foveated.rs / full_graph_wiring.rs (+ 既監査 4 モジュール警告一掃) (wave 142, 2026-07-27)
+
+census grep 機械確定: wiring:1957 `let _ = fos` で foveated::shading_rate の
+実評価結果を即 `_` 破棄する中間構造 (§7 禁止の「実装済み未配線」)、
+foveated::Vec4 + Vec3/Vec4 両型 Add/Sub/Mul trait 6 impls が crate+
+workspace 消費者完全ゼロ (Vec3 型は shading_rate 引数型として消費、
+演算子は不使用)。wiring 呼出実引数: uv=Vec3(0.5,0.5,0)、
+gaze=(camera_dir[0]*0.5+0.5, camera_dir[2]*0.5+0.5)、radius=0.2、
+min_rate=0.5。
+
+- **EP-1 [中] §7 消化 9 `_ = fos` 破棄根治**: report 実フィールド
+  `foveated_center_rate: f32` へ実消費 (画面中央 uv の shading rate、
+  gaze=camera_dir (x,z) NDC→uv 写像) + det 比較集合 1 assert (to_bits)
+  + empty/chunked golden 追記。golden (rq ep_foveated 導出、
+  f32 逐次丸め追従): camera_dir=[0,0,1] (empty/chunked 共通) →
+  gaze=(0.5,1.0) → dy=-0.5 → d=0.5/0.2=2.5 → t=clamp 1 → 0.5=
+  0x3F000000 (0x40800000=4.0 は EJ-1 由来の既知 bits)。
+- **EP-2 [中] Vec4+全 trait 完全装飾削除**: EN-2 (subgroup) 同型。
+  wgsl_source ≡ FOVEATED_WGSL const identity と Vec3 構築契約
+  (new/default) は strict pin 化 (削除による検証空白を残さない)。
+- **EP-3 [観] 誠実注記 4 項目**: (1) min_rate>1.0 は最終
+  `.clamp(min_rate, 1.0)` が **min>max で panic**、
+  (2) NaN 伝播 — **捕捉 57 [小]**: 初注記「min_rate NaN は透過」は
+  誤りで、f32::clamp は **引数 min/max が NaN でも panic**
+  (std doc 一次情報: "Panics if min > max, min is NaN, or max is NaN"、
+  RFC 1961 同文、実測 msg `min > max, or either was NaN. min = NaN,
+  max = 1.0`)。self NaN のみ透過 (doc 例証
+  `(f32::NAN).clamp(-2.0, 1.0).is_nan()`)。strict テスト初回実行が
+  コミット前に本誤りを RED 捕捉 (厳格テストの自己捕捉機能の実証)
+  → 注記訂正 + NaN min_rate を should_panic テスト
+  `min_rate_nan_panics` (expected="min > max, or either was NaN") へ
+  分離。NaN radius は f32::max の NaN 落としで 1e-4 底上げ
+  (0 除算回避) → t≥1 → rate=min_rate 収束、NaN uv は self NaN 透過で
+  出力 NaN、(3) uv.z/gaze.z 未使用 (2D radial 評価)、(4) Vec4 削除経緯。
+- **EP-4 [低] strict 5 件**: wiring 形状 golden bits (camera_dir 4 点:
+  [0,0,1]→0.5=0x3F000000・[0,0,0]→1.0=0x3F800000・[0,0,0.2]→
+  **0x3F3FFFFF (0.75 の 1 ulp 下 — d=0.099999994 の f32 逐次丸め、
+  暗算予想 0.75 は誤り・rq 真値採用)** ・[0,0,±0.4]→0.5 t=1 境界)、
+  min_rate>1.0 panic pin、NaN 3 経路 pin (radius→min_rate 収束・
+  radius 0→1e-4 底・uv NaN 透過)、捕捉 57 panic pin、wgsl identity+
+  Vec3 契約 pin。
+- **EP-5 [低] 検出空白補完 pin**: 既定 camera_dir=[0,0,1] は t≥1 で
+  rate≡min_rate=0.5 **下限退化** → wiring radius 変異が empty/chunked
+  golden 非検出の構造 (EO-5 同型パターン) → camera_dir を 4 値振動
+  させ t<1 域の変動値を golden 化する wiring strict
+  `tick_world_foveated_rate_varies_with_camera_dir` 新設
+  (0.0→1.0/0.2→0x3F3FFFFF/0.4→0.5/-0.4→0.5、rq 導出)。
+- **EP-6 [低] §7 消化 (既監査モジュール残警告一掃)**: lib test 警告
+  4 件 (HEAD 同数・wave 142 起因 0 を git stash で機械確認) を根治 —
+  aces_tonemap 未使用 let 削除・half_vertex/fsr3_fg needless mut 2 件
+  除去・meshlet_cone 未使用変数を degenerate cone **全可視不変式**
+  (axis=[0,0,0]・cos_angle=-1・任意有限方向で visible=true) の
+  2 assert pin へ転換。旧コメント「axis becomes (0,0,1)」は実装照査で
+  誤記確定 (normalize は 1e-8 底上げのみ・方向置換なし) → 修正。
+  lib test 警告 4→**0**、lib 本編警告は従来どおり **0**。
+
+adversarial 5 系統 (全て変異前実体コピー先行・復元 MD5-VERIFIED 5 回、
+foveated 52434480・wiring d33e6ce9 三重照合):
+(a) wiring radius 0.2→0.4 **1 RED** (EP-5 のみ検出・module golden は
+自前引数 pin で写し不変 = 補完 pin が唯一の検出線として正確に機能)
+・(b) wiring min_rate 0.5→0.25 **3 RED** (empty/chunked golden+EP-5:
+下限退化域を直撃)・(c) gaze map 定数化 (camera_dir 無視) **3 RED**
+(rate≡1.0 となり golden 直撃)・(d) Vec4+全 trait 復活 revert
+**非検出** (foveated 9 件全緑・警告 0 — pub mod 公開済で dead code
+警告も発生せず、EL-1 (d)/EO (e) 同型の誠実記録 = 装飾削除は検証
+非強化の整理)・(e) t 内側 clamp 除去 **非検出** (数学的等価: d≥0・
+radius≥1e-4>0 で t≥0 保証、t≥1 域は外側 `.clamp(min_rate,1.0)` が
+min_rate へ完全補償、NaN も同一路径 — EN max→min 同型の構造的
+非検出、誠実記録)。
+
+opt-gfx **1179 全緑** (21.21s 機械値、net +6 = foveated strict 5 +
+EP-5 1、機械検算 1173+6=1179)・lib 本編/test 警告 0 (EP-6 後)・
+api 49 全緑・fmdiff 自己起因逸脱 0・全厳密値 rq ep_foveated 事前導出
+(全 assert 通過、python 引退継続)・固定版 md5 三重保存 (foveated
+52434480967ed69e364ace9d99cd2bfd・wiring d33e6ce9f7b983cc40e0539b7aacf9ac・
+aces 9f0b28d172b95fc580b22a943d67efba・half 5fe5cf3d1776c7d124f732841b792cbe・
+meshlet 7a8ecf08369f04c6ebbe5a4285ffa7d9 (seal 初回 FAIL: 追加 assert 長行
+1 行逸脱 → 正準手術後全 PASS)・fsr3 d6b8b5de21846fe0e17b48ca90680efb)。
+seal 全 6 ゲート PASS (san/fmdiff 自己起因 0/trailws/1179 全緑/digest
+004c1cf5fb17bfe8 rows=357 不変/env-check)。台帳 534・TRIGGER 179。

@@ -144,8 +144,17 @@ mod tests {
         // two opposite-ish normals -> wide cone; camera in front should be visible
         let normals = [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
         let c = Cone::from_normals(&normals);
-        // average is zero -> axis becomes (0,0,1) after normalize of zero (degenerate).
-        // Use a clearly forward set instead:
+        // degenerate (平均法線ゼロ): axis = [0,0,0]/max(l,1e-8) = [0,0,0]、
+        // min_cos = 0 → cos_angle = −1 → 全有限方向で dot = 0 >= −1 が真 =
+        // **全可視** (静寂な形状蒸発を起こさない保守方向の不変式、wave 142
+        // EP-6 で pin。axis が (0,0,1) になる記述は誤記 — normalize は
+        // 1e-8 底上げのみで方向の置換はしない)。
+        assert!(c.visible([0.0, 0.0, 1.0]), "degenerate cone は前向きに可視");
+        assert!(
+            c.visible([0.0, 0.0, -1.0]),
+            "degenerate cone は後向きにも可視"
+        );
+        // 可視判定の意味ある検証には非 degenerate の前向き集合を使用:
         let normals2 = [[0.0, 0.0, 1.0], [0.3, 0.0, 0.95]];
         let c2 = Cone::from_normals(&normals2);
         assert!(c2.visible([0.0, 0.0, 1.0]));

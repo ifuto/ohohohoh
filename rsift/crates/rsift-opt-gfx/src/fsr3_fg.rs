@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn disocclusion_prefers_curr() {
-        let mut prev = solid_frame(0xFF000000, 0.5, 8, 8);
+        let prev = solid_frame(0xFF000000, 0.5, 8, 8);
         let mut curr = solid_frame(0xFFFFFFFF, 0.5, 8, 8);
         // 前景深さだけ変えて disocclusion を誘発
         curr.depth[10] = 0.1;
