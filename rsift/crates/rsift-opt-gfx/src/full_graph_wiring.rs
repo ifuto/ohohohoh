@@ -121,6 +121,12 @@ pub struct FrameWiringReport {
     /// 実消費へ閉塞。EB-3 公知の登録経路不在では恒 0、登録時に真値を返す
     /// 計測点 (junction 保持設計は wiring 側注記参照)。
     pub decals_projected: u32,
+    /// この tick に GigaVoxels 要求キューから実生成・アップロード扱いと
+    /// なった brick 数 (process_requests の戻り値実測)。
+    /// 【wave 166 FL 捕捉 101】旧 `_bricks` 破棄の実消費配線。
+    pub gigavoxels_processed: u32,
+    /// 処理後のプール常駐 brick 数 (BrickPool.resident_bricks.len() 実測)。
+    pub gigavoxels_resident: u32,
     /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
     pub cluster_lit_clusters: u32,
     /// GTAO オクルージョン (実パレット高さ場の中央断面スライス由来、[0,1]、
@@ -1255,7 +1261,17 @@ impl FullGraphWiring {
                 }
                 brick
             };
-            let _bricks = self.gigavoxels.process_requests(8, self.tick, gen);
+            // 【wave 166 FL 捕捉 101 §7 消化 28】旧 `_bricks` 破棄を根治:
+            // 生成件数と常駐数を report 実フィールドへ閉じる (brick
+            // ストリーミング負荷の決定性計測点)。
+            let bricks_processed = self.gigavoxels.process_requests(8, self.tick, gen) as u32;
+            report.gigavoxels_processed = bricks_processed;
+            report.gigavoxels_resident = self
+                .gigavoxels
+                .pool
+                .lock()
+                .map(|p| p.resident_bricks.len() as u32)
+                .unwrap_or(0);
         }
         // -- CLP: 実パレットの不透明ビットボード + 実発光種で GPU に実ディスパッチ。
         //    (デバイス非搭載時は安全にスキップ — CPU フォールバックの AO/Light 系で代替。)
@@ -3334,6 +3350,38 @@ mod strict_tests {
             "カメラ原点箱のみ投影成立 (非ゼロ工程化、far は None)"
         );
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 【wave 166 FL 捕捉 101 §7 消化 28】`_bricks` 破棄を report 実配線
+    /// したことの非ゼロ工程化 pin: palette ありで tick 毎に (0,0,0,0) が
+    /// request→process され processed=1・resident=1 定常 (rq fl_giga (3))。
+    /// palette なしでは両者 0 (分岐両側を pin)。
+    #[test]
+    fn fl_gigavoxels_report_pins_nonvacuous() {
+        let (dir, mut w) = unique_wiring("giga_stats");
+        let mut inp = empty_inputs();
+        let mut palette: crate::binary_greedy_meshing::SectionPalette = [0u16; 4096];
+        palette[0] = 7;
+        inp.section_palettes = vec![palette];
+        let r1 = w.tick_world(&inp);
+        assert_eq!(r1.gigavoxels_processed, 1, "palette あり: 1 件処理");
+        assert_eq!(r1.gigavoxels_resident, 1, "brick 常駐 1");
+        let r2 = w.tick_world(&inp);
+        assert_eq!(
+            r2.gigavoxels_processed, 1,
+            "tick 毎に再生成 (動的 voxel 経路)"
+        );
+        assert_eq!(
+            r2.gigavoxels_resident, 1,
+            "pool は (0,0,0,0) の 1 brick 定常"
+        );
+        let (dir2, mut w2) = unique_wiring("giga_stats_empty");
+        let inp2 = empty_inputs(); // palette なし
+        let r3 = w2.tick_world(&inp2);
+        assert_eq!(r3.gigavoxels_processed, 0, "palette なし: 処理 0");
+        assert_eq!(r3.gigavoxels_resident, 0);
+        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(dir2);
     }
 
     fn unique_wiring(tag: &str) -> (std::path::PathBuf, FullGraphWiring) {

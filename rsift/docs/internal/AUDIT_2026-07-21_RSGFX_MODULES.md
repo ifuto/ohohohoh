@@ -8845,3 +8845,47 @@ junction: 書込みサイト 0 件・登録 API 不在で恒空ループ、旧 `
   rustfmt 全量適用で自己起因逸脱を解消、seal ゲート2 機械値: decals
   0/0/0・wiring 0/0/0 全 PASS)。digest 004c1cf5fb17bfe8 rows=357 不変・
   seal 全 6 ゲート PASS・台帳 623・TRIGGER 202。
+
+## wave 166 (FL) gigavoxels.rs 厳密監査 (2026-07-28)
+
+census grep 機械確定: `GigaVoxelsBrickStreaming` = full_graph_wiring:339
+(フィールド)/:503 `new(2048)`/:1243 `request_brick(BrickKey(0,0,0,0))`
+(`section_palettes.first()` 条件)/:1258 旧 `_bricks` 破棄。生成クロージャ
+は実パレット由来の真生成 (`section_idx` = binary_greedy_meshing::idx、
+SectionPalette = `[u16; 4096]`、恒値・空クロージャではない) で、brick
+ボクセル値は負の座標重なりを 0..16 の実境界でクリップ。
+
+- **FL-1 [低] 捕捉 99 [小]**: `process_requests` が pop 先行構造で
+  budget==0 でもキュー先頭 1 件を生成していた契約逸脱 (rq fl_giga (1))
+  → budget ゲートを pop より先行させる根治 (TDD value RED: budget=0 で
+  processed>=1 を機械記録 → 0 へ GREEN)。partial carryover も厳密 pin。
+- **FL-2 [低] 捕捉 100 [小]**: `new(0)` で pool 空のまま evict 経路に
+  入り `pool_slots[0]` への OOB panic 潜入口 (rq (2)) → 構築時 assert
+  (max_bricks >= 1) の fail-loud 化。should_panic strict で契約 pin。
+- **FL-3 [低] 捕捉 101 [小] §7 消化 28**: wiring の
+  `let _bricks = self.gigavoxels.process_requests(...)` 評価破棄を根治
+  → report 実フィールド `gigavoxels_processed` / `gigavoxels_resident`
+  (u32) への実計測配線 (brick ストリーミング負荷の決定性計測点)。
+  TDD 機械記録: compile RED E0609×6 (report フィールド先行追加) →
+  value RED 3/3 (budget_zero / new_rejects / report_pins_nonvacuous)。
+  strict 当初 +5 (module 4: budget_zero / budget_partial_carryover /
+  new_rejects should_panic / evicts_oldest_key_exactly (green-today
+  pin) + wiring 1: report_pins_nonvacuous) net 1334 全緑を経て、
+  adversarial (e) の盲点分析で強化 +1 (後述) → **+6 net 1335 全緑**
+  (機械検算 1329+6、fmt 後全量 21.23s・最終緑確認済)。
+  adversarial 5 系統: (a) budget==0 early return 除去 1 RED・(b) 構築
+  assert 除去 1 RED・(c) wiring report 0 化 1 RED・(d) pub 死救出
+  (resident_brick_count) 非検出 (dead code 系 15 例目、誠実連番)・
+  (e) eviction 比較 `<`→`>`: 初回 **非検出 = 構造吸収** (oldest_idx
+  初期値 0 が touch 無し系列で真の最古 slot 0 と常に一致、スキャン
+  不更新化が不可視) → 盲点分析により touch 後 LRU 順位 pin の強化
+  strict `fl_evicts_lru_after_touch_exactly` を新設し変異下 1 RED で
+  検出確立、固定版で全緑。復元 MD5-VERIFIED 5 回 (b/c/d/e/強化後再
+  適用、a は前セッションで計上済)。最終 md5: gigavoxels 4467d4ca /
+  wiring 732abcd6。bak 固定版は強化テスト込み最終版へ更新済。
+  api 49・replay 16 全緑・警告 0。fmt 自己起因 0 (seal ゲート2 機械値:
+  wiring 0/0/0・gigavoxels 1/1/0 全 PASS; 手計測 tail+2 では
+  gigavoxels HEAD 原生 8 行 = 1d0 artifact + process_requests シグ
+  ネチャ長行、hunk 内容 HEAD と完全一致・行シフトのみ)。
+  digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
+  台帳 626・TRIGGER 203。
