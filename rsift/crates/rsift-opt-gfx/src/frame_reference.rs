@@ -79,7 +79,9 @@ fn face_normal(face: u32) -> [f32; 3] {
 
 /// fs_pull の Lambert + AO + band と同一。
 fn shade(tex: u32, light_ao: u32, face: u32) -> [f32; 3] {
-    let ao = 0.55 + light_ao as f32 * 0.15;
+    // wave 167 FM 捕捉 102: AO→係数語彙を ao_bake::ao_to_shade に単一点化
+    // (bit 同一は fm_probe cur==del 全 4 値で実機証明、shade_exact_bits 既 pin)。
+    let ao = crate::ao_bake::ao_to_shade(light_ao as u8);
     let band = (tex % 7) as f32 / 7.0;
     let n = face_normal(face);
     let ndl = (n[0] * SUN_DIR[0] + n[1] * SUN_DIR[1] + n[2] * SUN_DIR[2]).max(0.0);
@@ -949,10 +951,26 @@ mod tests {
         }
     }
 
+    /// 【wave 167 FM 捕捉 102】shade() の AO→係数語彙は ao_bake::ao_to_shade
+    /// への委譲で単一点化 (fs_pull truth と同一式)。脱委譲は語彙分裂回帰。
+    #[test]
+    fn fm_shade_delegates_to_ao_bake() {
+        const SRC: &str = include_str!("frame_reference.rs");
+        // 自己言及回避: 針文字列は分割連結 (リテラル直書きだと本テスト自身が
+        // マッチして vacuous 化する — wave 167 TDD で一次実測)。
+        let needle = concat!("crate::ao_bake::", "ao_to_shade(light_ao as u8)");
+        assert!(
+            SRC.contains(needle),
+            "shade は ao_bake::ao_to_shade へ委譲済みであること"
+        );
+    }
+
     /// wave 21-3: Lambert が面方位を実際に識別し、AO/band 係数との合成出力が
     /// WGSL/Rust 同一演算順の f32 厳密導出値と bit 一致すること。
     /// 期待値はモジュール固定演算順 (band * ao * li, ((band*0.6)*ao)*li, ...) から
     /// f32 エミュレーションで厳密導出 (直感値禁止: K-6 教訓)。
+    /// (wave 167: fm テスト挿入が一時的に本 fn の #[test] を剥奪 — 同 wave
+    /// 内自己照査で捕捉・修復、誠実記録)
     #[test]
     fn shade_exact_bits_matching_wgsl_eval_order() {
         // shade(tex=4, light_ao=3, face): band=4/7, ao=1.0
