@@ -111,6 +111,11 @@ pub struct FrameWiringReport {
     /// Pacer の目標リフレッシュレート (Hz、構築契約不変値)。
     /// 【wave 161 FG 捕捉 91】target_refresh_hz (private 化済み) の実消費者配線。
     pub frame_target_hz: f64,
+    /// PSO library の累計ヒット数 (get 実測、wave 83 CG-7 で真のキャッシュ化
+    /// 済みの計器)。【wave 163 FI 捕捉 94】stats() 消費者ゼロの実配線。
+    pub pso_lib_hits: u64,
+    /// 同、累計ミス数 (初回プロファイル遭遇数)。
+    pub pso_lib_misses: u64,
     /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
     pub cluster_lit_clusters: u32,
     /// GTAO オクルージョン (実パレット高さ場の中央断面スライス由来、[0,1]、
@@ -1697,6 +1702,12 @@ impl FullGraphWiring {
         if self.tick % 600 == 0 {
             let _ = self.pso_lib.save();
         }
+        // 【wave 163 FI 捕捉 94 §7 消化 25】stats() の消費者ゼロを根治:
+        // CG-7 で真のキャッシュ化した計器の読出し側を report 実フィールドへ
+        // 閉じる (起動ハング監視: miss 率は実プロファイル遭遇率)。
+        let (po_h, po_m) = self.pso_lib.stats();
+        report.pso_lib_hits = po_h;
+        report.pso_lib_misses = po_m;
 
         // Bundle reuse: 実チャンク単位の再録キャッシュ。
         for (i, k) in inputs.chunk_keys.iter().take(8).enumerate() {
@@ -3259,6 +3270,29 @@ mod strict_tests {
             0x4040aaaaaaaaaaab,
             "t2 = 100/3 (probe bits)"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 【wave 163 FI 捕捉 94 §7 消化 25】PsoLibrary::stats() の消費者ゼロを
+    /// report 実配線したことの非ゼロ工程化 pin: 同一 inputs (material hash
+    /// 不変) で tick 系列は (misses=1, hits=N-1) — rq fi_pso (1)。CG-7 で
+    /// 真のキャッシュ化した計器の読出し側が閉じていなかったことの根治で、
+    /// hit 経路が必ず発火する (vacuous 回避)。
+    #[test]
+    fn fi_pso_stats_report_pins_nonvacuous() {
+        let (dir, mut w) = unique_wiring("pso_stats");
+        let inp = empty_inputs();
+        let r1 = w.tick_world(&inp);
+        assert_eq!(r1.pso_lib_misses, 1, "初 tick は get=miss + insert");
+        assert_eq!(r1.pso_lib_hits, 0);
+        let r2 = w.tick_world(&inp);
+        assert_eq!(
+            r2.pso_lib_misses, 1,
+            "material hash 不変 → miss は 1 のまま"
+        );
+        assert_eq!(r2.pso_lib_hits, 1, "2 tick 目以降 hit 単調 (hits=N-1)");
+        let r3 = w.tick_world(&inp);
+        assert_eq!(r3.pso_lib_hits, 2);
         let _ = std::fs::remove_dir_all(dir);
     }
 

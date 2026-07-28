@@ -8747,3 +8747,35 @@ software_vrs_checkerboard 実設定由来)、`set_camera_speed`=:623 (M-1
   0/0/0 全 PASS — stub 削除で原生逸脱 2 行も消滅、difflib 交差選択
   適用 0/12 で自己起因ゼロ実証)。digest 004c1cf5fb17bfe8 rows=357 不変・
   seal 全 6 ゲート PASS・台帳 615・TRIGGER 199。
+
+## wave 163 (FI) pso_library_cache.rs 厳密監査 (2026-07-28)
+
+census grep 機械確定: `get`/`insert`/`save` = full_graph_wiring:1694-1699
+実消費 (wave 83 CG-7 で 100% miss 虚偽計器を真のキャッシュ挙動へ根治済)、
+`stats()` = 消費者ゼロ (自家テストのみ)、`new` = :498 (cache_dir 由来)。
+他 crate 参照なし。既監査注記 (2026-07-22) で save() ワイヤ形式の
+不可逆性 (12B レコード = vs_hash+len のみ、ロード不可) は公知・設計として
+公表済み。
+
+- **FI-1 [低] 捕捉 94 [小] §7 消化 25**: CG-7 で「測る側」を真化した
+  計器の「読む側」が閉じていなかった (`stats() = (hits, misses)` の実
+  消費者ゼロ)。wiring report 2 実フィールドへ配線、3 tick 非ゼロ工程化
+  pin (material_independent_hash 不変のため初 tick のみ miss、hit 経路
+  必発火 = vacuous 回避設計、rq fi_pso (1))。TDD compile RED E0609×5
+  機械記録。
+- **FI-2 [低] 捕捉 95 [小]**: ワイヤ blob 長の `as u32` キャストは
+  4GiB 超で暗黙 wrap (capture 84/88 の wrap 禁止族)。`wire_blob_len`
+  純粋関数へ抽出し u32 飽和へ根治。TDD は fn をキャスト版で先行実装し
+  `left: 0 vs right: 4294967295` の value RED を機械記録、saturate で
+  GREEN (到達不能域だが契約の数学的完全性として、と深刻度の境界を
+  誠実明記)。
+- **FI-3 [低] strict +2 net 1324 全緑** (機械検算 1322+2、fmt 後全量
+  21.11s・adversarial 後最終 21.15s)。rq fi_pso (1)-(3) 全 assert 通過。
+  adversarial 5 系統: (a) hits/misses swap 1 RED・(b) CG-7 再帰 (tick
+  混合キー → 恒 miss) 1 RED で回帰ガード実証・(c) cast revert 1 RED・
+  (d) report 0 化 1 RED・(e) dead code 死救出 非検出 (12 例目、census
+  grep 領域の限界として一貫記録)。復元 MD5-VERIFIED 5 回 (pso
+  6b21d11d/wiring 194bef49 三重照合)。api 49・replay 16 全緑・警告 0・
+  fmt 自己起因 0 (seal ゲート2 機械値: wiring 0/0/0・pso 7/7/0 全 PASS
+  — difflib 交差選択適用 1/9・1/2 で自己起因 hunk のみ解消)。digest 004c1cf5fb17bfe8 rows=357 不変・seal
+  全 6 ゲート PASS・台帳 618・TRIGGER 200。

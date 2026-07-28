@@ -1,6 +1,18 @@
 
 //! PSOキャッシュとPipelineLibrary - 初回起動ハング防止
 //! ID3D12PipelineLibrary相当をRustで再現: PSOをハッシュ化してディスクキャッシュ。
+//!
+//! 【wave 163 FI (2026-07-28)】消費者: `FullGraphWiring` の PSO library
+//! 計測 (`new`/`get`/`insert`/`save` = :1694-1699 実消費、`stats` = report
+//! 実フィールド pso_lib_hits/pso_lib_misses)。捕捉 94 [小]: §7 消化 25 で
+//! 消費者ゼロだった `stats()` へ読出し側を閉じた。捕捉 95 [小]: ワイヤ
+//! blob 長 `as u32` 暗黙 wrap (rq fi_pso (3): 2^32 → 0) を `wire_blob_len`
+//! 純粋関数の u32 飽和へ根治 (誠実注記: 実体 blob は MB 級で当該域は
+//! 到達不能、契約の数学的完全性としての修正)。未捕捉棚卸し ([観]):
+//! 保存ファイルは new() 注記通りロード不可の診断用アーティファクト、
+//! HashMap 走査順由来でバイト列は実行間非決定 (12B レコード集合は同一、
+//! 字节順のみ揺らぐ — I/O チャーンは 600 tick 間隔で実害極小のため
+//! 仕様棚卸しに留める)。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -20,6 +32,14 @@ pub struct PsoLibrary {
     path: PathBuf,
     hits: u64,
     misses: u64,
+}
+
+/// wire 長フィールド値 (12B レコードの blob 長部分)。
+/// 【wave 163 FI 捕捉 95】契約の純粋関数化: 4GiB 超は u32 飽和。
+/// (実体 PSO blob は MB 級で到達不能だが、キャスト契約は wrap 禁止族一
+/// (capture 84/88) として数学的に保証する)。
+fn wire_blob_len(len: usize) -> u32 {
+    (len as u64).min(u32::MAX as u64) as u32
 }
 
 impl PsoLibrary {
@@ -56,7 +76,9 @@ impl PsoLibrary {
         let mut out = Vec::new();
         for (k, v) in &self.cache {
             out.extend_from_slice(&k.vs_hash.to_le_bytes());
-            out.extend_from_slice(&(v.len() as u32).to_le_bytes());
+            // 【wave 163 FI 捕捉 95】旧 `v.len() as u32` の暗黙 wrap を
+            // 飽和契約の純粋関数へ (capture 84/88 同型)。
+            out.extend_from_slice(&wire_blob_len(v.len()).to_le_bytes());
         }
         fs::write(&self.path, out)
     }
@@ -139,6 +161,20 @@ mod strict_tests {
         assert_eq!(raw.len(), 12, "1 エントリ 12B");
         // dir = <unique>/a/b → ancestors().nth(2) でユニーク親ごと掃除
         let _ = fs::remove_dir_all(dir.ancestors().nth(2).unwrap().to_path_buf());
+    }
+
+    /// 【wave 163 FI 捕捉 95】wire 長フィールドは u32 飽和であること。
+    /// 旧 `v.len() as u32` は 4GiB 超で暗黙 wrap (capture 84/88 同型、
+    /// rq fi_pso (3): 2^32 → 0)。4GiB alloc 不要の契約 pin (純粋関数化)。
+    #[test]
+    fn wire_blob_len_saturates_past_u32() {
+        assert_eq!(wire_blob_len(64), 64);
+        assert_eq!(wire_blob_len(u32::MAX as usize), u32::MAX);
+        assert_eq!(
+            wire_blob_len(u32::MAX as usize + 1),
+            u32::MAX,
+            "wrap せず飽和"
+        );
     }
 
     #[test]
