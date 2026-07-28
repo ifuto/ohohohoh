@@ -244,6 +244,18 @@ pub struct FrameWiringReport {
     /// 【wave 155 FA-3】同上: quads − ranges の draw call 削減量 (同一キー
     /// の複数 quad が 1 draw に merge された節約、4 相異キーで常に 0)。
     pub hud_draw_calls_saved: u32,
+    /// 【wave 156 FB-3】pool_slab の占有 slot 数 (key ライフサイクル駆動:
+    /// 初見 chunk alloc・退去 chunk free、§7 消化 19 で旧無限 append を
+    /// 根治)。det subset 登録 (chunk_keys 系列のみ由来=完全決定)。
+    pub slab_occupied: u32,
+    /// 同上: 当該 tick の初見 chunk による alloc 実行数。
+    pub slab_new_allocs: u32,
+    /// 同上: 当該 tick の退去 chunk による free 実行数。
+    pub slab_freed: u32,
+    /// 同上: ObjectPool<BatchOutput> の HUD scratch acquire 直後
+    /// available (cap 2・1 outstanding で常に 1、capacity 保持
+    /// リサイクルの稼働証跡)。det subset 登録 (定数構造値)。
+    pub object_pool_available: u32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -302,6 +314,14 @@ pub struct FullGraphWiring {
     // ---- memory / scheduling ----
     bump: crate::bump_arena::BumpArena,
     slab: crate::pool_slab::Slab<u32>,
+    /// 【wave 156 FB §7 消化 19】chunk key → slab slot の真ライフサイクル
+    /// 写像 (初見 key のみ alloc・退去 key を free)。旧は毎 tick 全 chunk
+    /// を無限 append (free 消費者ゼロ) + `slot == usize::MAX` vacuous
+    /// 満杯分岐 (捕捉 74)。
+    slab_key_to_slot: std::collections::BTreeMap<(i32, i32), usize>,
+    /// 【wave 156 FB §7 消化 19】HUD scratch の ObjectPool リサイクル
+    /// (BatchOutput の Vec 容量を跨 tick で保持 = pool 本来の確保回避)。
+    scratch_pool: crate::pool_slab::ObjectPool<crate::hud_batch::BatchOutput>,
     registry: crate::dashmap_registry::ChunkRegistry,
     time_slice: crate::stutter_guard::TimeSlice<u32>,
     frame_arena: crate::stutter_guard::FrameArena,
@@ -448,7 +468,9 @@ impl FullGraphWiring {
             vis_graph: crate::visibility_graph::VisibilityGraph::new(),
             indirect_scratch: Vec::new(),
             bump: crate::bump_arena::BumpArena::new(4 << 20),
-            slab: crate::pool_slab::Slab::new(),
+            slab: crate::pool_slab::Slab::with_capacity(1024),
+            slab_key_to_slot: std::collections::BTreeMap::new(),
+            scratch_pool: crate::pool_slab::ObjectPool::new(2),
             registry: crate::dashmap_registry::ChunkRegistry::new(),
             time_slice: crate::stutter_guard::TimeSlice::new(800),
             frame_arena: crate::stutter_guard::FrameArena::new(1 << 20),
@@ -668,20 +690,57 @@ impl FullGraphWiring {
             self.registry
                 .set_state(*k, crate::dashmap_registry::ChunkBuildState::Building);
         }
-        // EB-5 (2026-07-26): 旧 slab_base (確保前 gpu_arena.used_bytes の
-        // スナップショット) も let _ 破棄のみの消費者不在メトリクスだった
-        // ため参照ごと削除 (slab_slots と同型。gpu_arena.used_bytes() 自体は
-        // vram_used_bytes 集計で引き続き実評価される)。
-        // slab.alloc は allocator 状態を実際に進める副作用 (スロット消費・満杯判定)
-        // 自体が目的。確保できたスロット数を数えるだけの書き込み専用カウンタ
-        // (slab_slots) は消費者不在のため削除 (監査警告 full_graph_wiring.rs:404/411)。
-        for (i, k) in inputs.chunk_keys.iter().enumerate() {
-            let mat = inputs.chunk_materials.get(i).copied().unwrap_or(0);
-            let slot = self.slab.alloc(mat);
-            if slot == usize::MAX {
-                break;
+        // RenderSection slab: chunk key ライフサイクル駆動の真実装 (wave 156
+        // FB 捕捉 74 根治 + §7 消化 19)。旧実装は毎 tick 全 chunk を無限
+        // append するのみ (free 消費者ゼロ) で、`slot == usize::MAX` の
+        // 満杯分岐は 64-bit 到達不能 (alloc は無制限成長で MAX sentinel を
+        // 返しえない) の vacuous check、「満杯判定自体が目的」のコメントは
+        // 虚偽構文だった。真契約: 初見 key のみ alloc (世代スラブへ mat
+        // 格納)、退去 key は free で mat 回収、map は module 側 len と
+        // 常時一致 (integrity debug_assert)。
+        {
+            let cur: std::collections::BTreeSet<(i32, i32)> =
+                inputs.chunk_keys.iter().copied().collect();
+            let evicted: Vec<(i32, i32)> = self
+                .slab_key_to_slot
+                .keys()
+                .copied()
+                .filter(|k| !cur.contains(k))
+                .collect();
+            let mut slab_freed = 0u32;
+            for k in evicted {
+                let slot = self
+                    .slab_key_to_slot
+                    .remove(&k)
+                    .expect("evict key は map に在る");
+                self.slab
+                    .free(slot)
+                    .expect("evict slot は map 一意で必ず在る (1 key = 1 slot 不変式)");
+                slab_freed += 1;
             }
-            let _ = k;
+            let mut slab_new_allocs = 0u32;
+            for (i, k) in inputs.chunk_keys.iter().enumerate() {
+                if !self.slab_key_to_slot.contains_key(k) {
+                    let mat = inputs.chunk_materials.get(i).copied().unwrap_or(0);
+                    let slot = self.slab.alloc(mat);
+                    debug_assert!(slot != usize::MAX, "alloc は無制限 (捕捉 74)");
+                    self.slab_key_to_slot.insert(*k, slot);
+                    slab_new_allocs += 1;
+                }
+            }
+            debug_assert_eq!(
+                self.slab_key_to_slot.len(),
+                self.slab.len(),
+                "map と slab 占有は常時一致 (integrity)"
+            );
+            debug_assert_eq!(
+                self.slab_key_to_slot.is_empty(),
+                self.slab.is_empty(),
+                "is_empty 一致 (integrity)"
+            );
+            report.slab_freed = slab_freed;
+            report.slab_new_allocs = slab_new_allocs;
+            report.slab_occupied = self.slab.len() as u32;
         }
 
         // BumpArena: morton コード列を実確保 (ヒープ不使用) して局所性 sort を評価。
@@ -852,7 +911,16 @@ impl FullGraphWiring {
                     start_instance_location: i as u32,
                 },
                 chunk_id: i as u32,
-                material_id: inputs.chunk_materials.get(i).copied().unwrap_or(0),
+                // §7 消化 19 (wave 156): material を世代スラブから真の
+                // read-back 供給 (slab を RenderSection の真の material
+                // store とする本来アーキテクチャ。key → slot → get の
+                // 丸ごと経路で、値は inputs 由来と round-trip bit 同一)。
+                material_id: self
+                    .slab_key_to_slot
+                    .get(&inputs.chunk_keys[i])
+                    .and_then(|&slot| self.slab.get(slot))
+                    .copied()
+                    .unwrap_or(0),
                 _pad: [0; 2],
             })
             .collect();
@@ -1724,7 +1792,11 @@ impl FullGraphWiring {
 
         // HUD: 実統計バーを実バッチ (draw call 削減量を実測)。
         self.hud.begin_frame();
-        let mut hud_scratch = crate::hud_batch::BatchOutput::default();
+        // §7 消化 19 (wave 156): scratch は ObjectPool から acquire
+        // (BatchOutput の indices Vec 容量を跨 tick で保持 = 確保回避の
+        // pool 本来役割)。枯渇時は default へ安全 fallback (実値非依存)。
+        let mut hud_scratch = self.scratch_pool.acquire().unwrap_or_default();
+        report.object_pool_available = self.scratch_pool.available() as u32;
         let stats_vals = [
             report.draw_command_count as f32 / 64.0,
             report.lockfree_cache_hits as f32 / 16.0,
@@ -1762,6 +1834,9 @@ impl FullGraphWiring {
             hud_view.ranges.iter().filter(|d| d.index_count > 0).count() as u32;
         report.hud_draw_calls_saved = self.hud.draw_calls_saved();
         drop(hud_view);
+        // §7 消化 19 (wave 156): 借用終了後に pool へ release (indices は
+        // 次 tick push_rect 上書きで実値非依存、容量のみ真の再利用)。
+        self.scratch_pool.release(hud_scratch);
 
         // Decals: 【誠実注記 EB-3 (2026-07-26)】旧コメントの「登録 API 経由の
         // 実データがあれば」は虚偽 — 本ベクタへの push 経路はクレート内に
@@ -3295,6 +3370,18 @@ mod strict_tests {
             a.hud_draw_calls_saved, b.hud_draw_calls_saved,
             "{ctx}: hud_draw_calls_saved"
         );
+        // FB-3 (wave 156): pool_slab 構造 4 値 (chunk_keys 系列のみ由来の
+        // 完全決定値、wall-clock 非依存) → det pin 正当。
+        assert_eq!(a.slab_occupied, b.slab_occupied, "{ctx}: slab_occupied");
+        assert_eq!(
+            a.slab_new_allocs, b.slab_new_allocs,
+            "{ctx}: slab_new_allocs"
+        );
+        assert_eq!(a.slab_freed, b.slab_freed, "{ctx}: slab_freed");
+        assert_eq!(
+            a.object_pool_available, b.object_pool_available,
+            "{ctx}: object_pool_available"
+        );
         assert_eq!(
             a.subsystems_active, b.subsystems_active,
             "{ctx}: subsystems_active"
@@ -3762,6 +3849,121 @@ mod strict_tests {
                 "bar{i}: 幅は設計値 v*120 (v={vw}); 旧 x_end 供給は +8px 超過 (捕捉 72)"
             );
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 156 FB-1 TDD RED】pool_slab lifecycle 構造値 golden: 静的
+    /// chunked keys=[(0,0)] は t1 で new=1/occupied=1、t2 は map hit で
+    /// new=0/freed=0/occupied=1 不変 (rq fb_slab (5))。捕捉 74 根治で
+    /// vacuous MAX 分岐は除去、ObjectPool mid available=1 も pin。
+    #[test]
+    fn tick_world_slab_lifecycle_counts_golden_strict() {
+        let (dir, mut w) = unique_wiring("fb_slab_c");
+        let mut inputs = chunked_inputs();
+        inputs.frame_index = 1;
+        let r1 = w.tick_world(&inputs);
+        assert_eq!(r1.slab_new_allocs, 1, "t1: 初見 (0,0) のみ alloc");
+        assert_eq!(r1.slab_freed, 0, "t1: 退去なし");
+        assert_eq!(r1.slab_occupied, 1, "t1: occupied 1");
+        assert_eq!(r1.object_pool_available, 1, "cap2-1=1 (acquire 稼働)");
+        inputs.frame_index = 2;
+        let r2 = w.tick_world(&inputs);
+        assert_eq!(r2.slab_new_allocs, 0, "t2: 同 key → map hit で alloc 0");
+        assert_eq!(r2.slab_freed, 0, "t2: 退去なし");
+        assert_eq!(
+            r2.slab_occupied, 1,
+            "t2: occupied 不変 (旧無限 append 根治)"
+        );
+        assert_eq!(r2.object_pool_available, 1, "t2 も 1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 156 FB-1】empty scene golden + integrity: key ゼロでは
+    /// 全 tick 0/0/0 (is_empty 一致)、ObjectPool は chunk 非依存で 1。
+    #[test]
+    fn tick_world_slab_empty_golden_strict() {
+        let (dir, mut w) = unique_wiring("fb_slab_e");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        for t in 1..=2u64 {
+            inputs.frame_index = t;
+            let r = w.tick_world(&inputs);
+            assert_eq!(r.slab_new_allocs, 0, "t{t}: alloc 0");
+            assert_eq!(r.slab_freed, 0, "t{t}: free 0");
+            assert_eq!(r.slab_occupied, 0, "t{t}: occupied 0 (is_empty 一致)");
+            assert_eq!(r.object_pool_available, 1, "t{t}: pool は chunk 非依存");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 156 FB-1 捕捉 74/§7 消化 19 TDD RED】eviction 系列 strict
+    /// (rq fb_slab (6)): t1 keys [(0,0),(1,0)] mats [7,9] → slots 0,1
+    /// occupied 2。t2 keys [(1,0),(2,0)] mats [5,3] → 退去 (0,0) freed=1
+    /// (mat 7 回収)、初見 (2,0) new=1 で slot0 LIFO 再利用 (gen+1)、
+    /// occupied 2 追従。material read-back は (1,0)→9 / (2,0)→3 の厳密
+    /// 一致 (全 tick chunk_keys 全要素を走査する chunk_id 0..last)。
+    #[test]
+    fn tick_world_slab_eviction_golden_strict() {
+        let (dir, mut w) = unique_wiring("fb_slab_v");
+        let mut inputs = chunked_inputs();
+        inputs.chunk_keys = vec![(0, 0), (1, 0)];
+        inputs.chunk_materials = vec![7, 9];
+        inputs.chunk_aabbs = vec![
+            ([0.0, 0.0, 0.0], [16.0, 16.0, 16.0]),
+            ([16.0, 0.0, 0.0], [32.0, 16.0, 16.0]),
+        ];
+        inputs.chunk_dists = vec![8.0, 8.0];
+        inputs.draw_index_counts = vec![36, 36];
+        inputs.section_palettes = vec![[1u16; 4096], [2u16; 4096]];
+        inputs.frame_index = 1;
+        let r1 = w.tick_world(&inputs);
+        assert_eq!(
+            (r1.slab_new_allocs, r1.slab_freed, r1.slab_occupied),
+            (2, 0, 2),
+            "t1 構造値"
+        );
+        assert_eq!(
+            w.slab.get(w.slab_key_to_slot[&(0, 0)]).copied(),
+            Some(7),
+            "t1: (0,0)→mat 7"
+        );
+        assert_eq!(
+            w.slab.get(w.slab_key_to_slot[&(1, 0)]).copied(),
+            Some(9),
+            "t1: (1,0)→mat 9"
+        );
+        assert_eq!(w.slab_key_to_slot[&(0, 0)], 0, "(0,0)→slot0");
+        assert_eq!(w.slab_key_to_slot[&(1, 0)], 1, "(1,0)→slot1");
+        // t2: (0,0) 退去 → mat 7 回収、(2,0) 新規 → slot0 LIFO 再利用。
+        inputs.chunk_keys = vec![(1, 0), (2, 0)];
+        inputs.chunk_materials = vec![5, 3];
+        inputs.frame_index = 2;
+        let r2 = w.tick_world(&inputs);
+        assert_eq!(
+            (r2.slab_new_allocs, r2.slab_freed, r2.slab_occupied),
+            (1, 1, 2),
+            "t2 構造値"
+        );
+        assert_eq!(
+            w.slab.get(w.slab_key_to_slot[&(1, 0)]).copied(),
+            Some(9),
+            "t2: (1,0) は mat 9 のまま (inputs mat 5 に上書きされない)"
+        );
+        assert_eq!(
+            w.slab.get(w.slab_key_to_slot[&(2, 0)]).copied(),
+            Some(3),
+            "t2: (2,0)→mat 3"
+        );
+        assert_eq!(
+            w.slab_key_to_slot[&(2, 0)],
+            0,
+            "(2,0) は free 済 slot0 を LIFO 再利用"
+        );
+        assert!(
+            !w.slab_key_to_slot.contains_key(&(0, 0)),
+            "退去 key は map から除去"
+        );
+        assert_eq!(w.slab.len(), 2, "module len と map 整合");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

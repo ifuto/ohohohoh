@@ -8276,3 +8276,97 @@ f8617dd42f3217397ad1a43841505b06・wiring
 46b21815c17de2c2a33211fbb73afcae、src+/tmp+rsift/bak 三重照合)・
 digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
 台帳 589・TRIGGER 192。
+
+## FB. pool_slab.rs / full_graph_wiring.rs (wave 156, 2026-07-28)
+
+対象 pool_slab.rs 255→455 行 (CR 0)、full_graph_wiring.rs 4432→4634 行
+(RenderSection lifecycle 真実装 + material read-back + ObjectPool HUD
+scratch リサイクル + report 4 フィールド + det pin 4)。wgsl なし。
+census grep 機械確定: pool_slab は lib.rs:230 `pub mod` 公開 + wiring:304
+`Slab<u32>` 保持・451 構築・**680 `alloc` のみ実消費**、他 crate 消費者
+ゼロ (crates 全域、stray コピー除外注記は FA 節参照)。free/get/get_mut/
+ObjectPool/GenerationalSlab 直接利用/with_capacity/len/is_empty は
+全消費者ゼロ、680 では `slot == usize::MAX` 満杯分岐と `let _ = k` 破棄。
+
+- FB-1 [中] **捕捉 74 [中] (vacuous 満杯判定 + 無限 append)**: 旧 wiring
+  は `slot == usize::MAX` を満杯と判定すべく分岐していたが、
+  `Slab::alloc` は Vec push の無制限成長で **MAX sentinel を構造的に
+  返しえない** (index は u32 由来、64-bit では 0xFFFF_FFFF ≠
+  usize::MAX、32-bit でも 2^32 件必要) — 到達不能の vacuous check で、
+  EB-5 以降のコメント「(スロット消費・満杯判定) 自体が目的」は虚偽
+  構文だった。加えて free 消費者ゼロで毎 tick 全 chunk を無限 append
+  (単調増大) + `let _ = k` 破棄。根治: RenderSection 本来の key
+  ライフサイクル真実装 (BTreeMap key→slot、**初見 key のみ alloc・
+  退去 key を free で mat 回収**、map == slab の占有と常時一致の integrity
+  debug_assert 2 本、`let _ = k` 消滅)。vacuous 分岐は除去 (挙動同一、
+  module 側真契約は alloc_unbounded golden が pin)。material_id
+  (draw cmd) は key→slot→`slab.get` の真 read-back 供給へ (値は
+  inputs 由来と round-trip bit 同一、det/EO 影響ゼロ、eviction 系列が
+  (1,0)→9 保持・(2,0)→3 新規で経路を実証)。
+- FB-2 [低] §7 消化 19: 消費者ゼロ構造へ真消費者創出 — free (evict)
+  /get (material read-back) /len→report.slab_occupied /is_empty
+  (integrity debug_assert) /Slab::with_capacity(1024) 事前確保接続
+  (reserve のみ挙動同一、GenerationalSlab::with_capacity 伝達) /
+  ObjectPool<BatchOutput> HUD scratch リサイクル (acquire 稼働
+  available=1 を report、release で Vec 容量の跨 tick 保持 = pool 本来
+  の確保回避、実値非依存=det 正当) 。`Slab::get_mut` /
+  `GenerationalSlab::get_mut` は不可能証明の上削除 (mat は frame
+  snapshot で不変・変異消費経路は crates 全域 census grep で存在
+  証明できない (不可能証明)、捏造 vacuous
+  書き込み=偽装禁止抵触、census grep 消費者ゼロ)。get_mut 以外の
+  全構造は維持・配線済 (削除 item は get_mut 2 件のみ)。
+- FB-3 [観] **捕捉 75 記録+根治**: insert で free_head 非 sentinel なのに
+  指先が Vacant でない場合の silent フォールスルー (内部不変式違反を
+  静寂マスクし push 増長する経路) を debug_assert で不変式明示
+  (公開 API からは到達不能、挙動同一、adversarial (e) が検出力を実証:
+  free-list 不進行変異を :102 で捕捉 panic)。他注記: generation u32
+  wrapping (同一 slot 2^32 reuse で理論上 ABA、60fps 全 tick でも
+  ~2.2 年到達不能、EY jitter wrap 同型)・Slab idx_to_handle の二重
+  free 安全 (take で Some→None)・LIFO 復帰順・pool LIFO 系列、
+  rq fb_slab 全 assert 通過 (python 引退継続)。
+- FB-4 [低] strict module 8 追加 (alloc unbounded golden/LIFO 復帰
+  golden/ABA gen +1 golden/occupied 二重 free 不変 pin/範囲外 None
+  契約 (u32::MAX idx overflow 安全含む)/ObjectPool acquire 系列 golden/
+  with_capacity 挙動同一 pin/keyed lifecycle pattern golden (wiring
+  実消費の module 側再現)、既存 2 維持) + wiring 3 (chunked lifecycle
+  golden t1/t2・empty golden 2 tick・eviction golden slot 再利用+
+  material 保持 read-back)。**+11 net 1294 全緑** (機械検算
+  1283+8+3、fmt 後全量再実測 21.65s・adversarial 後最終 22.12s)。
+  golden 全 rq fb_slab 事前導出 (LIFO 系列/gen 系列/occ 系列/pool
+  系列/scene 系列全整数)。TDD RED は compile RED 31 機械記録
+  (E0599 with_capacity/len/is_empty・E0609 report 4 fields、GC/EZ
+  同型の仕様先行)。
+
+adversarial 5+1 系統: (a) 捕捉 74 revert (evict 無し毎 tick 全 append)
+**15 RED** — 新 golden 2 に加え既存複数 tick chunked 系 13 が整合
+debug_assert (map.len()==slab.len()、wiring:712) で全滅 panic
+(det 系/EO golden/render_pipeline det 含む)。**私の事前予想 2 RED は
+debug_assert の複数 tick 波及を見落とした暗算予想で、実測 15 へ誠実
+訂正** (検出幅が golden 2 件を大きく上回る assert 網)。・(b) 削除済
+get_mut 復活 **非検出** (dead code 1294 緑・警告 0、census grep が
+検出責務、152 以来の同型誠実記録)。・(c) ObjectPool revert (acquire
+除去 + report 0 固定) **2 RED** (lifecycle+empty、事前予想完全一致)。
+・(d) 世代前進 skip (wrapping_add 除去) **2 RED** (aba golden + 既存
+test_generational_slab、事前予想 1 へ既存検出 +1 の誠実記録)。
+・(e) free-list 不進行変異 **1 RED** (捕捉 75 debug_assert :102 が
+鎖破壊を panic 捕捉、事前予想完全一致)。・(f) material read-back
+revert (inputs 直参照へ逆戻し) **非検出** (round-trip 値同一性により
+値では不可視 = 構造的限界、eviction golden の map 保持 pin が整合責務、
+誠実記録)。変異前実体コピー /tmp+rsift/bak 先行・python assert で適用
+確認後計測・毎回復元 MD5-VERIFIED (6 照合、(f) 復元時は cwd 誤りで
+cp が失敗し md5sum 工程が経路不一致を捕捉 → 絶対パスで真復元し直し
+MD5-VERIFIED + 固定版全量 22.12s 再実測、誠実記録)。
+
+opt-gfx **1294 全緑** (net +11、機械検算 1283+11=1294)・api 49 全緑・
+replay 16 全緑・lib 本編警告 0・fmt: slab HEAD 原生逸脱 2 行 (71/79)
+保有 → python difflib+git diff 行範囲交差判定で自己起因 hunk のみ選択
+適用 (keep=4 skip=2) → 区間内 71 は適用・未触 79 (=現座標 118) は
+保存で**自己起因 0** (seal ゲート2 機械値も slab HEAD 逸脱 2 / 現 1 /
+自己起因 0 で手計測と完全一致)、wiring HEAD 原生 0 → in-place rustfmt
+全量適用・seal 機械値 0/0/0=自己起因 0 (self-caught:
+通常代入式に誤ってタプル参照キャスト式 `*{(mat,)}.0 as &u32` を混入
+させた入力ミスをビルド前に自己修正、台帳には誠実記録)・固定版 md5
+三重保存 (slab c2a80a34a83b9ebcc65b9b51de4ecd09・wiring
+6a7be816645621d81e40466d5cf85493、src+/tmp+rsift/bak 三重照合)・
+digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
+台帳 593・TRIGGER 193。
