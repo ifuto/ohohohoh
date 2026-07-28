@@ -8811,3 +8811,37 @@ Vec4・Vec3::Sub は crate 全域消費者ゼロ。陽性確定: SH 5 定数
   全一致、seal ゲート2 機械値: wiring 0/0/0・ibl 8/8/0 全 PASS)。
   digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・台帳
   620・TRIGGER 201。
+
+## wave 165 (FK) decals.rs 厳密監査 (2026-07-28)
+
+census grep 機械確定: `decal_local` = full_graph_wiring:1914 (EB-3 公知
+junction: 書込みサイト 0 件・登録 API 不在で恒空ループ、旧 `let _` 評価
+破棄)、`wgsl_source` = gpu_runtime:75。`soft_edge`/Vec4/Vec3::Add/Mul は
+自家テスト以外ゼロ。census のẢng 補足: 全消費構造は wave EB-3 の誠実
+注記どおり (本 wave は評価破棄側の根治に限定、登録経路設計は継承)。
+
+- **FK-1 [低] 捕捉 97 [小]**: zero-half 除算チャネルの NaN 潜入口を
+  事前拒否へ根治 (TDD value RED 1/1 → GREEN)。数学整理 (rq fk_decals
+  (1)(2)): ゲート `|x|<=half.x` は half.x==0 かつ x==0 で真 → 0/0=NaN;
+  負 extent は恒偽で自然 None; half.z==0 は z 除算なしで無害 (d3 陽性
+  pin で仕様として固定)。境界等号は 3 辺全て inclusive (x/half.x =
+  1.0 bit 厳密 0x3f800000)。
+- **FK-2 [低] 捕捉 98 [小] §7 消化 27**: 評価破棄を計測へ閉塞
+  (report.decals_projected u32、EB-3 junction 設計を温存した上で計測
+  点として真値 0/非 0 を帳簿) + Vec4 (型+3 演算)・Vec3::{Add,Mul<f32>}
+  不可能証明削除 (判例連鎖 4 wave 目、crate 全域 + 他 crate grep 証跡)。
+  soft_edge 保持判定: 「decal_local と対をなす正当アルゴリズムで自家
+  strict と wgsl 語彙に消費証跡があり、登録経路接続時の実消費に直結」
+  — directive⑦ の保持側判断を明文記録 (削除は不可能証明不能 = 意味を
+  持つ計算であり fake 配線も不可のため)。
+- **FK-3 [低] strict +3 net 1329 全緑** (機械検算 1326+3、fmt 後全量
+  21.06s・adversarial 後最終緑確認済)。wiring pin はテスト特権 push で
+  非ゼロ工程化 (projected=1、EB-3 公知の登録経路不在を誠実明記)。
+  adversarial 5 系統: (a) guard 除去 1 RED・(b) x 境界厳格化 1 RED・
+  (e) z 境界厳格化 2 RED (inclusive 3 系を全捕捉)・(c) 評価破棄復帰
+  1 RED・(d) Vec4 死救出 非検出 (dead code 系 14 例目)。復元 MD5-
+  VERIFIED 5 回 (decals 275c302e/wiring 06ea60a7 三重照合)。api 49・
+  replay 16 全緑・警告 0・fmt 自己起因 0 (decals HEAD 実質正準 →
+  rustfmt 全量適用で自己起因逸脱を解消、seal ゲート2 機械値: decals
+  0/0/0・wiring 0/0/0 全 PASS)。digest 004c1cf5fb17bfe8 rows=357 不変・
+  seal 全 6 ゲート PASS・台帳 623・TRIGGER 202。

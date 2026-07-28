@@ -116,6 +116,11 @@ pub struct FrameWiringReport {
     pub pso_lib_hits: u64,
     /// 同、累計ミス数 (初回プロファイル遭遇数)。
     pub pso_lib_misses: u64,
+    /// この tick にカメラ位置がデカール箱へ投影成立した個数 (実評価計測)。
+    /// 【wave 165 FK 捕捉 98】旧 `let _ = decal_local(...)` 評価破棄を
+    /// 実消費へ閉塞。EB-3 公知の登録経路不在では恒 0、登録時に真値を返す
+    /// 計測点 (junction 保持設計は wiring 側注記参照)。
+    pub decals_projected: u32,
     /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
     pub cluster_lit_clusters: u32,
     /// GTAO オクルージョン (実パレット高さ場の中央断面スライス由来、[0,1]、
@@ -1910,8 +1915,13 @@ impl FullGraphWiring {
         // **存在しない** (census grep: 書き込みサイト 0 件、公開登録 API なし)。
         // 本ループは恒常空で実評価は構造的に不発。将来の登録経路接続用の
         // 結合点として保持 (directive⑦)。
+        // 【wave 165 FK 捕捉 98 §7 消化 27】旧 `let _ = decal_local(...)`
+        // 評価破棄を根治: 投影成立数を report 実フィールドへ実消費配線
+        // (登録経路接続時にそのまま真値を返す計測点 = EB-3 の junction
+        // 設計と整合、恒空下では 0 を真値として帳簿)。
+        let mut decals_projected = 0u32;
         for d in &self.decals {
-            let _ = crate::decals::decal_local(
+            let local = crate::decals::decal_local(
                 crate::decals::Vec3::new(
                     inputs.camera_pos[0],
                     inputs.camera_pos[1],
@@ -1919,7 +1929,9 @@ impl FullGraphWiring {
                 ),
                 d,
             );
+            decals_projected += local.is_some() as u32;
         }
+        report.decals_projected = decals_projected;
 
         // ============================================================
         // 7. 参照ポストチェーン: 実カメラ/実スカイドーム → 全ポスト効果を実計算。
@@ -3295,6 +3307,32 @@ mod strict_tests {
         assert_eq!(r2.pso_lib_hits, 1, "2 tick 目以降 hit 単調 (hits=N-1)");
         let r3 = w.tick_world(&inp);
         assert_eq!(r3.pso_lib_hits, 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 【wave 165 FK 捕捉 98 §7 消化 27】decal_local 評価の `let _` 破棄を
+    /// report 実フィールドへ閉じたことの非ゼロ工程化 pin。EB-3 公知: 本
+    /// クレートに登録 API は存在しないため wiring フィールドへの直接 push
+    /// (テスト特権) で工程化する。原点箱 (カメラ内) + 遠方箱 (100,0,0) で
+    /// 投影成立は 1/2 (rq fk_decals (3))。
+    #[test]
+    fn fk_decals_projected_report_pin_nonvacuous() {
+        let (dir, mut w) = unique_wiring("decals_pin");
+        let box_at = |x: f32| crate::decals::Decal {
+            center: crate::decals::Vec3::new(x, 0.0, 0.0),
+            right: crate::decals::Vec3::new(1.0, 0.0, 0.0),
+            up: crate::decals::Vec3::new(0.0, 1.0, 0.0),
+            forward: crate::decals::Vec3::new(0.0, 0.0, 1.0),
+            half: crate::decals::Vec3::new(2.0, 2.0, 2.0),
+        };
+        w.decals.push(box_at(0.0));
+        w.decals.push(box_at(100.0));
+        let inp = empty_inputs(); // camera [0,0,0]
+        let r = w.tick_world(&inp);
+        assert_eq!(
+            r.decals_projected, 1,
+            "カメラ原点箱のみ投影成立 (非ゼロ工程化、far は None)"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
