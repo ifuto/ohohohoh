@@ -235,6 +235,15 @@ pub struct FrameWiringReport {
     /// Minimized=2/Idle=3)。mode() getter 冗長削除の代替観測面。
     /// wall-clock 由来のため det subset 非登録 (grep 587 注記と同根拠)。
     pub power_mode: u8,
+    /// 【wave 155 FA-3】HUD batch の quad 総数 (§7 消化 18: 旧 drop 破棄
+    /// 根治)。wiring は layer 4 相異キーの統計バー 4 本固定 → 常に 4。
+    pub hud_quads: u32,
+    /// 【wave 155 FA-3】同上: index_count>0 の描画 range 数 ( ImmediatelyFast
+    /// 本質の merge 後 draw call 数、4 相異キーで常に 4)。
+    pub hud_draw_ranges: u32,
+    /// 【wave 155 FA-3】同上: quads − ranges の draw call 削減量 (同一キー
+    /// の複数 quad が 1 draw に merge された節約、4 相異キーで常に 0)。
+    pub hud_draw_calls_saved: u32,
     /// 配線サブシステム仕様数 (固定 60)。【誠実注記 wave 83 CG-3】本値は
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
@@ -1730,10 +1739,14 @@ impl FullGraphWiring {
                     scissor_id: 0,
                     layer: i as u16,
                 },
+                // 捕捉 72 (wave 155) 根治: module 契約は [x,y,w,h] — 旧は
+                // rect[2] に x_end (8.0+v*120.0) を供給して幅が常に +8px
+                // 過大 (v=0 で 8px の非ゼロ棒) だった。w = 設計幅 v*120
+                // (端 = 8+vw で同一、v=0 → 幅 0 exact)。
                 [
                     8.0,
                     8.0 + i as f32 * 12.0,
-                    8.0 + v.clamp(0.0, 1.0) * 120.0,
+                    v.clamp(0.0, 1.0) * 120.0,
                     18.0 + i as f32 * 12.0,
                 ],
                 hud_layer_color(i as u16),
@@ -1741,9 +1754,14 @@ impl FullGraphWiring {
             );
         }
         let hud_view = self.hud.finish(&mut hud_scratch);
-        let hud_saved = self.hud.draw_calls_saved();
+        // FA-3 (wave 155) §7 消化 18: 旧 drop(hud_view)+let _ = hud_saved 両方破棄
+        // を根治 → batch 構造値を report へ実配線 (layer 4 相異キーで
+        // 全 scene 確定的 4/4/0、det pin 正当)。
+        report.hud_quads = hud_view.quad_count;
+        report.hud_draw_ranges =
+            hud_view.ranges.iter().filter(|d| d.index_count > 0).count() as u32;
+        report.hud_draw_calls_saved = self.hud.draw_calls_saved();
         drop(hud_view);
-        let _ = hud_saved;
 
         // Decals: 【誠実注記 EB-3 (2026-07-26)】旧コメントの「登録 API 経由の
         // 実データがあれば」は虚偽 — 本ベクタへの push 経路はクレート内に
@@ -3267,6 +3285,16 @@ mod strict_tests {
             b.power_smoothed_dt.to_bits(),
             "{ctx}: power_smoothed_dt (bit)"
         );
+        // FA-3 (wave 155): HUD batch 構造 3 値 (全 scene 確定的)
+        assert_eq!(a.hud_quads, b.hud_quads, "{ctx}: hud_quads");
+        assert_eq!(
+            a.hud_draw_ranges, b.hud_draw_ranges,
+            "{ctx}: hud_draw_ranges"
+        );
+        assert_eq!(
+            a.hud_draw_calls_saved, b.hud_draw_calls_saved,
+            "{ctx}: hud_draw_calls_saved"
+        );
         assert_eq!(
             a.subsystems_active, b.subsystems_active,
             "{ctx}: subsystems_active"
@@ -3679,6 +3707,61 @@ mod strict_tests {
             "empty tick1 EMA s1 (rq ez_pp、シーン非依存)"
         );
         assert_eq!(r.power_mode, 0, "empty も初期 Active");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 155 FA-3】HUD batch 構造値 golden: layer 4 相異キー →
+    /// quads=4 / ranges=4 / saved=0 (全 scene 確定的、chunked/empty 両方
+    /// で pin、rq fa_hud (1))。ImmediatelyFast merge の観測面実配線。
+    #[test]
+    fn tick_world_hud_batch_counts_golden_strict() {
+        for (tag, chunked) in [("fa_hud_c", true), ("fa_hud_e", false)] {
+            let (dir, mut w) = unique_wiring(tag);
+            let mut inputs = if chunked {
+                chunked_inputs()
+            } else {
+                empty_inputs()
+            };
+            inputs.view_proj = IDENTITY_VP;
+            inputs.frame_index = 1;
+            let r = w.tick_world(&inputs);
+            assert_eq!(r.hud_quads, 4, "{tag}: 4 bar = 4 quads");
+            assert_eq!(r.hud_draw_ranges, 4, "{tag}: 4 相異キー = 4 ranges");
+            assert_eq!(r.hud_draw_calls_saved, 0, "{tag}: merge なし → saved 0");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// 【wave 155 FA-1 捕捉 72 TDD RED】HUD 棒グラフ rect 契約: module は
+    /// `[x,y,w,h]` の w を受けるのに旧 wiring は x_end (8.0+v*120.0) を w
+    /// として供給 → 幅が常に +8px 過大 (v=0 でも 8px の非ゼロ棒 = 捕捉
+    /// 62/63 クラスの供給値契約不一致)。幅は wiring 内基準 x=8 起点で
+    /// `x1-x0 == v*120` (端 8+v*120) が正しい。頂点は finish 後も
+    /// begin_frame まで保持されるため経由して厳密照合する。
+    #[test]
+    fn tick_world_hud_bar_width_capture72_strict() {
+        let (dir, mut w) = unique_wiring("fa_hud72");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 1;
+        let r = w.tick_world(&inputs);
+        let stats = [
+            r.draw_command_count as f32 / 64.0,
+            r.lockfree_cache_hits as f32 / 16.0,
+            r.lbvh_culled as f32 / 16.0,
+            r.aokana_visible_regions as f32 / 8.0,
+        ];
+        let mut scratch = crate::hud_batch::BatchOutput::default();
+        let view = w.hud.finish(&mut scratch);
+        for (i, &v) in stats.iter().enumerate() {
+            let vw = v.clamp(0.0, 1.0) * 120.0; // 真の設計幅 (端 = 8+vw)
+            let got = view.vertices[i * 4 + 1].pos[0] - view.vertices[i * 4].pos[0];
+            assert_eq!(
+                got.to_bits(),
+                vw.to_bits(),
+                "bar{i}: 幅は設計値 v*120 (v={vw}); 旧 x_end 供給は +8px 超過 (捕捉 72)"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

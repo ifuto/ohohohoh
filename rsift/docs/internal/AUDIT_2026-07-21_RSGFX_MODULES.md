@@ -8187,3 +8187,92 @@ md5 三重保存 (pp 9c52433dd81a95db2be20e96ed269c5c・wiring
 3853688004c30344086915a5e01dbab4、src+/tmp+rsift/bak 三重照合)・
 digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
 台帳 585・TRIGGER 191。
+
+## FA. hud_batch.rs / full_graph_wiring.rs (wave 155, 2026-07-28)
+
+対象 hud_batch.rs 224→441 行 (CR 0)、full_graph_wiring.rs (rect 供給値
+根治 + report 3 フィールド + det pin 3 + §7 消化 18 配線)。wgsl なし。
+census grep 機械確定: HudBatch は lib.rs:186 `pub mod hud_batch` 公開 +
+wiring:334 保持・486 構築 (quad 容量 1024)・1726-1763 実消費、他 crate
+消費者ゼロ (crates 全域、stray コピー rsift/rsift/rsift-opt-gfx/src は
+ビルド対象外ユーザ管理資産として除外注記)。旧構造値は
+`drop(hud_view)` + `let _ = hud_saved` 両方破棄 (§7 未消費 2 構造) で、
+batching の draw call 削減量が一切観測されない主沈黙面だった。
+
+- FA-1 [中] **捕捉 73 [中] (非連続 push 結合未実装・golden 試験が切開)**:
+  finish 内 finalize_indices は range の `first_index..+index_count`
+  slice 出力のみで、非連続同一キー push (A,B,A) では A range の区間に
+  中間 B の index run が包含 → **B が A range と B range の双方で二重
+  描画**される誤描画系。先頭 doc「非連続 push の結合」は未実装主張で、
+  wiring は昇順連続 push のみで非顕在化構造。根治: push 毎の chunk
+  (slot, indices 内 offset) run 記録 + finalize を by_slot 1 pass 真
+  再配置 (O(chunks)、range×chunk 二重走査回避で低スペック整合) +
+  **slot_for の map ずらし時に chunk slot も同規則 +1 ずらし** (初回
+  ずらし忘れで interleave/repeat golden 再 RED → 2 段修正緑、自己照査
+  記録)。ImmediatelyFast Text batching 同型 (文字順≠キー順で非連続が
+  本質)。golden = repeat-after-insert strict (rq fa_hud (4))。
+- FA-1 [中] **捕捉 71 [中] (slot_for 返却非一致)**: slot_for は
+  `ranges.len()` (挿入前末尾) を返すのに実配置は insert_pos (層昇順)。
+  旧 push_quad の冗長 3 段 (誤 range への base_vertex 設定 attempt は
+  count>0 で skip/no-op `map.get_mut(&key).map(|_| ())`/`self.map[&key]`
+  真 slot 再取得) で辛うじて整合していた構造 (絶対 index 方式で
+  base_vertex=0 契約は golden pin)。根治: slot_for 返却=insert_pos +
+  push_quad 単一路簡素化、挙動同一は golden 3 本 (same_key 列/
+  interleave/repeat) で pin。adversarial (b) 帳尻復帰は挙動同一で
+  非検出 (誠実記録、根治は簡素化+pin で代替正当)。
+- FA-1 [小] **捕捉 72 [小] (wiring rect 供給値契約不一致、捕捉 62/63
+  クラス)**: module 契約は rect=[x,y,w,h] の w に対し wiring は x_end
+  (`8.0+v*120.0`) を供給 → 幅が常に **+8px 系統誤差** (v=1 で 128/120
+  = +6.7%、v=0 で 8px の非ゼロ棒=空でない)。TDD RED 機械記録: bar0
+  v=0 で幅 bits=left 0x41000000 (8.0) ≠ right 0 (rq fa_hud 予想完全一致)。
+  根治: wiring は `v.clamp(0.0,1.0)*120.0` を w 供給 (端=8+vw で旧表示
+  の意図と同一、v=0 → 幅 0 exact、module 側 w=0 空矩形受理 pin)。
+- FA-2 [低] §7 消化 18: 旧 `drop(hud_view)`+`let _ = hud_saved` 両方
+  破棄を根治 → report `hud_quads`/`hud_draw_ranges`/
+  `hud_draw_calls_saved` 実配線 (layer 4 相異キーで全 scene 確定的
+  4/4/0、merge 0 の wiring 構造正直注記) + det_subset bit pin 3
+  (3289-3296)。ImmediatelyFast merge の観測面を真値で開設 (虚偽
+  イベント捏造の fake 配線なし)。
+- FA-3 [観] 注記 6 項 + **mojibake 誤読の誠実撤回**: push_rect doc
+  「実線矩形」を前モデルが文字化けと誤判定した件、od byte 照合で E7 9F
+  A9 = U+77E9「矩」の健全 UTF-8 と一次確認 → 撤回注記のみ (修正対象
+  なし、terminal 表示断片を一次照合なしに疑った前例として pub 記録)。
+  他注記: draw_calls_saved=saturating_sub で負化なし/begin_frame 完全
+  リセット (chunks/quads 含む)/map・chunk ずらし可変性の不変式文書化。
+- FA-4 [低] strict module 5 追加 (same_key index **列** golden [(b,b+1,
+  b+2,b,b+2,b+3)×3]・layer interleave golden [ranges (0,6,6),(5,12,6),
+  (9,0,6)+finalize 列]・repeat-after-insert golden [(0,6,6),(9,0,12)+列
+  [4,5,6,4,6,7,0,1,2,0,2,3,8,9,10,8,10,11]]・push_rect contract golden
+  [(8,8),(128,8),(128,18),(8,18) 全 dyadic exact+w=0 空矩形]・
+  begin_frame 再利用+empty golden) + wiring 2 (捕捉 72 幅照合 4 本
+  report 由来汎用式・counts golden chunked/empty 両方 (4,4,0))。
+  既存 2 (merges/layers_sort) 維持。**+7 net 1283 全緑** (機械検算
+  1276+5+2、fmt 後全量再実測 22.27s・adversarial 後最終 21.71s)。
+  golden 全 rq fa_hud 事前導出 (構造値 4/4/0・index パターン・
+  interleave/repeat 列・捕捉 72 新旧差分、python 引退継続)。
+
+adversarial 5 系統: (a) 捕捉 73 revert (旧 slice finalize) **1 RED**
+(repeat_after_insert のみ — interleave は全キー相異で slice≡repack の
+構造的緑、事前導出どおり誠実記録)・(b) 捕捉 71 revert (帳尻 3 段復帰)
+**非検出** (帳尻が返却非一致を厳密相殺する挙動同一、1283 緑機械記録・
+警告 0、簡素化+golden pin が代替保証、誠実記録)・(c) 捕捉 72 revert
+(w=8.0+v*120) **1 RED** (capture72 幅照合)・(d) 層比較方向反転
+(`>`→`<`) **3 RED** (layers_sort/interleave/repeat golden)・(e) §7 消化
+18 revert (report 3 代入削除=0 固定) **1 RED** (counts golden)。
+変異前実体コピー /tmp+rsift/bak 先行・python assert+grep -c で適用確認
+後計測・毎回復元 MD5-VERIFIED (5 照合、(c)(e) 適用時に wiring 行 695 の
+過去文書語句「adversarial (c)」を誤数と検討し行位置一次確認で解消)。
+
+opt-gfx **1283 全緑** (net +7、機械検算 1276+7=1283)・api 49 全緑・
+replay 16 全緑・lib 本編警告 0・fmt: hud HEAD 原生逸脱保有のため
+python difflib+git diff 行範囲交差判定で自己起因 hunk のみ選択適用
+(KEEP 3 hunk+境界誤判定 1 行を手動修正)=自己起因 0 (逸脱内容一致:
+push_glyph literals/DrawRange 1 行リテラル/key()/mkquad 4 群、seal
+ゲート2 機械値は HEAD 逸脱 10/現 10/自己起因 0 PASS — 行数は
+difflib 計上と seal 計上で定義差あり、自己起因 0 は両者一致)・wiring
+HEAD 原生 0 → in-place rustfmt 全量適用・seal 機械値 0/0/0=自己起因
+0・固定版 md5 三重保存 (hud
+f8617dd42f3217397ad1a43841505b06・wiring
+46b21815c17de2c2a33211fbb73afcae、src+/tmp+rsift/bak 三重照合)・
+digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
+台帳 589・TRIGGER 192。
