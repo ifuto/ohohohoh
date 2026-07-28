@@ -131,6 +131,10 @@ pub struct FrameWiringReport {
     /// (DWORD 単位、定数 19 = 16 Camera + 1 bindless Table + 2 Material)。
     /// D3D12 64 DWORD 制限内の実行時 telemetry 化。
     pub root_cost_dwords: u32,
+    /// 【wave 169 FO 捕捉 106 §7 消化 31】bundle_cache 帳簿 (累積値) の
+    /// 実配線。hits=再利用回数・misses=初回生成回数 (u64、wiring 単位累積)。
+    pub bundle_hits: u64,
+    pub bundle_misses: u64,
     /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
     pub cluster_lit_clusters: u32,
     /// GTAO オクルージョン (実パレット高さ場の中央断面スライス由来、[0,1]、
@@ -1757,7 +1761,11 @@ impl FullGraphWiring {
                 ]
             });
         }
-        let _bundle_stats = self.bundle_cache.stats();
+        // 【wave 169 FO 捕捉 106 §7 消化 31】旧 `let _bundle_stats = ...;`
+        // 破棄を report 実配線へ根治 (pso_lib 帳簿報告と同型)。
+        let (b_h, b_m) = self.bundle_cache.stats();
+        report.bundle_hits = b_h;
+        report.bundle_misses = b_m;
 
         // BC7: 実マテリアル由来の代表タイルを実エンコード/デコード (帯域見積りの実証)。
         if let Some(&m) = inputs.quad_materials.first() {
@@ -3373,6 +3381,23 @@ mod strict_tests {
             "16 (Camera RootConstants) + 1 (bindless Table) + 2 (Material RootDescriptor)"
         );
         assert!(r.root_cost_dwords <= 64, "D3D12 64 DWORD 制限内");
+    }
+
+    /// 【wave 169 FO 捕捉 106】§7 消化 31: 旧 `let _bundle_stats = ...;` 破棄を
+    /// report.bundle_hits/bundle_misses 実配線へ根治。8 キー固定供給で初回 8 miss、
+    /// 2 回目 tick で 8 hit 累積 (BundleCache 帳簿は wiring 単位累積) の非ゼロ両側 pin。
+    #[test]
+    fn fo_bundle_report_pins_nonvacuous() {
+        let (_dir, mut w) = unique_wiring("fo_bundle");
+        let mut inp = empty_inputs();
+        inp.chunk_keys = (0..8).map(|i| (i, i * 7)).collect();
+        inp.draw_index_counts = (0..8).map(|i| 36 + i as u32).collect();
+        let r1 = w.tick_world(&inp);
+        assert_eq!(r1.bundle_misses, 8, "初回 8 キー全 miss");
+        assert_eq!(r1.bundle_hits, 0, "初回 hit 0");
+        let r2 = w.tick_world(&inp);
+        assert_eq!(r2.bundle_hits, 8, "2 回目は 8 キー全 hit (累積 8)");
+        assert_eq!(r2.bundle_misses, 8, "miss 累積は 8 のまま");
     }
 
     /// 【wave 166 FL 捕捉 101 §7 消化 28】`_bricks` 破棄を report 実配線
