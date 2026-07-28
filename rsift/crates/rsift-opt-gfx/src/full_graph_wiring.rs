@@ -260,6 +260,21 @@ pub struct FrameWiringReport {
     /// 実数え上げではなく固定の仕様値 — tick_world 内で起動される系の
     /// 実計数ではなく、決定性ピンのために定数で供給する。
     pub subsystems_active: u32,
+    /// FSR3 FG 用バッファ: color 2 面分 [bytes] (1920×1080 契約、定数)。
+    /// 【wave 159 FE 捕捉 83 §7 消化 21】旧実装は fsr3_buffers タプルを
+    /// `let _ =` で破棄していた中間構造 — 実報告フィールドへ配線。
+    pub fsr3_color_bytes: u64,
+    /// 同上: depth 2 面分 [bytes]。
+    pub fsr3_depth_bytes: u64,
+    /// 同上: motion [bytes]。
+    pub fsr3_motion_bytes: u64,
+    /// FSR3 FG アルファ中間フレームの R チャンネル平均絶対差
+    /// (0.0〜255.0、bootstrap (prev 不在) は out:=curr serve で厳密 0.0)。
+    /// 【wave 159 FE 捕捉 83 §7 消化 21】旧実装は `_fsr3_mean_delta` 捨ての
+    /// 検証メトリクスだった — 「serve した中間フレームが現フレームとどれ
+    /// ほど違うか」の品質観測として実配線。det subset 登録 (scene 固定で
+    /// 完全決定、dome/inputs 由来のみ)。
+    pub fsr3_mean_delta: f32,
 }
 
 /// 全サブシステムを保持・駆動する配線オーケストレーター。
@@ -2333,19 +2348,31 @@ impl FullGraphWiring {
             if let Some(prev) = &self.fsr3_prev {
                 self.fsr3_interp
                     .interpolate_cpu(prev, &curr, &mut self.fsr3_out);
-                // 実出力の検証メトリクス: アルファ中間フレームの平均輝度差。
-                let sum: u64 = self
-                    .fsr3_out
-                    .iter()
-                    .zip(&curr.color)
-                    .map(|(a, b)| {
-                        (((a >> 16) & 0xFF) as i64 - ((b >> 16) & 0xFF) as i64).unsigned_abs()
-                    })
-                    .sum();
-                let _fsr3_mean_delta = sum as f32 / (FW * FH) as f32;
+            } else {
+                // 【wave 159 FE bootstrap 根治】旧実装は prev 不在の初回に
+                // fsr3_out を前値 (全ゼロ含む) のまま残し、黒フレーム混じり
+                // のマトリクス/Δ 測定系だった。中間フレーム ≈ 現フレームへ
+                // 倒す FSR3 既定動作で serve する。
+                self.fsr3_out.copy_from_slice(&curr.color);
             }
+            // 【wave 159 FE 捕捉 83 §7 消化 21】実出力の検証メトリクス
+            // (アルファ中間フレーム vs 現フレームの R 平均絶対差) を
+            // report へ実配線 — 旧実装は `_fsr3_mean_delta` 捨て。
+            let sum: u64 = self
+                .fsr3_out
+                .iter()
+                .zip(&curr.color)
+                .map(|(a, b)| {
+                    (((a >> 16) & 0xFF) as i64 - ((b >> 16) & 0xFF) as i64).unsigned_abs()
+                })
+                .sum();
+            report.fsr3_mean_delta = sum as f32 / (FW * FH) as f32;
             self.fsr3_prev = Some(curr);
-            let _ = self.fsr3_buffers;
+            // 【wave 159 FE 捕捉 83 §7 消化 21】バッファ 3 定数の実配線 —
+            // 旧実装は `let _ = self.fsr3_buffers` 破棄。
+            report.fsr3_color_bytes = self.fsr3_buffers.0;
+            report.fsr3_depth_bytes = self.fsr3_buffers.1;
+            report.fsr3_motion_bytes = self.fsr3_buffers.2;
         }
 
         // ============================================================
@@ -3140,6 +3167,52 @@ mod strict_tests {
         (dir.clone(), FullGraphWiring::new(&dir))
     }
 
+    /// 【wave 159 FE 捕捉 83 §7 消化 21 + bootstrap 根治】fsr3 報告の実配線:
+    /// (a) fsr3_*_bytes は計算→破棄 (`let _ =`) だったバッファ 3 定数、
+    /// (b) fsr3_mean_delta は `let _fsr3_mean_delta` 捨ての検証メトリクス。
+    /// f1 (prev 不在) は out := curr serve で Δ=0.0、f2 以降は実補間 Δ。
+    #[test]
+    fn fsr3_bootstrap_serve_and_report_wired() {
+        let (dir_a, mut a) = unique_wiring("fe_fsr3_a");
+        let (dir_b, mut b) = unique_wiring("fe_fsr3_b");
+        let mut inputs = empty_inputs();
+        // speed=40 では dome 量子化で補間差分が厳密 0 となる (実機 probe
+        // 4 点 (40/200/500/2000) → (0.0, 0.08203125, 0.3203125, 1.2617188)
+        // で初回 40 前提の非ゼロ予想を自己捕捉訂正) — 500 を採用。
+        inputs.camera_speed = 500.0;
+        let r1a = a.tick_world(&inputs);
+        let r1b = b.tick_world(&inputs);
+        assert_eq!(
+            r1a.fsr3_mean_delta.to_bits(),
+            0.0f32.to_bits(),
+            "f1 bootstrap: out:=curr serve で Δ=0 (旧実装は全ゼロ out から測る擬似 Δ)"
+        );
+        assert_eq!(
+            (
+                r1a.fsr3_color_bytes,
+                r1a.fsr3_depth_bytes,
+                r1a.fsr3_motion_bytes
+            ),
+            (8_294_400, 8_294_400, 16_588_800),
+            "1920x1080 バッファ 3 定数 (rq fe_fsr3 (4))"
+        );
+        let r2a = a.tick_world(&inputs);
+        let r2b = b.tick_world(&inputs);
+        assert!(
+            r2a.fsr3_mean_delta > 0.0,
+            "f2: camera_speed=500 の motion warp で補間差分は非ゼロ"
+        );
+        assert_eq!(
+            r2a.fsr3_mean_delta.to_bits(),
+            0x3EA4_0000u32,
+            "f2: Δ 実機 probe golden 0.3203125 (waves の実測値 pin、rq 系ではなく probe 由来であることを誠実明記)"
+        );
+        assert_report_det_subset(&r1a, &r1b, "fsr3 f1");
+        assert_report_det_subset(&r2a, &r2b, "fsr3 f2");
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
     /// 監査 2026-07-22 K-4/K-5 の決定性比較集合: FrameWiringReport の pub
     /// フィールドのうち、非決定と doc 明記されたもの — vanilla_hook_hits_delta
     /// (プロセス全域カウンタ由来)・power_skip_extra (壁時計由来 mode/gate
@@ -3385,6 +3458,25 @@ mod strict_tests {
         assert_eq!(
             a.subsystems_active, b.subsystems_active,
             "{ctx}: subsystems_active"
+        );
+        // 【wave 159 FE 捕捉 83】§7 消化 21 で実配線した fsr3 報告 4 面を
+        // det subset 登録 (定数 3 + scene 固定で完全決定の実測 ratio)。
+        assert_eq!(
+            a.fsr3_color_bytes, b.fsr3_color_bytes,
+            "{ctx}: fsr3_color_bytes"
+        );
+        assert_eq!(
+            a.fsr3_depth_bytes, b.fsr3_depth_bytes,
+            "{ctx}: fsr3_depth_bytes"
+        );
+        assert_eq!(
+            a.fsr3_motion_bytes, b.fsr3_motion_bytes,
+            "{ctx}: fsr3_motion_bytes"
+        );
+        assert_eq!(
+            a.fsr3_mean_delta.to_bits(),
+            b.fsr3_mean_delta.to_bits(),
+            "{ctx}: fsr3_mean_delta"
         );
     }
 

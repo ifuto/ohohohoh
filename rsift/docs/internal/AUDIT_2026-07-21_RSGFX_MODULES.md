@@ -8521,3 +8521,77 @@ replay 16 全緑・lib 本編警告 0・fmt: 両対象 HEAD 逸脱は先頭空�
 artifact のみ (実質正準) → in-place rustfmt 全量適用・seal ゲート2 機械値
 mc 0/0/0・rp 0/0/0 (両対象 PASS)・digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート
 PASS・台帳 601・TRIGGER 195。
+
+## FE. fsr3_fg.rs / full_graph_wiring.rs (wave 159, 2026-07-28)
+
+対象 fsr3_fg.rs 216→296 行 (CR 0)、full_graph_wiring.rs (fsr3 報告 4
+実配線 + bootstrap serve + det subset 4 面)。census grep 機械確定:
+fsr3_fg の消費者は full_graph_wiring (:367-369 field・:521-522 構築・
+:2305 FrameInput 実構築・:2334 interpolate_cpu 実消費 — 16×16 実 probe
+フレームで毎フレーム実行) + gpu_runtime:107 (FSR3_FG_WGSL 文字列登録
+のみ、GPU 実行バックエンド未配線 = 計測実演層、誠実注記) + lib:184
+pub mod。curr_bias_disocclusion の wiring 側設定者はゼロ (default 1.0
+固定)、interpolate_cpu 消費者は wiring:2334 + 本 module tests のみ。
+
+- FE-1 [中] **捕捉 81 [中]**: FSR3_FG_WGSL が CPU 参照 (interpolate_cpu)
+  と 3 点で数学乖離 — (1) motion 空間: CPU は texel 単位 (`x − mv·a`)
+  なのに WGSL は `uv − mv·a` の uv 単位で解像数倍の誤サンプル (1920 幅
+  で mv=8, a=0.5 なら意図 4 texel が 7680 texel/frame 誤読、rq (6))、
+  (2) texel 中心: CPU bilinear floor 系 vs WGSL +0.5 中心で半テクセル
+  ずれ、(3) curr_bias_disocclusion が uniform 未配管で disoc 時
+  curr 100% 固定 (CPU bias 語彙と乖離、bias≠1.0 設定で両者非同義)。
+  根治: `(center − mv·a) / res2` (texel 単位・+0.5 保持) と uniform
+  +curr_bias / `select(a, cfg.curr_bias, disoc)` で CPU 式と厳密同一
+  語彙へ。GPU 未実行層のため contract text pin 4 本で固定。
+- FE-2 [低] **捕捉 82 [小]** d_next 死計算 + clone_shallow 恒等 no-op
+  helper の §7 未配線: 値は `let _` 破棄・GPU にも対応概念なし =
+  不変式層でも死 → impossible-proof の上両者削除。+ **捕捉 83 [小]**
+  wiring で `let _ = self.fsr3_buffers` / `let _fsr3_mean_delta` の
+  2 破棄 → §7 消化 21: FrameWiringReport へ fsr3_color/depth/motion_
+  bytes (定数 3) + fsr3_mean_delta (実測) 実配線 + det subset 4 面
+  登録。**併根治: bootstrap (prev 不在) は out:=curr serve** (旧は
+  全ゼロ出力の残留=黒混入測定系、FSR3 既定の「中間≈現フレーム」動作)。
+- FE-3 [低] **捕捉 84 [小]** fsr3_required_buffers の u32 乗算 wrap
+  (65536² = 2^32 → 0 へ wrap し全長 0 を静寂計上) → u64 昇格乗算
+  (rq (5))。+ **捕捉 85 [小]** interpolate_cpu のバッファ長契約を
+  fail-loud 化 (4 バッファ == w*h・out ≥ w*h を契約メッセージ付
+  assert 6 本。旧は深部 index OOB panic への流出で診断不能)。
+- FE-4 [低] strict module 8 (warp bilinear golden 行 [0,12,28,44,60,
+  76,92,108]×2 行・alpha 端点 0≡prev/1≡curr 全画素・disoc 境界等号は
+  非 disoc (dyadic 厳密 Δ=1/16=0.0625=thr)・bias=0.5 blend golden
+  0x88804422・buffers 1920×1080 golden + 2^32 no-wrap・契約
+  should_panic 2・wgsl contract pin 4 条件) + wiring 1 (bootstrap
+  serve Δ=0.0 厳密位相 + f2 probe golden 0.3203125 = 0x3EA40000 +
+  det subset 2 往復)。**+9 net 1311 全緑** (機械検算 1302+9=1311)。
+  **自己照査 3 件誠実記録**: (1) f2 Δ の私の初予想 (speed=40 → 非ゼロ)
+  は dome u8 量子化で厳密 0 だった → 実機 probe 4 点計測 (40/200/500/
+  2000 → 0.0 / 0.08203125 / 0.3203125 / 1.2617188) で speed=500 の
+  0x3EA40000 を採用 (初回主張の自己捕捉訂正、rq 系と probe 値の混同
+  禁止規律)、(2) 私のテスト先行コミット 85698a6 (未 push) が修正込み
+  形状で混入 → soft reset で単一 wave コミットへ正規化、(3) baseline
+  再測定で私が fixed 版を「旧版」へ誤コピー (integrated-code+旧試験
+  =1302 緑を旧版と誤測) → 真の旧版+旧試験基準は 2c0a940 の CI 緑
+  (30323336231) で代替確立。rq fe_fsr3 (1)-(6) 全 assert 通過
+  (TDD compile RED 6 件 = E0609 report 4 field 機械記録、module 到達
+  RED は下記 adversarial で逆証明)。
+
+adversarial 5 系統: (a) 捕捉 84 revert (u32 wrap) **1 RED** (buffers
+pin、事前予想一致)・(b) WGSL 乖離 revert (uv 空間式+select 固定+bias
+なし uniform) **1 RED** (wgsl contract pin、予想一致)・(c) d_next +
+clone_shallow 死計算復活 **0 RED 非検出** (値同一 dead code・警告 0、
+除去正当性は §7 census + 不変式層不在証明が担保、誠実記録)・(d)
+bootstrap serve 削除 **1 RED** (f1 Δ=0 assert が黒混入を検出、予想
+一致)・(e) バッファ配線 revert (`let _ =`) **1 RED** (3 定数 assert、
+予想一致)。変異前実体コピー /tmp+rsift/bak 先行・python assert/grep
+-c で適用確認後計測・毎回復元 MD5-VERIFIED 5 回
+(fg 098bf4bc9e4d5345de6a633473456c52、wiring
+d7335407fcea8615c12ad5d2f60de38f — fmt 選択適用で初版
+50215f46899f37f13bcd4b18bdb62c14 / c90efc801fdb8903737c4b42aab8244c
+から再採番、src+/tmp+rsift/bak 三重照合)。
+
+opt-gfx **1311 全緑** (net +9、機械検算 1302+9=1311、fmt 後全量再実測
+21.68s・adversarial 後最終 21.28s)・api 49 全緑・replay 16 全緑・
+警告 0・fmt: 両対象 HEAD 原生逸脱保有 → difflib+git diff HEAD 交差
+判定で自己起因 hunk のみ選択適用 (fg 6 適用/3 原生保持・wiring 1/1、
+seal ゲート2 機械値 fg 2/2/0・wiring 0/0/0 (両対象 PASS))・digest 004c1cf5fb17bfe8 rows=357
+不変・seal 全 6 ゲート PASS・台帳 605・TRIGGER 196。
