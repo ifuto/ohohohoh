@@ -192,6 +192,29 @@ fn encode_mesh(mesh: &BuiltChunkMesh, section_rle: &[RleSection]) -> Result<Vec<
     zstd::encode_all(raw.as_slice(), 3).map_err(|e| e.to_string())
 }
 
+/// 捕捉 80 (wave 158 FD): 非整列安全な POD ベクタ復元。
+/// v2 wire の頂点領域オフセットは `14 + Σ(4+rle_len_i) + 8` で、RLE ブロブ
+/// 長は `2+4·runs_i` (run 構造に無関係に ≡ 2 mod 4) しか取り得ないため
+/// `off ≡ 2+2S (mod 4)` — セクション数 S が偶数の正当エントリは align(4)
+/// 不整列となり (本エンジンの生産定数 SECTIONS_PER_COLUMN=4 が常時該当)、
+/// 旧実装の `bytemuck::cast_slice(&raw[off..])` 直接参照変換は実行時
+/// アライメント検査で TargetAlignmentGreaterAndInputNotAligned panic した
+/// (MeshDiskCache::get → decode_mesh、pipeline 暖機 f2 で 100% 再現)。
+/// `pod_read_unaligned` による要素単位コピー読み (std::ptr::read_unaligned
+/// 相当、コンパイラが unaligned load/store に最適化) へ根治。領域長は
+/// 呼出側の切頭検査 (`off + vbytes + ibytes > raw.len()`) で事前保証済み。
+/// (v1 wire は off ≡ 0 (mod 4) に数学的制限される (rq fd_cache (5)) が、
+///  両経路を同一安全プリミティブに統一し、将来の wire 変更に対する
+///  不整列耐性を不変式化する。)
+fn read_pod_vec<T: bytemuck::AnyBitPattern>(raw: &[u8], off: usize, len: usize) -> Vec<T> {
+    let stride = std::mem::size_of::<T>();
+    debug_assert!(stride > 0, "POD は非 ZST (chunks_exact(0) 禁止)");
+    raw[off..off + len * stride]
+        .chunks_exact(stride)
+        .map(|c| bytemuck::pod_read_unaligned::<T>(c))
+        .collect()
+}
+
 fn decode_mesh(data: &[u8], expect_x: i32, expect_z: i32) -> Result<BuiltChunkMesh, String> {
     let raw = decompress_bounded(data)?;
     let mut off = 0usize;
@@ -247,10 +270,9 @@ fn decode_mesh(data: &[u8], expect_x: i32, expect_z: i32) -> Result<BuiltChunkMe
     if off + vbytes + ibytes > raw.len() {
         return Err("truncated mesh".into());
     }
-    let vertices: Vec<Quantized12ByteVertex> =
-        bytemuck::cast_slice(&raw[off..off + vbytes]).to_vec();
+    let vertices: Vec<Quantized12ByteVertex> = read_pod_vec(&raw, off, vlen);
     off += vbytes;
-    let indices: Vec<u32> = bytemuck::cast_slice(&raw[off..off + ibytes]).to_vec();
+    let indices: Vec<u32> = read_pod_vec(&raw, off, ilen);
     Ok(BuiltChunkMesh {
         chunk_x: cx,
         chunk_z: cz,
@@ -285,10 +307,9 @@ fn decode_mesh_v1(
     if off + vbytes + ibytes > raw.len() {
         return Err("truncated mesh".into());
     }
-    let vertices: Vec<Quantized12ByteVertex> =
-        bytemuck::cast_slice(&raw[off..off + vbytes]).to_vec();
+    let vertices: Vec<Quantized12ByteVertex> = read_pod_vec(&raw, off, vlen);
     off += vbytes;
-    let indices: Vec<u32> = bytemuck::cast_slice(&raw[off..off + ibytes]).to_vec();
+    let indices: Vec<u32> = read_pod_vec(&raw, off, ilen);
     Ok(BuiltChunkMesh {
         chunk_x: cx,
         chunk_z: cz,
@@ -482,6 +503,44 @@ mod tests {
         assert_eq!(verts_bytes(&got), verts_bytes(&src));
         assert_eq!(got.indices, src.indices);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 【wave 158 FD TDD RED / 捕捉 80】セクション数 S = 0..=4 全域で
+    /// encode→decode ラウンドトリップが panic せずビット保存する。
+    /// wire オフセット代数学 (rq fd_cache (1)-(3)):
+    ///   頂点オフセット = 14 (header) + Σ(4+rle_len_i) + 8 (vlen/ilen)、
+    ///   rle_len_i = 2+4·runs_i は run 構造に無関係に ≡ 2 (mod 4)
+    ///   → off ≡ 2+2S (mod 4) → **S が偶数で align(4) 不整列**。
+    /// 本エンジンの生産定数 SECTIONS_PER_COLUMN=4 は常時この事故帯であり、
+    /// 旧実装の `bytemuck::cast_slice(&raw[off..])` は参照変換の実行時
+    /// アライメント検査で TargetAlignmentGreaterAndInputNotAligned panic
+    /// した (統合側再現: render_pipeline `frame_disk_cache_warm_reframe_strict`、
+    /// f1 put → f2 get で全正当エントリ 100% 発火)。
+    #[test]
+    fn roundtrip_bits_any_section_count_alignment() {
+        for s in 0..=4usize {
+            let m = sample_mesh(-3, 11);
+            let expect_v = verts_bytes(&m);
+            // Σcount=4096 を満たす正当 RLE (uniform 1-run) を S 本。
+            let sections: Vec<RleSection> = (0..s)
+                .map(|_| one_rle().into_iter().next().unwrap())
+                .collect();
+            let rle_bytes: usize = sections.iter().map(|r| r.to_bytes().len()).sum();
+            let vtx_off = 14 + 4 * s + rle_bytes + 8;
+            // rq fd_cache (2): off ≡ 2+2S (mod 4) — S 偶数で不整列の自己文書化。
+            assert_eq!(
+                vtx_off % 4 == 0,
+                s % 2 == 1,
+                "S={s}: off={vtx_off} の整列予想 (rq (2))"
+            );
+            let packed = encode_mesh(&m, &sections).expect("encode ok");
+            let got = decode_mesh(&packed, -3, 11).unwrap_or_else(|e| {
+                panic!("S={s}: decode must succeed without alignment panic (off={vtx_off}): {e}")
+            });
+            assert_eq!((got.chunk_x, got.chunk_z), (-3, 11), "S={s}: coords");
+            assert_eq!(verts_bytes(&got), expect_v, "S={s}: vertex bits round-trip");
+            assert_eq!(got.indices, m.indices, "S={s}: indices round-trip");
+        }
     }
 
     /// wave 98 CW-1: 展開ボム拒否 — 65MiB のゼロを圧縮した数 KB の blob は

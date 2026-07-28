@@ -8452,3 +8452,72 @@ artifact のみ (実質正準) → in-place rustfmt 全量適用・seal ゲー�
 固定版 md5 三重保存 (上記 2 値、src+/tmp+rsift/bak 三重照合)・digest
 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・台帳 597・
 TRIGGER 194。
+
+## FD. mesh_cache.rs / render_pipeline.rs (wave 158, 2026-07-28)
+
+対象 mesh_cache.rs 566→611 行 (CR 0)、render_pipeline.rs (warm f2 統合
+pin 1 + fc_xinv 注記更新)。wgsl なし。census grep 機械確定: MeshDiskCache
+は render_pipeline の唯一実消費者 (lib.rs pub mod、render_pipeline:30
+import・:95 field・:197 adaptive 構築・:398 get・:496 put・:1002 stats
+report・:1301 invalidate_chunk)、設定面は rsift-api adaptive_perf.rs
+mesh_disk_cache ( tier false/true/true/true ) + gui_settings toggle、
+他 crate 消費者ゼロ (stray コピー rsift/rsift/rsift-opt-gfx/src は除外)。
+encode_mesh/decode_mesh/decode_mesh_v1/decompress_bounded/read_pod_vec
+は全て private で put/get 経由消費。
+
+- FD-1 [中] **捕捉 80 [中] (FC-3 予約の wave 158 根治)**: decode_mesh
+  (v2 :273/:275、v1 :310/:312) が decompress 産 Vec<u8> の任意オフセット
+  領域を `bytemuck::cast_slice` で直接参照変換。v2 wire 頂点オフセット =
+  14 + Σ(4+rle_len_i) + 8 で rle_len_i = 2+4·runs_i は run 構造に無関係に
+  ≡ 2 (mod 4) → off ≡ 2+2S (mod 4) → **S 偶数で align(4) 不整列**
+  (rq fd_cache (1)-(3))。生産定数 SECTIONS_PER_COLUMN=4 が常時偶数のため
+  disk cache 有効 tier では**全正当エントリが再読込 (暖機 f2) で 100%
+  panic** (TargetAlignmentGreaterAndInputNotAligned)。根治:
+  `read_pod_vec<T: AnyBitPattern>` = chunks_exact(stride) +
+  pod_read_unaligned 要素単位コピー読み (std::ptr::read_unaligned 相当、
+  整列入力でも読取値同一) へ v2/v1 全 4 箇所統一置換。書込側 cast_slice
+  (encode :190-191) は実体 Vec の align 保証で安全、維持。trait 導出は
+  `unsafe impl<T: Pod> AnyBitPattern` (vendor anybitpattern.rs:56) 一次確認。
+  TDD RED 2/2 機械記録 (module alignment roundtrip + pipeline warm f2、
+  両者 bytemuck internal.rs:33 panic)。
+- FD-2 [低] **§7 消費者検査**: 消費者ゼロ構造の新規検出なし (全 pub API
+  実消費+test 消費)。監査評価済み非該当 3 項: (1) fs::read は圧縮後サイズ
+  まで読むが展開増幅は DECOMPRESS_CAP 64MiB で制御完、上限和
+  68,786,585,585 < i64::MAX (rq (6)) で 64-bit 非 overflow 証明 (CI
+  ubuntu-latest x86_64 のみ一次確認)、(2) クロスプロセス同一 tmp 名の書込
+  競合は decode 検証+破損 remove+再構築で fail-safe 封じ (CW-2 設計範疇)、
+  (3) decode 末尾バイト許容は無害 (mesh 消費は前置長厳密、末尾は解釈経路
+  を持たない純粋前置関数)。
+- FD-3 [観] 誠実注記: v1 wire は off = 20+12k / idx = 20+12k+4m ≡ 0
+  (mod 4) に数学的制限され panic 不能 (rq (5)) — 両経路の同一安全
+  プリミティブ統一は将来 wire 変更への不整列耐性不変式化。key_path は
+  負数含む十進 3 連接で '_' を数値が含み得ないため座標→名前は単射。
+  **私の rq (6) 総和リテラル初版を暗算誤り (69,206,047,745)、python
+  機械計算で 68,786,585,585 に訂正 = 数値暗算禁止規律効果の自己記録**。
+- FD-4 [低] strict 追加 2: module roundtrip_bits_any_section_count_
+  alignment (S=0..=4、整列予想自己文書化 assert の golden、rq (2)) +
+  pipeline frame_disk_cache_warm_reframe_strict (fc_xinv 同 scene で
+  f1 put (hits 0 / builds 2) → f2 get decode (hits 2 / builds 0) +
+  verdict golden (4,2,1,0,1) の f2 不変 + Σ+4 面一致)。fc_xinv の
+  捕捉 80 予約注記を根治済みへ更新。**+2 net 1302 全緑** (機械検算
+  1300+2、fmt 後全量再実測 21.66s・adversarial 後最終 21.51s)。
+  golden 全 rq fd_cache 事前導出 ((1)-(6)、python 引退継続)。
+
+adversarial 5 系統: (a) 捕捉 80 revert (v2+v1 全 4 箇所 cast_slice 復帰)
+**2 RED** (module+pipeline 両新 strict が捕捉、事前予想一致)・(b)
+truncate guard `>`→`>=` (v2) **3 RED** (put_get_roundtrip+any_section+
+warm、exact-length raw が境界で誤 Err)・(c) vertex/index 読取順入替
+(v2) **2 RED** (module 両 roundtrip が bit 崩壊を検出、warm 統合 pin は
+帳簿レベル検査のため非検出 = 統合 bit 完全性は module 責務という分界を
+誠実記録)・(d) rle 検証 skip **1 RED** (wave 61 BK corrupt 既存テスト)・
+(e) v1 のみ cast_slice 復帰 **0 RED 非検出** (v1 は数学的整列制限で
+panic 不能+整列入力で cast / read_unaligned の読取値が同一 = 構造限界、
+誠実記録)。変異前実体コピー /tmp+rsift/bak 先行・python assert で適用
+確認後計測・毎回復元 MD5-VERIFIED 5 回 (mc f396ecd676dee78113061e4c438ea
+8b5、rp 3f4abdc960f6df5229b458dd5945d97b — src+/tmp+rsift/bak 三重照合)。
+
+opt-gfx **1302 全緑** (net +2、機械検算 1300+2=1302)・api 49 全緑・
+replay 16 全緑・lib 本編警告 0・fmt: 両対象 HEAD 逸脱は先頭空行
+artifact のみ (実質正準) → in-place rustfmt 全量適用・seal ゲート2 機械値
+mc 0/0/0・rp 0/0/0 (両対象 PASS)・digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート
+PASS・台帳 601・TRIGGER 195。

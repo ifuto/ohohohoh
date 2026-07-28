@@ -1677,10 +1677,68 @@ mod tests {
             st.visible, s.visible_chunks,
             "visible 帳簿一致 (fresh frame: 全 mesh が当該 verdict 経由)"
         );
-        // 捕捉 80 (wave 158 予約): f2 以降は mesh_cache::decode_mesh 経路で
-        // latent panic を確認済 (ingest 列の disk cache 再読込、bytemuck
-        // alignment panic、デフォルト flag でも再現) — 本 pin は fresh f1
-        // の構造値に限定する。
+        // 捕捉 80 (wave 158 FD で根治済): f2 暖機再読込路の回帰 pin は
+        // frame_disk_cache_warm_reframe_strict へ分離 (旧実装は f2 の
+        // mesh_cache::decode_mesh で bytemuck align panic、本 pin は
+        // fresh f1 の構造値固定に特化)。
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 158 FD 捕捉 80 統合 pin】暖機フレーム (f2) の disk cache
+    /// 再読込路: fc_xinv と同 scene で f1 が put したエントリを f2 の
+    /// build_chunk が get→decode_mesh で復元する。旧実装は v2 wire 頂点
+    /// オフセット ≡ 2 (mod 4) (SECTIONS_PER_COLUMN=4 偶数・rq fd_cache (3))
+    /// のため全正当エントリが decode 時 bytemuck cast panic — f2 到達自体が
+    /// 不可能だった。根治後は f2 も panic 無く帳簿が厳密維持されることを固定
+    /// (cull verdict は cache 非依存でフレーム毎再評価、Σ+3 面 cross 有効)。
+    #[test]
+    fn frame_disk_cache_warm_reframe_strict() {
+        let (dir, mut p) = unique_pipeline("fd_warm");
+        p.low_spec.frustum_cull = false;
+        p.low_spec.flora_lod = false;
+        p.low_spec.pull_generation_cache = false;
+        p.low_spec.pre_mesh_occlusion = false;
+        p.world.ingest(1, 0, 0, &[7u16; 4096], 1);
+        p.world.ingest(5, 0, 0, &[0u16; 4096], 1);
+        p.world.ingest(20, 0, 0, &[9u16; 4096], 1);
+        let coords = [(0, 0), (1, 0), (5, 0), (20, 0)];
+        let s1 = p.frame(&coords, 640, 360, 0.016);
+        assert_eq!(s1.cache_hits, 0, "f1: fresh (put 側)");
+        assert_eq!(s1.chunks_built, 2, "f1: (0,0),(1,0) を構築→put");
+        // 捕捉 80 の本来発火点: f2 は disk エントリの get→decode_mesh 経路。
+        let s2 = p.frame(&coords, 640, 360, 0.016);
+        assert_eq!(
+            s2.cache_hits, 2,
+            "f2: 両列 disk cache hit (decode 成功の証)"
+        );
+        assert_eq!(s2.chunks_built, 0, "f2: rebuild 無し (cache 供給)");
+        let st = &p.cull_stats;
+        assert_eq!(
+            (
+                st.tested,
+                st.visible,
+                st.empty_skipped,
+                st.occluded_skipped,
+                st.range_skipped
+            ),
+            (4, 2, 1, 0, 1),
+            "f2: verdict golden は f1 と不変 (rq fc_cull (6) 同 scene)"
+        );
+        assert_eq!(
+            st.tested,
+            st.visible + st.empty_skipped + st.occluded_skipped + st.range_skipped,
+            "f2: Σ 完全性"
+        );
+        assert_eq!(st.empty_skipped, s2.empty_culled, "f2: empty 帳簿一致");
+        assert_eq!(
+            st.occluded_skipped, s2.visgraph_culled,
+            "f2: visgraph 帳簿一致 (恒 0)"
+        );
+        assert_eq!(st.range_skipped, s2.range_culled, "f2: range 帳簿一致");
+        assert_eq!(
+            st.visible, s2.visible_chunks,
+            "f2: visible 帳簿一致 (両 mesh が cache hit 経由で描画列)"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
