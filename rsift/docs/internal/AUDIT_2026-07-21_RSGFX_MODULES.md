@@ -8656,3 +8656,53 @@ census grep 機械確定: `ddgi::Vec3` 消費=full_graph_wiring:541/542/1466、
   wiring 0/0/0 全 PASS — difflib+git diff 交差選択適用では自己起因範囲と
   交差する hunk が 0 件 (0/3・0/2) で機械的に変更要パッチゼロ!)。digest 004c1cf5fb17bfe8
   rows=357 不変・seal 全 6 ゲート PASS・台帳 609・TRIGGER 197。
+
+## wave 161 (FG) frame_pacing.rs 厳密監査 (2026-07-28)
+
+census grep 機械確定: `FramePacer::new`/`record_frame` は full_graph_wiring
+:543/:629 実消費、`next_present_time`/`smoothed_frame_ms`/refresh_hz 読取は
+消費者ゼロ (自家テストのみ)、`FramePacing::wgsl_source` (unit-struct 装飾
+メソッド) ゼロ、`FRAME_PACING_WGSL` const は gpu_runtime:94 直参照登録。
+本モジュール内部 (S-3 契約 assert・EMA NaN 遮断・O(1) 境界 snap +
+±1 端数補正ループ) は既波群 (17/23/32) で強化済、**アルゴリズム面の
+新規捕捉はゼロ** (最早境界不変式 sweep 2000 件・NaN/負ギャップ帰着・
+巨大ギャップ O(1) が既存緑) — 誠実な陰性監査結果として記録し、本 wave
+は配線/契約醸成案件のみで完結。
+
+- **FG-1 [低] 捕捉 90 [小]**: `FramePacing` unit struct + `wgsl_source(&self)`
+  は crate 全体で消費者完全ゼロの完全装飾 (tbdr_hints.rs:56-58 が同型を
+  明文判例化済: 「状態を持たず &self を使わない装飾メソッド」)。EL-1
+  判例へ整合: free fn `wgsl_source()` + 登録一本化。wgsl は 2 行コメント
+  のみ (真空) だが、mip_streaming 波 43 / tbdr_hints:15-20 の確立方針
+  (registry 真空 marker は removed-not ではなく「設計上存在し得ない」の
+  正当 marker + naga pin で維持、除去は naga 検証経路と wiring 連結 pin
+  への波及で設計引継ぎ) に整合させ、frame_pacing.wgsl を自己参照
+  ループ + ホスト時計観測不能の 2 理由で marker 強化し、
+  wgsl_is_intentionally_shader_free_marker (naga parse・entry/global ゼロ)
+  を新設。私の当初案 (registry エントリ+ファイル削除断行) は先行波方針と
+  衝突するため機械証拠で撤回・方針整合側へ修正したことを誠実記録。
+- **FG-2 [低] 捕捉 91 [小] §7 消化 23**: vsync snap/平滑値/目標 Hz の
+  消費者ゼロ → wiring Pacing 帳簿 (pacing_clock_ms/last_present_ms 状態、
+  壁時計非依存の決定論系列) 真駆動 + report 3 実フィールド。refresh_hz は
+  private+getter 化。rq fg_pacing (1) EMA 分数厳密 (s1=248/15、s2=1232/75、
+  私の初版誤式を rq が捕捉し訂正済) (2) 境界 index (ceil 46/50=1 等)
+  (3) 負ギャップ n=1 帰着 (650/3>200) (4) 1 分=3600 提示厳密、f64 実機
+  probe bits: s1=0x4030888888888889・s2=0x40306d3a06d3a06e・
+  t1=0x4030aaaaaaaaaaab・t2=0x4040aaaaaaaaaaab・neggap=0x406b155555555555・
+  hz=0x404e000000000000。
+- **FG-3 [低] strict +3 net 1321 全緑** (機械検算 1318+3、fmt 後全量
+  21.67s・adversarial 後最終 21.15s)。TDD compile RED E0609×5 機械記録。
+  adversarial 6 系統: (a) ceil→floor 非検出 = floor(x)∈{ceil(x),ceil(x)-1}
+  のため ±1 補正ループが構造吸収 (検出不動点)。(a2) 第1補正ループ除去
+  非検出 = 発火は「i が fl 下方丸めかつ商が厳密整数」の bit 域で現 corpus
+  外防御 (第2ループが上側 overshoot を担当する実動作整理)。(b) alpha
+  0.2→0.5 は wiring bit pin のみ捕捉 (module 区間検査は検出不能と分類
+  明記)。(c) hz 0 化 1 RED。(d) @compute 注入 1 RED で marker pin の
+  有効性を実証。(e) 装飾 struct 再救出非検出 (dead code 系 10 例目)。
+  復元 MD5-VERIFIED 6 回 (fp 646db112/gr 313fdd56/wiring ed39da22/
+  wgsl ddcd149f 三重照合)。api 49・replay 16 全緑・警告 0・fmt 自己起因
+  0 (seal ゲート2 機械値: frame_pacing 0/0/0・gpu_runtime 0/0/0・
+  wiring 0/0/0 全 PASS — 手計測で自己起因 1 (naga parseStr 行の過剰
+  折返し) を検出し in-place で解消後に seal 0/0/0)。
+  digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・台帳
+  612・TRIGGER 198。

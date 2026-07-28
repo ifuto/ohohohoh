@@ -91,7 +91,7 @@ pub fn all_wgsl_sources() -> Vec<(&'static str, &'static str)> {
         ("mip_streaming", crate::mip_streaming::MIP_STREAMING_WGSL),
         ("tbdr_hints", crate::tbdr_hints::wgsl_source()),
         ("simd_frustum", crate::simd_frustum::SIMD_FRUSTUM_WGSL),
-        ("frame_pacing", crate::frame_pacing::FRAME_PACING_WGSL),
+        ("frame_pacing", crate::frame_pacing::wgsl_source()),
         (
             "clustered_lighting",
             crate::clustered_lighting::CLUSTERED_LIGHTING_WGSL,

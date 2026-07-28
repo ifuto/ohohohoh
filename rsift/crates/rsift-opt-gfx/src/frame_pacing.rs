@@ -2,9 +2,24 @@
 //!
 //! 内蔵GPUでは vsync に合わせて提示しないと描画が無駄になり発熱するだけなので重要。
 //! また EMA でフレーム時間を平滑化し、スパイクによる誤った解像度判断を防ぐ。
+//!
+//! 【wave 161 FG (2026-07-28)】消費者: `FullGraphWiring` の Pacing 帳簿
+//! (`new`/`record_frame`/`next_present_time`/`smoothed_frame_ms`/
+//! `target_refresh_hz`) → report 実フィールド 3 件、WGSL marker は
+//! `gpu_runtime::all_wgsl_sources` へ `wgsl_source()` 経由で登録。
+//! 捕捉 90 [小]: 消費者完全ゼロの `FramePacing` unit-struct 完全装飾
+//! (`wgsl_source(&self)`) を tbdr_hints EL-1 判例で free fn へ根治
+//! (EJ-2 Vec3/Vec4 完全装飾削除と同型)。捕捉 91 [小]: §7 消化 23 で
+//! 消費者ゼロだった vsync snap/平滑値へ Pacing 帳簿の実消費者を配線し、
+//! `refresh_hz` を private+getter へ (pub 全書込み可能フィールドは
+//! interval キャッシュとの不整合を許す契約逸脱口)。
 
 pub struct FramePacer {
-    pub refresh_hz: f64,
+    /// 目標リフレッシュレート (Hz)。private 化 (wave 161 FG 捕捉 91):
+    /// pub フィールドのままでは構築後の外部書換えで `frame_interval`
+    /// キャッシュと恒久的に不整合となり得た (契約逸脱口)。更新経路は
+    /// 持たない設計のため、読取りは `target_refresh_hz` に限定する。
+    refresh_hz: f64,
     frame_interval: f64,
     smoothed_ms: f64,
     alpha: f64,
@@ -67,13 +82,22 @@ impl FramePacer {
     pub fn smoothed_frame_ms(&self) -> f64 {
         self.smoothed_ms
     }
+
+    /// 目標リフレッシュレート (Hz、構築時検証済みの不変値)。
+    pub fn target_refresh_hz(&self) -> f64 {
+        self.refresh_hz
+    }
 }
 
-pub struct FramePacing;
-impl FramePacing {
-    pub fn wgsl_source(&self) -> &'static str {
-        FRAME_PACING_WGSL
-    }
+/// WGSL 取得の唯一の公式アクセスポイント (wave 161 FG 捕捉 90)。
+/// 旧 `FramePacing` unit struct ラッパ (`wgsl_source(&self)`) は crate 全体で
+/// 消費者完全ゼロ (新指令 §7「消費者なし禁止」違反) で、状態を持たず
+/// `&self` を使わない装飾メソッドだったため削除 (tbdr_hints EL-1 /
+/// async_compute EJ-2 Vec3/Vec4 完全装飾削除と同型)。ddgi/tbdr_hints/
+/// shadow_lod と同じ free fn 様式に統一し、gpu_runtime::all_wgsl_sources
+/// の登録を本関数経由に一本化した。
+pub fn wgsl_source() -> &'static str {
+    FRAME_PACING_WGSL
 }
 pub const FRAME_PACING_WGSL: &str = include_str!("../shaders/frame_pacing.wgsl");
 
@@ -139,6 +163,32 @@ mod tests {
             assert!(t >= now, "past present: t={t} now={now}");
             assert!(t - i < now, "not earliest: t={t} now={now} i={i}");
         }
+    }
+
+    /// 【wave 161 FG 捕捉 90】wgsl は設計上シェーダを持ち得ない正当 marker
+    /// (mip_streaming wave 43 様式): naga parse 可能・entry point / global
+    /// 変数ゼロを機械ピン。GPU は提示のスケジュールを行えない (提出自体が
+    /// 既に提示であり自己参照) ので registry 内で唯一「将来もシェーダを
+    /// 持ち得ない」ことの宣言。
+    #[test]
+    fn wgsl_is_intentionally_shader_free_marker() {
+        let module = naga::front::wgsl::parse_str(FRAME_PACING_WGSL).expect("marker must parse");
+        assert!(
+            module.entry_points.is_empty(),
+            "CPU 計時モジュールにシェーダは要らない (設計正当性は wgsl コメント参照)"
+        );
+        assert!(module.global_variables.iter().next().is_none());
+    }
+
+    /// 【wave 161 FG】負ギャップ (now < last) は strictly-after-last 語彙で
+    /// n=1 帰着 (last 自体の境界は要求しない)。rq fg_pacing (3) + 実機
+    /// probe: 200 + 50/3 = 216.666.. = 0x406b155555555555。
+    #[test]
+    fn negative_gap_returns_strictly_after_last() {
+        let p = FramePacer::new(60.0);
+        let t = p.next_present_time(200.0, 100.0);
+        assert_eq!(t.to_bits(), 0x406b155555555555, "216.666.. (probe bits)");
+        assert!(t > 200.0 && t >= 100.0, "strictly-after-last で now 以上");
     }
 
     /// 非有限の観測値は平滑値を汚染しない (bit 不変)。

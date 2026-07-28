@@ -102,6 +102,15 @@ pub struct FrameWiringReport {
     /// 同体積のプローブ総数 (dims 積、`probe_count` usize 積の u32 min 飽和)。
     /// 【wave 160 FF 捕捉 87】ddgi::probe_count の実消費者配線。
     pub ddgi_probe_count: u32,
+    /// この tick で確定した次回提示境界 (vsync snap 済み、累積 delta 時計上)。
+    /// 【wave 161 FG 捕捉 91】next_present_time の実消費者配線 (Pacing 帳簿)。
+    pub frame_next_present_ms: f64,
+    /// EMA 平滑されたフレーム時間 (ms)。低スペックのスパイク耐性監視。
+    /// 【wave 161 FG 捕捉 91】smoothed_frame_ms の実消費者配線。
+    pub frame_smoothed_ms: f64,
+    /// Pacer の目標リフレッシュレート (Hz、構築契約不変値)。
+    /// 【wave 161 FG 捕捉 91】target_refresh_hz (private 化済み) の実消費者配線。
+    pub frame_target_hz: f64,
     /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
     pub cluster_lit_clusters: u32,
     /// GTAO オクルージョン (実パレット高さ場の中央断面スライス由来、[0,1]、
@@ -387,6 +396,11 @@ pub struct FullGraphWiring {
     aces_inst: crate::aces_tonemap::AcesTonemap,
     vco: crate::vertex_cache_opt::VertexCacheOptimizer,
     pacer: crate::frame_pacing::FramePacer,
+    /// Pacing 帳簿 (wave 161 FG 捕捉 91): 決定論の入力由来時計 (累積
+    /// delta_ms)。壁時計非依存で tick 列に対し再生可能な提示境界列を得る。
+    pacing_clock_ms: f64,
+    /// 直近に確定した提示境界 (strictly-after-last 語彙の last)。
+    last_present_ms: f64,
     fsr3_interp: crate::fsr3_fg::FrameInterpolator,
     fsr3_buffers: (u64, u64, u64),
     fsr3_prev: Option<crate::fsr3_fg::FrameInput>,
@@ -541,6 +555,8 @@ impl FullGraphWiring {
             aces_inst: crate::aces_tonemap::AcesTonemap::new(),
             vco: crate::vertex_cache_opt::VertexCacheOptimizer::new(16),
             pacer: crate::frame_pacing::FramePacer::new(60.0),
+            pacing_clock_ms: 0.0,
+            last_present_ms: 0.0,
             fsr3_interp: crate::fsr3_fg::FrameInterpolator::default(),
             fsr3_buffers: crate::fsr3_fg::fsr3_required_buffers(1920, 1080),
             fsr3_prev: None,
@@ -627,6 +643,19 @@ impl FullGraphWiring {
         // 1. 計測・スケジューリング (実 frame 計測値で動作)
         // ============================================================
         self.pacer.record_frame(inputs.delta_ms as f64);
+        // 【wave 161 FG 捕捉 91 §7 消化 23】Pacing 帳簿の真駆動: 旧来は
+        // EMA 観測のみで vsync snap (next_present_time) / 平滑値
+        // (smoothed_frame_ms) / 目標 Hz に消費者が存在しなかった。入力由来
+        // の決定論時計 (累積 delta_ms) で提示境界列を生成し report 実
+        // フィールドへ配線 (低スペックの提示浪費・スパイク耐性の監視)。
+        self.pacing_clock_ms += inputs.delta_ms as f64;
+        let next_present = self
+            .pacer
+            .next_present_time(self.last_present_ms, self.pacing_clock_ms);
+        self.last_present_ms = next_present;
+        report.frame_next_present_ms = next_present;
+        report.frame_smoothed_ms = self.pacer.smoothed_frame_ms();
+        report.frame_target_hz = self.pacer.target_refresh_hz();
         // bytecode_transpiler (HEAD 挿入済 vanilla メソッド) の実測到達デルタ。
         // Governor の実入力: vanilla 描画ループの過負荷時にダウンシフト圧を与える。
         let (gq, cl) = crate::render_pipeline::vanilla_render_hook_hits();
@@ -3192,6 +3221,44 @@ mod strict_tests {
             "camera (-40,-8,-16) -> (-2.5,-1.0,-1.0) exact bits"
         );
         assert_eq!(r2.ddgi_probe_count, 1024);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 【wave 161 FG 捕捉 91 §7 消化 23】Pacing 帳簿の非ゼロ工程化 pin:
+    /// 60Hz (interval 50/3ms) + delta 16ms x2 tick。rq fg_pacing (1)(2) の
+    /// 分数厳密値 (s1=248/15、s2=1232/75、t1=50/3、t2=100/3) を f64 実機
+    /// probe bits で固定。smoothed は 16 でも interval でもない (nonvacuous)。
+    #[test]
+    fn fg_pacing_report_pins_nonvacuous() {
+        let (dir, mut w) = unique_wiring("pacing_pins");
+        let inp = empty_inputs(); // delta_ms = 16.0
+        let r1 = w.tick_world(&inp);
+        assert_eq!(
+            r1.frame_smoothed_ms.to_bits(),
+            0x4030888888888889,
+            "s1 = 248/15 (probe bits)"
+        );
+        assert_eq!(
+            r1.frame_next_present_ms.to_bits(),
+            0x4030aaaaaaaaaaab,
+            "t1 = 50/3 (probe bits)"
+        );
+        assert_eq!(
+            r1.frame_target_hz.to_bits(),
+            0x404e000000000000,
+            "60.0 (probe bits)"
+        );
+        let r2 = w.tick_world(&inp);
+        assert_eq!(
+            r2.frame_smoothed_ms.to_bits(),
+            0x40306d3a06d3a06e,
+            "s2 = 1232/75 (probe bits)"
+        );
+        assert_eq!(
+            r2.frame_next_present_ms.to_bits(),
+            0x4040aaaaaaaaaaab,
+            "t2 = 100/3 (probe bits)"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
