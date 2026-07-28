@@ -106,6 +106,11 @@ pub struct RsiftRenderPipeline {
     pub frame_stats: FrameStats,
     pub last_camera_speed: f32,
     pub cull_pass: ChunkCullPass,
+    /// 【wave 157 FC §7 消化 20】chunk_cull::CullStats 第 2 帳簿:
+    /// 旧は消費者ゼロ孤立 (捕捉 79)。両 verdict call site で apply 蓄積し、
+    /// frame 末端で frame_stats arms と cross-field 照合する (検出力は
+    /// frame_cull_stats_cross_invariants_strict + frame 末端 debug_assert)。
+    pub cull_stats: crate::chunk_cull::CullStats,
     pub camera: CameraState,
     pub svo_cache: HashMap<(i32, i32), SparseVoxelOctree>,
     pub frame_reuse: FrameReuseCache,
@@ -219,6 +224,7 @@ impl RsiftRenderPipeline {
             frame_stats: FrameStats::default(),
             last_camera_speed: 0.0,
             cull_pass: ChunkCullPass::from_profile(&profile),
+            cull_stats: crate::chunk_cull::CullStats::default(),
             camera: CameraState {
                 y: 64.0,
                 fov_y: 70.0_f32.to_radians(),
@@ -508,6 +514,7 @@ impl RsiftRenderPipeline {
         let verdict = self
             .cull_pass
             .verdict_column(cx, cz, camera_x, camera_z, &rle);
+        self.cull_pass.apply(verdict, &mut self.cull_stats); // FC §7 消化 20: 第 2 帳簿蓄積 (apply は pass 保有 API)
         match verdict {
             CullVerdict::Visible => {
                 Some(self.build_chunk(cx, cz, 0, dist_blocks, Some(&sections), Some(&rle)))
@@ -551,6 +558,7 @@ impl RsiftRenderPipeline {
         // 注: FullGraphWiring の駆動はフレーム末端で「このフレームの実データ」を
         //   揃えて `tick_world` を呼ぶ (実メッシュ/実クアッド/実パレットを実入力)。
         self.frame_stats = FrameStats::default();
+        self.cull_stats = crate::chunk_cull::CullStats::default();
         self.frame_reuse.begin_frame(self.tick);
         self.pull_meshes.clear();
         self.gpu_quad_bytes.clear();
@@ -811,6 +819,7 @@ impl RsiftRenderPipeline {
             let verdict = self
                 .cull_pass
                 .verdict_column(cx, cz, self.camera.x, self.camera.z, &rle);
+            self.cull_pass.apply(verdict, &mut self.cull_stats); // FC §7 消化 20: 第 2 帳簿蓄積 (apply は pass 保有 API)
             match verdict {
                 CullVerdict::EmptyColumn => {
                     self.frame_stats.empty_culled += 1;
@@ -1132,6 +1141,29 @@ impl RsiftRenderPipeline {
                 .collect();
             self.frame_stats.wiring_subsystems = report.subsystems_active;
         }
+
+        // FC §7 消化 20: frame 末端で第 2 帳簿と第 1 帳簿を cross 照合
+        // (Σ 完全性 + 3 面一致、不変式違反は即 panic で検出)。
+        debug_assert_eq!(
+            self.cull_stats.tested,
+            self.cull_stats.visible
+                + self.cull_stats.empty_skipped
+                + self.cull_stats.occluded_skipped
+                + self.cull_stats.range_skipped,
+            "cull Σ 完全性 (tested == Σ4 verdict)"
+        );
+        debug_assert_eq!(
+            self.cull_stats.empty_skipped, self.frame_stats.empty_culled,
+            "帳簿 cross: empty"
+        );
+        debug_assert_eq!(
+            self.cull_stats.occluded_skipped, self.frame_stats.visgraph_culled,
+            "帳簿 cross: visgraph"
+        );
+        debug_assert_eq!(
+            self.cull_stats.range_skipped, self.frame_stats.range_culled,
+            "帳簿 cross: range"
+        );
 
         self.frame_stats.clone()
     }
@@ -1591,6 +1623,65 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    /// 【wave 157 FC §7 消化 20 TDD RED】chunk_cull::CullStats を真の
+    /// 第 2 帳簿として frame_stats arms と独立に apply 蓄積し、frame 毎に
+    /// （a) Σ 完全性 (tested == visible+empty+occluded+range)、(b) 三面
+    /// cross-field 一致 (empty_skipped==empty_culled 等 3 面) を検証する
+    /// (rq fc_cull (1)(5)、wave 152 Σ==len 完全性の判例)。旧は統計機構が
+    /// 消費者ゼロで孤立 (捕捉 79) し、二重帳簿のずれ検出手段がなかった。
+    #[test]
+    fn frame_cull_stats_cross_invariants_strict() {
+        let (dir, mut p) = unique_pipeline("fc_xinv");
+        // verdict 到達を確実化 (continue 前倒しゲートを本テスト内のみ無効化、
+        // camera_speed 回帰テストの flag 制御と同型の harness 操作)。
+        p.low_spec.frustum_cull = false;
+        p.low_spec.flora_lod = false;
+        p.low_spec.pull_generation_cache = false;
+        p.low_spec.pre_mesh_occlusion = false;
+        // 4 verdict 全てを 1 frame に生成 (rq fc_cull (6)): (0,0) デフォルト
+        // 地形 Visible、(1,0) occupied ingest Visible、(5,0) 空 ingest
+        // EmptyColumn (dist 88 < 128)、(20,0) occupied ingest OutOfRange
+        // (center 328 > floor 半径 128)。all-zero 帳簿は vacuous になる
+        // 構造を、非ゼロ 4 verdict scene で根治した (初版は全 V 帳簿のみで
+        // adversarial (b) 非検出 → 本設計へ作り替え、誠実記録)。
+        p.world.ingest(1, 0, 0, &[7u16; 4096], 1);
+        p.world.ingest(5, 0, 0, &[0u16; 4096], 1);
+        p.world.ingest(20, 0, 0, &[9u16; 4096], 1);
+        let s = p.frame(&[(0, 0), (1, 0), (5, 0), (20, 0)], 640, 360, 0.016);
+        let st = &p.cull_stats;
+        assert_eq!(
+            (
+                st.tested,
+                st.visible,
+                st.empty_skipped,
+                st.occluded_skipped,
+                st.range_skipped
+            ),
+            (4, 2, 1, 0, 1),
+            "f1: 4 verdict 構造値 golden (rq fc_cull (6))"
+        );
+        assert_eq!(
+            st.tested,
+            st.visible + st.empty_skipped + st.occluded_skipped + st.range_skipped,
+            "f1: Σ 完全性"
+        );
+        assert_eq!(st.empty_skipped, s.empty_culled, "empty 帳簿一致");
+        assert_eq!(
+            st.occluded_skipped, s.visgraph_culled,
+            "visgraph 帳簿一致 (恒 0)"
+        );
+        assert_eq!(st.range_skipped, s.range_culled, "range 帳簿一致");
+        assert_eq!(
+            st.visible, s.visible_chunks,
+            "visible 帳簿一致 (fresh frame: 全 mesh が当該 verdict 経由)"
+        );
+        // 捕捉 80 (wave 158 予約): f2 以降は mesh_cache::decode_mesh 経路で
+        // latent panic を確認済 (ingest 列の disk cache 再読込、bytemuck
+        // alignment panic、デフォルト flag でも再現) — 本 pin は fresh f1
+        // の構造値に限定する。
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // =================================================================

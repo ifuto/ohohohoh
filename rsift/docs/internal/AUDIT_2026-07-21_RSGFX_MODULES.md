@@ -8370,3 +8370,85 @@ replay 16 全緑・lib 本編警告 0・fmt: slab HEAD 原生逸脱 2 行 (71/79
 6a7be816645621d81e40466d5cf85493、src+/tmp+rsift/bak 三重照合)・
 digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・
 台帳 593・TRIGGER 193。
+
+## FC. chunk_cull.rs / render_pipeline.rs (wave 157, 2026-07-28)
+
+対象 chunk_cull.rs 220→401 行 (CR 0)、render_pipeline.rs (cull_stats
+第 2 帳簿配線 + strict 1)。wgsl なし。census grep 機械確定: chunk_cull は
+lib.rs:9 pub mod +:78 pub use 公開 + render_pipeline:9 import・:108 field
+・:221 from_profile 構築・verdict_column 2 call site (:509/:812)・
+verdict arm 直加算のみ実消費、他 crate 消費者ゼロ。**CullStats+apply・
+visgraph_enabled・max_section_draw は読み手全域ゼロ** (entity_culling の
+CullStats は別型)。
+
+- FC-1 [低] **捕捉 78 [小] (dead field 2 件の §7 未配線)**: from_profile
+  が値を装填するのみで読み手ゼロ。visgraph_enabled: gate 対象の flood
+  fill が render_pipeline に存在せず (wave 129 EC 構造) + 全 tier
+  visgraph_occlusion=true 恒真 (rsift-api adaptive_perf 4 tier 機械
+  確認) + BK 設計で verdict 非読取 → 捏造ゲートは偽装禁止抵触のため
+  **不可能証明の上削除**。max_section_draw: 部分 section cap は chunk
+  全体シェーディング構造と不整合 (捏造機能回避) + BGM loop は別監査
+  module で同一不可能証明。
+- FC-2 [低] **捕捉 79 [小] (統計機構の消費者ゼロ孤立)**: render_pipeline
+  は frame_stats arms 直加算のみで CullStats+apply が完全孤立 (二重帳簿
+  のずれ検出手段ゼロ構造)。§7 消化 20: pipeline に第 2 帳簿として真蓄積
+  (両 verdict call site) + frame 末端 debug_assert 4 本 (Σ 完全性+
+  3 面 cross 一致) + strict 1 (非ゼロ 4 verdict 工程化 scene golden)。
+  **初版 invariant テストはデフォルト scene で全 V 帳簿 (=全比較面 0)
+  の vacuous green となり adversarial (b) 非検出を招来 → 4 verdict 非ゼロ
+  工程化 scene (ingest (1,0) 占有/(5,0) 空/(20,0) 遠方占有、low_spec 4
+  flag 無効化で verdict 到達経路確定) へ作り替えた自己照査を誠実記録。
+  probe 実測: デフォルト scene f1 は tested=3 全 V、f2+ は cache/再利用
+  前倒しで tested=0 (verdict site 不経由)。**
+- FC-3 [観] 誠実注記 5 項 (header): (1) 捕捉 78 経緯、(2) 捕捉 79/消化 20
+  経緯、(3) 順序帰属 (EmptyColumn は距離より先=range_skipped は遠方空を
+  数えない設計意図)、(4) 境界等号の帰属 (dist==radius は Visible、1-ulp
+  窓 strict、実機 probe: hypot(8,8)=0x413504f3=sqrt(128) bit 一致・
+  hypot(24,8)=0x41ca62c2)、(5) Occluded 非送出 (wave 61 BK) + 双 call
+  site skip 統一 (wave 86 CJ-2) は将来 producer の防衛、現挙動では
+  occluded_skipped 恒 0。**私の当初 center 対称 golden は probe 照合で
+  dist 非対称 (原点 8 オフセット由来) と自己捕捉 → bits 厳密 golden
+  (centers int-exact 0x41c00000/0xc1000000/0x41000000) へ訂正記録**。
+- FC-4 [低] strict module 5 (apply Σ 完全性全接頭辞+終端 golden 7/3/2/1/1・
+  境界等号 + 1-ulp 窓 3 点・from_profile カスタム rd=12→192/floor 7→128
+  導出・center 公式 dist bits+非対称中点 verdict・2×2 帰属 matrix+apply
+  帰属) + pipeline 1 (cross invariants 構造値 (4,2,1,0,1)+Σ+4 面一致)。
+  apply は pass 保有 API (当初 `self.cull_stats.apply` と API 形状誤り →
+  E0599 を緑前自己修正)。**+6 net 1300 全緑** (機械検算 1294+5+1、fmt 後
+  全量再実測 21.81s・adversarial 後最終 22.44s)。golden 全 rq fc_cull
+  事前導出 (整数系列+scene (6)、python 引退継続)。
+
+**捕捉 80 [中] (wave 158 対応予約、波及的発見)**: adversarial (b) 検証中
+の scene 調査で **mesh_cache::decode_mesh が MeshDiskCache::get 経路で
+bytemuck alignment panic する latent 障害** を特定。再現は最小: デフォ
+ルト flag の新 pipeline に `world.ingest(1,0,[7u16;4096])` → coords 同じ
+で 2 frame 目に cache decode で panic (RUST_BACKTRACE full: bytemuck
+internal cast_slice TargetAlignmentGreaterAndInputNotAligned ← decode_mesh
+← MeshDiskCache::get ← frame)。既監査 mesh_cache (AUDIT 行 302 既出) の
+見落とし潜在で、既存 det テストが ingest+2frame 組を持たない隙間構造。
+本 wave では FC 範囲外のため再現経路+証拠のみ記録し、wave 158 (FD)
+を mesh_cache 厳密監査として根治予定だ (捕捉採番 81 以降は同 wave で
+確定)。f1 構造値 pin は当該 decode 経路を踏まない設計に限定した。
+
+adversarial 5 系統: (a) apply Occluded arm skip **2 RED** (sigma golden+
+既存 legacy accumulate、事前予想完全一致)・(b) site-2 apply 除去 — **初回
+0 RED (初版 invariant test が全ゼロ vacuous で非検出、自己照査で捕捉) →
+非 vacuous 化後の再変異で 1 RED** (xinv strict、既存 det 系は cull 非ゼロ
+scene を持たず非検出面を正直記録)・(c) 順序 swap (range→empty) **2 RED**
+(legacy order pin+attribution matrix、予想一致)・(d) fields 復活 **非検出**
+(dead code 1300 緑・警告 0、誠実記録 8 連続)・(e) `>`→`>=` **1 RED**
+(equality ulp window、予想一致)。変異前実体コピー /tmp+rsift/bak 先行・
+python assert/grep -c で適用確認後計測・毎回復元 MD5-VERIFIED (cull
+4fb8edb58ede003e97dbb6b3628200db、pipe c43c3b0501d664b775953ebf461b875a
+— pipe は初版 ef8ba8c4 から invariant 作り替えで再採番)。grep 照合が
+私自身の誠実記録コメント語句「adversarial (b)」と衝突したため行位置
+一次確認で解消 (md5 照合が正)。
+
+opt-gfx **1300 全緑** (net +6、機械検算 1294+6=1300)・api 49 全緑・
+replay 16 全緑・lib 本編警告 0・fmt: 両対象 HEAD 逸脱は先頭空行
+artifact のみ (実質正準) → in-place rustfmt 全量適用・seal ゲート2
+機械値は両対象 0/0/0=自己起因 0 (pipe は invariant 作り替え後に再
+適用・再保存)・
+固定版 md5 三重保存 (上記 2 値、src+/tmp+rsift/bak 三重照合)・digest
+004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・台帳 597・
+TRIGGER 194。
