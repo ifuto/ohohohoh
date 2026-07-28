@@ -94,6 +94,14 @@ pub struct FrameWiringReport {
     /// 【wave 135 EI-1】旧 `_max_cluster_load` 破棄から実フィールドへ配線
     /// (新指令 §7 消費者なし禁止の消化)。
     pub cluster_max_load: u32,
+    /// DDGI probe 体積に対するカメラ位置の fractional probe 座標
+    /// (実 `DdgiVolume::probe_coord` 由来、セル内補間格子位置)。
+    /// 【wave 160 FF 捕捉 87】旧 `let probe = ...; let _ = probe;` 評価破棄
+    /// (新指令 §7「評価実効・消費なし」) を report 実フィールドへ根治。
+    pub ddgi_probe_coord: [f32; 3],
+    /// 同体積のプローブ総数 (dims 積、`probe_count` usize 積の u32 min 飽和)。
+    /// 【wave 160 FF 捕捉 87】ddgi::probe_count の実消費者配線。
+    pub ddgi_probe_count: u32,
     /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
     pub cluster_lit_clusters: u32,
     /// GTAO オクルージョン (実パレット高さ場の中央断面スライス由来、[0,1]、
@@ -1463,12 +1471,16 @@ impl FullGraphWiring {
             let _ = rs.update(s, l.intensity, 1.0, rand);
         }
         let _restir_estimate = rs.estimate();
+        // 【wave 160 FF 捕捉 87 §7 消化 22】旧 `let _ = probe;` 破棄を根治:
+        // 実体積由来の probe 座標・プローブ総数を report 実フィールドへ配線
+        // (低スペック GI 品質監視の決定性ピンとして全消費フレームで参照可能)。
         let probe = self.ddgi.probe_coord(crate::ddgi::Vec3::new(
             inputs.camera_pos[0],
             inputs.camera_pos[1],
             inputs.camera_pos[2],
         ));
-        let _ = probe;
+        report.ddgi_probe_coord = [probe.x, probe.y, probe.z];
+        report.ddgi_probe_count = (self.ddgi.probe_count() as u64).min(u32::MAX as u64) as u32;
         let intensities: Vec<f32> = emissive_lights.iter().map(|l| l.intensity).collect();
         // EN-1: wave 集約・ballot を report 実フィールドへ接続 (旧 `_` 破棄
         // 中間構造 = §7「評価実効・消費なし」の根治)。空 intensities の
@@ -3153,6 +3165,35 @@ mod strict_tests {
     // =====================================================================
     // 第 9 波: tick_world 統合テスト (監査 2026-07-22 に基づく決定性仕様)
     // =====================================================================
+
+    /// 【wave 160 FF 捕捉 87 §7 消化 22】DDGI probe 座標の旧 `let _ = probe`
+    /// 破棄を report 実フィールド pin へ根治したことの非ゼロ工程化 pin:
+    /// 全ゼロ帳簿 vacuous 化 (wave 157 FC の教訓) を避けるため camera_pos は
+    /// 非自明値。cell は全て 2 の冪で除算厳密 (rq ff_ddgi (4) + 実機 probe:
+    /// 1.5=0x3fc00000/1.0=0x3f800000/3.0=0x40400000/-2.5=0xc0200000)。
+    /// tick 2 回で pin 不変 (体積設定は静的契約) も併せて検証。
+    #[test]
+    fn ff_ddgi_probe_report_pins_nonvacuous() {
+        let (dir, mut w) = unique_wiring("ddgi_probe_pins");
+        let mut inp = empty_inputs();
+        inp.camera_pos = [24.0, 8.0, 48.0];
+        let r1 = w.tick_world(&inp);
+        assert_eq!(
+            r1.ddgi_probe_coord.map(f32::to_bits),
+            [0x3fc00000, 0x3f800000, 0x40400000],
+            "camera (24,8,48) -> probe coord (1.5,1.0,3.0) exact bits"
+        );
+        assert_eq!(r1.ddgi_probe_count, 1024, "dims 16*4*16");
+        inp.camera_pos = [-40.0, -8.0, -16.0];
+        let r2 = w.tick_world(&inp);
+        assert_eq!(
+            r2.ddgi_probe_coord.map(f32::to_bits),
+            [0xc0200000, 0xbf800000, 0xbf800000],
+            "camera (-40,-8,-16) -> (-2.5,-1.0,-1.0) exact bits"
+        );
+        assert_eq!(r2.ddgi_probe_count, 1024);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     fn unique_wiring(tag: &str) -> (std::path::PathBuf, FullGraphWiring) {
         let dir = std::env::temp_dir().join(format!(

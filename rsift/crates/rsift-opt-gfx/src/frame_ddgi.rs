@@ -164,26 +164,21 @@ fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
 
 /// WGSL `octEncode` と同一演算 (標準 diamond wrap)。
 pub fn oct_encode_wgsl(n: [f32; 3]) -> [f32; 2] {
-    let s = (n[0].abs() + n[1].abs() + n[2].abs()).max(1e-8);
-    let mut o = [n[0] / s, n[1] / s];
-    if n[2] < 0.0 {
-        let sx = if o[0] >= 0.0 { 1.0 } else { -1.0 };
-        let sy = if o[1] >= 0.0 { 1.0 } else { -1.0 };
-        o = [(1.0 - o[1].abs()) * sx, (1.0 - o[0].abs()) * sy];
-    }
-    o
+    // 【wave 160 FF 捕捉 87】WGSL 語彙の唯一 CPU 参照 `ddgi::oct_encode_unit`
+    // へ委譲 (式ツリー同一のため corpus 全域で旧複製実装と bit 同一 —
+    // probe: enc 8/8・dec 14/14 bit 一致、ddgi tests の bit 同一 pin で
+    // 恒常監視)。旧来は二重実装のまま ddgi 本家が非標準 wrap のまま
+    // 腐っていた (捕捉 86) のを単一真実へ統合。
+    let (x, y) = crate::ddgi::oct_encode_unit(crate::ddgi::Vec3::new(n[0], n[1], n[2]));
+    [x, y]
 }
 
 /// WGSL `octDecode` と同一演算 (normalize = IEEE sqrt 厳密)。
 pub fn oct_decode_wgsl(f: [f32; 2]) -> [f32; 3] {
-    let mut n = [f[0], f[1], 1.0 - f[0].abs() - f[1].abs()];
-    if n[2] < 0.0 {
-        let sx = if f[0] >= 0.0 { 1.0 } else { -1.0 };
-        let sy = if f[1] >= 0.0 { 1.0 } else { -1.0 };
-        n = [(1.0 - f[1].abs()) * sx, (1.0 - f[0].abs()) * sy, n[2]];
-    }
-    let l = dot3(n, n).sqrt();
-    [n[0] / l, n[1] / l, n[2] / l]
+    // 【wave 160 FF 捕捉 87】同上: `ddgi::oct_decode_unit` へ委譲
+    // (bit 同一、ddgi tests pin)。
+    let v = crate::ddgi::oct_decode_unit((f[0], f[1]));
+    [v.x, v.y, v.z]
 }
 
 /// WGSL 版の uv → 最近傍 texel (blend で書いた atlas の参照逆変換)。

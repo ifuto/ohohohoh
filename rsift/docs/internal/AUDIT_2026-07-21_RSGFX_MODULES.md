@@ -8595,3 +8595,64 @@ opt-gfx **1311 全緑** (net +9、機械検算 1302+9=1311、fmt 後全量再実
 判定で自己起因 hunk のみ選択適用 (fg 6 適用/3 原生保持・wiring 1/1、
 seal ゲート2 機械値 fg 2/2/0・wiring 0/0/0 (両対象 PASS))・digest 004c1cf5fb17bfe8 rows=357
 不変・seal 全 6 ゲート PASS・台帳 605・TRIGGER 196。
+
+## wave 160 (FF) ddgi.rs 厳密監査 (2026-07-28)
+
+census grep 機械確定: `ddgi::Vec3` 消費=full_graph_wiring:541/542/1466、
+`chebyshev_visibility`=frame_ddgi:386 (実消費)、`wgsl_source`=gpu_runtime:59
+登録、`probe_coord`=wiring:1466-1471 **`let _ = probe` 破棄 (§7 違反)**、
+`probe_count`=自家テストのみ、`oct_encode_unit/oct_decode_unit`/`Vec4`=crate
+全域消費者ゼロ (frame_ddgi は `oct_encode_wgsl` 等の別複製を `let uv =`
+:191・`let dir =` :254・往復試験 :834 で実消費、外部参照なし)。他 crate
+参照なし (stray コピー除外)。
+
+- **FF-1 [中] 捕捉 86**: 旧 oct 対は z<0 の wrap で成分 swap を欠く非標準
+  fold (ddgi: `((1-|ox|)sgn(ox),(1-|oy|)sgn(oy))` vs WGSL truth:
+  `((1-|oy|)sgn(ox),(1-|ox|)sgn(oy))`)。rq ff_ddgi (1) で代数的乖離
+  ((0.8,0.6) vs (0.6,0.8)) と実数厳密 roundtrip を導出、実機 probe
+  (rustc -O) で corpus 8+6 の bit 記録: 下半球 3 入力で対角鏡像乖離を
+  実測 ((0x3f19999a,0x3f4ccccd) vs (0x3f4ccccd,0x3f19999a) 等)。自己整合
+  ペアのため旧 roundtrip 試験は緑のまま潜伏 (capture 81 同型の CPU/GPU
+  ミラー乖離)。根治: WGSL 式ツリー同一語彙化 (pre-normalize 撤去: 射影
+  s が正規化を兼ねる、swap fold、タプル同時評価で逐語代入の更新漏れを
+  構造排除)。TDD RED 4/4 を機械記録 (encode golden / decode golden /
+  bit 同一 corpus / no-wrap、現行値は全て真値の対角 swap で検出)。
+- **FF-2 [低] 捕捉 87 §7 消化 22 + 捕捉 88 [小]**: wiring:1466-1471 の
+  `let _ = probe` 破棄を report 実フィールド 2 (ddgi_probe_coord [f32;3]、
+  ddgi_probe_count u32 min 飽和) 配線へ根治。`probe_count` は u32 積が
+  1626^3 超で暗黙 wrap (rq (3)、debug で overflow panic 実測、capture 84
+  同型) だったものを usize 積昇格。Vec4 (型+3 演算 impl)・
+  Vec3::{normalize,Add,Mul<f32>} は修正後の消費者ゼロを機械 grep
+  (crate 全域 + 他 crate) で証明し不可能証明削除 (async_compute EJ-2
+  判例、`use std::ops::{Add,Mul}` 未使用化も同時整理、警告 0 維持)。
+- **FF-3 [低] 捕捉 89**: frame_ddgi の oct_encode_wgsl/oct_decode_wgsl を
+  ddgi 本家への bit 同一委譲へ統合 (二重実装解消 + oct 対への実消費者
+  新設、probe: 委譲版は旧複製と corpus 全域 bit 同一 enc 8/8・dec 14/14)。
+  decode の旧 1e-8 normalize ガードは Sigma|n_i| = a+|1-a| >= 1 (rq (2)
+  milli grid min=1、実数上は三角不等式で恒成立) に到達不能と証明し除去。
+  自己照査記録: 旧 decode ty 項が sign(ox) typo 状態と一時主張したが
+  sed 一次確認で `if oy` の自己整合実装と判明、台帳・節とも訂正済
+  (grep 折返し一字確認工程の信用担保)。rustfmt 後の mut-(e) アンカー
+  不一致は python assert が適用失敗を阻止 (誠実記録、現テキスト一行化
+  を確認後に再適用)。
+- **FF-4 [低] strict +7 net 1318 全緑** (機械検算 1311+7、fmt 後全量
+  21.10s・adversarial 後最終 21.17s): ddgi 6 (WGSL swap golden encode/
+  decode・frame_ddgi bit 同一 corpus 8・probe_count no-wrap golden・
+  probe_coord 厳密 binary pin (0x3fc00000/0x3f800000/0x40400000/
+  0xc0200000/0xbf800000 全て 2 冪 cell の厳密値、実機 probe 確定)・
+  Sigma bound grid) + wiring 1 (camera (24,8,48)/(-40,-8,-16) の非ゼロ
+  工程化 2 tick pin、wave 157 FC の all-zero vacuous 教訓を設計に織込)。
+  rq ff_ddgi (1)-(4) 全 assert 通過 (python 引退継続、max が f32 専用の
+  言語制約は一次確認で if 分解へ修正した上で全緑)。adversarial 5 系統:
+  (a) encode revert 3 RED / (b) decode revert 3 RED / (c) u32 revert 1 RED
+  (overflow panic) / (d) Vec4 死コード再追加 **非検出** (pub 死コードは
+  警告も出ず、code-review/census 領域の限界として誠実記録、wave 157 (d)
+  系 9 例目) / (e) report pin 0 化 1 RED。復元 MD5-VERIFIED 5 回
+  (ddgi 81e8421d/frame_ddgi 94e9d4bc/wiring aaac157d 三重照合)。誠実
+  分析: `ff_oct_pair_bit_identical` は対称変異 (両側同一の誤り) を
+  理論上不検出 (consistency pin であって truth pin ではない) — 絶対真値は
+  golden 2 本が担保、と pin 分類を明文化。api 49・replay 16 全緑・警告 0・
+  fmt 自己起因 0 (seal ゲート2 機械値: ddgi 2/2/0・frame_ddgi 2/2/0・
+  wiring 0/0/0 全 PASS — difflib+git diff 交差選択適用では自己起因範囲と
+  交差する hunk が 0 件 (0/3・0/2) で機械的に変更要パッチゼロ!)。digest 004c1cf5fb17bfe8
+  rows=357 不変・seal 全 6 ゲート PASS・台帳 609・TRIGGER 197。
