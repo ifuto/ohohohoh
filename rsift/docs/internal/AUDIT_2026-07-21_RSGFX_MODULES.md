@@ -8706,3 +8706,44 @@ census grep 機械確定: `FramePacer::new`/`record_frame` は full_graph_wiring
   折返し) を検出し in-place で解消後に seal 0/0/0)。
   digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・台帳
   612・TRIGGER 198。
+
+## wave 162 (FH) adaptive_shading.rs 厳密監査 (2026-07-28)
+
+census grep 機械確定: `new`=render_pipeline:211-217 (feather 2 flag +
+software_vrs_checkerboard 実設定由来)、`set_camera_speed`=:623 (M-1
+回帰で実変位速度)、`tick`=:624 (同経路で実駆動 — 初判「tick 未駆動」は
+変数名 `s` 見落としの grep 誤り、一次確認で訂正)、`should_draw_chunk`=
+:703 vacuous gate (恒 true で `continue` は死分岐)、`shading_rate`/
+`rate_for_distance`/`apply_motion`/`skip_stride`/`checkerboard_skip` は
+自家 strict_tests のみ。lib.rs:71 wildcard re-export 経由の他 crate 参照
+なし。
+
+- **FH-1 [中] 捕捉 92**: 恒値スタブ 2 件 + 死帳簿: `honesty_spec_never_
+  culls_geometry` が「将来拡張の遺物」「shading rate hint はメッシュを
+  カリングしない」と証言する恒 false/true 常数 API で、pipeline は
+  `if !s.should_draw_chunk(i,d) { shading_skipped += 1; continue }` の
+  vacuous gate を保持 (到達不能分岐と不増カウンタの真空帳簿 — cross-pin
+  1567 は a==b の決定性のみで 0 定数の検出力を持たなかった)。常数
+  のため配線意味なし → 不可能証明削除、gate は rate 実計測へ根治、
+  「カリングしない」仕様は API 非存在による構造保証へ昇格。
+- **FH-2 [低] 捕捉 93 §7 消化 24**: 出力側 4 API の消費者ゼロを
+  FrameStats 3 実フィールド (shading_half/shading_quarter/
+  shading_stride_sum=u32) 真計上で根治。TDD compile RED E0609×3 機械
+  記録。自己照査: use 行未更新の E0433×3 を全量ビルドで捕捉し
+  `{AdaptiveShadingController, ShadingRate}` import で修正 (緑前解消)。
+- **FH-3 [低] strict +1 net 1322 全緑** (機械検算 1321+1、fmt 後全量
+  21.20s・adversarial 後最終 21.04s): fh_shading_rate_buckets_golden は
+  camera (0,0) からの距離境界等号 2 件 ((3,0):48.0→Full、(6,0):96.0→
+  Half) を含む非ゼロ工程化 golden (half=2/quarter=1/stride=9、rq
+  fh_shading で分数ではなく i64 厳密導出、bool 比較は言語型制約で
+  差分形式へ修正の上全 assert 通過)。honesty 試験はスタブ消失に伴い
+  rate 飽和上限 (Quarter 飽和・stride≤4) の全掃引 pin へ作り替え。
+  adversarial 5 系統: (a) 96→90 境界潰し 2 RED (module+pipeline 両 pin
+  の二重捕捉)・(b) 8→9 動作閾値 1 RED・(c) Quarter→Half 誤帰属 1 RED・
+  (e) stride 4→3 で 2 RED・(d) 恒値スタブ死救出 非検出 (dead code 系
+  11 例目)。復元 MD5-VERIFIED 5 回 (shading fd0c9885/pipe badddd3a
+  三重照合)。api 49・replay 16 全緑・警告 0・fmt 自己起因 0
+  (seal ゲート2 機械値: adaptive_shading 15/13/0・render_pipeline
+  0/0/0 全 PASS — stub 削除で原生逸脱 2 行も消滅、difflib 交差選択
+  適用 0/12 で自己起因ゼロ実証)。digest 004c1cf5fb17bfe8 rows=357 不変・
+  seal 全 6 ゲート PASS・台帳 615・TRIGGER 199。

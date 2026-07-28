@@ -1,6 +1,6 @@
 //! Rsift render pipeline — 必須/推奨 + Feather weak-PC (no resolution scaling).
 
-use crate::adaptive_shading::AdaptiveShadingController;
+use crate::adaptive_shading::{AdaptiveShadingController, ShadingRate};
 use crate::billboard_lod::BillboardLodSelector;
 use crate::binary_greedy_meshing::{
     demo_column_palettes, mesh_chunk_column, mesh_chunk_column_pull_world, SectionPalette,
@@ -60,7 +60,15 @@ pub struct FrameStats {
     pub draw_calls: u32,
     pub cpu_culled: u64,
     pub tiles_binned: u32,
-    pub shading_skipped: u32,
+    /// このフレームに Half レート判定された chunk 数 (実 rate 計測)。
+    /// 【wave 162 FH 捕捉 92】旧 `shading_skipped` は `should_draw_chunk`
+    /// 恒 true スタブの `continue` が死分岐で不増の真空帳簿だったものを、
+    /// 実バケット統計へ根治。
+    pub shading_half: u32,
+    /// 同、Quarter レート判定数。
+    pub shading_quarter: u32,
+    /// 同、skip_stride 総和 (ソフト VRS コスト proxy: Full=1/Half=2/Quarter=4)。
+    pub shading_stride_sum: u32,
     pub empty_culled: u32,
     pub visgraph_culled: u32,
     pub range_culled: u32,
@@ -699,11 +707,19 @@ impl RsiftRenderPipeline {
                 break;
             }
             let dist = ((cx - cam_cx) as f32).hypot((cz - cam_cz) as f32) * 16.0;
+            // 【wave 162 FH 捕捉 92/93 §7 消化 24】旧 `should_draw_chunk`
+            // 恒 true スタブの vacuous gate (continue は死分岐) + 不増死
+            // 帳簿を根治: shading_rate を実呼出してバケット統計/stride 総和
+            // を真計上する実消費へ置換。ジオメトリ決不カリング仕様は維持
+            // (rate はヒントであり draw 可否は決定しない)。
             if let Some(s) = self.shading.as_ref() {
-                if !s.should_draw_chunk(i, dist) {
-                    self.frame_stats.shading_skipped += 1;
-                    continue;
+                let rate = s.shading_rate(i, dist);
+                match rate {
+                    ShadingRate::Half => self.frame_stats.shading_half += 1,
+                    ShadingRate::Quarter => self.frame_stats.shading_quarter += 1,
+                    ShadingRate::Full => {}
                 }
+                self.frame_stats.shading_stride_sum += rate.skip_stride();
             }
 
             if self.low_spec.frustum_cull
@@ -1515,6 +1531,38 @@ mod tests {
         (dir, p)
     }
 
+    /// 【wave 162 FH 捕捉 92/93 §7 消化 24】旧 vacuous gate
+    /// (`should_draw_chunk` 恒 true + shading_skipped 不増死帳簿) を rate
+    /// 実計測へ根治したことの非ゼロ工程化 pin。camera chunk (0,0)、
+    /// distance のみ有効: (3,0)=48 ブロック境界等号→Full、(4,0)=64→Half、
+    /// (6,0)=96 境界等号→Half、(7,0)=112→Quarter (rq fh_shading (1))。
+    /// golden: half=2・quarter=1・stride_sum=1+2+2+4=9 (rq (2))。
+    /// low_spec 4 系統は 157 FC harness 同様到達性のため無効化 (誠実明記)。
+    #[test]
+    fn fh_shading_rate_buckets_golden() {
+        let (dir, mut p) = unique_pipeline("fh_buckets");
+        p.low_spec.frustum_cull = false;
+        p.low_spec.flora_lod = false;
+        p.low_spec.pull_generation_cache = false;
+        p.low_spec.pre_mesh_occlusion = false;
+        p.feather.enabled = true;
+        p.feather.distance_adaptive_shading = true;
+        p.shading = Some(AdaptiveShadingController::new(true, false, false));
+        let coords = [(3, 0), (4, 0), (6, 0), (7, 0)];
+        for &(cx, cz) in &coords {
+            p.world.ingest(cx, 0, cz, &[7u16; 4096], 1);
+        }
+        p.world.set_camera(0.0, 70.0, 0.0, 0.0, 0.0);
+        let s = p.frame(&coords, 640, 360, 0.016);
+        assert_eq!(s.shading_half, 2, "(4,0)+(6,0)=96 境界等号が Half に帰着");
+        assert_eq!(s.shading_quarter, 1, "(7,0) Quarter");
+        assert_eq!(
+            s.shading_stride_sum, 9,
+            "Full1+Half2+Half2+Quarter4 = 9 (rq (2) golden)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// M-1 回帰: カメラ速度は実変位計測 (旧実装は 6.0/delta の虚偽一定式で
     /// motion adaptive shading が恒に最高速判定となっていた)。
     #[test]
@@ -1564,7 +1612,12 @@ mod tests {
             assert_eq!(sa.draw_calls, sb.draw_calls, "draw_calls");
             assert_eq!(sa.cpu_culled, sb.cpu_culled, "cpu_culled");
             assert_eq!(sa.tiles_binned, sb.tiles_binned, "tiles_binned");
-            assert_eq!(sa.shading_skipped, sb.shading_skipped, "shading_skipped");
+            assert_eq!(sa.shading_half, sb.shading_half, "shading_half");
+            assert_eq!(sa.shading_quarter, sb.shading_quarter, "shading_quarter");
+            assert_eq!(
+                sa.shading_stride_sum, sb.shading_stride_sum,
+                "shading_stride_sum"
+            );
             assert_eq!(sa.empty_culled, sb.empty_culled, "empty_culled");
             assert_eq!(sa.visgraph_culled, sb.visgraph_culled, "visgraph_culled");
             assert_eq!(sa.range_culled, sb.range_culled, "range_culled");

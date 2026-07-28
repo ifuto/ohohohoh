@@ -1,4 +1,15 @@
 //! Adaptive shading — distance/motion pseudo-VRS (no framebuffer resolution change).
+//!
+//! 【wave 162 FH (2026-07-28)】消費者: `RsiftRenderPipeline` の frame 計測
+//! (`new`/`set_camera_speed`/`tick`/`shading_rate`/`skip_stride` → FrameStats
+//! バケット)。捕捉 92 [中]: `checkerboard_skip` (恒 false) /
+//! `should_draw_chunk` (恒 true) の常数スタブ (自家 honesty 試験が「将来
+//! 拡張の遺物」と証言) を不可能証明削除 — 常数のため配線意味を持たず、
+//! 「ジオメトリをカリングしない」仕様は draw 判定 API が存在しないことで
+//! 構造保証される。捕捉 93 [小]: §7 消化 24 で rate 出力 API (shading_rate/
+//! rate_for_distance/apply_motion/skip_stride) の消費者ゼロへ実消費者
+//! (FrameStats::shading_half/shading_quarter/shading_stride_sum 真計上)
+//! を配線。
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShadingRate {
@@ -71,16 +82,11 @@ impl AdaptiveShadingController {
         }
     }
 
-    /// Software VRS checkerboard — affects shading rate only, never hides geometry.
-    pub fn checkerboard_skip(&self, _chunk_index: usize) -> bool {
-        false
-    }
-
-    pub fn should_draw_chunk(&self, _chunk_index: usize, _dist_blocks: f32) -> bool {
-        true
-    }
-
     /// Shading rate hint for downstream passes (does not cull meshes).
+    /// 【wave 162 FH 捕捉 92】旧 `checkerboard_skip` (恒 false) /
+    /// `should_draw_chunk` (恒 true) の常数スタブは不可能証明削除
+    /// (消費経路は vacuous gate と自家 honesty 試験のみ、常数のため
+    /// 配線意味を持たない)。
     pub fn shading_rate(&self, chunk_index: usize, dist_blocks: f32) -> ShadingRate {
         let mut rate = self.rate_for_distance(dist_blocks);
         rate = self.apply_motion(rate);
@@ -160,13 +166,29 @@ mod strict_tests {
 
     #[test]
     fn honesty_spec_never_culls_geometry() {
+        // 【wave 162 FH】旧来は常数スタブ (恒 false/true の skip/draw 判定)
+        // を呼ぶだけの巡回試験だった (スタブ自家証言「将来拡張の遺物」)。
+        // 捕捉 92 でスタブは不可能証明削除され、「カリングしない」は draw
+        // 判定 API が存在しないことで構造保証される。ここでは残存 API の
+        // 行為上限 (rate が Quarter を下回らない飽和降格) を、速度・距離・
+        // parity 全組合せで掃引 pin する。
         let mut c = AdaptiveShadingController::new(true, true, true);
         c.set_camera_speed(100.0);
-        c.tick();
-        for i in 0..8usize {
-            assert!(!c.checkerboard_skip(i), "skip フラグは恒常 false (将来拡張の遺物)");
-            for d in [0.0_f32, 96.0, 500.0, f32::MAX] {
-                assert!(c.should_draw_chunk(i, d), "shading rate hint はメッシュをカリングしない");
+        for frame in 0..4u32 {
+            c.tick();
+            for i in 0..8usize {
+                for d in [0.0_f32, 48.0, 96.0, 500.0, f32::MAX] {
+                    let _ = frame;
+                    let rate = c.shading_rate(i, d);
+                    assert!(
+                        matches!(
+                            rate,
+                            ShadingRate::Full | ShadingRate::Half | ShadingRate::Quarter
+                        ),
+                        "rate は enum 全域内 (Quarter 飽和の上限を逸脱しない)"
+                    );
+                    assert!(rate.skip_stride() <= 4);
+                }
             }
         }
     }
