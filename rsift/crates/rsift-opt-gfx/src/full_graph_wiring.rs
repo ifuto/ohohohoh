@@ -127,6 +127,10 @@ pub struct FrameWiringReport {
     pub gigavoxels_processed: u32,
     /// 処理後のプール常駐 brick 数 (BrickPool.resident_bricks.len() 実測)。
     pub gigavoxels_resident: u32,
+    /// 【wave 168 FN 捕捉 105 §7 消化 30】rs_graphics() の root cost
+    /// (DWORD 単位、定数 19 = 16 Camera + 1 bindless Table + 2 Material)。
+    /// D3D12 64 DWORD 制限内の実行時 telemetry 化。
+    pub root_cost_dwords: u32,
     /// 1 灯以上帰属したクラスタ数 (同上、正規化後の実供給から集計)。
     pub cluster_lit_clusters: u32,
     /// GTAO オクルージョン (実パレット高さ場の中央断面スライス由来、[0,1]、
@@ -348,7 +352,9 @@ pub struct FullGraphWiring {
 
     // ---- D3D12 相当の CPU モデル群 (実バイト/実コマンドを生成) ----
     desc_ring: crate::descriptor_heap_ring::DualHeapRing,
-    root_cost: u32,
+    /// 【wave 168 FN】rs_graphics() の root cost (定数 19、D3D12 64 DWORD
+    /// 制限内の実行時不変式)。§7 消化 30 で tick 破棄を report 配線へ根治。
+    root_cost_dwords: u32,
     pso_lib: crate::pso_library_cache::PsoLibrary,
     bundle_cache: crate::bundle_reuse::BundleCache,
     barriers: crate::enhanced_barriers::BarrierBatch,
@@ -510,7 +516,7 @@ impl FullGraphWiring {
             tdl: crate::tiled_deferred::TiledDeferredLighting::new(1920, 1080),
             clp: crate::compute_light_prop::ComputeLightPropagation::new(4096),
             desc_ring: crate::descriptor_heap_ring::DualHeapRing::new(4096, 256, 64, 64),
-            root_cost,
+            root_cost_dwords: root_cost,
             pso_lib: crate::pso_library_cache::PsoLibrary::new(&cache_dir),
             bundle_cache: crate::bundle_reuse::BundleCache::new(),
             barriers: crate::enhanced_barriers::BarrierBatch::new(),
@@ -1687,7 +1693,9 @@ impl FullGraphWiring {
         let n_desc = inputs.quad_materials.len() as u32 + 2;
         let _cbv = self.desc_ring.cbv_srv_uav.alloc(n_desc);
         let _smp = self.desc_ring.sampler.alloc(1);
-        let _ = self.root_cost;
+        // 【wave 168 FN 捕捉 105 §7 消化 30】旧 `let _ = self.root_cost;`
+        // 破棄を report 実配線へ根治 (rs_graphics() は定数生成のため 19 固定)。
+        report.root_cost_dwords = self.root_cost_dwords;
 
         // Enhanced barriers: upload 実バイトに応じたバリア遷移。
         if inputs.quad_bytes > 0 {
@@ -3352,10 +3360,27 @@ mod strict_tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// 【wave 168 FN 捕捉 105】§7 消化 30: tick の `let _ = self.root_cost;`
+    /// 破棄を report.root_cost_dwords 実配線へ根治。rs_graphics() は定数生成の
+    /// ため 19 固定 pin (D3D12 64 DWORD 制限内である不変式を実行時 telemetry 化)。
+    #[test]
+    fn fn_root_cost_report_field_pin() {
+        let (_dir, mut w) = unique_wiring("fn_root_cost");
+        let inp = empty_inputs();
+        let r = w.tick_world(&inp);
+        assert_eq!(
+            r.root_cost_dwords, 19,
+            "16 (Camera RootConstants) + 1 (bindless Table) + 2 (Material RootDescriptor)"
+        );
+        assert!(r.root_cost_dwords <= 64, "D3D12 64 DWORD 制限内");
+    }
+
     /// 【wave 166 FL 捕捉 101 §7 消化 28】`_bricks` 破棄を report 実配線
     /// したことの非ゼロ工程化 pin: palette ありで tick 毎に (0,0,0,0) が
     /// request→process され processed=1・resident=1 定常 (rq fl_giga (3))。
     /// palette なしでは両者 0 (分岐両側を pin)。
+    /// (wave 168: fn テスト挿入が一時的に本 fn の #[test] を剥奪 — wave 167
+    /// 同型事故の再発。同 wave 内自己照査で捕捉・修復、誠実記録)
     #[test]
     fn fl_gigavoxels_report_pins_nonvacuous() {
         let (dir, mut w) = unique_wiring("giga_stats");

@@ -50,7 +50,11 @@ impl OptimizedRootSignature {
                 StaticSampler { filter: 0, address_u: 1, address_v: 1, address_w: 1, shader_register: 0, register_space: 0 }, // Linear Wrap
                 StaticSampler { filter: 1, address_u: 1, address_v: 1, address_w: 1, shader_register: 1, register_space: 0 }, // Point
             ],
-            flags: 0x1, // DENY_HS|DS|GS等最適化
+            // 【wave 168 FN 捕捉 104】MS Learn 一次情報: 0x1 は ALLOW_INPUT_ASSEMBLER_
+            // INPUT_LAYOUT (IA opt-in) で DENY 系ではない。設計意図 DENY_HS|DS|GS
+            // は 0x4|0x8|0x10 = 0x1C。vertex pull 主パイプラインで IA 非使用の
+            // ため ALLOW_IA は opt-in しない。
+            flags: 0x1C, // DENY_HULL(0x4)|DENY_DOMAIN(0x8)|DENY_GEOMETRY(0x10)
         }
     }
 
@@ -97,7 +101,7 @@ mod strict_tests {
             (1, 1, 1, 1, 1, 0),
             "s1 = Point Wrap"
         );
-        assert_eq!(rs.flags, 0x1, "DENY 系フラグ 0x1 固定");
+        assert_eq!(rs.flags, 0x1C, "DENY_HS|DS|GS = 0x1C (一次情報真値)");
     }
 
     #[test]
@@ -116,6 +120,26 @@ mod strict_tests {
             flags: 0,
         };
         assert_eq!(rs.root_cost(), 5 + 1 + 2 + 0, "Constants=DWORD数, Table=1, RootDesc=2, Sampler=0");
+    }
+
+    /// 【wave 168 FN 捕捉 104】flags の真値 pin (一次情報 = MS Learn
+    /// D3D12_ROOT_SIGNATURE_FLAGS): 0x1 = ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+    /// (vertex pull 主パイプラインで IA 非使用のため opt-in しない)、
+    /// DENY_HS=0x4 / DENY_DS=0x8 / DENY_GS=0x10 → 設計意図 DENY_HS|DS|GS = 0x1C。
+    /// 現行 0x1 + 「DENY 系」コメント/旧 golden は一次情報と正矛盾。
+    #[test]
+    fn fn_flags_truth_from_first_source() {
+        let rs = OptimizedRootSignature::rs_graphics();
+        assert_eq!(
+            rs.flags, 0x1C,
+            "DENY_HULL(0x4)|DENY_DOMAIN(0x8)|DENY_GEOMETRY(0x10) = 0x1C"
+        );
+        assert_eq!(
+            rs.flags & 0x1,
+            0,
+            "ALLOW_IA(0x1) は opt-in しない (vertex pull)"
+        );
+        assert_eq!(rs.flags & !0x1C, 0, "既知外のフラグは立たない");
     }
 
     #[test]
