@@ -8779,3 +8779,35 @@ census grep 機械確定: `get`/`insert`/`save` = full_graph_wiring:1694-1699
   fmt 自己起因 0 (seal ゲート2 機械値: wiring 0/0/0・pso 7/7/0 全 PASS
   — difflib 交差選択適用 1/9・1/2 で自己起因 hunk のみ解消)。digest 004c1cf5fb17bfe8 rows=357 不変・seal
   全 6 ゲート PASS・台帳 618・TRIGGER 200。
+
+## wave 164 (FJ) ibl_sh.rs 厳密監査 (2026-07-28)
+
+census grep 機械確定: ibl_sh の消費者は full_graph_wiring:2121-2129 の IBL
+抽出 (Vec3::new/sh_basis/evaluate_sh/Add/Mul<f32> 実消費 →
+report.ambient_light) と gpu_runtime:74 の `wgsl_source` 登録の 2 系統。
+Vec4・Vec3::Sub は crate 全域消費者ゼロ。陽性確定: SH 5 定数
+(0.282095/0.488603/1.092548/0.315392/0.546274) は CPU リテラルと WGSL
+本文が逐語一致しており捕捉 81 型の乖離は非該当 (6dp trunc は両側同一
+設計、真値との絶対誤差 ~2e-7 は [観] 注記)。
+
+- **FJ-1 [低] 捕捉 96 [小] §7 消化 26**: Vec4 (型+Add/Sub/Mul<f32>)・
+  Vec3::Sub を不可能証明削除 (EJ-2/FF 判例)。WGSL `evaluate_sh` は
+  `sh_basis(normalize(dir))` の二重正規化 (値不動点だが bit 語彙が一意
+  でない装飾) を `sh_basis(dir)` へ統一 — TDD value RED 1/1
+  (wgsl_matches_cpu_reference_vocabulary が旧形を検出) → GREEN。wiring
+  :2123 の enumerate+`let _ = i;` 装飾撤去 (反復値不変、dome 先頭 9
+  方向の CH-4 公知リング)。残愛器 new/dot/length/normalize/Add/Mul は
+  sh_basis/evaluate_sh の内部語彙で全て実消費中を確認。
+- **FJ-2 [低] strict +2 net 1326 全緑** (機械検算 1324+2、fmt 後全量
+  21.20s・adversarial 後最終 21.20s): bit golden は実機 probe (rustc -O)
+  3 端点全 9 項 (z+: Y00=0x3e906ec1/Y1,0=0x3efa2a2c/Y2,0=0x3f217b0f、
+  x+: Y2,0=-0.315392=0xbea17b0f/Y2,2=+0.546274=0x3f0bd89d、y+: Y2,2
+  符号反転=0xbf0bd89d) + (0,0,2) 非単位入力の正規化不動点 bit 一致 pin。
+  adversarial 5 系統: (b)/(c) (rs 側定数・添字変異) で bit golden RED、
+  (d)/(e) (wgsl 定数テキスト・二重正規化復帰) で vocabulary pin RED、
+  (a) Vec4 死救出 非検出 (dead code 系 13 例目)。復元 MD5-VERIFIED 5 回
+  (ibl 7d767aa4/wiring 8f0a3a5c/wgsl 36b12568 三重照合)。api 49・replay
+  16 全緑・警告 0・fmt 自己起因 0 (ibl/wiring 共に HEAD 逸脱と現逸脱が
+  全一致、seal ゲート2 機械値: wiring 0/0/0・ibl 8/8/0 全 PASS)。
+  digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS・台帳
+  620・TRIGGER 201。

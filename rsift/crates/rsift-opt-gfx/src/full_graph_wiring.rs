@@ -2118,13 +2118,15 @@ impl FullGraphWiring {
         // 水平リング (「ドーム」でなく地平環)。重み 0.03 は 4π/N の SH
         // 求積でなく ad-hoc 減衰係数 (ambient_light は現行メトリクス消費
         // のみで実描画へは未還元)。
+        // 【wave 164 FJ 捕捉 96】(i, d) enumerate + `let _ = i;` の装飾
+        // scaffolding を撤去 (§7 評価破棄系)。反復は dome の先頭 9 方向
+        // (CH-4 公知の水平リング) で値は不変。
         let mut sh = [crate::ibl_sh::Vec3::new(0.0, 0.0, 0.0); 9];
-        for (i, d) in dome.iter().enumerate().take(9) {
+        for d in dome.iter().take(9) {
             let basis = crate::ibl_sh::sh_basis(crate::ibl_sh::Vec3::new(d.x, d.y, d.z));
             for b in 0..9 {
                 sh[b] = sh[b] + crate::ibl_sh::Vec3::new(d.x, d.y, d.z) * basis[b] * 0.03;
             }
-            let _ = i;
         }
         let ambient = crate::ibl_sh::evaluate_sh(&sh, crate::ibl_sh::Vec3::new(0.0, 1.0, 0.0));
         report.ambient_light = (ambient.x + ambient.y + ambient.z) / 3.0;

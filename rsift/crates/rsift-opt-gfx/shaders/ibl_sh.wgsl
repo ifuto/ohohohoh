@@ -11,7 +11,10 @@ fn sh_basis(dir: vec3<f32>) -> array<f32, 9> {
 }
 
 fn evaluate_sh(coeffs: array<vec3<f32>, 9>, dir: vec3<f32>) -> vec3<f32> {
-  let b = sh_basis(normalize(dir));
+  // wave 164 (FJ): 二重正規化を撤去 (正規化は sh_basis 内部の 1 回。
+  // 旧形は値の不動点だが CPU 参照 ibl_sh.rs::evaluate_sh と bit 語彙が
+  // 一意でない装飾だった)。
+  let b = sh_basis(dir);
   // 注: 値として渡された配列引数 / let 配列はループ変数で動的 index できない
   // (naga IndexMustBeConstant — 2026-07-21 監査で検出)。関数アドレス空間へ
   // 値複写してから index する。演算 (係数と基底の逐次積和) は CPU ミラー
