@@ -313,6 +313,10 @@ pub struct FrameWiringReport {
     /// 同上: Σ 全グループの InstanceData 総バイト (旧 first mesh のみの弱い
     /// 見積から truth へ、32B/instance、rq ft_instanced)。
     pub instanced_bytes: u32,
+    /// 【wave 175 FU 捕捉 115】BumpArena::used() (morton codes 実確保後の
+    /// 当該 tick アリーナ使用バイト、旧消費者ゼロ → §7 消化 37 実計測配線、
+    /// max(k,1)*8 の truth、rq fu_bump)。
+    pub bump_used: u64,
     /// 同上: ObjectPool<BatchOutput> の HUD scratch acquire 直後
     /// available (cap 2・1 outstanding で常に 1、capacity 保持
     /// リサイクルの稼働証跡)。det subset 登録 (定数構造値)。
@@ -882,6 +886,9 @@ impl FullGraphWiring {
                 std::ptr::copy_nonoverlapping(codes.as_ptr(), ptr, codes.len());
             }
         }
+        // FU 捕捉 115 §7 消化 37: bump used() 消費者ゼロ → report 実計測
+        // (morton 実確保の当該 tick 使用バイト truth telemetry)。
+        report.bump_used = self.bump.used() as u64;
         let mut order_morton: Vec<usize> = (0..n_chunks).collect();
         order_morton.sort_by_key(|&i| codes.get(i).copied().unwrap_or(0));
         let _ = order_morton;
@@ -3320,6 +3327,23 @@ mod strict_tests {
             "camera (-40,-8,-16) -> (-2.5,-1.0,-1.0) exact bits"
         );
         assert_eq!(r2.ddgi_probe_count, 1024);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 【wave 175 FU 捕捉 115】BumpArena used() 消費者ゼロ → report.bump_used
+    /// 真配線 pin (rq fu_bump): morton codes 実確保の used = max(k,1)*8。
+    /// tick1: keys=5 → 40・tick2: keys=3 → reset 後 24 (u64 align 8)。
+    #[test]
+    fn fu_bump_used_truth() {
+        let (dir, mut w) = unique_wiring("bump_used_pins");
+        let mut i1 = empty_inputs();
+        i1.chunk_keys = vec![(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)];
+        let r1 = w.tick_world(&i1);
+        assert_eq!(r1.bump_used, 40, "keys=5 → 5*8 (rq)");
+        let mut i2 = empty_inputs();
+        i2.chunk_keys = vec![(0, 0), (1, 1), (5, 5)];
+        let r2 = w.tick_world(&i2);
+        assert_eq!(r2.bump_used, 24, "reset 後 keys=3 → 3*8 (rq)");
         let _ = std::fs::remove_dir_all(dir);
     }
 

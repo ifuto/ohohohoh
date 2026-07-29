@@ -8960,3 +8960,11 @@ census grep: InstancedCollector/add/total_instances/groups/as_bytes = full_graph
 - **FT-1 [低] 捕捉 114 [小]**: §7 消化 36。→ report 3 実フィールド真配線 (instanced_total/groups/bytes)、bytes を Σ 全グループ総バイト truth へ根治 (旧 first mesh のみ見積)。TDD compile RED E0609×3 → 配線 GREEN (ft_instanced_report_truth: groups 3/total 5/bytes 160 非ゼロ pin)。
 
 rq ft_instanced 全 assert 通過。adversarial 3 系統: (a) report.instanced_total 0 化 1 RED・(b) total_instances を first group のみ変異 2 RED (module+wiring 両側)・(c) clear API 死救出 非検出 (dead code 23 例目)。復元 MD5-VERIFIED 3 回 (固定版 md5 wiring 9e3e946c9f4de4d3d959ad74e6547975、instanced_draw 未変更で git restore 2 回)。strict +1 net 1347 全緑 (機械検算 1346+1)。api 49・replay 16 全緑・警告 0。fmt: 自己起因 1 (map クロージャ) 適用 → seal ゲート2 機械値 HEAD 0 / 現 0 / 自己起因 0。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
+
+## wave 175 (FU) bump_arena.rs 厳密監査 (2026-07-29)
+
+census grep: BumpArena=wiring:393 保持/:553 new(4MiB)/:869 reset/:880 alloc_slice morton 実確保+copy。used() は module 4 テスト (align/枯渇/容量/reset 再利用の厳密 pin 済で本体アルゴリズム陰性 HEAD 照合) 以外に読み出しゼロを機械確定。frame_arena は stutter_guard 別型で非対象。
+
+- **FU-1 [低] 捕捉 115 [小]**: §7 消化 37。used() 消費者ゼロ → report.bump_used 実計測配線 (morton 実確保バイト truth、reset 周期の当該 tick 値)。
+
+rq fu_bump 全 assert 通過 (max(k,1)*8: 5→40/3→24/0→8)。adversarial 3 系統: (a) report 0 化 1 RED・(b) alloc 引数 +1 変異 1 RED (used 40→48 偏差)・(c) capacity() 死救出 非検出 (dead code 24 例目)。復元 MD5-VERIFIED 3 回 (固定版 md5 wiring a36fd83cfb42e194265a9fc3a3da64a4、bump_arena 未変更で git restore ×1)。strict +1 net 1348 全緑 (機械検算 1347+1)。api 49・replay 16 全緑・警告 0。fmt: seal ゲート2 機械値 HEAD 0 / 現 0 / 自己起因 0。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
