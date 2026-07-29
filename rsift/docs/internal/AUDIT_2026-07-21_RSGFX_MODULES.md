@@ -8990,3 +8990,50 @@ census grep: CompactSection=world_column_store (struct field :16・encode_hot :1
 - **FW-3 [低]**: adversarial 変異 C 初回非検出捕捉 → 破損 LZ4 decode 契約 pin (空/欺瞞 size prefix 2³⁰/末尾切詰め 8B の 3 ケース、panic せず全 0 返却の防御設計 — Lz4 wire は to_cold メモリ内のみで破損 wire 到達不能 = wave 61 BK fail-loud 対象外を明記) → 再変異 RED 1 で検出可能化 (FV-3 同型回収)。
 
 rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・1022*4=4088<4096→Rle・1024*4=4096>=4096→Lz4・raw=8192・threshold bytes=4098)。fw strict 計 +4 net **1355** 全緑 (機械検算 1351+4): fw_encode_variant_selection_exact (Single/1差分 Rle runs 値 pin/境界両側 1022,1024)・fw_is_air_truth_lemma (全構築 variant 補題 pin)・fw_lz4_decode_corrupt_contract (3 破損ケース契約)・fw_to_cold_forms (Single/Lz4 clone・Rle→Lz4 化 roundtrip)。adversarial 3 系統: (a) fallback `>=`→`>` 1 RED (境界 pin 検出)・(b) is_air 配線反転 3 RED (ingest_and_window + render_pipeline strict 2 本波及で配線 truth 逆証明)・(c) unwrap 化 初回 0 RED 非検出 → pin 追加後 RED 1 (26 例未採で回収)。復元 MD5-VERIFIED 5 回 (固定版 md5 section_compress e2863fe41c333a390cfe65755d254a22・world_column_store 4964e5c84c11e9b2518f9e14ce93f2d1)。api 49・replay 16 全緑・警告 0。fmt: section_compress 自己起因 4 hunk 正準化 (1 回目 3+見落とし 1 を再採点で自己検出、誠実記録) → 現 ZERO、world_column_store は HEAD 原生逸脱 21 行保持 (新規編集 column_for_mesh 領域は逸脱ゼロ)。fmt seal ゲート2 機械値: section_compress HEAD 0/現 0/自己起因 0・world_column_store HEAD 9/現 9/自己起因 0 (HEAD 原生完全保持)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
+### wave 178 (FX) software_tiling.rs (111 行) — カメラ非追従 bin 配線・doc 虚構・装飾的 clamp
+- census 機械確定: SoftwareTileBinner=render_pipeline:108 保持/:638 new/
+  :645 bin_chunks→frame_stats.tiles_binned 実消費。SoftwareTileBinner/
+  TileId/TileDrawList 直接参照=render_pipeline のみ (dx12 等他クレート
+  参照ゼロ)。tile_count()=他 module/他 crate 参照ゼロ・内部 tw/th 導出
+  のみ。tile_size_px default 64 (feather_preset.rs:45)、software_tile
+  _binning default=false (disabled 既定)。
+- 捕捉 120 [中] (FX-1: render_pipeline:645 bin_chunks を (0.0, 0.0) 固定
+  渡しでカメラ非追従 → 真の world.camera_chunk() 配線)。tdd: RED→GREEN
+  確立 — 新 strict fx_tile_binner_camera_tracks_world_camera (camera
+  chunk (24,0) で 8 chunk が 3 tile 分散、/tmp/fx_probe.rs で f32 px/tx
+  機械導出 tx 4,4,4,5,5,5,5,6・ty 全 2 → tiles=3) を先記述し旧配線で
+  RED 適合 (旧 (0,0) 固定: clamp 集約 1 tile) → 配線後 GREEN。
+  なお中途工程でテスト挿入により既存 camera_speed_measured_from_real
+  _displacement の #[test] attribute を剥奪する自己起因事故を検出即修正
+  (wave 167/168 判例、テスト 2 本を個別フィルタで復元後検証)。
+- 捕捉 121 [小] (FX-2: module doc「draw reorder」に対し chunk_indices は
+  未配線・lists.len() 計測のみ消費 → doc truth 化、CJ-6 判例様式)。
+- 捕捉 122 [小] (FX-3: tile_count() 外部消費ゼロ → pub 剥奪 §7 消化 40)。
+  adversarial 変異 C (pub 復活) 初回非検出 → included_str! 自己参照
+  lexeme pin で回収 (fx_tile_count_visibility_lexeme、検出語彙分割記述
+  で自己言及 vacuous 化回避・wave 176 判例) → 再変異 RED 1 検証。
+- 捕捉 123 [小] (FX-4: bin_chunks の `.clamp(-1.0, 1.0)` は装飾的二重
+  防御 — 数学的等価証明 (ndc>1→px≥640→cap、ndc<-1→負飽和 0、NaN→0)
+  の上で削除、テスト fx_bin_edges_saturate_and_cap 改題・真実記述)。
+  adversarial 変異 B (clamp 除去) を非検出→関数等価で釈明、真の不変式
+  pin (min cap) の除去変異初回はテストフィルタ `tile` が対象に不一致で
+  無効測定 → ターゲット絞りで正当 RED 1 検証 (誠実訂正記録)。
+- strict +6 net 1361 全緑 (機械検算 1355+6): module 5 本 (visibility
+  lexeme/recenter/saturate_and_cap/equal_distance_stable/floor_boundaries)
+  + render 側 1 本 (camera_tracks)。rq /tmp/fx_bounds.rq 全 assert
+  (110>19/3520/32=110/ceil 640/17=38 等)。api 49・replay 16 全緑・警告 0。
+- adversarial 4 系統 4/1/1/回収RED1: (a) camera 配線 revert (cam_cx→0.0)
+  → fx_tile_binner RED 1 検出。(b) tx cap (min(tw-1)) 除去 → fx_bin
+  _edges_saturate_and_cap RED 1 (110 vs 19)。(c) tile_count pub 復活
+  → 初回非検出 (API 露出 pin 不在) → lexeme pin 追加で回収・再変異
+  RED 1。(d) clamp 除去 (FX-4 適用後) → 実施済み削除の検証は非検出は
+  関数等価で釈明。復元 MD5-VERIFIED (software_tiling 固定版 md5
+  8741aaba8924274315e44cf64474211b・render_pipeline 固定版 md5
+  7bda52c17edf20142d8eb243a8fde943、bak 第 2 固定版は lexeme 追版で
+  md5 同、変異は逐適用/逐復元)。
+- fmt: 自己起因 1 hunk (right assert 折返し) 正準化、HEAD 原生逸脱ハンク
+  (TileDrawList 初期化/trace!/既存テスト長行) 完全一致で完全保持
+  (機械分離 6del/14add 集合一致)。fmt: seal ゲート2 機械値は下記コミット
+  時記載へ整合。
+
+## wave 179 以降の監査計画

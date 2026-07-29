@@ -642,7 +642,13 @@ impl RsiftRenderPipeline {
                 ));
             }
             if let Some(b) = self.tile_binner.as_mut() {
-                let lists = b.bin_chunks(chunk_coords, 0.0, 0.0);
+                // 【wave 178 FX-1】旧実装は (0.0, 0.0) 固定渡しでタイル割当が
+                // ワールド原点基準・カメラ非追従だった (module doc の
+                // 「screen tiles / overdraw locality」と乖離)。真の
+                // world camera chunk を渡してスクリーン再中心化 bin とする
+                // (bin 本体内の NDC-ish 計算は camera_chunk 引数を前提設計)。
+                let (cam_cx, cam_cz) = self.world.camera_chunk();
+                let lists = b.bin_chunks(chunk_coords, cam_cx as f32, cam_cz as f32);
                 self.frame_stats.tiles_binned = lists.len() as u32;
             }
         }
@@ -1559,6 +1565,28 @@ mod tests {
         assert_eq!(
             s.shading_stride_sum, 9,
             "Full1+Half2+Half2+Quarter4 = 9 (rq (2) golden)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 178 FX-1 配線 pin】software_tile_binning の bin_chunks が真の
+    /// world camera 追従であることの証明: 旧実装は (0.0, 0.0) 固定渡しで
+    /// カメラ非追従 (遠方 chunk は NDC clamp で端タイルに集約)。camera chunk
+    /// (24,0) 配置で近傍 8 チャンクは 3 タイルに分散し、旧 (0,0) 固定では
+    /// clamp 集約 1 タイル → 本 pin は旧実装で RED。tile_size_px=64 default、
+    /// px/tx 値は f32 probe /tmp/fx_probe.rs 機械導出 (tx 4,4,4,5,5,5,5,6)。
+    #[test]
+    fn fx_tile_binner_camera_tracks_world_camera() {
+        let (dir, mut p) = unique_pipeline("fx_tile_cam");
+        p.feather.enabled = true;
+        p.feather.software_tile_binning = true;
+        p.world.ingest(0, 0, 0, &[1u16; 4096], 1);
+        p.world.set_camera(392.0, 70.0, 8.0, 0.0, 0.0); // chunk (24, 0)
+        let chunks: Vec<(i32, i32)> = (21..=28).map(|x| (x, 0)).collect();
+        let s = p.frame(&chunks, 640, 360, 0.016);
+        assert_eq!(
+            s.tiles_binned, 3,
+            "camera (24,0) 追従 → tx 4,4,4,5,5,5,5,6 (ty=2) で 3 タイル (旧 0,0 固定は clamp 集約 1)"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
