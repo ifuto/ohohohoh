@@ -131,6 +131,38 @@ fn instance_descriptor_with_apple_policy() -> wgpu::InstanceDescriptor {
     desc
 }
 
+/// 【wave 193 GM】GpuPowerPolicy → wgpu::PowerPreference 写像 (全 3 腕、
+/// gm_wgpu_power_mapping_golden が厳密 pin)。
+fn map_power_policy(p: crate::apple_backend::GpuPowerPolicy) -> wgpu::PowerPreference {
+    match p {
+        crate::apple_backend::GpuPowerPolicy::HighPerformance => {
+            wgpu::PowerPreference::HighPerformance
+        }
+        crate::apple_backend::GpuPowerPolicy::LowPowerPreferred => wgpu::PowerPreference::LowPower,
+        crate::apple_backend::GpuPowerPolicy::WgpuDefault => wgpu::PowerPreference::None,
+    }
+}
+
+/// 【wave 193 GM】電力 policy 適用の adapter 要求オプション。
+/// env `RSIFT_GFX_POWER` を 1 回読み (low/high/default、未知値は既定再帰)、
+/// 選択 policy を info! で可観測化。実効の機序: wgpu-core instance.rs
+/// :923-933 の integrated/discrete 優先規則 (一次情報) — dual-GPU Intel
+/// MacBook で low = iGPU 選択 (低温・バッテリー側の「軽い」経路)、単一
+/// GPU 環境 (Apple Silicon 全機等) では同一デバイス到達で非破壊。
+fn adapter_options_with_power_policy() -> wgpu::RequestAdapterOptions<'static, 'static> {
+    let env = std::env::var("RSIFT_GFX_POWER").ok();
+    let policy = crate::apple_backend::adapter_power_policy(env.as_deref());
+    info!(
+        "[GpuRuntime] power policy={policy:?} (RSIFT_GFX_POWER={:?})",
+        env.as_deref()
+    );
+    let power_preference = map_power_policy(policy);
+    wgpu::RequestAdapterOptions {
+        power_preference,
+        ..Default::default()
+    }
+}
+
 /// 実デバイスを遅延生成し全 WGSL を naga 検証付き実コンパイル。
 /// GPU 非搭載・ドライバー異常・仮想環境では `None` (安全側)。
 pub fn runtime() -> Option<&'static GpuRuntime> {
@@ -143,7 +175,7 @@ pub fn runtime() -> Option<&'static GpuRuntime> {
             let instance = wgpu::Instance::new(desc);
             let created = block_on(async {
                 let adapter = instance
-                    .request_adapter(&wgpu::RequestAdapterOptions::default())
+                    .request_adapter(&adapter_options_with_power_policy())
                     .await?;
                 let info = adapter.get_info();
                 // 【wave 189 GI】adapter 分類の実消費 (info!/warn! ログ)。
@@ -498,5 +530,50 @@ mod tests {
                 "{module}: const 直接参照の復活を検出 (EL-1(d)/EO(e) 同型、wave 187 GG pin)"
             );
         }
+    }
+
+    /// 【wave 193 GM】policy → wgpu::PowerPreference 写像 golden
+    /// (全 3 腕厳密。LowPowerPreferred→LowPower=integrated 優先、
+    /// HighPerformance→HighPerformance=discrete 優先、WgpuDefault→None)。
+    #[test]
+    fn gm_wgpu_power_mapping_golden() {
+        use crate::apple_backend::GpuPowerPolicy as P;
+        assert_eq!(
+            super::map_power_policy(P::HighPerformance),
+            wgpu::PowerPreference::HighPerformance
+        );
+        assert_eq!(
+            super::map_power_policy(P::LowPowerPreferred),
+            wgpu::PowerPreference::LowPower
+        );
+        assert_eq!(
+            super::map_power_policy(P::WgpuDefault),
+            wgpu::PowerPreference::None
+        );
+    }
+
+    /// 【wave 193 GM】adapter 要求 site の構造 pin: policy 適用 presence
+    /// + `RequestAdapterOptions::default()` 丸投げ (policy 素通し) の禁止。
+    /// request_adapter policy の実機効果は本 CI (GPU 非搭載) では検査不能
+    /// なため、実行非依存の構造 pin で補完する (presence も split concat!
+    /// = include_str! が本テスト自身を含む自己言及対策)。
+    #[test]
+    fn gm_adapter_site_power_policy_lexeme() {
+        let src = include_str!("gpu_runtime.rs");
+        assert_eq!(
+            src.matches(concat!("adapter_options_with_", "power_policy()"))
+                .count(),
+            2,
+            "GM: policy 適用 helper は 定義1+呼出1 で単一経路必須"
+        );
+        assert_eq!(
+            src.matches(concat!(
+                "request_adapter(&wgpu::",
+                "RequestAdapterOptions::default())"
+            ))
+            .count(),
+            0,
+            "GM 禁止語彙: policy 未適用の default 丸投げ request_adapter"
+        );
     }
 }

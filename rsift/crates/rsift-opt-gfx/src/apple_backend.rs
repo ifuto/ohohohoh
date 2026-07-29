@@ -173,6 +173,39 @@ pub enum BackendChoice {
     MetalPreferred,
 }
 
+/// 【wave 193 GM】adapter 要求の電力 policy。policy 値の実効は wgpu-core
+/// の adapter 選択規則 (vendor instance.rs:923-933 一次情報) に従う:
+/// LowPower → integrated 優先、HighPerformance → discrete 優先、
+/// None → 列挙最小 id。単一 GPU 環境 (Apple Silicon 全機、一般デスクトップ)
+/// では何を選んでも同一デバイスへ到達するため効果差なし = 非破壊。
+/// 「軽く」の実効面は dual-GPU Intel MacBook (iGPU+dGPU、15/16 型世代) の
+/// LowPowerPreferred = iGPU 選択 (低温・バッテリー側)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuPowerPolicy {
+    /// discrete 優先 (既定族)。dual-GPU Intel Mac では dGPU 確定。
+    HighPerformance,
+    /// integrated 優先。dual-GPU Intel MacBook の省電力・低温経路。
+    LowPowerPreferred,
+    /// wgpu PowerPreference::None 委譲 (列挙最小 id、判断を戻す)。
+    WgpuDefault,
+}
+
+/// env `RSIFT_GFX_POWER` からの電力 policy 決定 (trim+lowercase):
+/// "low" → LowPowerPreferred、"high" → HighPerformance、
+/// "default" → WgpuDefault、未知値 → 既定再帰、無指定 → HighPerformance
+/// (性能系 mod の既定として性能優先を明示; 単一 GPU 環境では従来デバイスと
+/// 同一到達で非破壊的厳密化)。選択規則の厳密 matrix は
+/// gm_adapter_power_policy_golden が pin。
+pub fn adapter_power_policy(env: Option<&str>) -> GpuPowerPolicy {
+    match env.map(|s| s.trim().to_ascii_lowercase()) {
+        Some(v) if v == "low" => GpuPowerPolicy::LowPowerPreferred,
+        Some(v) if v == "high" => GpuPowerPolicy::HighPerformance,
+        Some(v) if v == "default" => GpuPowerPolicy::WgpuDefault,
+        Some(_) => adapter_power_policy(None),
+        None => GpuPowerPolicy::HighPerformance,
+    }
+}
+
 /// OS + 環境変数上書きから backends 選択。`env` は `RSIFT_GFX_BACKENDS`
 /// の値 (None なら未設定)。値 "metal" は全 OS で Metal 優先、"all" は
 /// 既定に強制、それ以外の値は未設定扱い (warn は呼出側責務)。
@@ -294,6 +327,40 @@ mod tests {
     }
 
     /// Metal 4 surface は「宣言条件 (Apple Silicon + os>=26) の計算のみ」で
+    /// 【wave 193 GM】電力 policy golden: env `RSIFT_GFX_POWER` 規則
+    /// ("low"→LowPowerPreferred (integrated 優先、dual-GPU Intel MacBook
+    /// では iGPU = 低温・バッテリーの「軽い」側)、"high"/無指定既定→
+    /// HighPerformance (discrete 優先)・"default"→WgpuDefault (wgpu None
+    /// 委譲)。trim+lowercase、未知値は既定再帰)。選択の実効は vendor
+    /// wgpu-core instance.rs:923-933 の一次規則どおり (LowPower→
+    /// integrated優先、HighPerformance→discrete優先、単一 GPU 環境
+    /// (Apple Silicon 全機・通常デスクトップ) では両者同一デバイス =
+    /// no-op で非破壊)。
+    #[test]
+    fn gm_adapter_power_policy_golden() {
+        let pairs: [(&str, GpuPowerPolicy); 4] = [
+            ("low", GpuPowerPolicy::LowPowerPreferred),
+            (" LOW ", GpuPowerPolicy::LowPowerPreferred),
+            ("high", GpuPowerPolicy::HighPerformance),
+            ("default", GpuPowerPolicy::WgpuDefault),
+        ];
+        for (env, want) in pairs {
+            assert_eq!(adapter_power_policy(Some(env)), want, "env={env:?}");
+        }
+        assert_eq!(
+            adapter_power_policy(None),
+            GpuPowerPolicy::HighPerformance,
+            "無指定既定は性能優先 (単一 GPU 環境では従来デバイスと同一の非破壊厳密化)"
+        );
+        for junk in ["turbo", "", "loww", "Default1"] {
+            assert_eq!(
+                adapter_power_policy(Some(junk)),
+                adapter_power_policy(None),
+                "未知値 {junk:?} は既定再帰"
+            );
+        }
+    }
+
     /// usable は常に false — external metal 依存が未導入である現行の政策を
     /// 機械固定する pin; usable=true へ変える時は本 pin が必ず RED になり
     /// binding 導入の設計更新を強制される (忘れ物防止構造)。

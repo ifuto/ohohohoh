@@ -9706,6 +9706,84 @@ RGB を優先すると α は (q<<1)|p で 254 に復元される — **α 誤�
   PASS、san 26 files 0 findings・台帳 664 の機械表示)。
 - 台帳 GL-1 (664 行目)。digest 004c1cf5fb17bfe8 rows=357 不変。
 
+## wave 193 (GM) — dual-GPU MacBook 電力 policy 配線 (ユーザー方針転換の受理: 本当に軽くなるデバイス依存は保持) (2026-07-30)
+
+### 経緯: ユーザー指摘への機械反証と方針受理
+ユーザー「なんでMETAL4と旧Mac用のGL無くしたの? …本当に軽くなるデバイス
+依存は残していい」→ **削除事実は存在しないことを機械反証済**: apple_backend.rs
+(Metal4Surface declared・旧 Intel Mac の GL フォールバック分類含む) は HEAD に
+健在 (git log に削除コミットゼロ、作成は wave 189 = 9a131bf のみ、Metal4Surface
+等 35 件ヒット)。「デバイス依存は計画から除外」は私の方針誤読として受理し、
+「実装面で本当に軽くなるデバイス依存技術は歓迎・検証可能な policy 層で実装」
+へ更新。なお metal-rs 直叩き (MTL4 selector binding 等) はこの Linux sandbox
++ CI (GPU/macOS runner 非搭載) では build/test 一切検証不能 = 品質規律
+(スタブ/未検証コード禁止) 上なお非採用 — 誠実な境界として継続明記。
+
+### GM-1 [機能] RSIFT_GFX_POWER による PowerPreference policy 配線
+MacBook dual-GPU (Intel 世代 iGPU+dGPU 機) で省電力 iGPU 経路を開く
+(低温・バッテリー持続側の「軽い」経路)。一次情報 (vendor ソース目視):
+wgpu-types/src/lib.rs:141-149 `PowerPreference {None(#[default]),LowPower,
+HighPerformance}`・同:211-225 `RequestAdapterOptions` Default 実装・
+wgpu/src/lib.rs:1386 `pub type RequestAdapterOptions<'a,'b> =
+RequestAdapterOptionsBase<&'a Surface<'b>>;` (**2 lifetime**)・
+wgpu-core/src/instance.rs:923-933 `LowPower =>
+integrated.or(discrete).or(other).or(virt).or(cpu)` /
+`HighPerformance => discrete.or(integrated).or(other)…` / `None => 列挙最小 id`・
+wgpu-hal metal/adapter.rs:610 `low_power: !os_is_mac || device.is_low_power()`。
+- apple_backend.rs: `GpuPowerPolicy {HighPerformance, LowPowerPreferred,
+  WgpuDefault}` + `adapter_power_policy(env: Option<&str>)` — trim+lowercase
+  正規化、"low"→LowPowerPreferred (iGPU 側)/"high"→HighPerformance、"default"→
+  WgpuDefault、未知値→既定再帰 (junk は静かに既定へ)、None→HighPerformance。
+  既定 HighPerformance = 現行 default() (=None→最小 id 列挙) から dual-GPU で
+  振る舞い変更の余地があるが、dGPU 優先は描画負荷プロファイルに一致させる
+  ポリシー判断として明示化 (数学的正誤の問題ではない設計判断・信頼度ラベル:
+  判断)、「軽い」要求は RSIFT_GFX_POWER=low の公式経路で担保。
+- gpu_runtime.rs: `map_power_policy` (3 腕写像) + `adapter_options_with_power_
+  policy()` (env `RSIFT_GFX_POWER` を 1 回読み→policy 決定→info! で可観測化→
+  `RequestAdapterOptions {power_preference, ..Default::default()}`) を module
+  レベルに新設し、runtime() の request_adapter site を置換。単一 GPU 環境
+  (Apple Silicon 全機・統合のみの PC) では or-連鎖が同一唯一候補へ収束するため
+  **全 policy で no-op 非破壊** (instance.rs:923-933 の規則から帰結)。
+- strict +3 (1428→1431): gm_adapter_power_policy_golden (行列 4 ペア
+  trim/case 含む + None 既定 + junk 4 値の既定再帰)・gm_wgpu_power_mapping_
+  golden (3 腕全写像)・gm_adapter_site_power_policy_lexeme (include_str!
+  lexeme pin: presence `adapter_options_with_power_policy()` count==2
+  (定義 1+呼出 1) + banned `request_adapter(&wgpu::RequestAdapterOptions::
+  default())` count==0、完全形リテラルをテスト内に書かない split concat!
+  設計で自己言及 vacuous を回避)。
+- TDD: compile RED (E0432/E0425/E0433、GpuPowerPolicy 未存在) 機械記録
+  → 実装 → GREEN 3/3 (個別フィルタ `-- gm_` で確認)。
+- adversarial 4 系統全 RED: (A) "low" 腕を HighPerformance へ swap → golden
+  RED (env="low" assertion):14625・(B) 未知値再帰削除→WgpuDefault 固定 →
+  golden RED (junk "turbo" 既定再帰):14910・(C) map HighPerformance 腕→
+  LowPower → mapping RED:15196・(D) site を `RequestAdapterOptions::default()`
+  へ revert → lexeme RED:15483 (presence 2→1・banned 0→1)。復元
+  MD5-VERIFIED×4 (整形後最終 md5 へ再固定済)。
+- 実行環境効果の誠実な境界: iGPU 選択による発熱低下・バッテリー持続の実効は
+  sandbox/CI では**非計測** (GPU/macOS 非搭載) — pin 対象は policy 写像の
+  正しさのみ。probe 不要 (写像のみ・op-count 対象副作用なし) を明記。
+
+### 自己照査 (GM 内で完結解決、誠実記録)
+(i) edit_file の new_text が runtime() 本体内・アンカー誤帰属で helper を構造
+破壊的に誤挿入し、修復時に bak 未参照の憶測再構成で幻影 validate ループ
+(tests 専用経路の naga 検証を本体に存在するかのように混入) — 編集前 bak
+(bak/wave193_*_orig) を一次参照して runtime() 本体を bak 忠実に修復、
+helper のみ module レベルへ分離。(ii) RequestAdapterOptions に lifetime 1 個
+(`<'static>`) を与え E0107 — vendor alias が 2 lifetime と確認して修正。
+(iii) tests module に `use super::*` 非存在で裸名呼出 E0425×3 → super:: 修飾。
+(iv) fmt 自己起因逸脱 1 行 (新設 info! が max_width 超過) → rustfmt 忠実形へ
+外科修正 (行集合照合で自己起因 0 復帰)。
+
+### 機械検数
+- strict 1431 全緑 (1428+3、gm_ 3 本個別フィルタ確認)。api 49・replay 16
+  全緑。警告 0。fmt: apple_backend HEAD 逸脱 0/現 0・gpu_runtime HEAD 0/現 0
+  (初版 1 行逸脱を外科修正後の機械照合)、自己起因 0 = HEAD 原生包含。簡体字
+  走査 0 (変更 5 ファイル)。seal 全 6 ゲート一発 PASS (san 26 files
+0 findings・ゲート2 機械値: **apple_backend HEAD 0/現 0/自己起因 0・
+gpu_runtime HEAD 0/現 0/自己起因 0 両 PASS**・台帳 **665** 機械表示・
+digest PASS)。
+- 台帳 GM-1 (665 行目)。digest 004c1cf5fb17bfe8 rows=357 不変。
+
 ## wave 189 以降の運用 (フェーズ 2 完遂後)
 - adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
   完結 (directive ⑧)。
@@ -9714,4 +9792,5 @@ RGB を優先すると α は (q<<1)|p で 254 に復元される — **α 誤�
   (rsift/rsift/rsift-opt-gfx) 削除はユーザー管理資産確認待ちで継続保留。
 - 捕捉採番の次空き: 130 (129 は wave 190 で使用)。strict 総数履歴:
   …1398(185)→1402(186)→1404(187)→1408(188)→1418(189、gi_ 10 本)
-  →1422(190、gj_ 4 本)→1425(191、gk_ 3 本)→1428(192、gl_ 3 本)。
+  →1422(190、gj_ 4 本)→1425(191、gk_ 3 本)→1428(192、gl_ 3 本)
+  →1431(193、gm_ 3 本)。
