@@ -8925,3 +8925,12 @@ census grep: for_tier/recommended_allocator/env_string = full_graph_wiring:446-4
 - **FP-2 [低] 捕捉 108 [小]**: §7 消化 32。`use_mimalloc` 恒 true 死蔵 (truth 未リンクで真値 false への虚構) + `large_object_threshold` (mimalloc env 語彙非対応の未配線値) を不可能証明削除。
 
 rq fn_mimalloc 全 assert 通過 (KiB 換算 16→16384/32→32768/64→65536)。strict +2 net 1343 全緑 (機械検算 1341+2)。api 49・replay 16 全緑・警告 0。adversarial 4 系統: (a) 架空語彙逆変異 3 RED・(b) KiB 乗数 1000 変異 3 RED・(c) Minimal tier 16→8 変異 2 RED・(d) use_mimalloc 死救出 非検出 (dead code 19 例目、pub フィールドは lint 不検出)。復元 MD5-VERIFIED 4 回 (固定版 md5 c009e626f10205dce24ffe355180b4a2)。fmt: seal ゲート2 機械値 HEAD 逸脱 8 / 現 0 / 自己起因 0 (HEAD 原生存続の長行が根治で縮退、現逸脱ゼロ)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
+
+## wave 171 (FQ) dashmap_registry.rs 厳密監査 (2026-07-28)
+
+census grep: registry=wiring:383 保持/:537 構築/:768-770 set_state(Building) のみ消費。get_state/pending_chunks/version 読み取り消費者ゼロ・doc「再投入抑止に使える」虚偽を機械確定。
+
+- **FQ-1 [低] 捕捉 109 [小]**: §7 消化 33。→ slab truth 連動の真状態機械へ根治 (初見 → Building → alloc 直後 Done、退去 → remove 新 API、state_counts/len 追加 + report 5 実フィールド + get_state 実消費 integrity)。TDD compile RED E0609×5 → 実装 GREEN。module 側は remove API compile RED E0599×2 → 追加 GREEN。
+- **FQ-2 [低]**: pending/building は同期 pipeline truth で常 0 の到達不能 pin として doc 誠実明記 (非同期化で非ゼロ変動)。
+
+rq fq_registry 全 assert 通過 (version 4→7 導出: 初見 +2/件・退去 +1/件)。strict +3 net 1346 全緑 (機械検算 1343+3)。api 49・replay 16 全緑・警告 0。adversarial 4 系統: (a) Done 遷移除去 1 RED (integrity debug_assert 即検出)・(b) remove version 前進除去 2 RED (module+wiring 両側)・(c) report 0 化 1 RED・(d) failed_chunks 死救出 非検出 (dead code 20 例目)。復元 MD5-VERIFIED 4 回 (固定版 md5 dashmap 53f478717a407aa2ac9133078f0f4605 / wiring fdfeca7d400234548542a83695d618c1)。fmt: seal ゲート2 機械値 dashmap HEAD 逸脱 10 / 現 10 / 自己起因 0 (HEAD 原生完全保持、git diff 削除行 0)・wiring 0/0/0 (自己起因 1 適用済)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。

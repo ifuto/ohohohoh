@@ -293,6 +293,18 @@ pub struct FrameWiringReport {
     pub slab_new_allocs: u32,
     /// 同上: 当該 tick の退去 chunk による free 実行数。
     pub slab_freed: u32,
+    /// 【wave 171 FQ 捕捉 109】DashMap registry の状態別計測 (Building)。
+    /// 現 pipeline は同期的で初見 tick 内に即 Done 遷移するため常 0 pin =
+    /// 非同期ビルド未導入の truth pin (導入時に非ゼロへ動く実計測面)。
+    pub registry_building: u32,
+    /// 同上 (Done): 現存 chunk 総数で slab_occupied と常時一致 (truth pin)。
+    pub registry_done: u32,
+    /// 同上 (Pending): 非同期投入キュー未導入で到達不能 = 常 0 pin。
+    pub registry_pending: u32,
+    /// 同上: 追跡中 chunk 総数 (map.len)。
+    pub registry_total: u32,
+    /// 同上: set_state+remove の累計操作回数 (単調増加、初見 +2/件・退去 +1/件)。
+    pub registry_version: u64,
     /// 同上: ObjectPool<BatchOutput> の HUD scratch acquire 直後
     /// available (cap 2・1 outstanding で常に 1、capacity 保持
     /// リサイクルの稼働証跡)。det subset 登録 (定数構造値)。
@@ -763,11 +775,11 @@ impl FullGraphWiring {
         debug_assert_eq!(exec_order.len(), 5);
         let critical_ms = dag.critical_path_ms();
 
-        // Registry: 実チャンクのライフサイクル追跡 (Build 中の再投入抑止に使える実状態)。
-        for k in &inputs.chunk_keys {
-            self.registry
-                .set_state(*k, crate::dashmap_registry::ChunkBuildState::Building);
-        }
+        // Registry: chunk key ライフサイクル駆動の真状態機械 (wave 171 FQ
+        // 捕捉 109)。slab truth と連動: 初見 → Building → (alloc 直後) Done、
+        // 退去 → remove。旧実装は全 chunk を毎 tick Building に一色上書きする
+        // のみで get_state/pending_chunks/version の読み取り消費者ゼロ、
+        // doc「再投入抑止に使える」は虚偽だった。
         // RenderSection slab: chunk key ライフサイクル駆動の真実装 (wave 156
         // FB 捕捉 74 根治 + §7 消化 19)。旧実装は毎 tick 全 chunk を無限
         // append するのみ (free 消費者ゼロ) で、`slot == usize::MAX` の
@@ -794,6 +806,7 @@ impl FullGraphWiring {
                 self.slab
                     .free(slot)
                     .expect("evict slot は map 一意で必ず在る (1 key = 1 slot 不変式)");
+                self.registry.remove(k); // FQ 捕捉 109: 退去で registry からも除去
                 slab_freed += 1;
             }
             let mut slab_new_allocs = 0u32;
@@ -803,6 +816,12 @@ impl FullGraphWiring {
                     let slot = self.slab.alloc(mat);
                     debug_assert!(slot != usize::MAX, "alloc は無制限 (捕捉 74)");
                     self.slab_key_to_slot.insert(*k, slot);
+                    // FQ 捕捉 109: 初見 → Building → (slab alloc 直後) Done
+                    // (同期 pipeline の truth: tick 内即時遷移)。
+                    self.registry
+                        .set_state(*k, crate::dashmap_registry::ChunkBuildState::Building);
+                    self.registry
+                        .set_state(*k, crate::dashmap_registry::ChunkBuildState::Done);
                     slab_new_allocs += 1;
                 }
             }
@@ -819,6 +838,23 @@ impl FullGraphWiring {
             report.slab_freed = slab_freed;
             report.slab_new_allocs = slab_new_allocs;
             report.slab_occupied = self.slab.len() as u32;
+            // FQ 捕捉 109 §7 消化 33: registry 読み取り面の実計測
+            // (state_counts/pending_chunks/version/len の実消費者配線)。
+            let counts = self.registry.state_counts();
+            report.registry_pending = self.registry.pending_chunks().len() as u32;
+            report.registry_building = counts[1];
+            report.registry_done = counts[2];
+            report.registry_total = self.registry.len() as u32;
+            report.registry_version = self.registry.version();
+            debug_assert_eq!(
+                report.registry_done, report.slab_occupied,
+                "registry Done と slab 占有は slab truth 連動で常時一致"
+            );
+            debug_assert!(
+                inputs.chunk_keys.iter().all(|k| self.registry.get_state(*k)
+                    == Some(crate::dashmap_registry::ChunkBuildState::Done)),
+                "全現存 chunk key は registry で Done (get_state 実消費 integrity)"
+            );
         }
 
         // BumpArena: morton コード列を実確保 (ヒープ不使用) して局所性 sort を評価。
@@ -3278,6 +3314,36 @@ mod strict_tests {
             "camera (-40,-8,-16) -> (-2.5,-1.0,-1.0) exact bits"
         );
         assert_eq!(r2.ddgi_probe_count, 1024);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 【wave 171 FQ 捕捉 109】DashMap registry 真 lifecycle pin (rq fq_registry):
+    /// 初見 → Building → (slab alloc 直後) Done、退去 → remove。tick1: 初見
+    /// 2 件で version=4 (set 2 回/件)、done=2、building=0 (即時遷移の truth)。
+    /// tick2: (0,0) 退去 remove +1、(2,2) 初見 set +2 → version=7、total=2。
+    /// pending は非同期投入キュー未導入で到達不能（常 0 pin）。report 4 実
+    /// フィールドの非ゼロ工程化 pin 兼ねる (version/done は非ゼロ変動)。
+    #[test]
+    fn fq_registry_lifecycle_truth() {
+        let (dir, mut w) = unique_wiring("registry_lifecycle");
+        let mut i1 = empty_inputs();
+        i1.chunk_keys = vec![(0, 0), (1, 1)];
+        let r1 = w.tick_world(&i1);
+        assert_eq!(
+            r1.registry_version, 4,
+            "初見 2 件 × set 2 回 (Building+Done)"
+        );
+        assert_eq!(r1.registry_done, 2);
+        assert_eq!(r1.registry_building, 0, "Building は tick 内即時 Done 遷移");
+        assert_eq!(r1.registry_pending, 0, "非同期キュー未導入で到達不能");
+        assert_eq!(r1.registry_total, 2);
+        let mut i2 = empty_inputs();
+        i2.chunk_keys = vec![(1, 1), (2, 2)];
+        let r2 = w.tick_world(&i2);
+        assert_eq!(r2.registry_version, 7, "(0,0) 退去 +1、(2,2) 初見 +2");
+        assert_eq!(r2.registry_total, 2);
+        assert_eq!(r2.registry_done, 2);
+        assert!(r2.registry_version > r1.registry_version, "単調増加");
         let _ = std::fs::remove_dir_all(dir);
     }
 
