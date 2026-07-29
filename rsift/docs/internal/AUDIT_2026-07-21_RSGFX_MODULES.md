@@ -9669,6 +9669,43 @@ mode6 α 端点量子化精度の可能性 (信頼度: 中 — 症候は確定�
 - 台帳 GK-1 (663 行目)。digest 004c1cf5fb17bfe8 rows=357 不変。
 - 環境再構築 6 度目復旧 (fetch+reset --mixed+restore-env+rspeed)。
 
+## wave 192 (GL) — bc7 mode6 α roundtrip debug_assert の規格真理根治 (GK-3 発見の回収) (2026-07-29)
+
+### GL-1 [小] wiring:1859 debug_assert は規格上不達契約だった (根治)
+GK-3 (wave 191 発見保留) の本格精査。`choose_pbits` は RGBA 4ch 誤差和で
+端点単位共有 pbit を最適選択済み (一次実装確認) = encoder は mode6 規格
+(RGBA 7bit + 1 endpoint = RGBA セット 1 pbit) 下で正しい。共有 pbit が
+RGB を優先すると α は (q<<1)|p で 254 に復元される — **α 誤差 ≤1 は規格
+内帰結であり、wiring の `debug_assert_eq!(dec[0][3], 255)` は規格上不達
+の bitwise 期待契約バグ**が真因 (m 依存発火は probe m=0..31 で FAIL 9 値
+確定 = wave 191)。根治: assert を `dec[0][3] >= 254` (const-α=255 一様
+ブロックの契約真下限) へ + 根拠コメント。
+- const-α 定理 (mode6 で const-α ブロックは ANY p policy でも round-to-
+  nearest 量子化ゆえ復元 α 誤差 ≤1): /tmp/gl_probe で 10 α×7 m = 70 件
+  全走査 **max 誤差丁度 1 (bound tight)**、solid RGB=0 α=255 では全画素
+  dec α≡254 (SSE が RGB 優先で p=0 — 私の初期注釈予想 (255 復元) は外れ
+  を誠実記録、誤差 1 は例外でなく頻発し得る規格内挙動)。
+- strict +3 (1425→1428): gl_mode6_const_alpha_error_bound_strict (70 件
+  ≤1 + tight=1 + solid 全 254)・gl_mode6_wiring_vpattern_alpha_floor_
+  corpus (m=0..31 dec[0][3] exact table、probe 機械導出) =
+  green-today 財産化・gl_bc7_alpha_contract_first_material_fail_set_
+  strict (FAIL 集合 m=7 first で tick 完走、**TDD RED = 旧 assert で
+  panic を機械記録** → 修正で GREEN)。
+- adversarial 4 系統 5 RED: (A) choose_pbits round→floor 1 RED (corpus、
+  定理は |2·floor(x)−2x|<2 で ≤1 不変の数学的正しい沈黙を誠実記録)・
+  (B) clamp 127→126 2 RED (定理破壊も検出)・(C) decode expand p 無視
+  1 RED (corpus、定理正しい沈黙)・(D) wiring assert ==255 revert 1 RED
+  (panic 再現)。復元 MD5-VERIFIED×4。
+
+### 機械検数
+- strict 1428 全緑 (1425+3、gl_ 3 本個別フィルタ確認)。api 49・replay 16
+  全緑。警告 0。fmt: assert_eq! 分割形の外科正規化 1 箇所 (rustfmt 忠実形
+  = 引数ペア 1 行化へ初回 1 行化誤りを二度目で適合、誠実記録)、
+  現逸脱 HEAD 外 0。seal ゲート2 機械値: **bc7_ktx2 HEAD 逸脱 8 行/
+  現 8 行/自己起因 0 行・full_graph_wiring 0/0/0 (両 PASS)** (一発
+  PASS、san 26 files 0 findings・台帳 664 の機械表示)。
+- 台帳 GL-1 (664 行目)。digest 004c1cf5fb17bfe8 rows=357 不変。
+
 ## wave 189 以降の運用 (フェーズ 2 完遂後)
 - adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
   完結 (directive ⑧)。
@@ -9677,4 +9714,4 @@ mode6 α 端点量子化精度の可能性 (信頼度: 中 — 症候は確定�
   (rsift/rsift/rsift-opt-gfx) 削除はユーザー管理資産確認待ちで継続保留。
 - 捕捉採番の次空き: 130 (129 は wave 190 で使用)。strict 総数履歴:
   …1398(185)→1402(186)→1404(187)→1408(188)→1418(189、gi_ 10 本)
-  →1422(190、gj_ 4 本)→1425(191、gk_ 3 本)。
+  →1422(190、gj_ 4 本)→1425(191、gk_ 3 本)→1428(192、gl_ 3 本)。

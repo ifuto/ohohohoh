@@ -685,4 +685,81 @@ mod tests {
         assert_eq!(BC7_UNORM_BLOCK, 145);
         assert_eq!(BC7_SRGB_BLOCK, 146);
     }
+
+    // ---------------- wave 192 GL: mode6 α 契約 ----------------
+
+    /// wiring (full_graph_wiring) と同形状の v pattern ブロック。
+    fn wiring_vpattern_block(m: u8, alpha: u8) -> [[u8; 4]; 16] {
+        let mut block = [[0u8; 4]; 16];
+        for i in 0..16 {
+            let v = (m as u32).wrapping_mul(0x9E3779B9).wrapping_add(i as u32);
+            block[i] = [v as u8, (v >> 8) as u8, (v >> 16) as u8, alpha];
+        }
+        block
+    }
+
+    /// 【wave 192 GL】const-α 誤差定理 pin: mode6 は RGBA 7bit + 端点単位
+    /// 共有 pbit (1 endpoint = RGBA セットで 1 pbit) のため、const-α
+    /// ブロックの復元 α 誤差は ANY p 選択 policy でも round-to-nearest
+    /// 量子化ゆえ |dec−α| ≤ 1。bound は **tight** (達成例: RGB=0 単色で
+    /// α=255 → SSE が RGB を優先し p=0 → dec α≡254)。70 件全走査は
+    /// /tmp/gl_probe 導出 (max err 丁度 1) と機械一致。
+    #[test]
+    fn gl_mode6_const_alpha_error_bound_strict() {
+        let alphas = [0u8, 1, 2, 64, 127, 128, 192, 253, 254, 255];
+        let ms = [0u8, 1, 3, 6, 7, 11, 14];
+        let mut maxerr = 0i32;
+        for &a in &alphas {
+            for &m in &ms {
+                let enc = encode_block_mode6(wiring_vpattern_block(m, a));
+                let dec = decode_block_mode6(&enc);
+                for p in &dec {
+                    let e = (p[3] as i32 - a as i32).abs();
+                    maxerr = maxerr.max(e);
+                    assert!(
+                        e <= 1,
+                        "const-α 定理違反: a={a} m={m} dec={} err={e} (mode6 7bit+shared pbit 誤差 ≤1)",
+                        p[3]
+                    );
+                }
+            }
+        }
+        assert_eq!(maxerr, 1, "bound は tight (丁度 1 の達成が存在)");
+        // tight 達成の最小形: RGB=0 単色で α=255 → 全画素 dec α==254
+        // (RGB が p=0 を優先させ shared pbit で α が 1 下がる規格内帰結、
+        // /tmp/gl_probe (3) と機械一致)。
+        let mut solid = [[0u8; 4]; 16];
+        for p in &mut solid {
+            p[3] = 255;
+        }
+        let enc = encode_block_mode6(solid);
+        let dec = decode_block_mode6(&enc);
+        assert!(
+            dec.iter().all(|p| p[3] == 254),
+            "solid RGB=0 α=255 → 全画素 α=254 (shared pbit 帰結)"
+        );
+    }
+
+    /// 【wave 192 GL】wiring 供給形状 (α=255 一様) の全 m=0..31 floor
+    /// golden: dec[0][3] exact table (/tmp/gl_probe (1) 機械導出)。
+    /// quantize/choose_pbits/decode expand の何れの精度変動も検出。
+    #[test]
+    fn gl_mode6_wiring_vpattern_alpha_floor_corpus() {
+        let want: [u8; 32] = [
+            254, 255, 255, 255, 255, 255, 254, 254, 255, 255, 255, 254, 255, 255, 254, 255, 255,
+            255, 255, 254, 255, 254, 255, 255, 255, 255, 254, 255, 255, 254, 255, 255,
+        ];
+        for m in 0u8..32 {
+            let enc = encode_block_mode6(wiring_vpattern_block(m, 255));
+            let dec = decode_block_mode6(&enc);
+            assert_eq!(
+                dec[0][3], want[m as usize],
+                "m={m}: dec[0][3] floor table (probe 機械導出)"
+            );
+            assert!(
+                dec.iter().all(|p| p[3] >= 254),
+                "m={m}: const-α 一様ブロックの全画素 α ≥ 254"
+            );
+        }
+    }
 }

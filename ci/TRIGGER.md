@@ -277,3 +277,5 @@ wave 190 GJ hud_batch 軽量化 + 捕捉 129 (2026-07-29): DrawRange.first_index
 - 2026-07-29 (count 220): wave 190 GJ 上記の CI 緑確認用
 wave 191 GK material 名 format! メモ化 (2026-07-29): wiring tick テクスチャ節の per-material per-tick `format!("block/{m}")` alloc churn を mat_name_cache (entry API 1 照会) で根治 — hit 時 format! 不発、probe 64×60/16 unique で alloc 3844→20 (99.48%、op-count proxy)、hits=3824=N×ticks−U 理論一致。strict +3 = 1425、TDD compile RED→GREEN、adversarial 4 系統 7 RED、復元 MD5-VERIFIED×4。intern_pool 単一保持案はメモリ悪化で数理却下 (評価記録)、bc7 mode6 α roundtrip m 依存 debug_assert 症候 (probe m=0..31 PASS/FAIL 集合) を発見保留として記録。api 49・replay 16 全緑・警告 0・環境再構築 6 度目復旧
 - 2026-07-29 (count 221): wave 191 GK 上記の CI 緑確認用
+wave 192 GL bc7 mode6 α debug_assert 根治 (2026-07-29): wiring:1859 の `dec[0][3]==255` assert は mode6 (RGBA 7bit+端点共有 pbit) 規格上不達 (共有 p が RGB 優先で α 254 復元、誤差 ≤1 = 規格内) → `>= 254` へ契約根治 + const-α 定理 (ANY p policy で誤差 ≤1) probe 70 件 max 丁度 1 (tight) 証明 + m=0..31 floor exact table pin。strict +3 = 1428、TDD RED=旧 assert panic 記録→GREEN、adversarial 4 系統 5 RED (A/C は定理正しい沈黙を誠実記録)、復元 MD5-VERIFIED×4、api 49・replay 16 全緑・警告 0
+- 2026-07-29 (count 222): wave 192 GL 上記の CI 緑確認用

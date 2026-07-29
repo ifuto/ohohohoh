@@ -1856,7 +1856,18 @@ impl FullGraphWiring {
             }
             let enc = crate::bc7_ktx2::encode_block_mode6(block);
             let dec = crate::bc7_ktx2::decode_block_mode6(&enc);
-            debug_assert_eq!(dec[0][3], 255);
+            // 【wave 192 GL】旧 debug_assert_eq!(dec[0][3], 255) は mode6
+            // (RGBA 7bit + 端点単位共有 pbit) で規格上達成不能な bitwise
+            // roundtrip 期待だった — 共有 pbit が RGB を優先すると α は
+            // 254 に復元され得る (誤差 ≤1 = 規格内、const-α 定理は
+            // gl_mode6_const_alpha_error_bound_strict、全 m=0..31 floor
+            // table は gl_mode6_wiring_vpattern_alpha_floor_corpus が pin)。
+            // 契約真の下限: const-α=255 一様ブロックで全画素 α ≥ 254。
+            debug_assert!(
+                dec[0][3] >= 254,
+                "bc7 mode6 shared-pbit α 量子化誤差 ≤1 契約逸脱 (wave 192 GL): {}",
+                dec[0][3]
+            );
         }
 
         // ============================================================
@@ -5292,5 +5303,26 @@ mod strict_tests {
             1,
             "GK: hit カウンタ増分は Occupied 腕の単一箇所必須"
         );
+    }
+
+    /// 【wave 192 GL】wiring bc7 mode6 α roundtrip debug_assert は規格真
+    /// 契約 (const-α ブロック dec α ≥ 254、mode6 = RGBA 7bit + 端点単位共有
+    /// pbit の量子化誤差 ≤1 = gl_ module pin で定理化) を前提とする:
+    /// gk_bc7probe の FAIL 集合 {0,6,7,11,...} 所属の first material m=7 で
+    /// も tick が debug 完走する (旧 `== 255` bitwise 期待 assert は規格上
+    /// 不達で m=7 で panic = TDD RED 機械記録)。
+    #[test]
+    fn gl_bc7_alpha_contract_first_material_fail_set_strict() {
+        let (dir, mut w) = unique_wiring("gl_bc7_alpha");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 1;
+        inputs.quad_materials = vec![7, 3, 1];
+        let r = w.tick_world(&inputs);
+        assert_eq!(
+            r.material_binned_quads, 3,
+            "first material が旧 assert の FAIL 集合 m=7 でも規格真契約で完走 (捕捉 65 検算フィールド)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
