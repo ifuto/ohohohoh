@@ -275,3 +275,5 @@ wave 189 GI 機能開発 (2026-07-29): (A) 非 3D メイン/ポーズ画面高�
 - 2026-07-29 (count 219): wave 189 GI 上記の CI 緑確認用
 wave 190 GJ hud_batch 軽量化 + 捕捉 129 (2026-07-29): DrawRange.first_index の露出 buffer 不整合根治 (層 interleave/repeat で他者 slice を指した潜在欠陥、python 帰属照合 PROOF-OK) + append O(1) 化 (insert/map/chunks ずらし廃止) + two-pass flat finalize (定常ゼロ再割当、probe: 24 キー×2000 quad で旧 87 allocs/frame→新 0・ずらし 93→0・出力全一致 = op-count proxy)。TDD RED 5 件→GREEN、strict +4 = 1422、adversarial 5 系統 21 RED 累計 (A4/B6/C4/D3/E4)、復元 MD5-VERIFIED×5、api 49・replay 16 全緑・警告 0・環境再構築 5 度目復旧記録
 - 2026-07-29 (count 220): wave 190 GJ 上記の CI 緑確認用
+wave 191 GK material 名 format! メモ化 (2026-07-29): wiring tick テクスチャ節の per-material per-tick `format!("block/{m}")` alloc churn を mat_name_cache (entry API 1 照会) で根治 — hit 時 format! 不発、probe 64×60/16 unique で alloc 3844→20 (99.48%、op-count proxy)、hits=3824=N×ticks−U 理論一致。strict +3 = 1425、TDD compile RED→GREEN、adversarial 4 系統 7 RED、復元 MD5-VERIFIED×4。intern_pool 単一保持案はメモリ悪化で数理却下 (評価記録)、bc7 mode6 α roundtrip m 依存 debug_assert 症候 (probe m=0..31 PASS/FAIL 集合) を発見保留として記録。api 49・replay 16 全緑・警告 0・環境再構築 6 度目復旧
+- 2026-07-29 (count 221): wave 191 GK 上記の CI 緑確認用

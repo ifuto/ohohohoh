@@ -9617,6 +9617,58 @@ gj_first_index_addresses_own_quads_contract が pin。
   PASS** (初回 seal は gate1 FAIL の後、上記 (a)(b) 修復で再 seal 確認)。
 - api 49・replay 16 全緑。警告 0。digest 004c1cf5fb17bfe8 rows=357 不変。
 
+## wave 191 (GK) — wiring material 名 format! メモ化 + intern_pool 軽量化 census (却下記録) + bc7 α roundtrip 制約発見 (2026-07-29)
+
+### GK-1 [機能] tick per-material `format!("block/{m}")` の tick 跨ぎメモ化
+wiring テクスチャ節 (5) が全 material × 全 tick で `format!` の String を
+新規割当してから string interner へ渡す alloc churn 構造だった (interner が
+重複を潰しても format! 側の割当は残存)。根治: `mat_name_cache`
+(HashMap<u32, String, FoldBuildHasher>) で entry API 1 照会メモ化 —
+hit 時は format! 自体が不発 (or_insert_with の hit 非評価性)。
+- probe /tmp/gk_probe.rs (counting allocator、64 mats×60 ticks/16 unique
+  corpus): alloc **3844 → 20 (99.48% 削減)**、hits=3824=N×ticks−U と
+ 理論一致 (op-count proxy、wall-time 非計測を明記。初版 probe の期待式を
+  暗算で誤記 (U×ticks) → assert が捕捉して修正の誠実記録)。
+- strict +3 (1422→1425): gk_material_name_memo_zero_realloc_golden
+  (tick1 hits=3=N−U・tick2 cumulative 9、TDD compile RED 3× E0609 →
+  GREEN)・gk_material_name_memo_names_resolve_exact (resolve 逆引き
+  {block/1,3,7} byte 同一)・gk_material_name_memo_lexeme (presence
+  `.entry(m)` full-m キー + 禁止 `or_insert(format!`、presence 形も split
+  concat! — include_str! はテスト自身を含む自己言及対策)。
+- adversarial 4 系統 7 RED: (A) hits 増分削除 2 RED・(B) or_insert_with
+  形での hits 不計上 revert 2 RED・(C) キー短絡 m&0xFF 1 RED (lexeme
+  のみ、corpus <256 で golden/resolve 正しい沈黙 = 設計どおり)・
+  (D) eager or_insert(format! 2 RED。復元 MD5-VERIFIED×4。
+
+### GK-2 [監査] intern_pool 単一保持化はメモリ悪化で却下 (変更なし記録)
+候補として精査: map+values の T 2 重保持を hash→候補 slot の buckets 化で
+単一保持にする案は、u64 キー map node (~40B)+Vec オーバーヘッド (24B+)
+が現行 (T node ~17-24B + Option<T> 13B) を hash 相異時に上回り**悪化**
+(実質全ユニーク相異 hash のため常悪化)。単一候補 HashMap<u64,u32> は
+FoldHasher の衝突で Eq 違反を起こし得るため非健全。miss 経路 2 ハッシュは
+get+insert の API 構造由来で entry API 化の範囲では解消しない。**偽軽量化
+を踏まなかった評価記録** (数理却下、コード変更なし)。
+
+### GK-3 [発見・保留] bc7 mode6 α roundtrip の m 依存 debug_assert 制約
+wiring:1860 の `debug_assert_eq!(dec[0][3], 255)` が first material 由来の
+v pattern で **α=255 入力が 254 に decode** され得る症候を m≥256 テスト
+入力で踏み発見。probe /tmp/gk_bc7probe.rs で m=0..31 全域機械走査:
+PASS={1,2,3,4,5,8,9,10,12,13,15,16,17,18,20,22,23,24,25,27,28,30,31}、
+FAIL(α254)={0,6,7,11,14,19,21,26,29}。gk 両テストの first 要素は PASS
+集合の 1 を機械選定 (対症ではなく一次情報に基づく入力設計)。encoder 側の
+mode6 α 端点量子化精度の可能性 (信頼度: 中 — 症候は確定、原因帰属は
+未精査)。**本 wave では調査・改修せず、将来 wave 候補として記録**
+(既存 debug_assert の入力依存発火系、CI 緑阻害なし)。
+
+### 機械検数
+- strict 1425 全緑 (1422+3 機械検算、gk_ 3 本個別フィルタ確認)。api 49・
+  replay 16 全緑。警告 0。fmt: field 宣言 1 行化の外科正規化 1 箇所、
+  現逸脱 0/HEAD 外 0 (SUBSET-OK)。seal ゲート2 機械値:
+  **full_graph_wiring HEAD 逸脱 0 行/現 0 行/自己起因 0 行 PASS**
+  (一発 PASS、san 25 files 0 findings・台帳 663 の機械表示)。
+- 台帳 GK-1 (663 行目)。digest 004c1cf5fb17bfe8 rows=357 不変。
+- 環境再構築 6 度目復旧 (fetch+reset --mixed+restore-env+rspeed)。
+
 ## wave 189 以降の運用 (フェーズ 2 完遂後)
 - adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
   完結 (directive ⑧)。
@@ -9625,4 +9677,4 @@ gj_first_index_addresses_own_quads_contract が pin。
   (rsift/rsift/rsift-opt-gfx) 削除はユーザー管理資産確認待ちで継続保留。
 - 捕捉採番の次空き: 130 (129 は wave 190 で使用)。strict 総数履歴:
   …1398(185)→1402(186)→1404(187)→1408(188)→1418(189、gi_ 10 本)
-  →1422(190、gj_ 4 本)。
+  →1422(190、gj_ 4 本)→1425(191、gk_ 3 本)。

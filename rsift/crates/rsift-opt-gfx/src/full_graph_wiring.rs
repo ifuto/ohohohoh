@@ -359,6 +359,17 @@ pub struct FullGraphWiring {
     block_lut: crate::branchless_block::BlockLut,
     intern_pool: crate::intern_pool::InternPool<u32>,
     intern_strings: crate::string_intern::CompactSymbolTable,
+    /// 【wave 191 GK】material 名 `format!("block/{m}")` の tick 跨ぎメモ化。
+    /// 旧実装は per-material per-tick で String を新規割当してから interner
+    /// へ渡す alloc churn 構造だった (interner が重複を潰しても format! 側の
+    /// alloc は消えない)。entry API の 1 ルックアップで hit 時は format!
+    /// 自体を不発化 (or_insert_with は hit 非評価、禁止形は
+    /// gk_material_name_memo_lexeme が pin)。ハッシュは鍵が u32 の信頼
+    /// ホットループ用に crate 既存 FoldBuildHasher を再利用。
+    mat_name_cache: std::collections::HashMap<u32, String, crate::intern_pool::FoldBuildHasher>,
+    /// mat_name_cache の hit 回数 (truth 消費: gk_ strict が厳密値 pin、
+    /// InternPool::hits/misses と同型の内部統計)。
+    pub mat_name_cache_hits: u64,
 
     // ---- 2025 cutting-edge suite (全て実データ駆動) ----
     svdag: Option<crate::svdag::SparseVoxelDag>,
@@ -529,6 +540,8 @@ impl FullGraphWiring {
             block_lut: crate::branchless_block::BlockLut::new(),
             intern_pool: crate::intern_pool::InternPool::new(),
             intern_strings: crate::string_intern::CompactSymbolTable::new(),
+            mat_name_cache: std::collections::HashMap::default(),
+            mat_name_cache_hits: 0,
             svdag: None,
             t_svdag: crate::transform_svdag::TransformAwareSvdag::new(),
             aokana: crate::aokana::AokanaFramework::new(1920, 1080),
@@ -1729,8 +1742,17 @@ impl FullGraphWiring {
             let id = self.intern_pool.intern(m);
             let _ = crate::bindless::pack_handle(0, (id.0 & 0xFF) as u32, (id.0 >> 8) & 0xFF);
             let _ = self.atlas_packer.pack(m as u64, 16, 16);
-            let name = format!("block/{}", m);
-            let _ = self.intern_strings.intern(&name);
+            // 【wave 191 GK】旧: per-material per-tick で format! 新規割当
+            // (interner が重複を潰しても alloc churn は残存)。entry 1 照会で
+            // hit は format! 不発 — 名前は byte 同一を resolve 厳密 pin。
+            let name = match self.mat_name_cache.entry(m) {
+                std::collections::hash_map::Entry::Occupied(o) => {
+                    self.mat_name_cache_hits += 1;
+                    o.into_mut()
+                }
+                std::collections::hash_map::Entry::Vacant(v) => v.insert(format!("block/{m}")),
+            };
+            let _ = self.intern_strings.intern(name);
             tile_reqs.push(crate::texture_atlas_virtual::TileCoord {
                 x: (m % 32) as u32,
                 y: ((m / 32) % 32) as u32,
@@ -5186,6 +5208,89 @@ mod strict_tests {
             src.matches(concat!("intensity: lvl ", "as f32")).count(),
             1,
             "EN (e) 証明前提: intensity の u8 由来構築は単一箇所必須"
+        );
+    }
+
+    /// 【wave 191 GK】material 名 format! の tick 跨ぎメモ化 golden:
+    /// quad_materials = [1,7,7,3,7,3] (N=6, U=3、first=1 は probe m=0..31
+    /// 全域走査で α roundtrip PASS 集合 (1,2,3,4,5,8,...) 所属を機械選定、
+    /// FAIL 集合 0,6,7,11,14,... は tick 経路の bc7 debug_assert を踏む) で
+    /// tick1 hits = N−U = 3、
+    /// tick2 以降は全件 hit (cumulative 3→9)。旧実装 (メモなし) では
+    /// hits == 0 で RED (TDD 機械記録)。なお m≥256 系は wiring の bc7
+    /// debug_assert (mode6 alpha roundtrip) が m 由来入力で fail し得る
+    /// 既存の入力依存制約があり tick 刺激に使えない (wave 191 census 記録)
+    /// — キー短絡系変異は lexeme pin 側で構造検出する設計。
+    #[test]
+    fn gk_material_name_memo_zero_realloc_golden() {
+        let (dir, mut w) = unique_wiring("gk_memo");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 1;
+        inputs.quad_materials = vec![1, 7, 7, 3, 7, 3];
+        assert_eq!(w.mat_name_cache_hits, 0, "初期 hits=0");
+        let _ = w.tick_world(&inputs);
+        assert_eq!(
+            w.mat_name_cache_hits, 3,
+            "tick1 hits = N−U = 6−3 (初出 3 は miss、再出 3 は hit)"
+        );
+        let _ = w.tick_world(&inputs);
+        assert_eq!(
+            w.mat_name_cache_hits, 9,
+            "tick2 は全 6 件 hit → 3+6 (per-tick format! 新規割当は初出の 3 個のみ)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 191 GK】メモ化しても interner 到達文字列が完全同一 (truth):
+    /// resolve 逆引きで {"block/1","block/3","block/7"} 厳密集合。
+    #[test]
+    fn gk_material_name_memo_names_resolve_exact() {
+        let (dir, mut w) = unique_wiring("gk_memo_names");
+        let mut inputs = empty_inputs();
+        inputs.view_proj = IDENTITY_VP;
+        inputs.frame_index = 1;
+        inputs.quad_materials = vec![1, 7, 3];
+        let _ = w.tick_world(&inputs);
+        let mut got: Vec<String> = (0..3u32)
+            .filter_map(|i| {
+                w.intern_strings
+                    .resolve(crate::string_intern::SymbolId(i))
+                    .map(|s| s.to_string())
+            })
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec!["block/1", "block/3", "block/7"],
+            "interner 到達名は format! 系と byte 同一"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 191 GK】memo 経路の構造 lexeme pin (presence 形も split
+    /// concat! で自己言及 vacuous 回避 — include_str! は本テスト自身を含む):
+    /// 呼出形 presence (full m キー、マスク短絡系の変異を構造検出) +
+    /// 常時 format! 評価形の禁止 (hit でも
+    /// format! を評価して alloc 削減が無効化される「挙動同一・性能 revert」
+    /// 変異の検出、test レベルでは挙動同一 = probe 系限界の構造補完)。
+    #[test]
+    fn gk_material_name_memo_lexeme() {
+        let src = include_str!("full_graph_wiring.rs");
+        assert_eq!(
+            src.matches(concat!(".entry(", "m)")).count(),
+            1,
+            "GK: material 名メモは full-m キーの entry API 単一箇所必須"
+        );
+        assert_eq!(
+            src.matches(concat!("or_insert(", "format!")).count(),
+            0,
+            "GK 禁止語彙: 常時 format! 評価形 (hit でも alloc が消えない)"
+        );
+        assert_eq!(
+            src.matches(concat!("mat_name_cache_hits", " += 1")).count(),
+            1,
+            "GK: hit カウンタ増分は Occupied 腕の単一箇所必須"
         );
     }
 }
