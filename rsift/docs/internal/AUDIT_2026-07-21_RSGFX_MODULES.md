@@ -9156,3 +9156,25 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
 - 次工程 (wave 183 以降): フェーズ 2 = adversarial 非検出 26 例未採分の
   深化回収・loose pin の golden bit 化・台帳/docs 文書整合照査へ移行。
 
+## wave 183 (GC) — 台帳 hygiene 照査 (2026-07-29、文書のみ・採番なし)
+- **ID 重複疑いの機械解消**: BUGFIX_REGISTRY の uniq カウントで BG-2/BN-3
+  が 2 件ずつに見えたが、これは `BG-2b` (line 203) / `BN-3b` 等の suffix 型
+  ID の prefix 部分マッチ誤検出 (grep パターン `[A-Z]{1,3}-[0-9]+` が
+  suffix 一文字を切り落とす) — 実 ID は全件一意であることを raw grep -nF
+  で機械証明。**台帳整合は異常なし**、誤警報の自己照査として記録。
+- **捕捉 76/77 欠番の truth 記録**: 台帳は捕捉 74/75 (FB-1/FB-3) の次に
+  捕捉 78 (FC-1) へ進んでおり、捕捉 76/77 は FB〜FC 採番ジャンプで**使
+  途なく欠番** (3 文書横断 grep で参照ゼロ機械証明)。旧工程の採番採記
+  録が当時補完されなかったが事案 (a 期以降の自己照査項目) — 今後も
+  欠番の意図的利用はしない (NULL として保持、誤って 76/77 を新採番
+  しない運用確約)。本注記のために台帳 ID 本体は改変しない (歴史改ざん
+  としない方針)。
+- **adversarial dead/loose 非検出カウンタ現況 truth 記録**: 連番 26 件の
+  内訳 — 170 (d)=19 (wgsl_source 死救出)、171 (d)=20 (get_state 死救出)、
+  172 (b)=21 (parallel_for_each_chunk 削除対象死救出)、173 (c)=22 (bolt
+  死救出)、174 (c)=23 (clear API 死救出)、175 (c)=24 (capacity() 死救出)、
+  176 (c)=25 (gtao wgsl_source 死救出)。FV-3 / FW-3 / FX-3 / FX-C は初回
+  非検出を捕捉して strict pin 追加で全回収済 (採番増分なし)。waves
+  177-181 (FW/FY/FZ/GA) は adversarial 非検出 0 で据置 26。回収様式は
+  「include_str! 自己参照 lexeme pin」+「truth 契約 pin」に定型確立。
+- 本 wave は文書整合のみで src 変更ゼロ (テスト 1370 据置)。
