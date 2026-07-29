@@ -9555,11 +9555,74 @@ pin 分類明文化済)。
   findings・trailws 0・台帳件数 661・変更追跡ファイル 6 の seal 機械表示。
 - 台帳 GI-1 (661 行目)。digest 004c1cf5fb17bfe8 rows=357 不変。
 
+## wave 190 (GJ) — hud_batch 軽量化 + BatchView 契約整合 (捕捉 129 根治) (2026-07-29)
+
+背景: ユーザー指示「軽くしまくって・新技術自由・デバイス依存技術は抜く」に
+基づく portable 軽量化 wave 系列の第 1 段。対象は HUD/テキスト集約の
+hud_batch (wave 155 FA 系)。
+
+### GJ-1 [中] 捕捉 129: DrawRange.first_index の露出 buffer 不整合を根治
+wave 155 捕捉 73 (非連続同一キー run 再配置) の残根: finalize が露出する
+`BatchView (ranges, indices)` において `DrawRange.first_index` は「挿入前
+len 由来」のまま露出し、層 interleave/repeat 系では露出 indices 上の
+**他者 quad の slice** を指す自己不整合だった。python 機械実証 (帰属照合
+PROOF-OK 2 系): interleave 系は全 3 range が他者帰属、repeat 系は L0 が
+L9 quad・L9 が L0 混入 slice。wiring が first_index を非消費 (counts のみ)
+かつ昇順連続 push のみ供給するため非顕在化していた (捕捉 62/63/72 系の
+「供給パターン消隠」クラス)。根治: finalize が露出 buffer の累積確定位置で
+first_index を上書き。fa_hud 両 golden の pin 値は新契約値へ機械更新
+(interleave [6,12,0]→[0,6,12]・repeat (6,0)→(0,6))、同質性を
+gj_first_index_addresses_own_quads_contract が pin。
+
+### GJ-2 [機能] append O(1) 化 + two-pass flat finalize (定常ゼロ再割当)
+- slot_for: 旧「層昇順 insert + map 全値/chunks 全件 +1 ずらし」(新キー毎
+  O(keys)+O(chunks)) → append のみ O(1)。層昇順の materialize は
+  finalize の stable sort へ移譲 (append 順の層 stable sort ≡ 旧挿入順:
+  等層は共に作成順保持、独立 spec reference との 1024 系列 corpus 照合で
+  機械立証)。ずらし不変式の維持責務ごと構造消滅。
+- finalize: 旧 `vec![Vec; K]` by_slot 集約 + Vec 返却 (finish 内差替えで
+  scratch 容量を毎 frame 喪失) → 層 stable sort (order) + 累積 offset
+  (offs) two-pass で scratch へ直接構築 (BatchOutput に ranges/order/offs
+  追加、wiring の ObjectPool<BatchOutput> 確保回避設計と整合)。
+- probe /tmp/gj_probe.rs (-O, counting allocator + 移動カウンタ):
+  テキスト的 24 キー×2000 quad interleave corpus で旧 finish 87
+  allocs/frame → 新 0 (定常 frame、fill+finish 合算)、新キーずらし 93
+  回→0、出力 (indices 列・層順/count 系列) 全一致 assert 通過、旧 fi は
+  12 range 中 11 が stale。**op-count/alloc-count の proxy 計測であり
+  wall-time ではない** (捏造ベンチ禁止規律に基づく明記)。
+- TDD RED 記録: compile RED 3× E0609 (BatchOutput 新 field 未存在)
+  → 足場 field 追加で compile 通過後 runtime RED 5 件 (corpus n=4、
+  contract で tex=2 に 30=tex3 quad 混入実証、capacity pin、両 golden)
+  → 実装後全 GREEN。equal_layer pin は設計どおり green-today 構造 pin。
+- strict +4 (1418→1422): gj_first_index_addresses_own_quads_contract /
+  gj_finalize_matches_independent_spec_corpus (全 4^5 系列) /
+  gj_equal_layer_creation_order_golden / gj_scratch_capacity_reuse_pin。
+- adversarial 5 系統全 RED: (A) fi 上書き削除+作成時 len 復活 (旧 stale
+  世界) 4 RED・(B) 層降順化 6 RED・(C) カーソル前進削除 4 RED・
+  (D) map hit 返値改竄 3 RED・(E) offs 初期値 0 固定化 4 RED、
+  復元 MD5-VERIFIED×5。
+- fmt 自己照査: in-place 正規化が HEAD 原生逸脱 4 箇所中 3 箇所
+  (push_glyph/key/mkquad 原生 1 行リテラル群) まで巻き戻した — 初回
+  diff を head -20 で截断して残 3 hunk を見落とした私の過失 (誠実記録)。
+  HEAD 原生形へ全復元し「現逸脱 ⊆ HEAD 原生逸脱」を行集合機械照合。
+- san 自己照査: (a) wave 155 注記 5 が U+FFFD 生体を引用文に内包していた
+  (HEAD 原生だが同ファイル未変更 wave では gate1 走査対象外で既往未検出、
+  本 wave の変更で gate1 FAIL 捕捉) → 「実線<U+FFFD×2>形」の ASCII 表記化
+  で誠実記録を保持したまま根治。(b) 私の AUDIT 節で「消<U+9690>」の簡体字
+  typo → 私の補完走査は固定文字集合で U+9690 を含まず見落とし (seal san が
+  捕捉、走査集合の不完全性を誠実記録)。(c) さらに本注記 (b) の引用文自体が
+  U+9690 を再混入して 2 度目 FAIL → 置換表記化で根治 (自己言及混入を誠実
+  記録、2 サイト機械確認で残存 0)。
+- seal ゲート2 機械値: **hud_batch HEAD 逸脱 10 行/現 9 行/自己起因 0 行
+  PASS** (初回 seal は gate1 FAIL の後、上記 (a)(b) 修復で再 seal 確認)。
+- api 49・replay 16 全緑。警告 0。digest 004c1cf5fb17bfe8 rows=357 不変。
+
 ## wave 189 以降の運用 (フェーズ 2 完遂後)
 - adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
   完結 (directive ⑧)。
 - hygiene 残 (保持判定継続): opt-gfx src CRLF ファイル 10+・テスト側 unused
   変数警告 3 件 (more_culling/dag_scheduler、HEAD 原生)・stray copy
   (rsift/rsift/rsift-opt-gfx) 削除はユーザー管理資産確認待ちで継続保留。
-- 捕捉採番の次空き: 129。strict 総数履歴: …1398(185)→1402(186)→1404(187)
-  →1408(188)→1418(189、機能開発: gi_ 10 本)。
+- 捕捉採番の次空き: 130 (129 は wave 190 で使用)。strict 総数履歴:
+  …1398(185)→1402(186)→1404(187)→1408(188)→1418(189、gi_ 10 本)
+  →1422(190、gj_ 4 本)。
