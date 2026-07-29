@@ -9102,6 +9102,6 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   ac0b9d9c7ca1c4259c5185f082365f71)。非検出 0 (dead カウンタ据置 26 未採)。
 - fmt: 自己起因 2 件 (fz_item_frame の assert! 折返し) 正準化 → 逸脱 0、
   neighbor_mask 長行 (71) は HEAD 原生 (head-dev-del 機械分離) で保持。
-  fmt: seal ゲート2 機械値は下記コミット時記載へ整合。
+  fmt: seal ゲート2 機械値 more_culling 1/1/0 (HEAD 原生 1 行保持・自己起因 0)。
 
 ## wave 181 以降の監査計画
