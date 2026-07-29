@@ -3,6 +3,7 @@
 //! Tier 1–6 rendering / CPU optimizations — adaptive per hardware tier.
 
 pub mod adaptive_shading;
+pub mod apple_backend;
 pub mod binary_greedy_meshing;
 pub mod boot_splash;
 pub mod branchless_dda;

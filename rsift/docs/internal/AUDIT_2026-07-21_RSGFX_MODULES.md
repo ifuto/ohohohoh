@@ -9443,6 +9443,118 @@ pin 分類明文化済)。
   へ in-place 正規化して再 seal PASS (誠実記録)。
 - seal 全 6 ゲート PASS・digest 004c1cf5fb17bfe8 rows=357 不変・台帳 660。
 
+## wave 189 (GI) — 機能開発: 非 3D 画面 (メイン/ポーズ) 適応静止低レート化 + MacBook バックエンドポリシー (2026-07-29)
+
+### GI-1 [機能] ユーザー要求対応 2 本立て (監査系でなく機能開発 wave)
+要求 (1)「3D 描画ではないメイン画面やポーズ画面の描画高速化」、要求 (2)
+「最新 MacBook 向け Metal 4・旧 MacBook 向け OpenGL 対応 = 完全 MacBook
+対応」に対応。
+
+#### (A) gui_composite 適応静止低レート化
+- 現状認識: gui_composite は wave 149 GC 系デュアルレート (既定 gui 30/
+  render 120)。メイン/ポーズ画面等の入力不在区間でも 30 fps で GUI を
+  再描画し続けるため、静止時の再描画回数そのものを削る。
+- 実装: `GuiAdaptive { enabled, hold_full, hold_mid, mid_div, floor_div }`
+  (Default true/45/135/2.5/7.5) を `GuiRates::adaptive` として追加
+  (literal 構築 2 箇所は `..Default::default()` 形へ修正)。
+  `should_render_gui` が `still` (最後の入力/面破棄からの連続 render
+  回数) で u32 整数比較により 30→12.0→4.0 へ段階退化。**入力・
+  invalidate() は判定フレームに即時フルレート復帰** (0 フレーム遅延)。
+  `adaptive.enabled = false` で wave 149 挙動とビット一致 (legacy pin)。
+  `fps_now` は実効レートを報告 (GC-5 注記 5 からの意図的変更、44 render
+  未満では不変を module 機査で立証)。分母 2.5/7.5 は既定 30.0 が厳密に
+  12.0/4.0 になる値 (probe 機械確定)。
+- golden (probe /tmp/gi_probe・/tmp/gi_probe_extra 機械導出、IEEE 754):
+  dt=1/120・3000 tick 無入力 renders **199** (legacy 750 の **73.5%
+  削減**)。退化境界 render #44=(t=173,30.0)/#45=(177,30.0)/
+  #46=(181,30.0)、初 fps==12.0 render t=191・初 fps==4.0 t=1111、
+  内訳 30/12/4 = 46/90/63、最終 render t=2971。t=2000 入力 → 同フレーム
+  render・fps=30.0・invalidated=true、log 1998..2006 全 9 行 golden。
+  invalidate() 面破棄 → t=2001 復帰以後 renders = vec![2001,2005,2009,
+  2013,2017]。bits: 30.0=0x41F00000/12.0=0x41400000/4.0=0x40800000
+  (python struct.pack 機械値)。回帰: 120 tick=30 renders・dt=0.02 系列は
+  gc golden と一致。
+- strict 5 本追加: gi_adaptive_static_degrade_golden /
+  gi_adaptive_input_restore_zero_latency_golden /
+  gi_adaptive_full_rate_below_threshold (46 render まで全 30.0) /
+  gi_adaptive_disabled_is_legacy_identical (750) /
+  gi_adaptive_invalidate_surface_restores。
+- **自己照査**: 初版実装は invalidate() が still をリセットせず復帰しない
+  欠陥 → 新規テストが RED 捕捉 → probe 後 (a) 設計 (invalidate も即時
+  still=0 復帰) で根治した経緯を誠実記録 (TDD の検出力が機能自体の
+  バグを捕捉した事例)。
+
+#### (B) apple_backend 新設 + gpu_runtime 配線 (完全 MacBook 対応)
+- 実装: 新規モジュール `apple_backend` — OsKind/ArchKind/host_os()/
+  host_arch()・`AppleGpuClass` 7 分類 (NotApple/AppleSilicon/
+  AppleSiliconX86Process/IntelDedicatedMetal/IntelIntegratedMetal/
+  LegacyNoMetal/Unknown)・`classify(os, arch, device_name)`
+  (Aarch64+macOS→AppleSilicon 高信頼、"Apple M<digit>"+x86_64→
+  SiliconX86Process=Rosetta、GMA→LegacyNoMetal、AMD/Radeon/NVIDIA/
+  GeForce→Dedicated、Intel→Integrated、空/不明→Unknown)・
+  `chip_generation` ("Apple M1 Pro"→Some(1)..M4→Some(4)、M9、非 M 系
+  None)・`Metal4Surface { declared, usable }` (declared = AppleSilicon 系
+  && os_major>=26)・`BackendChoice`・`instance_backends(os, env)` (macOS
+  既定 MetalPreferred・非 macOS All・RSIFT_GFX_BACKENDS=metal/all/未知値
+  は既定再帰、trim+lowercase で 1 回読み)・`legacy_gl_fallback_note`
+  (LegacyNoMetal のみ Some)・`describe` (chip_gen は引数供給 — 初期の
+  プレースホルダ供給は誠実性で根治済)。
+- 配線 (§7 実消費): gpu_runtime に `instance_descriptor_with_apple_policy()`
+  を新設し runtime() の Instance::new へ適用 (MetalPreferred →
+  `desc.backends = wgpu::Backends::METAL`)。adapter 取得時に
+  classify+chip_generation+describe+legacy note を全消費する info!/warn!
+  ログ (os_major は wgpu 0.20 から取得不能のため describe へ 0 供給と
+  doc 明記)。
+- **誠実境界 (一次情報・信頼度: 高)**: wgpu 0.20.1 (lock 固定) は macOS
+  上で GL コンテキストを生成しない (GLES backend は EGL 経由のみ) ため、
+  旧 Intel/GMA Mac の「GL 対応」は runtime()==None の CPU フォールバック
+  経路 + legacy 注記ログで到達する policy 宣言 (GL 実コンテキスト
+  interop は将来検討対象、スタブでなく到達経路の宣言)。Metal 4 も metal
+  binding (metal-rs 系) 未導入のため `metal4_surface` は declared 算出
+  のみで **`usable = false` 固定** — 技術見送り宣言でなく policy 値であり、
+  `gi_metal4_surface_is_declaration_only` が usable=true 化 (binding 導入
+  時の忘れ物) を RED 検出する構造 (MUT-E で検出力実証済)。
+- strict 5 本追加: gi_classify_corpus_golden (AppleSilicon xcode env 系/
+  Rosetta "Apple M2"+x86_64/AMD Radeon Pro 5500M/NVIDIA GT 650M/
+  Intel Iris Pro/GMA 950/Windows Intel/Linux unknown corpus)・
+  gi_chip_generation_golden (M1 Max→1/M2→2/M3 Pro→3/M4→4/M9→Some(9)/
+  "M1" 前置なし None/Radeon None)・gi_metal4_surface_is_declaration_only
+  (class×os_major 行列で declared/usable 全確定)・
+  gi_instance_backends_policy_golden・gi_legacy_note_and_describe_golden。
+
+### adversarial 6 系統 (全 RED 検出・復元 MD5-VERIFIED×6)
+- (A) `still < hold_full` → `<=` (境界ずらし) → **2 RED**
+  (gi_adaptive_static_degrade_golden 200≠199・
+  gi_adaptive_full_rate_below_threshold 47≠46)。**自己照査**: 初回試行は
+  cargo test の複数フィルタを空白連結 1 文字列で渡し 0 マッチ vacuous
+  (全件 filtered) となるスクリプトバグで RED 未検証 → フィルタ別引数化
+  で再実施し RED 機械確定 (復元は初回から md5 照合済)。
+- (B) mid_div 2.5→3.0 → **1 RED** (static_degrade golden)。
+- (C) invalidated_now の still 解除削除 → **1 RED**
+  (input_restore_zero_latency golden)。
+- (D) classify Intel 腕の返値を IntelDedicatedMetal へ改竄 → **1 RED**
+  (classify_corpus: "Intel Iris Pro Graphics" left=Dedicated right=Integrated)。
+- (E) metal4_surface `usable: false` → `true` → **1 RED**
+  (declaration_only pin = 忘れ物防止構造の機能実証)。
+- (F) instance_backends macOS 既定腕 → BackendChoice::All → **1 RED**
+  (backends_policy: left=All right=MetalPreferred)。
+- 注記: adversarial 計測は fmt 正規化前コンテンツで実施し、正規化
+  (rustfmt 忠実形・純粋書式) 後に全量 1418 再検算で緑を再確認 (復元
+  基線 md5 も正規化後値へ再設定)。
+
+### 機械検数
+- strict +10 net **1418 全緑** (機械検算 1408+5(gui_composite)+
+  5(apple_backend)、gi_ 10 本は個別フィルタで個々に起動確認)。
+  api 49・replay 16 全緑。警告 0 (lib build gate)。
+- fmt: 初回採点 (seal 同一条件) で自己起因逸脱 3 ファイル (assert! 長行
+  分割・`||` 連結条件行・match 引数 1 行化) を捕捉 → rustfmt 忠実形へ
+  in-place 正規化 → 4/4 FMT-OK。seal ゲート2 機械値: **gpu_runtime
+  0/0/0・gui_composite 0/0/0・lib.rs 0/0/0 (全 PASS)** — apple_backend は
+  新規未追跡でゲート2 の HEAD 包含比較対象外のため、同一条件採点の
+  FMT-OK (0 逸脱) を自前機械確認で補完 (誠実記録)。san 27 files 0
+  findings・trailws 0・台帳件数 661・変更追跡ファイル 6 の seal 機械表示。
+- 台帳 GI-1 (661 行目)。digest 004c1cf5fb17bfe8 rows=357 不変。
+
 ## wave 189 以降の運用 (フェーズ 2 完遂後)
 - adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
   完結 (directive ⑧)。
@@ -9450,4 +9562,4 @@ pin 分類明文化済)。
   変数警告 3 件 (more_culling/dag_scheduler、HEAD 原生)・stray copy
   (rsift/rsift/rsift-opt-gfx) 削除はユーザー管理資産確認待ちで継続保留。
 - 捕捉採番の次空き: 129。strict 総数履歴: …1398(185)→1402(186)→1404(187)
-  →1408(188)。
+  →1408(188)→1418(189、機能開発: gi_ 10 本)。

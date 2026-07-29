@@ -117,17 +117,57 @@ pub fn all_wgsl_sources() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
+/// 【wave 189 GI】Apple ポリシーを反映した InstanceDescriptor の構成
+/// (env `RSIFT_GFX_BACKENDS` は起動時 1 回読み、解析は apple_backend 純粋関数)。
+fn instance_descriptor_with_apple_policy() -> wgpu::InstanceDescriptor {
+    let mut desc = wgpu::InstanceDescriptor::default();
+    let env = std::env::var("RSIFT_GFX_BACKENDS").ok();
+    match crate::apple_backend::instance_backends(crate::apple_backend::host_os(), env.as_deref()) {
+        crate::apple_backend::BackendChoice::MetalPreferred => {
+            desc.backends = wgpu::Backends::METAL;
+        }
+        crate::apple_backend::BackendChoice::All => {}
+    }
+    desc
+}
+
 /// 実デバイスを遅延生成し全 WGSL を naga 検証付き実コンパイル。
 /// GPU 非搭載・ドライバー異常・仮想環境では `None` (安全側)。
 pub fn runtime() -> Option<&'static GpuRuntime> {
     RUNTIME
         .get_or_init(|| {
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+            // 【wave 189 GI】MacBook ポリシー: macOS では Metal 優先制約
+            // (Apple Silicon 全機 + 2012 以降の Intel GPU は Metal 搭載、
+            // apple_backend.rs 参照。`RSIFT_GFX_BACKENDS=all` で既定に戻せる)。
+            let desc = instance_descriptor_with_apple_policy();
+            let instance = wgpu::Instance::new(desc);
             let created = block_on(async {
                 let adapter = instance
                     .request_adapter(&wgpu::RequestAdapterOptions::default())
                     .await?;
                 let info = adapter.get_info();
+                // 【wave 189 GI】adapter 分類の実消費 (info!/warn! ログ)。
+                let class = crate::apple_backend::classify(
+                    crate::apple_backend::host_os(),
+                    crate::apple_backend::host_arch(),
+                    &info.name,
+                );
+                // os_major は wgpu からは得られない (sysctl 非依存設計) ので
+                // 宣言面は 0 (declared=false) として要約に載せる。classify と
+                // ログ文言は apple_backend strict で検査済。
+                let line = crate::apple_backend::describe(
+                    class,
+                    crate::apple_backend::chip_generation(&info.name),
+                    0,
+                    crate::apple_backend::instance_backends(crate::apple_backend::host_os(), None),
+                );
+                info!(
+                    "[GpuRuntime] {line} (adapter={} backend={:?})",
+                    info.name, info.backend
+                );
+                if let Some(note) = crate::apple_backend::legacy_gl_fallback_note(class) {
+                    warn!("[GpuRuntime] {note}");
+                }
                 let limits = wgpu::Limits::downlevel_defaults();
                 let desc = wgpu::DeviceDescriptor {
                     label: Some("rsift-opt-gfx runtime"),
