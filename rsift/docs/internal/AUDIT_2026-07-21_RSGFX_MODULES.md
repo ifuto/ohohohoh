@@ -8990,7 +8990,7 @@ census grep: CompactSection=world_column_store (struct field :16・encode_hot :1
 - **FW-3 [低]**: adversarial 変異 C 初回非検出捕捉 → 破損 LZ4 decode 契約 pin (空/欺瞞 size prefix 2³⁰/末尾切詰め 8B の 3 ケース、panic せず全 0 返却の防御設計 — Lz4 wire は to_cold メモリ内のみで破損 wire 到達不能 = wave 61 BK fail-loud 対象外を明記) → 再変異 RED 1 で検出可能化 (FV-3 同型回収)。
 
 rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・1022*4=4088<4096→Rle・1024*4=4096>=4096→Lz4・raw=8192・threshold bytes=4098)。fw strict 計 +4 net **1355** 全緑 (機械検算 1351+4): fw_encode_variant_selection_exact (Single/1差分 Rle runs 値 pin/境界両側 1022,1024)・fw_is_air_truth_lemma (全構築 variant 補題 pin)・fw_lz4_decode_corrupt_contract (3 破損ケース契約)・fw_to_cold_forms (Single/Lz4 clone・Rle→Lz4 化 roundtrip)。adversarial 3 系統: (a) fallback `>=`→`>` 1 RED (境界 pin 検出)・(b) is_air 配線反転 3 RED (ingest_and_window + render_pipeline strict 2 本波及で配線 truth 逆証明)・(c) unwrap 化 初回 0 RED 非検出 → pin 追加後 RED 1 (26 例未採で回収)。復元 MD5-VERIFIED 5 回 (固定版 md5 section_compress e2863fe41c333a390cfe65755d254a22・world_column_store 4964e5c84c11e9b2518f9e14ce93f2d1)。api 49・replay 16 全緑・警告 0。fmt: section_compress 自己起因 4 hunk 正準化 (1 回目 3+見落とし 1 を再採点で自己検出、誠実記録) → 現 ZERO、world_column_store は HEAD 原生逸脱 21 行保持 (新規編集 column_for_mesh 領域は逸脱ゼロ)。fmt seal ゲート2 機械値: section_compress HEAD 0/現 0/自己起因 0・world_column_store HEAD 9/現 9/自己起因 0 (HEAD 原生完全保持)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
-### wave 178 (FX) software_tiling.rs (111 行) — カメラ非追従 bin 配線・doc 虚構・装飾的 clamp
+## wave 178 (FX) software_tiling.rs (111 行) — カメラ非追従 bin 配線・doc 虚構・装飾的 clamp
 - census 機械確定: SoftwareTileBinner=render_pipeline:108 保持/:638 new/
   :645 bin_chunks→frame_stats.tiles_binned 実消費。SoftwareTileBinner/
   TileId/TileDrawList 直接参照=render_pipeline のみ (dx12 等他クレート
@@ -9037,7 +9037,7 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   時記載へ整合。
 
 ## wave 179 以降の監査計画
-### wave 179 (FY) boot_splash.rs (112 行) — 消費者ゼロ誠実 logger の真配線化
+## wave 179 (FY) boot_splash.rs (112 行) — 消費者ゼロ誠実 logger の真配線化
 - census 機械確定: BootSplash 系は lib.rs:7 pub mod + :76 pub use のみで
   全クレート内参照ゼロ (step_name/BootSplash の他ファイル参照ゼロ)、
   module strict_tests 3 本 (default 厳密 pin/lifecycle/ゼロ除算ガード) のみ
@@ -9070,7 +9070,7 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   render_pipeline 0/0/0 (HEAD 原生 5 行完全保持・自己起因 0)。
 
 ## wave 180 以降の監査計画
-### wave 180 (FZ) more_culling.rs (117 行) — 消費ゼロ catalog API の保持証明
+## wave 180 (FZ) more_culling.rs (117 行) — 消費ゼロ catalog API の保持証明
 - census 機械確定: sign_text_visible=full_graph_wiring:1884 /
   screen_footprint_px=:1874 / rain_visible=:1900 の 3 関数が wiring 実評価
   経路実消費 (let _ 形式だが CH-3 承認済の実計算 assertion 路、値は別系
@@ -9105,7 +9105,7 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   fmt: seal ゲート2 機械値 more_culling 1/1/0 (HEAD 原生 1 行保持・自己起因 0)。
 
 ## wave 181 以降の監査計画
-### wave 181 (GA) dag_scheduler.rs (120 行) — 破棄 critical_path の配線化 + truth 契約
+## wave 181 (GA) dag_scheduler.rs (120 行) — 破棄 critical_path の配線化 + truth 契約
 - census 機械確定: DagScheduler=wiring:780 new 実消費、5 タスク実構築
   (ingest/mesh/cull/upload/light×delta_ms 係数)/topological_order len 5
   debug_assert 実評価/critical_path_ms は wiring:788 で `let critical_ms`
@@ -9136,3 +9136,23 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   full_graph_wiring 0/0/0 (dag HEAD 原生 8 行完全保持・両者自己起因 0)。
 
 ## wave 182 以降の全量最終検証・`rsift-opt-gfx` 厳密監査完遂後工程
+## wave 182 (GB) — 厳密監査フェーズ 1 完遂宣言 (2026-07-29 機械証明)
+- **在庫ゼロ機械証明**: rsift-opt-gfx src 全モジュール (lib.rs 除く) について
+  AUDIT 本文・BUGFIX_REGISTRY・ci/TRIGGER.md の 3 文書横断で「一度も監査
+  証跡に登場しないモジュール 0 件」を全件機械計算で確認 (機械計算値:
+  modules=162・unaudited_zero_mention=0、スクリプト: os.listdir 全 rs
+  走査 × 3 文書の文字列横断)。
+- wave 170-181 (FP〜GA) で残未監査 12 件を全消化 (捕捉 107-127・§7 消化
+  32-44)。テスト総数 1370 全緑・api 49・replay 16 全緑・警告 0・
+  structural digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
+- 監査フェーズ 1 完遂の truth 宣言、以下 hygiene 判定を誠実記録:
+  (i) src 残 CRLF ファイル約 10 件 (ao_bake 252/billboard_lod 229/
+  diff_mesh 214/drs 168/entity_tick_lod 272/simd_kernels 346/soa_layout
+  369/spatial_hash 187/taa 176/texture_atlas 347) は seal ゲート 1/2 が
+  `.lines()` 正規化で実害ゼロ・熱心度比から大規模 cosmetic diff を抑止し
+  保持判定、(ii) wave 見出し H2/H3 不統一 (178-181 H3 4 件) は H2 へ
+  定型修復済 (wave 182 適用)、(iii) `rsift/rsift/rsift-opt-gfx` 複写物は
+  ユーザー管理資産の可能性を鑑みて削除保留 (確認要)。
+- 次工程 (wave 183 以降): フェーズ 2 = adversarial 非検出 26 例未採分の
+  深化回収・loose pin の golden bit 化・台帳/docs 文書整合照査へ移行。
+
