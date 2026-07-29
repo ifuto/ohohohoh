@@ -8934,3 +8934,12 @@ census grep: registry=wiring:383 保持/:537 構築/:768-770 set_state(Building)
 - **FQ-2 [低]**: pending/building は同期 pipeline truth で常 0 の到達不能 pin として doc 誠実明記 (非同期化で非ゼロ変動)。
 
 rq fq_registry 全 assert 通過 (version 4→7 導出: 初見 +2/件・退去 +1/件)。strict +3 net 1346 全緑 (機械検算 1343+3)。api 49・replay 16 全緑・警告 0。adversarial 4 系統: (a) Done 遷移除去 1 RED (integrity debug_assert 即検出)・(b) remove version 前進除去 2 RED (module+wiring 両側)・(c) report 0 化 1 RED・(d) failed_chunks 死救出 非検出 (dead code 20 例目)。復元 MD5-VERIFIED 4 回 (固定版 md5 dashmap 53f478717a407aa2ac9133078f0f4605 / wiring fdfeca7d400234548542a83695d618c1)。fmt: seal ゲート2 機械値 dashmap HEAD 逸脱 10 / 現 10 / 自己起因 0 (HEAD 原生完全保持、git diff 削除行 0)・wiring 0/0/0 (自己起因 1 適用済)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
+
+## wave 172 (FR) rayon_job.rs 厳密監査 (2026-07-29)
+
+census grep: parallel_map_chunks = full_graph_wiring:863 実消費 (morton 局所性コード生成、indexed collect 順序保持が契約)。build_pcore_threadpool/RayonJobConfig/parallel_for_each_chunk = 全クレート全域呼出ゼロ・core_affinity dep 非存在・threads 読み書きゼロを機械確定。
+
+- **FR-1 [低] 捕捉 110 [小]**: build_pcore_threadpool の doc/名虚偽 (P-Core 専用・core_affinity ピン留め言及だが affinity 未構成) → 不可能証明 3 点削除 (FH 捕捉 92 判例)。
+- **FR-2 [低] 捕捉 111 [小]**: §7 消化 34。RayonJobConfig + parallel_for_each_chunk 消費者ゼロ → 不可能証明削除。module は wiring 実消費の parallel_map_chunks 単機能へ truth 縮退。
+
+adversarial 2 系統: (a) 順序逆転変異 2 RED (preserves/fr_deterministic 両側)・(b) pcore 死救出 非検出 (dead code 21 例目)。復元 MD5-VERIFIED 2 回 (固定版 md5 eed00df59afebb7e57c9a982e00b3e34)。strict 削除 2・追加 1 → net -1 で 1345 全緑 (機械検算 1346-1)。api 49・replay 16 全緑・警告 0・fmt 自己起因 0 (seal ゲート2 機械値 HEAD 1/現 1/自己起因 0 = artifact のみ)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。

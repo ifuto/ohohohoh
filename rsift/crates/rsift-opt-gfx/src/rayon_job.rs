@@ -1,22 +1,18 @@
 
 //! Rayon work-stealing Chunk Meshing - 32セクション並列
+//!
+//! 【wave 172 FR 捕捉 110/111】旧 `build_pcore_threadpool` は doc「P-Core
+//! 専用・core_affinity クレートでピン留め」と称したが affinity 実装も
+//! core_affinity dep (Cargo.toml/vendor 皆無) もなく名実共に虚構、`RayonJobConfig`
+//! (threads 読み書きゼロ) と `parallel_for_each_chunk` (薄ラッパ) は全クレート
+//! 全域で呼出消費者ゼロの未配線 → 3 件を不可能証明削除 (FH 捕捉 92 恒値
+//! スタブ削除・EJ-2 判例)。wiring が実消費する parallel_map_chunks 単機能へ
+//! 縮退 (truth: 実稼働しているのは map のみ)。
 
 use rayon::prelude::*;
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RayonJobConfig {
-    pub threads: usize,
-}
-
-pub fn parallel_for_each_chunk<I, F>(chunks: I, f: F)
-where
-    I: IntoParallelIterator,
-    F: Fn(I::Item) + Sync + Send,
-    I::Item: Send,
-{
-    chunks.into_par_iter().for_each(f);
-}
-
+/// チャンク列を並列 map。`IntoParallelIterator` の indexed collect で順序保持
+/// (wiring:863 の morton 局所性コード生成が実消費 = インデックス対応が契約)。
 pub fn parallel_map_chunks<I, T, F>(chunks: I, f: F) -> Vec<T>
 where
     I: IntoParallelIterator,
@@ -27,19 +23,9 @@ where
     chunks.into_par_iter().map(f).collect()
 }
 
-/// P-Core専用固定スレッドプール構築 (core_affinityクレートでピン留め)
-pub fn build_pcore_threadpool(num_threads: usize) -> rayon::ThreadPool {
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads)
-        .thread_name(|i| format!("rsift-pcore-{}", i))
-        .build()
-        .expect("Failed to build p-core pool")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn parallel_map_preserves_order_and_values() {
@@ -51,20 +37,16 @@ mod tests {
         }
     }
 
+    /// 【wave 172 FR】morton 用途の truth: 同一入力の 2 回実行は indexed
+    /// collect で bit 完全一致 (順序保持の決定論 pin)。green-today pin。
     #[test]
-    fn parallel_for_each_visits_every_item_once() {
-        let seen = AtomicUsize::new(0);
-        parallel_for_each_chunk(0..1_000usize, |_| {
-            seen.fetch_add(1, Ordering::Relaxed);
-        });
-        assert_eq!(seen.load(Ordering::Relaxed), 1_000);
-    }
-
-    #[test]
-    fn pcore_pool_named_and_sized() {
-        let pool = build_pcore_threadpool(1);
-        assert_eq!(pool.current_num_threads(), 1);
-        let name = pool.install(|| std::thread::current().name().map(|s| s.to_string()));
-        assert_eq!(name.as_deref(), Some("rsift-pcore-0"));
+    fn fr_map_deterministic_twice_and_indexed_order() {
+        let keys: Vec<(i32, i32)> = (-200i32..200).map(|i| (i * 7, i * -13)).collect();
+        let f = |(cx, cz): (i32, i32)| (cx as u64) & 1023 | (((cz as u64) & 1023) << 10);
+        let a = parallel_map_chunks(keys.clone(), f);
+        let b = parallel_map_chunks(keys.clone(), f);
+        assert_eq!(a, b, "2 回実行 bit 完全一致");
+        let expect: Vec<u64> = keys.into_iter().map(f).collect();
+        assert_eq!(a, expect, "シリアル参照と順序完全一致");
     }
 }
