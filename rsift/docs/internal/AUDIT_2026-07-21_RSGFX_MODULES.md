@@ -9066,7 +9066,7 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   未採、本 wave は検出可能系統で構成)。
 - fmt: boot_splash 自己起因 0 (機械分離: 31 分行集合が HEAD 原生集合に
   完全包含 = HEAD 原生完全保持、use 並び+テスト長行 hunk 2 件由来)、
-  render_pipeline 自己起因 1 正準化 (use 位置) で逸脱 0。fmt: seal ゲート2
-  機械値は下記コミット時記載へ整合。
+  render_pipeline 自己起因 1 正準化 (use 位置) で逸脱 0。fmt: seal ゲート2 機械値 boot_splash 5/5/0・
+  render_pipeline 0/0/0 (HEAD 原生 5 行完全保持・自己起因 0)。
 
 ## wave 180 以降の監査計画
