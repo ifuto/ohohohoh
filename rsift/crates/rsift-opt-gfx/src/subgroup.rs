@@ -175,4 +175,24 @@ mod strict_tests {
         assert!(out.iter().all(|&x| x == 64.0), "2.0×32 = 64.0");
         assert_eq!(out[0].to_bits(), 0x42800000);
     }
+
+    /// 【wave 187 GG フェーズ2 回収】dead code 系採番以前枠外同型 (wave 140
+    /// EN-2: 消費者ゼロの Vec3/Vec4 + Add/Sub/Mul trait 実装 完全装飾削除、
+    /// 保持不可能証明付き — EP-2(d)/ES-2(d)/ET-2(b) 同型は wave 185 GE で
+    /// 回収済、EN-2 は系譜原本)。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn gg_removed_subgroup_vec_lexeme() {
+        let src = include_str!("subgroup.rs");
+        for lex in [
+            concat!("struct ", "Vec", "3"),
+            concat!("struct ", "Vec", "4"),
+            concat!("impl ", "Vec", "3"),
+            concat!("impl ", "Vec", "4"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "EN-2 削除語彙の宣言形復活を検出 (wave 187 GG lexeme pin)"
+            );
+        }
+    }
 }

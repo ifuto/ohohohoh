@@ -410,4 +410,53 @@ mod tests {
             naga_validate(src).unwrap_or_else(|e| panic!("runtime WGSL 検証失敗 [{name}]: {e}"));
         }
     }
+
+    /// 【wave 187 GG フェーズ2 回収】EL-1(d) / EO(e) 同型検出空白の回収 —
+    /// wave 138/141 の adversarial で gpu_runtime 登録の free fn→const revert
+    /// は「同一 &str の機能等価・参照様式差のみ」で非検出と誠実記録されて
+    /// いた。free fn 呼出形は「WGSL 取得の唯一の公式アクセスポイント」
+    /// (wave 161 FG 捕捉 90 宣言) であることが本 pin で機械固定される。
+    /// 対象は free fn 様式統一の 5 モジュール (ddgi/tbdr_hints/shadow_lod/
+    /// fragment_ray_box/frame_pacing)。const 名の直接参照復活は意味的に
+    /// 等価でも契約逸脱として RED にする。
+    #[test]
+    fn gg_wgsl_registration_access_point_pin() {
+        let src = include_str!("gpu_runtime.rs");
+        for (module, call, banned_const) in [
+            (
+                "ddgi",
+                "ddgi::wgsl_source()",
+                concat!("ddgi::DD", "GI_WGSL"),
+            ),
+            (
+                "tbdr_hints",
+                "tbdr_hints::wgsl_source()",
+                concat!("tbdr_hints::TBDR", "_HINTS_WGSL"),
+            ),
+            (
+                "shadow_lod",
+                "shadow_lod::wgsl_source()",
+                concat!("shadow_lod::SHADOW", "_LOD_WGSL"),
+            ),
+            (
+                "fragment_ray_box",
+                "fragment_ray_box::wgsl_source()",
+                concat!("fragment_ray_box::FRAGMENT", "_RAY_BOX_WGSL"),
+            ),
+            (
+                "frame_pacing",
+                "frame_pacing::wgsl_source()",
+                concat!("frame_pacing::FRAME", "_PACING_WGSL"),
+            ),
+        ] {
+            assert!(
+                src.contains(call),
+                "{module}: free fn アクセスポイント経由の登録が必須 (wave 187 GG pin)"
+            );
+            assert!(
+                !src.contains(banned_const),
+                "{module}: const 直接参照の復活を検出 (EL-1(d)/EO(e) 同型、wave 187 GG pin)"
+            );
+        }
+    }
 }

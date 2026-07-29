@@ -9328,12 +9328,54 @@ golden 2 本が責務)・EW (a) (module dual pin が責務)・EZ (a) wiring Acti
   assert 1 行の過長は rustfmt 忠実形へ in-place 正規化後に 0)。
 - seal 全 6 ゲート PASS・digest 004c1cf5fb17bfe8 rows=357 不変。
 
-## wave 187 以降のフェーズ 2 継続計画
-- loose pin の golden bit 化 残系列の精読継続: subgroup (d) reduce max→min /
-  (e) .max(0.0) (GPU/WGSL 構造、CPU 検査不可なら不可能証明の形式化)、EW (a)
-  wiring closure revert (wiring レベル pin 新設可否)、FF consistency pin
-  (golden 2 本との役割再整理)、DH/DJ/DK 証明済中性系の証明 writing 拡充。
-- EL-1(d)/EO(e)/EN-2 等、dead code 系採番以前の同型誠実記録 (wave 142 より前)
-  の棚卸継続回収。
+## wave 187 (GG) — dead code 系採番以前枠外同型の棚卸回収: EN-2 subgroup Vec3/Vec4 + EL-1(d)/EO(e) WGSL アクセスポイント (2026-07-29)
+
+「wave 142 より前の同型誠実記録」の網羅スキャン (wave 130-147 節を機械精読):
+EP-2(d)/ES-2(d)/ET-2(b) は wave 185 GE で回収済、EU-3(c) 以降は dead code
+採番連番で回収済、FF ddgi (d) も 9 例目として回収済。残存は大元の
+**EN-2 (wave 140 subgroup Vec3/Vec4+trait 完全装飾削除、revival 変異自体は
+当時未実施だが同型非検出クラス)** と、別系譜の **EL-1(d) (wave 138) /
+EO(e) (wave 141) gpu_runtime WGSL 登録の free fn→const revert 非検出**
+(同一 &str 機能等価・参照様式差のみ) の 2 系列と機械確定。
+
+- **GG-1 [低] subgroup.rs EN-2 lexeme pin** (gg_removed_subgroup_vec_lexeme):
+  `struct Vec3`/`struct Vec4`/`impl Vec3`/`impl Vec4` の split concat!
+  宣言形検出 (doc 注記は接頭限定で範囲外、現言及は module doc 2 行のみを
+  grep 機械確認)。
+- **GG-2 [低] gpu_runtime.rs WGSL 登録アクセスポイント pin**
+  (gg_wgsl_registration_access_point_pin): free fn 様式統一の 5 モジュール
+  (ddgi/tbdr_hints/shadow_lod/fragment_ray_box/frame_pacing) について
+  登録が `wgsl_source()` 呼出形であること (wave 161 FG 捕捉 90「唯一の公式
+  アクセスポイント」宣言の機械固定) と、const 直接参照 (DDGI_WGSL 等)
+  の不在を pin (禁止語彙は split concat! で自己言及 vacuous 回避、
+  現在の直接参照ゼロを grep 機械確認済)。意味的に等価でも様式差は
+  契約逸脱として RED。
+- adversarial 3 系統 (復元基線は波修正後 md5、wave 186 自己照査の
+  儀式要件適用): (α) subgroup `pub struct Vec3`+impl 宣言形復活 →
+  **1 RED** (gg_removed_subgroup_vec_lexeme)・(β) tbdr_hints 登録
+  free fn→TBDR_HINTS_WGSL revert → **1 RED** (gg pin)・(γ) shadow_lod
+  登録 free fn→SHADOW_LOD_WGSL revert → **1 RED** (gg pin)。
+  復元 MD5-VERIFIED×3。
+- **環境再構築の誠実記録 (4 度目)**: wave 挿入直後に toolchain
+  (/home/user/rust/bin 等) が消失・HEAD が base (64294c6) 浅 clone に回帰 →
+  ワークツリー残存を md5 機械確認 (wave 187 編集 2 ファイル無傷) →
+  fetch origin + git reset --mixed FETCH_HEAD で HEAD=faa79c1 へ整列 →
+  restore-env.sh で toolchain+vendor 復元 (rustc 1.94.1) → rspeed 再構築。
+  消失コミット発生せず (wave 編集は全て未コミット作業ツリー内)。
+- strict +2 net **1404 全緑** (機械検算 1402+2、2 pin とも個別フィルタ確認 +
+  隣接 wave_width_contract/naga_all_runtime_dispatched_wgsl_validate 全緑)。
+  警告 0。fmt: seal 同一条件で ddgi タプル 1 行の過長を捕捉 → rustfmt
+  忠実形へ in-place 正規化後、seal ゲート2 機械値
+  **gpu_runtime.rs 0/0/0・subgroup.rs 0/0/0 (全 PASS)**。
+- seal 全 6 ゲート PASS・digest 004c1cf5fb17bfe8 rows=357 不変。
+
+## wave 188 以降のフェーズ 2 継続計画
+- 構造的限界系列の不可能証明形式化: EN (d) wiring subgroup reduce max→min /
+  (e) .max(0.0) (GPU/WGSL 供給構造由来)、FB (f) material read-back
+  (round-trip 値同一性)、EW (a) wiring closure revert (wiring レベル pin
+  新設可否の最終判定)、DH-追補 (a')(b')(c') / DJ-3 (c) / DS (d) / EZ (a)
+  (証明済み中性の proof 形式化)、FF consistency pin 分類記述の棚卸整理。
+- 上記が尽きれば全 162 モジュール × adversarial 非検出系列の閉鎖 = フェーズ 2
+  完遂宣言。
 - CRLF 残存 10 ファイル・stray copy (rsift/rsift/rsift-opt-gfx) 削除は
   ユーザー管理資産確認待ちで継続保留。
