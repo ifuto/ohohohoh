@@ -13,6 +13,17 @@
 //! 消費者ゼロだった vsync snap/平滑値へ Pacing 帳簿の実消費者を配線し、
 //! `refresh_hz` を private+getter へ (pub 全書込み可能フィールドは
 //! interval キャッシュとの不整合を許す契約逸脱口)。
+//!
+//! 【wave 186 GF (2026-07-29)】捕捉 128 [中]: `next_present_time` が
+//! 「now = 計算済み第 k 境界」の丸め窓で 1 インターバル全分の提示スキップ
+//! を返し得た段階丸めを、n 基準再計算へ根治 (probe gf_probe2/3 機械確定、
+//! 67116 corpus 中 2574 件 + 段階加算ドリフト 4 件、60Hz でも k=62 等)。
+//! 併せて loose pin 3 件を golden bit 化: (a2) 第 1 補正ループ発火窓
+//! (t_k+1ulp・商下側丸め) pin、(b) EMA α module 厳密 golden。(a) ceil→floor
+//! の wave 161「構造吸収」記述は機械訂正: 旧実装は bit 発散 4422/67116 で
+//! golden 不在の loose 事例 (検出可能だった)、根治後は n 基準の単一計算
+//! 単位で ceil≡floor の真の observational equivalence を probe 証明
+//! (67116 corpus 発散 0)。power_policy 側にも ε 窓 pin (EZ (e) 回収)。
 
 pub struct FramePacer {
     /// 目標リフレッシュレート (Hz)。private 化 (wave 161 FG 捕捉 91):
@@ -67,16 +78,22 @@ impl FramePacer {
         if !(n >= 1.0) {
             n = 1.0; // NaN や負ギャップは旧ループと同一の帰着 (last + 1 interval)
         }
-        let mut t = last_present + n * interval;
-        // 浮動小数点の端数ズレだけを補正 (高々 2 回ずつで収束)。
-        while t < now {
-            t += interval;
+        // 浮動小数点の端数ズレだけを n 基準で補正 (高々 2 回ずつで収束)。
+        // 【wave 186 GF 捕捉 128】旧実装は段階加算 (`t += interval`) と減算
+        // guard (`t - interval >= now`) の二重丸めで、「now が計算済み第 k
+        // 境界そのもの」の丸め窓 (例: 23.976Hz k≡0 mod 3, 60Hz k=62 等) に
+        // 落ちると 1 インターバル全分の提示スキップ (約 16.7ms@60Hz) を返し
+        // 得た (probe gf_probe2/3 機械確定: corpus 67116 中 2574 件)。
+        // 各反復で `last + n*interval` を再計算して段階丸めの累積を排除し、
+        // 出力を「計算済み境界の最早もの」に厳密化する (新旧差分は全て
+        // スキップ解消方向 = 遅れることはない、probe 機械検証済)。
+        while last_present + n * interval < now {
+            n += 1.0;
         }
-        while n > 1.0 && t - interval >= now {
-            t -= interval;
+        while n > 1.0 && last_present + (n - 1.0) * interval >= now {
             n -= 1.0;
         }
-        t
+        last_present + n * interval
     }
 
     pub fn smoothed_frame_ms(&self) -> f64 {
@@ -240,5 +257,109 @@ mod tests {
                 "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
             );
         }
+    }
+
+    /// 【wave 186 GF 捕捉 128 TDD】now が「計算済み第 k 境界そのもの」に一致する
+    /// 入力では、答えはその境界自身でなければならない (最早境界の一意性)。
+    /// 旧実装は ceil 推定後の段階減算 guard (`t - interval >= now`) の二重丸めで
+    /// この丸め窓に落ち、1 インターバル全分 (約 16.7ms@60Hz・41.7ms@23.976Hz) の
+    /// 提示スキップを返した — 例: 23.976Hz k=27 で 0x4091988127350B89 ではなく
+    /// 0x40923F568779614B (= last + 28·interval の段階加算系) を返していた
+    /// (probe gf_probe2/3 機械確定、corpus 67116 中 2574 件、60Hz でも k=62 等)。
+    /// golden bits は根治版 (n 基準再計算、wave 186 GF-1) の機械値。
+    #[test]
+    fn gf_boundary_exact_returns_computed_boundary_strict() {
+        // 23.976Hz: interval = 1001/24 の f64
+        let p = FramePacer::new(23.976);
+        let i = p.frame_interval;
+        assert_eq!(i.to_bits(), 0x4044_DAAC_088A_B856, "interval bits (probe)");
+        for (k, want_now) in [
+            (27u32, 0x4091_9881_2735_0B89u64),
+            (30u32, 0x4093_8D01_4802_0CD1u64),
+            (99u32, 0x40B0_2121_0E9B_4A93u64),
+        ] {
+            let now = (k as f64) * i; // 第 k 計算済み境界 (bits 一致を仕込む)
+            assert_eq!(now.to_bits(), want_now, "k={k}: 境界 bits (probe)");
+            let t = p.next_present_time(0.0, now);
+            assert_eq!(
+                t.to_bits(),
+                now.to_bits(),
+                "k={k}: now が計算済み境界なら答えはその境界自身 (捕捉 128 丸め窓スキップ拒否)"
+            );
+        }
+        // 60Hz (default 経路, last=0) k=62: 旧実装は 0x4090680000000000
+        // (1 interval スキップ) を返した (probe gf_probe3 機械確定)。
+        let p60 = FramePacer::new(60.0);
+        let i60 = p60.frame_interval;
+        let now60 = 62.0f64 * i60;
+        assert_eq!(
+            now60.to_bits(),
+            0x4090_2555_5555_5556,
+            "60Hz k=62 境界 bits (probe)"
+        );
+        let t60 = p60.next_present_time(0.0, now60);
+        assert_eq!(
+            t60.to_bits(),
+            now60.to_bits(),
+            "60Hz k=62 でも境界自身を返す (1 インターバル全分スキップ拒否)"
+        );
+    }
+
+    /// 【wave 186 GF (a2) 回収】第 1 補正ループ (undershoot 側) の発火 bit 域を
+    /// pin 化 — wave 161 FG adversarial (a2) は「現 corpus 外防御」として非検出
+    /// だったが、発火窓は `now = t_k + 1 ulp` かつ商丸め下側 (probe gf_probe2
+    /// (ii) 機械特定)。loop1 除去変異で t = 0x40B62856C91363DB < now に退行し
+    /// 本 pin が RED 化することを adversarial で実証済み。
+    /// golden bits は根治版 (n 基準再計算) の機械値 (k=136, k=139)。
+    #[test]
+    fn gf_loop1_undershoot_window_strict() {
+        let p = FramePacer::new(23.976);
+        let i = p.frame_interval;
+        for (k, y_bits, want_t) in [
+            (136u32, 0x40B6_2856_C913_63DBu64, 0x40B6_520C_2124_794Cu64),
+            (139u32, 0x40B6_A576_D146_A42Du64, 0x40B6_CF2C_2957_B99Eu64),
+            (34u32, 0x4096_2856_C913_63DBu64, 0x4096_CF2C_2957_B99Eu64),
+        ] {
+            let y = f64::from_bits(y_bits);
+            assert_eq!(y, (k as f64) * i, "k={k}: 第 k 境界と一致 (設計前提)");
+            let now = f64::from_bits(y.to_bits() + 1); // t_k + 1 ulp
+            let t = p.next_present_time(0.0, now);
+            assert!(
+                t >= now,
+                "k={k}: 提示は未来になければならない (loop1 除去変異はここで RED)"
+            );
+            assert_eq!(
+                t.to_bits(),
+                want_t,
+                "k={k}: 次境界 t_{{k+1}} の厳密 bits (probe gf_probe3 機械値)"
+            );
+        }
+    }
+
+    /// 【wave 186 GF (b) 回収】EMA α=0.2 の module 厳密 golden — wave 161 FG
+    /// adversarial (b) α 0.2→0.5 は wiring bit pin のみ捕捉 (module 区間検査は
+    /// 検出不能と分類) だった loose 例を module golden bit 化で回収。
+    /// α 変異で s1/s2 双方が別 bits (probe gf_probe [2]: α=0.5 →
+    /// s1'=0x4030A22222222222, s2'=0x4040A88888888888) となり本 pin が RED。
+    #[test]
+    fn gf_module_ema_golden_bits_strict() {
+        let mut p = FramePacer::new(60.0);
+        assert_eq!(
+            p.smoothed_frame_ms().to_bits(),
+            0x4030_AAAA_AAAA_AAAB,
+            "初期値 = interval (1000/60, probe)"
+        );
+        p.record_frame(16.6);
+        assert_eq!(
+            p.smoothed_frame_ms().to_bits(),
+            0x4030_A740_DA74_0DA8,
+            "s1 = s0 + 0.2·(16.6 − s0) (probe gf_probe [2] 機械値)"
+        );
+        p.record_frame(50.0);
+        assert_eq!(
+            p.smoothed_frame_ms().to_bits(),
+            0x4037_529A_485C_D7BA,
+            "s2 = s1 + 0.2·(50 − s1) (probe gf_probe [2] 機械値)"
+        );
     }
 }

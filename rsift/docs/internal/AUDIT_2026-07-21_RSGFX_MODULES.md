@@ -9263,9 +9263,77 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   逸脱 0/0/0 (私の挿入ブロックのみ選択正規化で HEAD 原生を非改変)。
 - seal 全 6 ゲート PASS・digest 004c1cf5fb17bfe8 rows=357 不変。
 
-## wave 186 以降のフェーズ 2 継続計画
-- loose pin の golden bit 化 (フェーズ 2 残項目)。
+## wave 186 (GF) — loose pin の golden bit 化: frame_pacing (a)(a2)(b) + power_policy (e)、捕捉 128 発掘根治 (2026-07-29)
+
+棚卸スキャン (`非検出構造|検出不能|構造的非検出|理論上不検出` 36 件) を個別精読し
+回収可能系のみ選定: FG frame_pacing (a) ceil→floor / (a2) 第 1 補正ループ除去 /
+(b) α 0.2→0.5 (wiring のみ捕捉)、EZ power_policy (e) gate ε 削除。既回収
+(6388/6451 追設・EJ-4 golden 強化・dead code 系 wave 184/185 完遂) と不可能証明
+保持系 (DH/DJ/DK 証明済中性・subgroup (d)(e) GPU 構造・FF consistency pin (truth
+golden 2 本が責務)・EW (a) (module dual pin が責務)・EZ (a) wiring Active 限界)
+は対象外と機械分類。
+
+- **GF-1 [中] 捕捉 128 [中] (新発掘根治)**: wave 161 FG (a) ceil→floor を
+  「±1 補正ループが構造吸収」と記述していたが、rustc -O probe (gf_probe,
+  IEEE 754 厳密・暗算禁止) で **旧実装は 67116 corpus 中 4422 件で bit 発散**
+  = loose-corpus 非検出 (golden 不在) であり構造的等価ではなかったと機械訂正。
+  しかも発散の主形は **ceil 側が 1 インターバル全分遅れる提示スキップ**
+  (now = 計算済み第 k 境界で `t - interval >= now` の段階減算 guard が二重
+  丸めで不発 → 最早境界でなく t_{k+1} を返却): 23.976Hz k≡0 mod 3 系・
+  60Hz k=62 (now=0x4090255555555556 → 旧 0x4090680000000000) 等、
+  hz 別分布 probe 確定 (50Hz のみ 0)。現実運用系列 (16.7ms グリッド 60000
+  ステップ連続提示) では発散 0 = 稀な潜在欠陥を誠実記録。TDD RED
+  (gf_boundary_exact_returns_computed_boundary_strict が旧 0x40923F568779614B
+  で失敗を機械記録) → 根治: 段階加算/減算を廃し各反復で
+  `last + n*interval` を再計算 (段階丸め累積の排除)。新旧差分 2574 件 (全て
+  スキップ解消方向) + 段階加算ドリフト修正 4 件、根治後 ceil≡floor の真の
+  observational equivalence を probe で証明 (67116 corpus 発散 0)。
+- **GF-2 [低] (a2) 回収**: 第 1 補正ループの発火 bit 域を機械特定
+  (`now = t_k + 1 ulp` かつ商下側丸め、probe gf_probe2 (ii)) →
+  gf_loop1_undershoot_window_strict (k=34/136/139・y/now/golden 全て probe
+  bits) で pin 化。adversarial loop1 除去で RED 実証 (t=0x40B62856C91363DB
+  < now 退行を検出)。
+- **GF-3 [低] (b) 回収**: EMA α=0.2 module 厳密 golden
+  (gf_module_ema_golden_bits_strict: s1=0x4030A740DA740DA8・
+  s2=0x4037529A485CD7BA probe gf_probe [2] 機械値)。wiring only 捕捉
+  だった loose 例を module でも検出可能化。
+- **GF-4 [低] (e) 回収**: gate ε=1e-5 窓下端 pin
+  (gf_gate_epsilon_lower_edge_strict): acc = need − 1 ulp (0x3D088888)
+  は ε あり true / なし false (gap = 2^-28 = 3.725290298e-9 < 1e-5、
+  probe [1] 機械確定: need=0x3D088889, ε=0x3727C5AC, 余剰 −2^-28=0xB1800000)。
+  EZ (e) の「ε 不発区間設計」(need−4·dt==0 bits 一致) と相補的に窓上下を
+  閉じる。
+- **adversarial 5 系統** (bak+md5 基線・python assert 適用確認・毎回復元
+  md5 -c): (a) ceil→floor → **1402 全緑 = 非検出・証明済み中性** (根治で n
+  基準の単一計算単位を共有し真の等価化、probe 67116 corpus 発散 0 が証拠、
+  DH/DK 系と同型の誠実記録)・(b) loop1 除去 → **1 RED** (gf_loop1)・
+  (c) loop2 除去 → **1 RED** (gf_boundary、loop2 除去の検出可能化は従来
+  未検証のボーナス回収)・(d) α 0.2→0.5 → **2 RED** (module gf_module_ema +
+  wiring fg_pacing_report_pins_nonvacuous 既存 bit pin — wave 161 記録
+  「wiring bit pin のみ捕捉」と一致)・(e) ε 削除 → **1 RED**
+  (gf_gate_epsilon、ε 不発区間設計の gate_accumulates_exact_count_strict 等は
+  緑維持 = 検出範囲が設計通り)。復元 MD5-VERIFIED×5。
+- **自己照査の誠実記録**: adversarial 儀式のバックアップを波編集前に採取
+  していた誤りで、MUT-A 復元時に wave 編集 (4 pin + 根治 + doc) が全て
+  巻き戻る事故 → MUT-B の python assert (loop1 count=0) が変異未適用を
+  拒否し md5 照合 forensics で巻き戻りを機械確定。編集を同一内容で再適用、
+  復元基線を波修正後 md5 (fp=8e7a1a70630fb89d0dcec96669f4b366・
+  pp=52cd71c7fe6876b1f05679f5dad38f11) に再設定して全 5 系統を最初から
+  やり直し (バックアップ採取時点と復元基線の同一性を今後の儀式要件に明文化)。
+- strict +4 net **1402 全緑** (機械検算 1398+4、4 pin 全て個別フィルタ確認 +
+  frame_pacing 系 15・power_policy 系 14 全緑)。api 49・replay 16 全緑・
+  警告 0。wiring pacing golden (fg_pacing_report_pins_nonvacuous) は修正
+  前後とも緑 = 修正の波及ゼロを機械確認。fmt (seal ゲート2 機械値、
+  全 PASS): frame_pacing.rs 0/0/0・power_policy.rs 0/0/0 (私の挿入
+  assert 1 行の過長は rustfmt 忠実形へ in-place 正規化後に 0)。
+- seal 全 6 ゲート PASS・digest 004c1cf5fb17bfe8 rows=357 不変。
+
+## wave 187 以降のフェーズ 2 継続計画
+- loose pin の golden bit 化 残系列の精読継続: subgroup (d) reduce max→min /
+  (e) .max(0.0) (GPU/WGSL 構造、CPU 検査不可なら不可能証明の形式化)、EW (a)
+  wiring closure revert (wiring レベル pin 新設可否)、FF consistency pin
+  (golden 2 本との役割再整理)、DH/DJ/DK 証明済中性系の証明 writing 拡充。
 - EL-1(d)/EO(e)/EN-2 等、dead code 系採番以前の同型誠実記録 (wave 142 より前)
-  の棚卸継続回収 (本 wave で EP-2(d)/ES-2(d)/ET-2(b) の直近 3 件を回収)。
+  の棚卸継続回収。
 - CRLF 残存 10 ファイル・stray copy (rsift/rsift/rsift-opt-gfx) 削除は
   ユーザー管理資産確認待ちで継続保留。

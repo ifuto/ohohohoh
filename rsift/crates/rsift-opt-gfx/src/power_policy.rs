@@ -398,6 +398,33 @@ mod tests {
         );
     }
 
+    /// 【wave 186 GF フェーズ2 回収】ε=1e-5 窓の厳密 pin — wave 154 EZ
+    /// adversarial (e) gate ε 削除は「golden が need−4·dt==0 bits 一致の
+    /// ε 不発区間設計」で非検出構造と誠実記録されていた loose 例。
+    /// 窓の下端単発: acc = need − 1 ulp (0x3D088888) は ε ありで true・
+    /// なしで false (gap = 2^-28 = 3.725290298e-9 < 1e-5、probe gf_probe
+    /// [1] 機械確定: need=0x3D088889, ε=0x3727C5AC)。ε 削除変異で RED。
+    /// 余剰引継ぎも厳密: (need−1ulp) − need = −2^-28 = 0xB1800000。
+    #[test]
+    fn gf_gate_epsilon_lower_edge_strict() {
+        let mut p = PowerPolicy::new(PowerLimits::default());
+        p.on_input(0.0);
+        p.mode_tick(120.0, true, false); // Idle → need = 1/30 = 0x3D088889
+        let mut acc = 0.0f32;
+        let need = 1.0f32 / 30.0f32;
+        assert_eq!(need.to_bits(), 0x3D08_8889u32, "need bits (probegf)");
+        let dt = f32::from_bits(need.to_bits() - 1); // need − 1 ulp
+        assert!(
+            p.frame_gate(&mut acc, dt, 30),
+            "need−1ulp は ε=1e-5 の窓内で描画到達 (ε 削除変異はここで RED)"
+        );
+        assert_eq!(
+            acc.to_bits(),
+            0xB180_0000u32,
+            "余剰 = −2^-28 probe 機械値 (ε 窓下端の引継ぎ)"
+        );
+    }
+
     /// 【wave 185 GE フェーズ2 回収】dead code 系 6 例目 (wave 154 EZ adversarial (b)
     /// 削除系 4 構造 (render()/with_frame_dt()/mode()/tick_frame) 復活 非検出、EZ-3 で
     /// 消費者ゼロ不可能証明削除済、wiring:684 に削除記録) の lexeme pin 化。
