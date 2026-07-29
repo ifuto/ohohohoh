@@ -109,4 +109,22 @@ mod strict_tests {
         assert_eq!((s.current_stage.current, s.current_stage.total), (5, 0), "値は検証せず透過保管");
         s.render_splash_frame(); // total==0 の除算ガード経路
     }
+
+    /// 【wave 179 FY】truth path 拡張 pin (green-today): update_progress の
+    /// 値透過保管は超過比も検証なし (200/100 → pct 200% 計算 truth)、
+    /// activate は冪等、未 activate での finish も panic なし・inactive 維持。
+    #[test]
+    fn fy_truth_paths_extended() {
+        let mut s = RsiftModernBootSplash::new();
+        s.finish_and_fade_out(); // 未 activate finish: no panic 契約
+        assert!(!s.is_active);
+        s.activate_override();
+        s.activate_override(); // 冪等呼出し
+        assert!(s.is_active);
+        s.update_progress("overflow", 200, 100); // 超過比も透過保管
+        assert_eq!((s.current_stage.current, s.current_stage.total), (200, 100));
+        s.render_splash_frame(); // pct=200.0 でも panic しない (ゼロ除算ガード外の正常経路)
+        s.finish_and_fade_out();
+        assert!(!s.is_active);
+    }
 }

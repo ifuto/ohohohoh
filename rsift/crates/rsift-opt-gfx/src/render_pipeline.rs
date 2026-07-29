@@ -6,6 +6,7 @@ use crate::binary_greedy_meshing::{
     demo_column_palettes, mesh_chunk_column, mesh_chunk_column_pull_world, SectionPalette,
     SECTION_SIZE,
 };
+use crate::boot_splash::RsiftModernBootSplash;
 use crate::chunk_cull::{ChunkCullPass, CullVerdict};
 use crate::chunk_mesh::{BuiltChunkMesh, MultithreadedChunkBuilder};
 use crate::cpu_occlusion::CpuMaskedOccluder;
@@ -163,6 +164,14 @@ struct ChunkBuildArtifacts {
 
 impl RsiftRenderPipeline {
     pub fn new(game_dir: &Path) -> Self {
+        // 【wave 179 FY-1】BootSplash 実消費配線 (捕捉 124 §7 消化 41):
+        // 消費者ゼロ module を Mojang 画面差し替えはしない誠実 logger として
+        // renderer 初期化の実イベントに連動。3 ステップは本関数で実際に行う
+        // 初期化段 (profile 検出 / サブシステム構築 / assembly 完結) に対応。
+        // GPU splash ではなく console tracing のみ (module doc truth 維持)。
+        let mut boot_splash = RsiftModernBootSplash::new();
+        boot_splash.activate_override();
+        boot_splash.update_progress("Detecting hardware profile", 1, 3);
         let hw = AdaptivePerfEngine::hardware();
         let profile = AdaptivePerfEngine::render_profile(hw);
         let feather = profile.feather.clone();
@@ -185,6 +194,7 @@ impl RsiftRenderPipeline {
                     .label()
             );
         }
+        boot_splash.update_progress("Building renderer subsystems", 2, 3);
         let texture_budget = TextureBudget::from_profile(
             feather.enabled,
             feather.compressed_textures,
@@ -197,6 +207,9 @@ impl RsiftRenderPipeline {
             feather.flat_palette_priority,
             feather.svo_far_only,
         );
+        boot_splash.update_progress("Completing pipeline assembly", 3, 3);
+        boot_splash.render_splash_frame();
+        boot_splash.finish_and_fade_out();
         Self {
             profile: profile.clone(),
             feather: feather.clone(),
@@ -1589,6 +1602,31 @@ mod tests {
             "camera (24,0) 追従 → tx 4,4,4,5,5,5,5,6 (ty=2) で 3 タイル (旧 0,0 固定は clamp 集約 1)"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 【wave 179 FY-1 配線 pin】boot_splash 実消費配線の語彙 pin (tracing
+    /// 出力は value 観測不能のため語彙 pin 代替とする誠実記録、FE 判例)。
+    /// 自己言及 vacuous 化回避のため検出語彙は分割記述 (配線除去変異で RED
+    /// になることを adversarial で逆証明)。
+    #[test]
+    fn fy_boot_splash_wired_lexeme() {
+        let src = include_str!("render_pipeline.rs");
+        assert!(
+            src.contains(concat!("boot_splash.", "activate_override()")),
+            "配線語彙: activate 不在"
+        );
+        assert!(
+            src.contains(concat!("boot_splash.", "update_progress(")),
+            "配線語彙: update 不在"
+        );
+        assert!(
+            src.contains(concat!("boot_splash.", "render_splash_frame()")),
+            "配線語彙: render 不在"
+        );
+        assert!(
+            src.contains(concat!("boot_splash.", "finish_and_fade_out()")),
+            "配線語彙: finish 不在"
+        );
     }
 
     /// M-1 回帰: カメラ速度は実変位計測 (旧実装は 6.0/delta の虚偽一定式で

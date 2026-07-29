@@ -9037,3 +9037,36 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   時記載へ整合。
 
 ## wave 179 以降の監査計画
+### wave 179 (FY) boot_splash.rs (112 行) — 消費者ゼロ誠実 logger の真配線化
+- census 機械確定: BootSplash 系は lib.rs:7 pub mod + :76 pub use のみで
+  全クレート内参照ゼロ (step_name/BootSplash の他ファイル参照ゼロ)、
+  module strict_tests 3 本 (default 厳密 pin/lifecycle/ゼロ除算ガード) のみ
+  が消費者。native_loader (rsift-api) 実ロード経路への crate 跨ぎ配線は
+  dep 追加+lockfile 変更の大型リスクで見送り (誠実記録)、crate 内真実
+  イベント (render_pipeline::new() 実初期化) への配線を採用。
+- 捕捉 124 [小] (FY-1 §7 消化 41): render_pipeline::new() に 3 段 truth
+  配線 (Detecting hardware profile 1/3 → Building renderer subsystems
+  2/3 → Completing pipeline assembly 3/3 + render_splash_frame +
+  finish_and_fade_out)。ステップ区切りは本関数の実作業 truth に対応
+  (profile 検出/caps・feather 報告/texture budget・render_graph・lod 構築/
+  Self 返却直前) で虚構区切りに非ず。use 配置は rustfmt ASCII ソート
+  (billboard→binary→boot) で私の初回挿入位置 (billboard 直後) が自己起因
+  逸脱 1 件 → binary_greedy_meshing ブロック直後へ正準化 (ソート直感
+  誤りの誠実記録)。
+- strict +2 net 1363 全緑 (機械検算 1361+2): fy_boot_splash_wired_lexeme
+  (render 側配線語彙 pin、value 観測不能誠実記録・split concat! vacuous
+  回避) + fy_truth_paths_extended (透過保管超過比 200/100・冪等 activate・
+  未 activate finish no panic 契約 green-today)。api 49・replay 16・警告 0。
+- adversarial 3 系統 1/1/2 全検出: (a) render_splash_frame() 呼出削除 →
+  lexeme pin RED 1 (render 語彙消失)・(b) update_progress step_name 空化
+  → activate_update_finish_lifecycle RED 1・(c) finish の inactive 化除去
+  → RED 2 (lifecycle + fy_truth_paths)。復元 MD5-VERIFIED 3 回 (boot_splash
+  bf490d63a1026df95f88fcb0e03457fb・render_pipeline
+  c584baab4a2922641e180dde457bd560)。非検出 0 (dead code カウンタ据置 26
+  未採、本 wave は検出可能系統で構成)。
+- fmt: boot_splash 自己起因 0 (機械分離: 31 分行集合が HEAD 原生集合に
+  完全包含 = HEAD 原生完全保持、use 並び+テスト長行 hunk 2 件由来)、
+  render_pipeline 自己起因 1 正準化 (use 位置) で逸脱 0。fmt: seal ゲート2
+  機械値は下記コミット時記載へ整合。
+
+## wave 180 以降の監査計画
