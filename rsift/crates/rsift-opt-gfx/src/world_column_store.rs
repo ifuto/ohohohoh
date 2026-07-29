@@ -224,7 +224,16 @@ impl WorldColumnStore {
             let world_sy = want_base + i as i32;
             let idx = world_sy - col.base_section_y;
             if idx >= 0 && (idx as usize) < col.sections.len() {
-                out[i] = col.sections[idx as usize].decode();
+                let sec = &col.sections[idx as usize];
+                // 【wave 177 FW-1】air セクションは decode を skip (空気の
+                // decode は全 0 で `out[i]` 初期値と逐語一致、数学的等価)。
+                // 等価証明: CompactSection::is_air()=true ⟹ decode()≡[0;VOL]
+                // — Single(0) は定義上全 0・Rle is_empty()=全 run block 0 で
+                // fill 対象は全て 0 (空 runs は旧 decode 契約 panic、こちらは
+                // 頑健に全 0)。any フラグ (範囲重複 truth) は不変。
+                if !sec.is_air() {
+                    out[i] = sec.decode();
+                }
                 any = true;
             }
         }
