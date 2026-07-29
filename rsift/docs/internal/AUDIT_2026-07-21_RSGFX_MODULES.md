@@ -8968,3 +8968,15 @@ census grep: BumpArena=wiring:393 保持/:553 new(4MiB)/:869 reset/:880 alloc_sl
 - **FU-1 [低] 捕捉 115 [小]**: §7 消化 37。used() 消費者ゼロ → report.bump_used 実計測配線 (morton 実確保バイト truth、reset 周期の当該 tick 値)。
 
 rq fu_bump 全 assert 通過 (max(k,1)*8: 5→40/3→24/0→8)。adversarial 3 系統: (a) report 0 化 1 RED・(b) alloc 引数 +1 変異 1 RED (used 40→48 偏差)・(c) capacity() 死救出 非検出 (dead code 24 例目)。復元 MD5-VERIFIED 3 回 (固定版 md5 wiring a36fd83cfb42e194265a9fc3a3da64a4、bump_arena 未変更で git restore ×1)。strict +1 net 1348 全緑 (機械検算 1347+1)。api 49・replay 16 全緑・警告 0。fmt: seal ゲート2 機械値 HEAD 0 / 現 0 / 自己起因 0。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
+
+## wave 176 (FV) gtao.rs 厳密監査 (2026-07-29)
+
+census grep: Gtao=wiring:440 フィールド参照/:599 `Gtao::new()`/:2348 `occlusion` 実消費 (tick_world_step_palette_reverse_ej_gtao_varies 等 strict 多数)。GTAO_WGSL=gpu_runtime:106 実消費 (定数経由)。4 module テスト (flat/nearby/closer_taller/multi_slice) は本体アルゴリズム陰性 HEAD 照合の範囲 pin で厳密性不足 → fv strict 追加。
+
+- **FV-1 [低] 捕捉 116 [小]**: directions/steps/radius フィールドが Default 定数保持のみで読み取り消費者ゼロ (CPU 参照は呼出し側 samples/slices 駆動でパラメータ非参照、外部読み取り全クレート grep ゼロ) → unit-struct 化 (`pub struct Gtao;`、EL-1 tbdr_hints 波 138 判例)。new() 返却型不変で wiring:599 無傷。
+- **FV-2 [低] 捕捉 117 [小]**: §7 消化 38。`wgsl_source()` 消費者ゼロ (GTAO_WGSL 直接消費で装飾) → 不可能証明削除。CPU/WGSL 語彙差分析: WGSL `pow(1.0 - occlusion, u.power)` 一般形 vs CPU `1.0 - occlusion` は power=1.0 特殊形で数学的に一致 (uniform 構築コード crate 内非存在 = GPU truth はソース登録のみ) → 陽性確定で fv_wgsl_power_special_form_vocabulary テキスト pin 化 (FE 判例: gtao.wgsl の atan2(h - center / clamp(maxHorizon / 1.5707963 / pow(1.0 - occlusion, u.power) 語彙含有)。
+- **FV-3 [低]**: adversarial 変異 A (clamp 除去) 初回非検出を捕捉 → 下端 truth pin fv_clamp_downward_returns_unoccluded 追加 (空 samples→max_horizon -π/2→ratio -1、負のみ→ratio -0.5、いずれも clamp で 0 → 1.0 返却、bit 0x3f800000 の f32 probe /tmp/fv_probe2 機械値 2 ケース pin) → 再変異で RED 1 検出可能化 (dead/loose pin 非検出 25 例から 1 回収)。
+
+strict: fv_slice_golden_bits (near=0x3dd75208・far=0x3ebfa8b8・flat=0x3f800000・avg=0x3e757d3a、f32 probe 導出、bit→10進は python 照合値 1037521416/1052747960/1065353216/1047887162) + fv_wgsl_power_special_form_vocabulary + fv_clamp_downward_returns_unoccluded、計 +3 net **1351** 全緑 (機械検算 1348+3)。adversarial 3 系統: (a) clamp 除去 1 RED (強化後)・(b) occlusion() avg→first slice 退化 1 RED (avg golden pin 検出)・(c) wgsl_source() 死救出 非検出 (dead code 25 例目、pub fn は lint 不検出)。復元 MD5-VERIFIED 3 回 (固定版 md5 ff15cbec5c404c7df6ce9aa5cc3be1ea)。api 49・replay 16 全緑・警告 0。
+
+自己照査誠実記録: (i) bit→10進変換暗算 3/4 誤りを python 機械照合で捕捉 (比較は順序保持で実害 0、正値で rq 再実行済); (ii) adversarial 初回 md5 -c を復元前に実行 → FAILED ガード検出、bak 復元後 MD5-VERIFIED; (iii) fmt 正準化は 2 段 (初回 edit が impl 閉じ `}` 前の空行を見落とし、diff 再採点で 54d54 を自己検出・確定修正)。fmt: seal ゲート2 機械値 HEAD 逸脱 0/現 逸脱 0/自己起因 0 (手計測 diff でも artifact のみ、正準化 2 段経過後)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。

@@ -6,27 +6,17 @@
 //! run at half resolution. The CPU side is a faithful single-slice reference
 //! used by the tests; the WGSL does the full multi-direction integral.
 
-#[derive(Clone, Copy, Debug)]
-pub struct Gtao {
-    /// Number of view directions integrated around the pixel.
-    pub directions: u32,
-    /// Sample count per direction.
-    pub steps: u32,
-    /// World-space AO radius.
-    pub radius: f32,
-}
-impl Default for Gtao {
-    fn default() -> Self {
-        Self {
-            directions: 4,
-            steps: 8,
-            radius: 1.0,
-        }
-    }
-}
+/// GTAO CPU 参照。【wave 176 FV 捕捉 116】旧 directions/steps/radius
+/// フィールドは Default 定数保持のみで読み取り消費者ゼロ (CPU 参照の
+/// occlusion()/slice_occlusion() は呼出し側の samples/slices 駆動で
+/// パラメータ非参照) → unit-struct 化 (EL-1 tbdr_hints 波 138 判例)。
+/// WGSL 側の radius/steps/power は uniform truth (gtao.wgsl) であり、
+/// 本 module は CPU 参照 (power=1.0 特殊形) と WGSL ソース供給に限定される。
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Gtao;
 impl Gtao {
     pub fn new() -> Self {
-        Self::default()
+        Gtao
     }
 
     /// Single-slice (1D) occlusion factor in [0,1] (1 = unoccluded).
@@ -61,10 +51,6 @@ impl Gtao {
         }
         sum / slices.len() as f32
     }
-
-    pub fn wgsl_source(&self) -> &'static str {
-        GTAO_WGSL
-    }
 }
 
 pub const GTAO_WGSL: &str = include_str!("../shaders/gtao.wgsl");
@@ -97,6 +83,54 @@ mod tests {
         let o_near = g.slice_occlusion(0.0, &near);
         let o_far = g.slice_occlusion(0.0, &far);
         assert!(o_near < o_far, "nearer occluder should occlude more");
+    }
+    /// 【wave 176 FV】slice_occlusion 厳密 bit golden (f32 probe 機械値、
+    /// bit→10進は python 照合): near(0.5,3.0)=0x3dd75208・far(2.0,3.0)=
+    /// 0x3ebfa8b8・flat=1.0=0x3f800000・avg=0x3e757d3a。green-today pin。
+    #[test]
+    fn fv_slice_golden_bits() {
+        let g = Gtao::new();
+        let near = vec![(0.5f32, 3.0f32), (1.0, 1.0)];
+        assert_eq!(g.slice_occlusion(0.0, &near).to_bits(), 0x3dd75208);
+        let far = vec![(2.0f32, 3.0f32), (4.0, 1.0)];
+        assert_eq!(g.slice_occlusion(0.0, &far).to_bits(), 0x3ebfa8b8);
+        let flat = vec![(1.0f32, 0.0f32), (2.0, 0.0)];
+        assert_eq!(g.slice_occlusion(0.0, &flat).to_bits(), 0x3f800000);
+        let avg = g.occlusion(0.0, &[near.clone(), far.clone()]);
+        assert_eq!(avg.to_bits(), 0x3e757d3a, "multi-slice 平均 (probe)");
+    }
+
+    /// 【wave 176 FV】CPU 参照 (1.0 - occlusion) は WGSL
+    /// `pow(1.0 - occlusion, u.power)` の power=1.0 特殊形と語彙一致する
+    /// truth pin (FE 判例): gtao.wgsl テキストに atan2(h - center /
+    /// clamp(maxHorizon / ・pow(1.0 - occlusion, u.power) が存在することを照合。
+    #[test]
+    fn fv_wgsl_power_special_form_vocabulary() {
+        let w = GTAO_WGSL;
+        assert!(w.contains("atan2(h - center"), "horizon angle 語彙");
+        assert!(
+            w.contains("clamp(maxHorizon / 1.5707963"),
+            "occlusion clamp 語彙"
+        );
+        assert!(
+            w.contains("pow(1.0 - occlusion, u.power)"),
+            "power 一般形語彙"
+        );
+    }
+
+    /// 【wave 176 FV】clamp(0.0, 1.0) 下端の truth pin (adversarial 変異 A で
+    /// 非検出捕捉 = FV-3): 全サンプルが center 以下 (ホライズンが tangent
+    /// より下) のケースで WGSL `clamp(maxHorizon / ...)` 同様に CPU 参照も
+    /// occlusion=0 (=1.0 返却、unoccluded) に潰れること。空/負のみの 2 ケース
+    /// で bit 0x3f800000 = 1.0 を厳密 pin (f32 probe /tmp/fv_probe2 機械値、
+    /// clamp 除去変異で 2.0/1.5 になり検出可能 → 非検出 25 例を回収済)。
+    #[test]
+    fn fv_clamp_downward_returns_unoccluded() {
+        let g = Gtao::new();
+        let empty: Vec<(f32, f32)> = vec![];
+        assert_eq!(g.slice_occlusion(0.0, &empty).to_bits(), 0x3f800000);
+        let down = vec![(1.0f32, -1.0f32), (2.0, -2.0)];
+        assert_eq!(g.slice_occlusion(0.0, &down).to_bits(), 0x3f800000);
     }
     #[test]
     fn multi_slice_average_in_range() {
