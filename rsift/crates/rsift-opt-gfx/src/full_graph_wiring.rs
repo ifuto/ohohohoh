@@ -317,6 +317,12 @@ pub struct FrameWiringReport {
     /// 当該 tick アリーナ使用バイト、旧消費者ゼロ → §7 消化 37 実計測配線、
     /// max(k,1)*8 の truth、rq fu_bump)。
     pub bump_used: u64,
+    /// 【wave 181 GA 捕捉 126 §7 消化 43】tick_world 実構築 DAG の critical
+    /// path (ms)。旧実装は wiring:788 で計算後 `let critical_ms` で破棄
+    /// (消費者ゼロ)。5 タスク (ingest/mesh/cull/upload/light、係数係0.05/
+    /// 0.4/0.1/0.2/0.1 × delta_ms) の critical = ingest→mesh→upload =
+    /// 0.65*delta_ms (/tmp/ga_probe.rs 機械導出)。
+    pub dag_critical_ms: f32,
     /// 同上: ObjectPool<BatchOutput> の HUD scratch acquire 直後
     /// available (cap 2・1 outstanding で常に 1、capacity 保持
     /// リサイクルの稼働証跡)。det subset 登録 (定数構造値)。
@@ -786,6 +792,9 @@ impl FullGraphWiring {
         let exec_order = dag.topological_order();
         debug_assert_eq!(exec_order.len(), 5);
         let critical_ms = dag.critical_path_ms();
+        // 【wave 181 GA 捕捉 126 §7 消化 43】旧実装は critical_ms を破棄
+        // (消費者ゼロ) → report 実計測配線。
+        report.dag_critical_ms = critical_ms;
 
         // Registry: chunk key ライフサイクル駆動の真状態機械 (wave 171 FQ
         // 捕捉 109)。slab truth と連動: 初見 → Building → (alloc 直後) Done、
@@ -3344,6 +3353,26 @@ mod strict_tests {
         i2.chunk_keys = vec![(0, 0), (1, 1), (5, 5)];
         let r2 = w.tick_world(&i2);
         assert_eq!(r2.bump_used, 24, "reset 後 keys=3 → 3*8 (rq)");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 【wave 181 GA 捕捉 126 §7 消化 43】tick_world DAG critical path の
+    /// report.dag_critical_ms 真配線 pin (旧実装は計算結果を `let critical_ms`
+    /// で破棄、消費者ゼロ = FQ/FT/FU 判例の report 化)。
+    /// 5 タスク実構築 (ingest/mesh/cull/upload/light、係数 0.05/0.4/0.1/0.2/
+    /// 0.1 × delta_ms)、critical chain = ingest→mesh→upload = 0.65*delta_ms
+    /// = 0.65*16.0 → f32 10.400001 bits 0x41266667 (/tmp/ga_probe.rs・
+    /// rq /tmp/ga_dag.rq 機械導出)。
+    #[test]
+    fn ga_dag_critical_report_truth() {
+        let (dir, mut w) = unique_wiring("dag_crit_pins");
+        let i = empty_inputs();
+        let r = w.tick_world(&i);
+        assert_eq!(
+            r.dag_critical_ms.to_bits(),
+            0x41266667,
+            "critical = 0.65*16.0 = 10.400001 (f32 probe/rq 機械値)"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 

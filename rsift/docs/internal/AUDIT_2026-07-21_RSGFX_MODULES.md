@@ -9105,3 +9105,34 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   fmt: seal ゲート2 機械値 more_culling 1/1/0 (HEAD 原生 1 行保持・自己起因 0)。
 
 ## wave 181 以降の監査計画
+### wave 181 (GA) dag_scheduler.rs (120 行) — 破棄 critical_path の配線化 + truth 契約
+- census 機械確定: DagScheduler=wiring:780 new 実消費、5 タスク実構築
+  (ingest/mesh/cull/upload/light×delta_ms 係数)/topological_order len 5
+  debug_assert 実評価/critical_path_ms は wiring:788 で `let critical_ms`
+  破棄 → 後続 grep 消費ゼロ機械確定 (FQ/FT/FU 同型破棄パターン第 4 段)。
+- 捕捉 126 [小] (GA-1 §7 消化 43): report.dag_critical_ms (f32) 実計測
+  配線、critical chain ingest→mesh→upload = 0.65*delta_ms → delta_ms=16
+  で f32 10.400001 bits 0x41266667 (f32 probe /tmp/ga_probe.rs・
+  rq /tmp/ga_dag.rq 機械導出: c1=10/c2=8/c3=2、c1 critical)。TDD compile
+  RED E0609 → 配線 GREEN (ga_dag_critical_report_truth)。
+- 捕捉 127 [小] (GA-2): truth 契約未記載 → Task.deps (dangling dep は
+  silent eternal block)/cost_ms (検証なし透過・負は chain 縮小・NaN は
+  f32::max 非 NaN 仕様で落選)/topological_order (HashMap 由来非決定的)
+  の doc 明記 + ga strict 2 本 green-today: ga_dangling_dep_blocks_silently
+  (TaskId(999) dangling → 永久ブロック、critical は schedulable subset)
+  ・ga_cost_special_values_truth (NaN chain 落選 crit=5.0・負 cost q
+  end=2.5 < p end=4.0 → max 4.0)。
+- strict +3 net 1370 全緑 (機械検算 1367+3): module 2 本 + wiring 1 本。
+  api 49・replay 16 全緑・警告 0。
+- adversarial 3 系統 1/6/1: (a) report 0 化 → ga_dag_critical RED 1・
+  (b) critical fold に f32::min 変異 → dag 系全 strict 6 RED (diamond/
+  chain/ga_cost/ga_dangling/self_loop/ga_dag_critical、強感応度証明)・
+  (c) 幽霊 dep ガード挿入 (`!contains_key → continue`) → ga_dangling RED 1。
+  復元 MD5-VERIFIED 3 回 (dag 7d588f0ce8daaef28f849e703b7ac4f4・
+  fgw 256714a351e8b9fb1f5e3be19ccdd0de)。非検出 0 (dead カウンタ据置 26)。
+- fmt: dag_scheduler 自己起因 0 (cur-dev-del 7 == head-dev-del 7 で機械
+  完全一致 = HEAD 原生完全保持: new() 1 行定義/add_task 長行等由来)、
+  full_graph_wiring も artifact のみで自己起因 0。fmt: seal ゲート2 機械値 dag_scheduler 8/8/0・
+  full_graph_wiring 0/0/0 (dag HEAD 原生 8 行完全保持・両者自己起因 0)。
+
+## wave 182 以降の全量最終検証・`rsift-opt-gfx` 厳密監査完遂後工程
