@@ -105,6 +105,31 @@ impl Default for SssParams {
     }
 }
 
+/// 【wave 188 GH-1】AABB 群の占有判定に基づく occlusion depth 供給の唯一実装。
+/// 点 `p` が何れかの AABB 内 (全端点閉区間) なら `(p−origin).length()`
+/// (`cast_sss` の travelled と同式同入力で diff==0.0 exact、捕捉 63 修正の
+/// 核心)、外なら `f32::INFINITY`。
+/// wiring 側の inline closure は module テスト同型の**別複製**で、その値は
+/// report 非属のため wiring 層 adversarial (EW (a) revert 変異) が構造的に
+/// 非検出だった — 検出空白の根は「同じ意味論を 2 か所に複製保持」した
+/// 構造にある。module/wiring を本関数に一本化し、変異が必ず module golden
+/// に到達する形へ根治 (検出空白クラスの構造的除去 = EW (a) 最終判定)。
+/// 実消費者: full_graph_wiring の sss_depth closure (経由先)。
+pub fn aabb_occupancy_depth(p: Vec3, origin: Vec3, aabbs: &[([f32; 3], [f32; 3])]) -> f32 {
+    for (mn, mx) in aabbs {
+        if p.x >= mn[0]
+            && p.x <= mx[0]
+            && p.y >= mn[1]
+            && p.y <= mx[1]
+            && p.z >= mn[2]
+            && p.z <= mx[2]
+        {
+            return (p - origin).length();
+        }
+    }
+    f32::INFINITY
+}
+
 /// March toward the light; `sample_depth` は点 `p` が occluder 上なら
 /// **`pos` からの進行距離** ((p−pos).length() 同形) を返し、空/到達不能は
 /// `f32::INFINITY` を返す (EW-2 注記 1: 旧 doc「nearest occluder までの
@@ -214,6 +239,51 @@ mod tests {
         );
         assert_eq!(vis, 0.0, "契約整合後は step1 で diff==0.0 exact → shadow");
         assert_eq!(calls.get(), 1, "即 return で sample 1 回のみ (rq)");
+    }
+
+    /// 【wave 188 GH-1】dedup 共有契約 golden: wiring/module を一本化した
+    /// `aabb_occupancy_depth` 経由で EW-4 golden (vis=0.0・sample 1 回即
+    /// return) が bit 同等に再現される (文レベル同一抽出のため IEEE 厳密
+    /// 一致)。共有本体の捕捉 63 revert (0.0 定数化) は本 golden が RED 化
+    /// (vis→1.0・calls 16) — EW (a) 検出空白クラスは構造的除去済。
+    #[test]
+    fn gh_shared_occupancy_depth_golden() {
+        let aabbs = [([0.0f32, 0.0, 0.0], [16.0f32, 16.0, 16.0])];
+        let origin = Vec3::new(8.0, 8.0, 8.0);
+        let calls = std::cell::Cell::new(0u32);
+        let depth = |p: Vec3| -> f32 {
+            calls.set(calls.get() + 1);
+            aabb_occupancy_depth(p, origin, &aabbs)
+        };
+        let vis = cast_sss(
+            origin,
+            Vec3::new(0.35, 0.55, 0.75),
+            &SssParams::default(),
+            &depth,
+        );
+        assert_eq!(vis, 0.0, "共有本体経由でも EW-4 golden と同一 (rq ew_sss)");
+        assert_eq!(calls.get(), 1, "共有本体経由でも即 return (sample 1 回)");
+    }
+
+    /// 【wave 188 GH-1】aabb_occupancy_depth 直接契約 pin: AABB 包含は全
+    /// 端点閉区間 (16.0 包含)、内部点は (p−origin).length()、外部/空 AABB
+    /// は INF。bits は python struct.pack 機械値 (8.0=0x41000000・1.0=
+    /// 0x3F800000・16.0=0x41800000)。
+    #[test]
+    fn gh_aabb_occupancy_depth_direct_contract() {
+        let aabbs = [([0.0f32, 0.0, 0.0], [16.0f32, 16.0, 16.0])];
+        let origin = Vec3::new(8.0, 8.0, 8.0);
+        // 閉区間境界: x=16.0 丁度は包含、(8−origin)=8.0 で正負対称
+        let d1 = aabb_occupancy_depth(Vec3::new(16.0, 8.0, 8.0), origin, &aabbs);
+        assert_eq!(d1.to_bits(), 0x4100_0000, "境界包含 8.0 (機械 bits)");
+        let d2 = aabb_occupancy_depth(Vec3::new(8.0, 7.0, 8.0), origin, &aabbs);
+        assert_eq!(d2.to_bits(), 0x3F80_0000, "単位オフセット 1.0 (機械 bits)");
+        // 外部点 (z>16) と空 AABB は INF
+        let d3 = aabb_occupancy_depth(Vec3::new(8.0, 8.0, 16.5), origin, &aabbs);
+        assert!(d3.is_infinite(), "外部点は INFINITY");
+        let empty: [([f32; 3], [f32; 3]); 0] = [];
+        let d4 = aabb_occupancy_depth(Vec3::new(8.0, 8.0, 8.0), origin, &empty);
+        assert!(d4.is_infinite(), "空 AABB は INFINITY");
     }
 
     /// 捕捉 63 再現 pin (旧構造の記録): AABB 内点に定数 0.0 を供給する旧

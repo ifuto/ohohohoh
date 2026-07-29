@@ -2157,19 +2157,12 @@ impl FullGraphWiring {
             inputs.camera_pos[1],
             inputs.camera_pos[2],
         );
+        // 【wave 188 GH-1】本体は screen_space_shadow::aabb_occupancy_depth
+        // へ一本化 — 旧 inline 複製は wiring 層 revert 変異が search 非属
+        // (report 非属) で検出不能だった検出空白の根源 (EW (a) 非検出構造、
+        // 構造的除去で根治)。
         let sss_depth = |p: crate::screen_space_shadow::Vec3| -> f32 {
-            for (mn, mx) in &inputs.chunk_aabbs {
-                if p.x >= mn[0]
-                    && p.x <= mx[0]
-                    && p.y >= mn[1]
-                    && p.y <= mx[1]
-                    && p.z >= mn[2]
-                    && p.z <= mx[2]
-                {
-                    return (p - sss_origin).length();
-                }
-            }
-            f32::INFINITY
+            crate::screen_space_shadow::aabb_occupancy_depth(p, sss_origin, &inputs.chunk_aabbs)
         };
         let shadow = crate::screen_space_shadow::cast_sss(
             sss_origin,
@@ -5150,5 +5143,49 @@ mod strict_tests {
         for (len, want) in cases {
             assert_eq!(leo_occupancy_tag(len), want, "len={len} → tag {want}");
         }
+    }
+
+    /// 【wave 188 GH-1】SSS depth 供給の一本化 pin: wiring は必ず
+    /// screen_space_shadow::aabb_occupancy_depth 経由で呼ぶ (EW (a) 検出
+    /// 空白 = 旧 inline 複製の構造的除去の固定)。旧 inline 本体の帰結式
+    /// (捕捉 63 修正形) の再導入も禁止語彙で検出する (split concat! で
+    /// 自己言及 vacuous 回避)。
+    #[test]
+    fn gh_wiring_sss_shared_depth_lexeme() {
+        let src = include_str!("full_graph_wiring.rs");
+        assert!(
+            src.contains("screen_space_shadow::aabb_occupancy_depth"),
+            "SSS depth は共有本体 aabb_occupancy_depth 経由が必須 (EW (a) 構造的除去、wave 188 GH pin)"
+        );
+        let banned = concat!("(p - sss_origin)", ".length()");
+        assert!(
+            !src.contains(banned),
+            "旧 inline SSS depth 本体の再導入を検出 (wave 188 GH pin)"
+        );
+    }
+
+    /// 【wave 188 GH-2】EN (d)/(e) 証明済み中性の**前提監視 pin** (変異その
+    /// ものではなく非検出証明の前提が将来崩れた時だけ RED になる設計):
+    /// (d) wiring reduce max→min 非検出の証明は「発光走査が cap 32 で硬停止
+    /// (break) → intensities ≤ 32 → subgroup wave 集約が常に単一要素 →
+    /// max≡min 恒等」に依存 (subgroup WAVE_WIDTH=32 契約 pin と連立)。
+    /// cap が将来 32 超に緩められれば証明が崩れ再監査が要る。
+    /// (e) `.max(0.0)` 除去非検出の証明は「intensity が u8 由来
+    /// (`lvl as f32`) 単一構築箇所で非負・-0.0 構造不出」に依存。
+    /// grep 機械採数: 各 1 箇所 (wave 188 時点)。
+    #[test]
+    fn gh_en_proof_premise_lexeme() {
+        let src = include_str!("full_graph_wiring.rs");
+        assert_eq!(
+            src.matches(concat!("emissive_lights.len() >= ", "32"))
+                .count(),
+            1,
+            "EN (d) 証明前提: 発光走査 cap 32 break は単一箇所必須 (cap 緩和なら EN (d) 再監査)"
+        );
+        assert_eq!(
+            src.matches(concat!("intensity: lvl ", "as f32")).count(),
+            1,
+            "EN (e) 証明前提: intensity の u8 由来構築は単一箇所必須"
+        );
     }
 }

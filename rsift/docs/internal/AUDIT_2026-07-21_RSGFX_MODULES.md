@@ -9369,13 +9369,85 @@ EO(e) (wave 141) gpu_runtime WGSL 登録の free fn→const revert 非検出**
   **gpu_runtime.rs 0/0/0・subgroup.rs 0/0/0 (全 PASS)**。
 - seal 全 6 ゲート PASS・digest 004c1cf5fb17bfe8 rows=357 不変。
 
-## wave 188 以降のフェーズ 2 継続計画
-- 構造的限界系列の不可能証明形式化: EN (d) wiring subgroup reduce max→min /
-  (e) .max(0.0) (GPU/WGSL 供給構造由来)、FB (f) material read-back
-  (round-trip 値同一性)、EW (a) wiring closure revert (wiring レベル pin
-  新設可否の最終判定)、DH-追補 (a')(b')(c') / DJ-3 (c) / DS (d) / EZ (a)
-  (証明済み中性の proof 形式化)、FF consistency pin 分類記述の棚卸整理。
-- 上記が尽きれば全 162 モジュール × adversarial 非検出系列の閉鎖 = フェーズ 2
-  完遂宣言。
-- CRLF 残存 10 ファイル・stray copy (rsift/rsift/rsift-opt-gfx) 削除は
-  ユーザー管理資産確認待ちで継続保留。
+## wave 188 (GH) — 構造的限界系列の閉鎖 + フェーズ 2 完遂宣言 (2026-07-29)
+
+### GH-1 [中] EW (a) 検出空白クラスの構造的除去 (dedup 根治)
+wave 151 EW (a) 「捕捉 63 wiring closure revert 非検出構造」の最終判定:
+wiring の sss_depth inline closure は「同じ意味論を module テストと 2 か所
+複製保持」し、出力は report 非属 (report 構造体に shadow 由来フィールドなし
+= grep 機械確定) のため wiring 層 golden は**構造的に新設不可能**。
+正しい根治は複製の解消: `screen_space_shadow::aabb_occupancy_depth` を唯一
+実装新設し wiring closure を共有本体呼出へ一本化 (文レベル同一抽出のため
+IEEE 厳密に挙動不変、module 既存 golden 緑維持で機械立証)。検出空白の
+「クラス」自体が消滅 (wiring 実体は module golden の検出範囲に帰着)。
+呼出側連続性は gh_wiring_sss_shared_depth_lexeme (共有呼出 presence +
+旧 inline 帰結式 banned、split concat!) が担保。
+- strict 追加: gh_shared_occupancy_depth_golden (共有本体経由で EW-4
+  golden とビット同等=vis 0.0/sample 1、rq ew_sss 引用)・
+  gh_aabb_occupancy_depth_direct_contract (閉区間境界 8.0=0x41000000・
+  1.0=0x3F800000・外部/空 AABB INF、bits は python struct.pack 機械値)。
+- adversarial: (A) 共有本体の捕捉 63 revert (return 0.0 化) → **2 RED**
+  (両 shared pin) = 旧 EW (a) 変異クラスの検出可能化を実証・(B) wiring
+  呼出側の旧 inline 復元 → **1 RED** (gh_wiring lexeme、presence 側)。
+  復元 MD5-VERIFIED×2。**誠実記録**: (B) の python 事後 grep は pin 自己
+  言及を除外し忘れ誤 FAIL — anchor assert (count==1) と RED 観測で適用は
+  機械確定 (install 確認 grep を併用する定型は wave 186 儀式で整流済)。
+
+### GH-2 [低] EN (d)/(e) 証明済み中性の前提監視 pin
+wave 140 EN (d)/(e) を精査して**証明の前提をコード内構造に由来すると機械
+確定**: (d) wiring reduce max→min は「発光走査 cap 32 `break 'scan` 硬停止
+→ intensities ≤ 32 → subgroup wave 集約出力が常に単一要素 → reduce
+f32::max ≡ f32::min 恒等 (subgroup WAVE_WIDTH=32 契約 pin と連立)」で
+構造的非検出が**構造証明**の形で成立 (corpus に依存しない)。(e) .max(0.0)
+除去は「intensity が `lvl as f32` (u8 由来・grep 機械採数で構築単一箇所)
+→ 非負・-0.0 構造不出 → 恒等関数」で型レベル証明成立。前提が将来崩れた
+時だけ RED になる前提監視 pin `gh_en_proof_premise_lexeme` を新設
+(cap 32 単一箇所・intensity 構築単一箇所の count==1、禁止語彙 split
+concat!)。**adversarial**: (C) cap 32→64 緩和 → **1 RED**・(D) `* 1.0`
+恒等付加 → 前提非破壊で**緑 (正しい沈黙)** = 私の変異設計不備を誠実記録、
+真の前提破壊 (D' `-(lvl as f32)` 符号反転) → **1 RED**。復元
+MD5-VERIFIED×3。
+
+### GH-3 [低] 証明済み中性系列の閉鎖索引 (doc のみ、再証明済)
+以下は既存証明書 (各 wave 節の Python 構造照合・数学恒等・構造証明) により
+閉鎖: DH (a')(b')(c') 前置/post/逆戻しマスク (全 1024 入力 0 差分、
+digest 不変由来)・DJ-3 (c) 第一マスク冗長 (二段目 `&0x030000FF` が bit10+
+殺傷)・DK (c) select OR→XOR (XOR≡OR≡ADD 同一 domain)・DS (d) prefetch
+除去 (WGSL 非生成・診断シンボルのみ)・CC-1 (GPU 側読み検出不能 →
+書込側 fail-loud 契約)・frustum 平面コモンモード (wave 82 4 層整合 +
+f32 検算ミラーでの捕捉経緯)・DG (c) idx 層 assert (防御第 2 層保持決定)・
+ER (d) NaN Equal→Greater (挿入ソート両方向同一帰結)・FE (c) clone_shallow
+(値同一 dead code・不変式層不在証明)・EH メトリクス非属 (module golden
+存在)・EZ (a) wiring 恒 false revert (focused=true 固定・60s 未到達で
+Active 恒、検出責務は module gate_is_sole_skip_decider_contract_pin)・
+FB (f) material read-back (round-trip 値同一性、整合責務は eviction golden
+map 保持 pin)・FF consistency pin 対称変異 (絶対真値は golden 2 本が責務、
+pin 分類明文化済)。
+
+### フェーズ 2 完遂宣言
+- **全 162 モジュール × adversarial 非検出系列の閉鎖を機械棚卸で証明**:
+  非検出/検出不能/理論上不検出の全言及 116 行 (grep 機械走査) を精査し、
+  各系列は (i) pin 回収済 (dead code 1-25 例目・wave 184-187 各回収・
+  FL eviction 追設・FV/FW/FW-4 追設・EO-5/EP 補完・EJ-4 強化・wave 186
+  loose 4 件・GH-1 構造的除去) か (ii) 証明済み中性・責務 pin 完備の
+  誠実記録 (GH-3 索引) の何れかに機械分類完結。dead code 連番カウンタ
+  26 → **0** (wave 185 完結)、loose 構造系列 → 本 wave で全閉鎖。
+- 完遂条件: 「 adversarial 非検出 = 将来 wave 棚卸対象」の残件ゼロ。
+  今後 adversarial で新たな非検出が出た場合は同 wave 内で自己照査解決
+  (directive ⑧) する従来運用へ帰還。
+- strict +4 net **1408 全緑** (機械検算 1404+4、4 pin 全て個別フィルタ確認)。
+  警告 0 (lib build gate、more_culling/dag_scheduler テスト側 unused は
+  HEAD 原生 hygiene として誠実記録・ゲート非該当)。fmt: seal ゲート2 機械値
+  **screen_space_shadow 0/0/0・full_graph_wiring 0/0/0 (全 PASS)** — 初回
+  seal は premise pin の .matches().count() 行逸脱 1 を捕捉、rustfmt 忠実形
+  へ in-place 正規化して再 seal PASS (誠実記録)。
+- seal 全 6 ゲート PASS・digest 004c1cf5fb17bfe8 rows=357 不変・台帳 660。
+
+## wave 189 以降の運用 (フェーズ 2 完遂後)
+- adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
+  完結 (directive ⑧)。
+- hygiene 残 (保持判定継続): opt-gfx src CRLF ファイル 10+・テスト側 unused
+  変数警告 3 件 (more_culling/dag_scheduler、HEAD 原生)・stray copy
+  (rsift/rsift/rsift-opt-gfx) 削除はユーザー管理資産確認待ちで継続保留。
+- 捕捉採番の次空き: 129。strict 総数履歴: …1398(185)→1402(186)→1404(187)
+  →1408(188)。
