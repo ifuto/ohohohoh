@@ -305,6 +305,14 @@ pub struct FrameWiringReport {
     pub registry_total: u32,
     /// 同上: set_state+remove の累計操作回数 (単調増加、初見 +2/件・退去 +1/件)。
     pub registry_version: u64,
+    /// 【wave 174 FT 捕捉 114】InstancedCollector 実計測: 総インスタンス数
+    /// (旧 `let _instanced_stats` 破棄 + doc「帯域見積に反映」虚偽を根治)。
+    pub instanced_total: u32,
+    /// 同上: 相異 mesh_id のグループ数 (mesh_id = mat.min(63))。
+    pub instanced_groups: u32,
+    /// 同上: Σ 全グループの InstanceData 総バイト (旧 first mesh のみの弱い
+    /// 見積から truth へ、32B/instance、rq ft_instanced)。
+    pub instanced_bytes: u32,
     /// 同上: ObjectPool<BatchOutput> の HUD scratch acquire 直後
     /// available (cap 2・1 outstanding で常に 1、capacity 保持
     /// リサイクルの稼働証跡)。det subset 登録 (定数構造値)。
@@ -1110,18 +1118,16 @@ impl FullGraphWiring {
             let mat = inputs.quad_materials.get(i).copied().unwrap_or(0);
             instanced.add(mat.min(63), *pos, mat, 3);
         }
-        // 先頭メッシュの実インスタンスバイナリを取得 → 帯域見積に反映。
-        let instanced_bytes = inputs
-            .quad_materials
-            .first()
-            .map(|m| (*m).min(63))
-            .and_then(|id| instanced.as_bytes(id).map(|b| b.len()))
-            .unwrap_or(0);
-        let _instanced_stats = (
-            instanced.total_instances(),
-            instanced.groups().count(),
-            instanced_bytes,
-        );
+        // 【wave 174 FT 捕捉 114 §7 消化 36】旧 `let _instanced_stats` 破棄
+        // (doc「帯域見積に反映」は反映先ゼロの虚偽) → report 3 実フィールド
+        // 真配線。bytes は旧 first mesh のみの弱い見積から Σ 全グループ総
+        // バイトの truth へ根治 (as_bytes/total_instances/groups 実消費)。
+        report.instanced_total = instanced.total_instances() as u32;
+        report.instanced_groups = instanced.groups().count() as u32;
+        report.instanced_bytes = instanced
+            .groups()
+            .map(|g| instanced.as_bytes(g.mesh_id).map(|b| b.len()).unwrap_or(0) as u32)
+            .sum();
 
         // -- OverdrawSorter: front-to-back 実順序 → upload 順に反映。
         let draw_items: Vec<crate::overdraw_sort::DrawItem> = inputs
@@ -3314,6 +3320,29 @@ mod strict_tests {
             "camera (-40,-8,-16) -> (-2.5,-1.0,-1.0) exact bits"
         );
         assert_eq!(r2.ddgi_probe_count, 1024);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 【wave 174 FT 捕捉 114】InstancedCollector 実計測 pin (rq ft_instanced):
+    /// mats=[1,1,2,2,3] → mesh_id=mat.min(63) で groups=3、total=5、
+    /// bytes=Σ全グループ総バイト=5*32=160。旧 `_instanced_stats` 破棄
+    /// (doc「帯域見積に反映」虚偽) から report 3 実フィールド真配線。
+    #[test]
+    fn ft_instanced_report_truth() {
+        let (dir, mut w) = unique_wiring("instanced_pins");
+        let mut i1 = empty_inputs();
+        i1.quad_positions = vec![
+            [0.0, 64.0, 0.0],
+            [4.0, 64.0, 0.0],
+            [8.0, 70.0, 8.0],
+            [12.0, 70.0, 8.0],
+            [16.0, 70.0, 8.0],
+        ];
+        i1.quad_materials = vec![1, 1, 2, 2, 3];
+        let r1 = w.tick_world(&i1);
+        assert_eq!(r1.instanced_total, 5);
+        assert_eq!(r1.instanced_groups, 3);
+        assert_eq!(r1.instanced_bytes, 160, "Σ 全グループ 5*32 (rq)");
         let _ = std::fs::remove_dir_all(dir);
     }
 

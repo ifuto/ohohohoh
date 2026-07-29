@@ -8952,3 +8952,11 @@ census grep: PgoConfig::release().rustflags() = full_graph_wiring:465 info! ロ�
 - **FS-2 [低] 捕捉 113 [小]**: §7 消化 35。dev() 消費者ゼロ → 不可能証明削除。
 
 adversarial 3 系統: (a) profile-generate 分岐除去 1 RED・(b) target-cpu v3→v2 変異 2 RED (profile_field/rustflags_string 両側)・(c) bolt 死救出 非検出 (dead code 22 例目)。復元 MD5-VERIFIED 3 回 (最終固定版 md5 a94328a48cad32048e4fc789a7397f00、fmt 正準化で更新)。strict +1 net 1346 全緑 (機械検算 1345+1)。api 49・replay 16 全緑・警告 0。fmt: 自己起因 11 機械分離 (release struct/format!/テスト struct update ×2) → 4 hunk rustfmt 正準化で逸脱 0 → seal ゲート2 機械値 HEAD 4 / 現 1 / 自己起因 0 (現逸脱は artifact のみ)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
+
+## wave 174 (FT) instanced_draw.rs 厳密監査 (2026-07-29)
+
+census grep: InstancedCollector/add/total_instances/groups/as_bytes = full_graph_wiring:1108-1125 実消費 (InstancedData Pod 32B レイアウト・追加順保持は module 3 テスト pin 済で本体アルゴリズム陰性)。wiring:1121 の `let _instanced_stats` 破棄 (doc「帯域見積に反映」虚偽) を機械確定。InstanceData 32B/追跡/bytes roundtrip は HEAD 完全照合の陰性。
+
+- **FT-1 [低] 捕捉 114 [小]**: §7 消化 36。→ report 3 実フィールド真配線 (instanced_total/groups/bytes)、bytes を Σ 全グループ総バイト truth へ根治 (旧 first mesh のみ見積)。TDD compile RED E0609×3 → 配線 GREEN (ft_instanced_report_truth: groups 3/total 5/bytes 160 非ゼロ pin)。
+
+rq ft_instanced 全 assert 通過。adversarial 3 系統: (a) report.instanced_total 0 化 1 RED・(b) total_instances を first group のみ変異 2 RED (module+wiring 両側)・(c) clear API 死救出 非検出 (dead code 23 例目)。復元 MD5-VERIFIED 3 回 (固定版 md5 wiring 9e3e946c9f4de4d3d959ad74e6547975、instanced_draw 未変更で git restore 2 回)。strict +1 net 1347 全緑 (機械検算 1346+1)。api 49・replay 16 全緑・警告 0。fmt: 自己起因 1 (map クロージャ) 適用 → seal ゲート2 機械値 HEAD 0 / 現 0 / 自己起因 0。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
