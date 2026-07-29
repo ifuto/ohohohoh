@@ -8916,3 +8916,12 @@ census grep 機械確定: `BundleCache` = wiring:359 フィールド/:521 構築
 - **FO-1 [低] 捕捉 106 [小] §7 消化 31**: `_bundle_stats` 破棄 → report.bundle_hits/bundle_misses (u64 累積) 実配線 (pso_lib 帳簿報告 FI-1 と同型)。TDD compile RED E0609×4 → 8 キー固定供給で初回 (hits=0, misses=8)・2 回目累積 (hits=8, misses=8) 非ゼロ両側 pin → GREEN。
 - **FO-2 [低] strict 総括**: +1 net **1341 全緑** (機械検算 1340+1・grep count 1341 一次確認)。api 49・replay 16 全緑・警告 0。adversarial 3 系統: (a) report 0 化 → **1 RED**・(b) stats() hits/misses 交換 → **2 RED** (自家 tests+wiring pin 両側)・(c) dead code 死救出 → **非検出** (dead code 系 **18 例目**、誠実連番)。復元 MD5-VERIFIED 3 回 (wiring bak e5587950 + bundle HEAD 照合 2 回)。
 - wave 168 対策 (新規テスト後の隣接個別フィルタ確認) を実施: fn_root_cost・fl_gigavoxels 隣接無傷確認。fmt wiring 0/0/0 (自作分正準、HEAD 原生 0)。md5 wiring e5587950。台帳 631・TRIGGER 206。
+
+## wave 170 (FP) mimalloc_config.rs 厳密監査 (2026-07-28)
+
+census grep: for_tier/recommended_allocator/env_string = full_graph_wiring:446-452 info! ログ消費 (実消費者存在)。use_mimalloc 読み取り消費者ゼロ・Cargo.lock/全 Cargo.toml に mimalloc 皆無 (未リンク truth) を機械確定。
+
+- **FP-1 [低] 捕捉 107 [小]**: `env_string()` が mimalloc 公式 env 語彙に存在しない架空文字列 "MIMALLOC_ARENA=64MB_LARGE=1048576" を生成 (README truth: オプション `arena_reserve` = `MIMALLOC_ARENA_RESERVE` 単位 KiB) → truth 語彙根治。TDD value RED (fn_env_string_truth_vocabulary / fn_tier_arena_kib_truth 2/2)。
+- **FP-2 [低] 捕捉 108 [小]**: §7 消化 32。`use_mimalloc` 恒 true 死蔵 (truth 未リンクで真値 false への虚構) + `large_object_threshold` (mimalloc env 語彙非対応の未配線値) を不可能証明削除。
+
+rq fn_mimalloc 全 assert 通過 (KiB 換算 16→16384/32→32768/64→65536)。strict +2 net 1343 全緑 (機械検算 1341+2)。api 49・replay 16 全緑・警告 0。adversarial 4 系統: (a) 架空語彙逆変異 3 RED・(b) KiB 乗数 1000 変異 3 RED・(c) Minimal tier 16→8 変異 2 RED・(d) use_mimalloc 死救出 非検出 (dead code 19 例目、pub フィールドは lint 不検出)。復元 MD5-VERIFIED 4 回 (固定版 md5 c009e626f10205dce24ffe355180b4a2)。fmt: seal ゲート2 機械値 HEAD 逸脱 8 / 現 0 / 自己起因 0 (HEAD 原生存続の長行が根治で縮退、現逸脱ゼロ)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
