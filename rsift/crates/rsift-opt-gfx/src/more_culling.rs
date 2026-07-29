@@ -1,6 +1,19 @@
 //! MoreCulling 逆輸入 — 看板テキスト / 額縁 / 雨 / 葉の追加カリング規則。
 //!
 //! どれも描画呼び出し側がフレームごとに呼ぶだけの純粋関数群 (副作用なし)。
+//!
+//! 【wave 180 FZ-1 §7 消化 42 保持判定】sign_text_visible /
+//! screen_footprint_px / rain_visible は full_graph_wiring 実評価経路に
+//! 実消費配線済 (wave 84 CH-3 系)。item_frame_visible / leaf_face_needed /
+//! neighbor_mask / shared_layer_face_needed の 4 関数は外部消費者ゼロだが
+//! 次の機械検討で保持を宣言: (i) 葉面 cull 同等機能は binary_greedy_meshing
+//! の高速専用形 (neighbor_opaque 直接参照の face_visible) で既配線済、
+//! 本 catalog 側へ統合すると face 毎に 6 近傍配列を再構築する性能退化が
+//! 生じ hot path 不可逆、故に統合不可能 (不可能証明)。(ii) 額縁省略の実効
+//! 経路は entity_culling 管轄 (種別非特化)。(iii) 透過共有面削減は mesh
+//! greedy 結合が管轄。以上より MoreCulling 上流互換カタログ API として
+//! 保持し、自家 strict (fz_* 4 本) が truth 消費証跡となる (FK 判例)。
+//! 虚構イベント捏造の fake 配線・vacuous 擬似接続は行わない。
 
 /// 看板テキスト: ブロックの正面法線とカメラ方向の内積で背面判定。
 /// `front_dot_cos` はカリング閾値 (cos角度)。MoreCulling 既定 ≒ cos(110°)。
@@ -113,5 +126,67 @@ mod tests {
         let far = screen_footprint_px(1.0, 400.0, 0.7, 1080.0);
         assert!(near > far);
         assert!(far < 2.0);
+    }
+
+    /// 【wave 180 FZ】sign_text_visible 110° threshold の両側厳密 pin
+    /// (f32 probe /tmp/fz_probe2 機械導出): 法線 (0,0,-1)・to_cam (0,0.94,c)
+    /// で c=0.342 → dot=-0.3419036 (0xbeaf0dfe) > -0.342 → true、c=0.343 →
+    /// dot=-0.3427860 (0xbeaf81a5) → false。MoreCulling 既定 cos110°=
+    /// -0.34202012 (0xbeaf1d43) との差 2e-5 の doc「≒」truth も整合。
+    #[test]
+    fn fz_sign_threshold_both_sides() {
+        let n = [0.0f32, 0.0, -1.0];
+        let center = [0.0f32, 0.0, 0.0];
+        assert!(sign_text_visible(n, center, [0.0, 0.94, 0.342]));
+        assert!(!sign_text_visible(n, center, [0.0, 0.94, 0.343]));
+    }
+
+    /// 【wave 180 FZ-1 消費証跡】item_frame_visible footprint/min_pixel の
+    /// 境界両側 pin (next_down(4.0)=3.9999998 bits 0x407fffff 機械導出):
+    /// fp<min → false (素通り面積カリング)、fp==min → sign 背面判定へ
+    /// fallthrough (背面なら無条件 false、表なら true)。
+    #[test]
+    fn fz_item_frame_boundary_both_sides() {
+        let facing = [0.0f32, 1.0, 0.0];
+        let center = [0.0f32, 64.0, 0.0];
+        let cam_above = [0.0f32, 68.0, 0.0];
+        assert!(!item_frame_visible(
+            facing, center, 3.9999998, cam_above, 4.0
+        ));
+        assert!(item_frame_visible(facing, center, 4.0, cam_above, 4.0));
+        assert!(!item_frame_visible(
+            [0.0, 0.0, -1.0],
+            center,
+            4.0,
+            [0.0, 64.0, 4.0],
+            4.0
+        ));
+    }
+
+    /// 【wave 180 FZ-1 消費証跡】neighbor_mask の 6 座標射影微分
+    /// ([+x,-x,+y,-y,+z,-z] 対応) と leaf_face_needed 全 6 dir truth pin。
+    #[test]
+    fn fz_leaf_neighbor_mask_projection() {
+        let m = neighbor_mask(&|dx, dy, dz| dx == 1 && dy == 0 && dz == 0, 0, 0, 0);
+        assert_eq!(m, [true, false, false, false, false, false]);
+        let m2 = neighbor_mask(&|dx, dy, dz| dz == -1, 0, 0, 0);
+        assert_eq!(m2, [false, false, false, false, false, true]);
+        for dir in 0..6usize {
+            let mut om = [false; 6];
+            om[dir] = true;
+            assert!(!leaf_face_needed(om, dir), "dir={dir} opaque → 面不要");
+            assert!(leaf_face_needed(om, (dir + 1) % 6), "別 dir → 面必要");
+        }
+    }
+
+    /// 【wave 180 FZ-1 消費証跡】shared_layer_face_needed 全 6 分岐 truth pin。
+    #[test]
+    fn fz_shared_layer_truth_table() {
+        assert!(!shared_layer_face_needed(true, true, true));
+        assert!(shared_layer_face_needed(true, true, false));
+        assert!(!shared_layer_face_needed(true, false, true));
+        assert!(!shared_layer_face_needed(true, false, false));
+        assert!(shared_layer_face_needed(false, true, false));
+        assert!(shared_layer_face_needed(false, false, false));
     }
 }

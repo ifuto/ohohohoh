@@ -9070,3 +9070,38 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   render_pipeline 0/0/0 (HEAD 原生 5 行完全保持・自己起因 0)。
 
 ## wave 180 以降の監査計画
+### wave 180 (FZ) more_culling.rs (117 行) — 消費ゼロ catalog API の保持証明
+- census 機械確定: sign_text_visible=full_graph_wiring:1884 /
+  screen_footprint_px=:1874 / rain_visible=:1900 の 3 関数が wiring 実評価
+  経路実消費 (let _ 形式だが CH-3 承認済の実計算 assertion 路、値は別系
+  entity/mesh 判定が管轄)。item_frame_visible / leaf_face_needed /
+  neighbor_mask / shared_layer_face_needed の 4 関数は外部参照 0・module
+  テストも未消費 → §7 消化 42。
+- 捕捉 125 [小] (FZ-1): directive⑦ 両証明付き保持判定 — (i) 葉面 cull 同等
+  機能は binary_greedy_meshing:105 の neighbor_opaque 高速専用形で既配線
+  (統合は face 毎 6 近傍配列再構築の性能退化・hot path 不可逆 → 不可能
+  証明)、(ii) 額縁省略は entity_culling 管轄、(iii) 透過共有面は mesh
+  greedy 管轄。upstream 互換カタログ API 保持、module doc 明記 + 自家
+  strict (fz_* 4 本) を truth 消費証跡 (FK 判例準拠、fake 配線なし)。
+- 機械導出スナップショット: 初回 probe で to_cam=(0,s,c) の s/c を転倒し
+  θ=110° 近傍が取れていなかったことを結果 (-0.94 系列) から自己捕捉・
+  s=0.94/c=0.342 修正 probe で threshold 両側を正確確定 (dot=-0.3419036
+  bits 0xbeaf0dfe → true / c=0.343 → dot=-0.3427860 bits 0xbeaf81a5 →
+  false)、MoreCulling 既定 cos110°=-0.34202012 との差 2e-5 で「≒」doc
+  truth 検証。next_down(4.0)=3.9999998 bits 0x407fffff (境界 item_frame)、
+  fp(1,4,0.7,1080)=192.85715 (0x4340db6e)。
+- strict +4 net 1367 全緑 (機械検算 1363+4): fz_sign_threshold_both_sides
+  / fz_item_frame_boundary_both_sides / fz_leaf_neighbor_mask_projection
+  (6 dir + 射影微分) / fz_shared_layer_truth_table (全 6 分岐)。
+  api 49・replay 16 全緑・警告 0。
+- adversarial 3 系統全検出 RED 1/1/1: (a) footprint 境界 <→<= 変異 →
+  fz_item_frame RED 1・(b) sign threshold -0.342→-0.35 厳格化変異 →
+  fz_sign RED 1 (緩和方向 -0.34 変異は両側 pin で検出不変のため厳格化変異
+  採用、誠実記録)・(c) shared_layer (true,false)=>false→true 変異 →
+  fz_shared RED 1。復元 MD5-VERIFIED 3 回 (more_culling 固定版 md5
+  ac0b9d9c7ca1c4259c5185f082365f71)。非検出 0 (dead カウンタ据置 26 未採)。
+- fmt: 自己起因 2 件 (fz_item_frame の assert! 折返し) 正準化 → 逸脱 0、
+  neighbor_mask 長行 (71) は HEAD 原生 (head-dev-del 機械分離) で保持。
+  fmt: seal ゲート2 機械値は下記コミット時記載へ整合。
+
+## wave 181 以降の監査計画
