@@ -188,4 +188,59 @@ mod strict_tests {
         assert_eq!(lib.stats(), (0, 1));
         let _ = fs::remove_dir_all(&dir);
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 12 例目 (wave 163 FI adversarial (e)
+    /// 死救出 非検出) の回収。当該 wave のコミット差分は削除行ゼロで対象語彙一意確定の
+    /// 一次資料が残らないため (誠実記録: 資料消失)、代置として構造網羅 pin を立てる:
+    /// 現存公開構造 (PsoKey/PsoLibrary/new/get/insert/save/stats + private wire_blob
+    /// 長飽和ヘルパ) の存在 pin + pub メソッド/struct 宣言総数 pin で新規公開構造
+    /// (当時の死救出型変更の再来) を将来検出する。561 緑系と総数差異のバイアス回避の
+    /// ため宣言形のみを数える。
+    #[test]
+    fn ge_structure_census_pin() {
+        let src = include_str!("pso_library_cache.rs");
+        // 現存公開構造の存在 pin (全消失は trajectory 異常として検出)
+        assert!(
+            src.contains(concat!("pub str", "uct PsoKey")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("pub str", "uct PsoLibrary")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn ne", "w(")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn ge", "t(")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn ins", "ert(")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn sav", "e(")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn sta", "ts(")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn wire_blob", "_len")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert_eq!(
+            src.matches(concat!("pub f", "n ")).count(),
+            5,
+            "pub メソッド宣言 の宣言総数 pin: 新規公開構造 (dead code 復活候補) の追加を検出"
+        );
+        assert_eq!(
+            src.matches(concat!("pub str", "uct ")).count(),
+            2,
+            "公開 struct 宣言 の宣言総数 pin: 新規公開構造 (dead code 復活候補) の追加を検出"
+        );
+    }
 }

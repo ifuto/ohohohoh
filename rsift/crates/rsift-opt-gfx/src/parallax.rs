@@ -286,4 +286,18 @@ mod tests {
             "Vec3 Add/Mul (m.z=5 私の初 pin 誤りを RED 捕捉→訂正)"
         );
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 1 例目 (wave 148 EU adversarial (c)
+    /// Vec4 復活 revert 非検出、EU-3 で型+3 演算 impl 不可能証明削除済) の lexeme pin 化。
+    /// EU-4 注記 (5) に削除経緯。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_vec4_lexeme() {
+        let src = include_str!("parallax.rs");
+        for lex in [concat!("struct ", "Vec4")] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

@@ -175,4 +175,18 @@ mod tests {
         let fade = soft_edge(Vec3::new(0.0, 0.0, 0.0), d.half, Vec3::new(0.5, 0.5, 0.5));
         assert!((fade - 1.0).abs() < 1e-6, "fade = {}", fade);
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 14 例目 (wave 165 FK adversarial (d)
+    /// Vec4 死救出 非検出、FK-2 捕捉 98 で型+3 演算+Vec3::{Add,Mul} 不可能証明削除済)
+    /// の lexeme pin 化。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_vec4_lexeme() {
+        let src = include_str!("decals.rs");
+        for lex in [concat!("struct ", "Vec4")] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

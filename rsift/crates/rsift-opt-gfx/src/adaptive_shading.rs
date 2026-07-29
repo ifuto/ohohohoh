@@ -192,4 +192,22 @@ mod strict_tests {
             }
         }
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 11 例目 (wave 162 FH adversarial (d)
+    /// 恒値スタブ死救出 非検出、FH-1 捕捉 92 で恒 false/true 常数 API 2 件を不可能
+    /// 証明削除し「カリングしない」仕様を API 非存在で構造保証化済) の lexeme pin 化。
+    /// 同宣言形の将来復活を静寂に通さない (現存の自家試験名は作り替え済で別形)。
+    #[test]
+    fn ge_removed_truth_stubs_lexeme() {
+        let src = include_str!("adaptive_shading.rs");
+        for lex in [
+            concat!("fn checkerboard", "_skip"),
+            concat!("fn should_draw", "_chunk"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

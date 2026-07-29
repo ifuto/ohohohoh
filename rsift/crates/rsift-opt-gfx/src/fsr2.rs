@@ -322,4 +322,25 @@ mod tests {
             "GPU 真経路の neighborhood clamp 残存 (注記 3/5)"
         );
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 5 例目 (wave 153 EY adversarial (b)
+    /// 削除系 4 構造 (CPU 側 neighborhood clamp / wgsl_source / Vec3::clamp / Sub+
+    /// vec_min/max) 復活 非検出、不可能証明削除済) の lexeme pin 化。GPU 真経路の
+    /// WGSL 側 clamp は別資産に残存 (注記 3/5)。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_fsr2_helpers_lexeme() {
+        let src = include_str!("fsr2.rs");
+        for lex in [
+            concat!("fn neighborhood", "_clamp"),
+            concat!("fn wgsl_", "source"),
+            concat!("fn cl", "amp"),
+            concat!("fn vec_", "min"),
+            concat!("fn vec_", "max"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

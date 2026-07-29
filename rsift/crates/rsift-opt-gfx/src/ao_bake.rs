@@ -249,4 +249,17 @@ mod tests {
         let ao = bake_face_ao(&n, 2);
         assert_eq!(ao, [3, 3, 3, 3]);
     }
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 16 例目 (wave 167 FM adversarial (c)
+    /// pack_ao4 死救出 非検出、FM 捕捉 103 で呼出ゼロ+格納域非存在+WGSL 消費者皆無の
+    /// 3 点不可能証明削除済) の lexeme pin 化。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_pack_ao4_lexeme() {
+        let src = include_str!("ao_bake.rs");
+        for lex in [concat!("fn pack_", "ao4")] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

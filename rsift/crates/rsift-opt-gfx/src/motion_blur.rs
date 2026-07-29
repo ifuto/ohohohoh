@@ -309,4 +309,23 @@ mod strict_tests {
         assert_eq!(d.samples, 8);
         assert_eq!(d.max_velocity.to_bits(), 0x3DCC_CCCD, "0.1f32");
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系採番枠外の先行同型 (wave 145 ES-2(d)
+    /// adversarial Sub 演算子 impl 復活 revert 非検出、ES-2 で Vec3/Vec4 Sub 完全装飾
+    /// 削除済) の lexeme pin 化。dead code 系採番は wave 148 EU-3(c) 起点のため本件
+    /// は枠外だが、同一限界構造の回収として本 wave で一括 pin 化。同宣言形の将来
+    /// 復活を静寂に通さない (Vec3/Vec4 側とも型+Add/Mul は消費維持)。
+    #[test]
+    fn ge_removed_sub_impls_lexeme() {
+        let src = include_str!("motion_blur.rs");
+        for lex in [
+            concat!("impl ", "Sub for Vec3"),
+            concat!("impl ", "Sub for Vec4"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

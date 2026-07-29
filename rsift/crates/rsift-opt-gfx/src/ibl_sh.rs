@@ -184,4 +184,18 @@ mod tests {
         let down = evaluate_sh(&coeffs, Vec3::new(0.0, 0.0, -1.0));
         assert!(up.x > 0.0 && down.x < 0.0);
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 13 例目 (wave 164 FJ adversarial (a)
+    /// Vec4 死救出 非検出、FJ-1 で型+3 演算+Vec3::Sub impl 不可能証明削除済) の
+    /// lexeme pin 化。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_vec4_lexeme() {
+        let src = include_str!("ibl_sh.rs");
+        for lex in [concat!("struct ", "Vec4")] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

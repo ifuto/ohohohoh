@@ -284,4 +284,18 @@ mod tests {
         }
         assert!(min_e >= 0.999, "min Sigma|n_i| = {}", min_e);
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 9 例目 (wave 160 FF adversarial (d)
+    /// Vec4 死コード再追加 非検出、FF-2 で型+3 演算 impl 不可能証明削除済) の
+    /// lexeme pin 化。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_vec4_lexeme() {
+        let src = include_str!("ddgi.rs");
+        for lex in [concat!("struct ", "Vec4")] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

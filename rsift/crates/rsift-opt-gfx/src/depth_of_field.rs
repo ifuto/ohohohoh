@@ -289,4 +289,24 @@ mod tests {
         let v = Vec4::new(1.0, 2.0, 3.0, 4.0) + Vec4::default();
         assert!(v.w == 4.0, "Vec4 Add+Default");
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系採番枠外の先行同型 (wave 147 ET
+    /// adversarial (b) Sub 演算子 impl 復活 revert 非検出) の lexeme pin 化。dead code
+    /// 系採番は wave 148 EU-3(c) 起点のため本件 (ES-2(d) wave 145・EP-2(d) wave 142
+    /// と併せた先行同型) は枠外だが、同一限界構造の回収として本 wave で一括 pin 化。
+    /// ET-2 で Sub 演算子 impl が census 消費者ゼロ不可能証明削除済。同宣言形の将来
+    /// 復活を静寂に通さない。
+    #[test]
+    fn ge_removed_sub_impls_lexeme() {
+        let src = include_str!("depth_of_field.rs");
+        for lex in [
+            concat!("impl ", "Sub for Vec3"),
+            concat!("impl ", "Sub for Vec4"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

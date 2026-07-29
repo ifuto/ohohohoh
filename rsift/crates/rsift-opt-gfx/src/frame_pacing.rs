@@ -223,4 +223,22 @@ mod tests {
     fn new_rejects_nan_refresh() {
         let _ = FramePacer::new(f64::NAN);
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 10 例目 (wave 161 FG adversarial (e)
+    /// 装飾 struct 再救出 非検出、FG-1 で unit struct+装飾メソッドを EL-1 判例で free fn
+    /// 一本化削除済、tbdr_hints.rs:56-58 同型判例) の lexeme pin 化。
+    /// 同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_frame_pacing_unit_lexeme() {
+        let src = include_str!("frame_pacing.rs");
+        for lex in [
+            concat!("struct ", "FramePacing"),
+            concat!("impl ", "FramePacing"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

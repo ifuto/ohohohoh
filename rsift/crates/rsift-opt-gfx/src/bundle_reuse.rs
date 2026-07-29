@@ -122,4 +122,59 @@ mod tests {
         assert_eq!(c.get_or_create(key(9), Vec::new).vertex_count, 30);
         assert_eq!(c.stats(), (2, 2));
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 18 例目 (wave 169 FO adversarial (c)
+    /// 死救出 非検出) の回収。変異スクリプト一次資料 (当時 /tmp) 消失で対象語彙が一意
+    /// 確定できないため (誠実記録)、代置として構造網羅 pin を立てる: 現存公開構造
+    /// (BundleKey/Bundle/BundleCommand/BundleCache/new/get_or_create/stats) の存在 pin
+    /// + pub fn/struct/enum 宣言総数 pin で新規公開構造 (当時の死救出型変更の再来) を
+    /// 将来検出する。
+    #[test]
+    fn ge_structure_census_pin() {
+        let src = include_str!("bundle_reuse.rs");
+        // 現存公開構造の存在 pin (全消失は trajectory 異常として検出)
+        assert!(
+            src.contains(concat!("pub str", "uct BundleKey")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("pub str", "uct Bundle")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("pub e", "num BundleCommand")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("pub str", "uct BundleCache")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn ne", "w(")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn get_or_", "create")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn sta", "ts(")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert_eq!(
+            src.matches(concat!("pub f", "n ")).count(),
+            3,
+            "pub メソッド宣言 の宣言総数 pin: 新規公開構造 (dead code 復活候補) の追加を検出"
+        );
+        assert_eq!(
+            src.matches(concat!("pub str", "uct ")).count(),
+            3,
+            "公開 struct 宣言 の宣言総数 pin: 新規公開構造 (dead code 復活候補) の追加を検出"
+        );
+        assert_eq!(
+            src.matches(concat!("pub en", "um ")).count(),
+            1,
+            "公開 enum 宣言 の宣言総数 pin: 新規公開構造 (dead code 復活候補) の追加を検出"
+        );
+    }
 }

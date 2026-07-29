@@ -397,4 +397,24 @@ mod tests {
             "acc = min(1.0−1/30, 1/30) = 1/30 = 0x3D088889 (rq ez_pp)"
         );
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 6 例目 (wave 154 EZ adversarial (b)
+    /// 削除系 4 構造 (render()/with_frame_dt()/mode()/tick_frame) 復活 非検出、EZ-3 で
+    /// 消費者ゼロ不可能証明削除済、wiring:684 に削除記録) の lexeme pin 化。
+    /// 同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_legacy_api_lexeme() {
+        let src = include_str!("power_policy.rs");
+        for lex in [
+            concat!("fn ren", "der"),
+            concat!("fn with_frame", "_dt"),
+            concat!("fn tick_", "frame"),
+            concat!("fn mo", "de("),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

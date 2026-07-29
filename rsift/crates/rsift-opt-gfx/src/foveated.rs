@@ -158,4 +158,26 @@ mod strict_tests {
         let d = Vec3::default();
         assert_eq!((d.x, d.y, d.z), (0.0, 0.0, 0.0));
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系採番枠外の先行同型 (wave 142 EP-2(d)
+    /// adversarial Vec4+全 trait 復活 revert 非検出、EP-2 で census 消費者ゼロ不可能
+    /// 証明削除済) の lexeme pin 化。dead code 系採番は wave 148 EU-3(c) 起点のため
+    /// 本件は枠外だが、同一限界構造の回収として本 wave で一括 pin 化。同宣言形の
+    /// 将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_vec4_lexeme() {
+        let src = include_str!("foveated.rs");
+        for lex in [
+            concat!("struct ", "Vec4"),
+            concat!("impl ", "Vec4"),
+            concat!("Add for ", "Vec4"),
+            concat!("Sub for ", "Vec4"),
+            concat!("Mul<f32> for ", "Vec4"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

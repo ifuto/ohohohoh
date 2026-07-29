@@ -352,4 +352,18 @@ mod tests {
             "WGSL も sum-then-exp 同形 (注記 3)"
         );
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 2 例目 (wave 150 EV adversarial (b)
+    /// Vec4+impl 復活 revert 非検出、EV-2 で不可能証明削除済) の lexeme pin 化。
+    /// 同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_vec4_lexeme() {
+        let src = include_str!("volumetric_fog.rs");
+        for lex in [concat!("struct ", "Vec4")] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

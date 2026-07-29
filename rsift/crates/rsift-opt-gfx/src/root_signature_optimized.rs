@@ -150,4 +150,55 @@ mod strict_tests {
         assert_eq!(cost, 19, "16 (Camera) + 1 (bindless Table) + 2 (Material)");
         assert!(cost <= 64, "D3D12 64 DWORD 制限内であること");
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 17 例目 (wave 168 FN adversarial (d)
+    /// 死救出 非検出) の回収。変異スクリプト一次資料 (当時 /tmp) 消失で対象語彙が一意
+    /// 確定できないため (誠実記録)、代置として構造網羅 pin を立てる: 現存公開構造
+    /// (RootParamType/RootParameter/StaticSampler/OptimizedRootSignature/rs_graphics/
+    /// root_cost) の存在 pin + pub fn/struct/enum 宣言総数 pin で新規公開構造 (当時の
+    /// 死救出型変更の再来) を将来検出する。
+    #[test]
+    fn ge_structure_census_pin() {
+        let src = include_str!("root_signature_optimized.rs");
+        // 現存公開構造の存在 pin (全消失は trajectory 異常として検出)
+        assert!(
+            src.contains(concat!("pub e", "num RootParamType")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("pub str", "uct RootParameter")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("pub str", "uct StaticSampler")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("pub str", "uct OptimizedRootSignature")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn rs_", "graphics")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert!(
+            src.contains(concat!("fn root_", "cost")),
+            "現存公開構造の識別子消失を検出"
+        );
+        assert_eq!(
+            src.matches(concat!("pub f", "n ")).count(),
+            2,
+            "pub メソッド宣言 の宣言総数 pin: 新規公開構造 (dead code 復活候補) の追加を検出"
+        );
+        assert_eq!(
+            src.matches(concat!("pub str", "uct ")).count(),
+            3,
+            "公開 struct 宣言 の宣言総数 pin: 新規公開構造 (dead code 復活候補) の追加を検出"
+        );
+        assert_eq!(
+            src.matches(concat!("pub en", "um ")).count(),
+            1,
+            "公開 enum 宣言 の宣言総数 pin: 新規公開構造 (dead code 復活候補) の追加を検出"
+        );
+    }
 }

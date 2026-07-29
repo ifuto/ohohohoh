@@ -256,4 +256,25 @@ mod tests {
         let (o, t) = b.build_draws();
         assert!(o.is_empty() && t.is_empty(), "empty golden (rq ex_mb (2))");
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 4 例目 (wave 152 EX adversarial (b)
+    /// Flora 系+split+draw_call_count 復活 非検出、EX-2 捕捉 64 で §7 消化 15 不可能
+    /// 証明削除済: census 全消費者ゼロ・wiring 供給点不在・fake 配線は偽装禁止抵触)
+    /// の lexeme pin 化。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_flora_lexeme() {
+        let src = include_str!("material_batch.rs");
+        for lex in [
+            concat!("struct ", "FloraInstance"),
+            concat!("struct ", "InstancedFloraRenderer"),
+            concat!("fn draw_call", "_count"),
+            concat!("fn split_opaque", "_transparent"),
+            concat!("fn decode_", "xyz"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

@@ -236,4 +236,18 @@ mod tests {
         assert_eq!(p, 3);
         assert_eq!(streamer.pool.lock().unwrap().resident_bricks.len(), 2);
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 15 例目 (wave 166 FL adversarial (d)
+    /// pub 死救出 非検出) の lexeme pin 化。FL 捕捉 101 で wiring 実配線 (report 実値)
+    /// に根治済みのため代替メソッド宣言形は不要。同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_resident_brick_count_lexeme() {
+        let src = include_str!("gigavoxels.rs");
+        for lex in [concat!("fn resident_brick", "_count")] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

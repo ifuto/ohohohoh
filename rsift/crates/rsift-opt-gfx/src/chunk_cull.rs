@@ -398,4 +398,22 @@ mod tests {
         c.apply(far_occ, &mut st);
         assert_eq!(st.range_skipped, 1, "遠方占有 → range 帰属");
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 8 例目 (wave 157 FC adversarial (d)
+    /// 捕捉 78 dead field 2 件の復活 非検出) の lexeme pin 化。FC-1 で visgraph gate/
+    /// 部分 section cap 双方とも捏造ゲート回避 (偽装禁止抵触) で不可能証明削除済。
+    /// 同フィールド宣言形 (名前+コロン) の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_dead_fields_lexeme() {
+        let src = include_str!("chunk_cull.rs");
+        for lex in [
+            concat!("visgraph_enabled", ":"),
+            concat!("max_section_draw", ":"),
+        ] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }

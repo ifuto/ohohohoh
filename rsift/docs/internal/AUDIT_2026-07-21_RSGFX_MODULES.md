@@ -9211,4 +9211,61 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   先頭空行 1 保持)・rayon_job 1/1/0 (全て HEAD 原生完全保持・自己起因 0)。
   定型改善: fmt 判定は必ず seal 同一条件 (tail -n +3) で採点すること。
 
-## wave 185 以降のフェーズ 2 継続計画
+## wave 185 (GE) — dead code 系非検出 1-18 例目全回収 + 採番系譜機械復元 (2026-07-29)
+
+- **採番系譜の機械復元 (GC 棚卸の例目帰属訂正)**: GC 台帳 hygiene は例目 1-8
+  を帰属不能 (空白) 扱いしていたが、AUDIT 一次資料の「同型 N 連続目」記述から
+  機械確定: EX-2 (wave 152)「EU-3(c)/EV-2(b)/EW-2(b) 同型 4 連続目」・EY (153)
+  「同型 5 連続目」・EZ (154)「同型 6 連続目」・FB (156) と FC (157)「誠実記録
+  8 連続」より 1=EU-3(c) parallax Vec4・2=EV-2(b) volumetric_fog Vec4+impl・
+  3=EW-2(b) screen_space_shadow Vec4・4=EX-2(b) material_batch Flora 系・
+  5=EY-2(b) fsr2 削除系 4 構造・6=EZ-3(b) power_policy 削除系 4 構造・
+  7=FB-2(b) pool_slab get_mut・8=FC-(d) chunk_cull fields 復活。9-18 =
+  FF-(d) ddgi Vec4・FG-(e) frame_pacing 装飾 struct・FH-(d) adaptive_shading
+  恒値スタブ・FI-(e) pso・FJ-(a) ibl_sh Vec4・FK-(d) decals Vec4・FL-(d)
+  gigavoxels resident_brick_count・FM-(c) ao_bake pack_ao4・FN-(d) root_sig・
+  FO-(c) bundle。**私の初手誤帰属** (AUDIT 行番号 grep で naga offset 突合
+  2/3 例目 (U-3/V-2) を dead code 系 2/3 例目と誤読した自己照査記録) を
+  本系譜復元で訂正。
+- **回収実施**: GD 定型 (include_str! 自己参照 lexeme pin・split concat! 自己
+  言及 vacuous 回避・証跡 doc 接頭限定) で ge_removed_*_lexeme 18 本を各
+  モジュール tests mod 末尾へ追加 + 採番枠外の先行同型 (EP-2(d) wave 142
+  foveated Vec4・ES-2(d) wave 145 motion_blur Sub impl・ET-2(b) wave 147
+  depth_of_field Sub impl — dead code 系採番は EU-3(c) 起点のため枠外だが
+  同一限界構造) 3 本、**計 21 pin**。例目 12 (FI)・17 (FN)・18 (FO) は対象
+  語彙の一次資料が消失 (FI: 当該コミット diff は削除行ゼロ機械確認・FN/FO:
+  /tmp 変異スクリプト消失) ため構造網羅 census pin (現存 pub 構造存在 pin +
+  pub fn/struct/enum 宣言総数 pin) へ代置の誠実記録。
+- **census pin 自己言及事故 (3 連続・全てテスト RED で捕捉・誠実記録)**:
+  総数 pin の concat! 第一引数が完全形リテラル ("pub fn "/"pub struct "/
+  "pub enum ") として自己言及混入 — 3 段 (pub fn→struct→enum) とも RED 検出
+  → concat! 分割 ("pub f"+"n "/"pub e"+"num ...") と assert メッセージ日本語化
+  (「公開 struct 宣言」) で根治。私の初期版 doc 採番 (dof=1 例目) 誤りも上記
+  系譜復元で訂正 (ET を採番枠外表記へ・EU=1/EV=2 へ繰上げ)。
+- **adversarial 21/21 RED 全検出**: 宣言形復活変異 (struct Vec4 宣言・
+  Sub/Flora/fsr2/power legacy API 復活・fields フィールド復活・unit struct
+  復活・恒値スタブ復活・pub fn/enum/struct 総数 +1 変異等) を全 21 ファイルに
+  個別適用 (18 一括 + dof 単独 + sss/foveated/motion_blur 3 追加)、全 pin が
+  1 RED 以上で検出 (dof 初回変異は use 行未変更で E0405 — コンパイル可能形
+  (use Sub 追加同行) へ修正して RED 確立の誠実記録)。復元 MD5-VERIFIED ×21。
+- **dead code 系非検出カウンタ 19→0 (例目 1-25 全回収完遂)**: 19-25 は wave
+  184 GD で回収済、1-18 を本 wave で回収 → カウンタ 0。「26 例目」は FW-3
+  (wave 177 adversarial (c) unwrap 化、破損 LZ4 契約 pin で既回収) の
+  truth 契約系で dead code 系には未採番 — FY 据置 26 記述との整合を確定記録
+  (dead code 系の最終採番は 25 で完結)。
+- strict +21 net **1398 全緑** (機械検算 1377+21。1377+18=1395 で 18 pin
+  反映、+3=1398 で先行同型 3 pin 反映を個別フィルタ確認で検算)。api 49・
+  replay 16 全緑・警告 0。src ロジック変更ゼロで digest 不変確実。
+- fmt (seal ゲート2 機械値、全 PASS): 全 21 ファイル自己起因 0 — HEAD 逸脱
+  完全保持 (adaptive_shading 13/13/0・bundle 20/20/0・ddgi 2/2/0・foveated
+  2/2/0・gigavoxels 1/1/0・ibl_sh 8/8/0・pool_slab 1/1/0・pso 7/7/0・
+  root_sig 23/23/0、残 12 ファイル 0/0/0)。ao_bake は CRLF 原生保持で
+  逸脱 0/0/0 (私の挿入ブロックのみ選択正規化で HEAD 原生を非改変)。
+- seal 全 6 ゲート PASS・digest 004c1cf5fb17bfe8 rows=357 不変。
+
+## wave 186 以降のフェーズ 2 継続計画
+- loose pin の golden bit 化 (フェーズ 2 残項目)。
+- EL-1(d)/EO(e)/EN-2 等、dead code 系採番以前の同型誠実記録 (wave 142 より前)
+  の棚卸継続回収 (本 wave で EP-2(d)/ES-2(d)/ET-2(b) の直近 3 件を回収)。
+- CRLF 残存 10 ファイル・stray copy (rsift/rsift/rsift-opt-gfx) 削除は
+  ユーザー管理資産確認待ちで継続保留。

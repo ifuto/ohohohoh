@@ -452,4 +452,18 @@ mod tests {
         assert_eq!(map[&(2, 0)], 0, "(2,0) は free 済 slot0 を LIFO 再利用");
         assert_eq!(*slab.get(map[&(1, 0)]).unwrap(), 9, "(1,0) mat 9 read-back");
     }
+
+    /// 【wave 185 GE フェーズ2 回収】dead code 系 7 例目 (wave 156 FB adversarial (b)
+    /// 削除済 get_mut 復活 非検出、census 消費者ゼロ確定で削除済) の lexeme pin 化。
+    /// 同宣言形の将来復活を静寂に通さない。
+    #[test]
+    fn ge_removed_get_mut_lexeme() {
+        let src = include_str!("pool_slab.rs");
+        for lex in [concat!("fn get_", "mut")] {
+            assert!(
+                !src.contains(lex),
+                "dead code 系削除語彙の宣言形復活を検出 (wave 185 GE lexeme pin)"
+            );
+        }
+    }
 }
