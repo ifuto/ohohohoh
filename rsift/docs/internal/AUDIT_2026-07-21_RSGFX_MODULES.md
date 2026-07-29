@@ -9178,3 +9178,37 @@ rq fw_section 全 assert 通過 (idx(1,2,3)=801・runs=3・stored=2+3*4=14・102
   177-181 (FW/FY/FZ/GA) は adversarial 非検出 0 で据置 26。回収様式は
   「include_str! 自己参照 lexeme pin」+「truth 契約 pin」に定型確立。
 - 本 wave は文書整合のみで src 変更ゼロ (テスト 1370 据置)。
+## wave 184 (GD) — adversarial 非検出旧例 7 件の一括回収 (2026-07-29)
+- 対象 （全て削除済み API の復活挿入変異非検出、lint/テスト限界):
+  170-d use_mimalloc (19 例目)・171-d failed_chunks (20)・172-b build_pcore
+  (21)・173-c dev() (22)・174-c clear() (23)・175-c capacity() (24)・
+  176-c wgsl_source (25)。
+- 回収様式 （FX-3 / wave 176 自己照査判例の定型確立): include_str! 自己参照
+  lexeme pin — 宣言形 (`fn <name>` 接頭) の不在 pin、検出語彙は split
+  concat! 分割記述で自己言及 vacuous 化回避、証跡 doc 条文は接頭限定で
+  範囲外。各ファイルに gd_removed_<api>_lexeme strict 追加 (7 本)。
+- adversarial 7 系統一括実証: 各 pin が復活挿入変異 (pub fn 宣言挿入) を
+  1 RED で全検出 (7/7 RED、復元 MD5-VERIFIED ×7: mimalloc
+  4baac38f9cd3e55658818735ebed748e / dashmap 85af22835774c0078784562237431fcd
+  / rayon 9b57c5aa348cc3e4e79d4f79360bd8fe / pgo 55e55f5e53b1c64f8075628bd7ffd165
+  / instanced d606a65ea626038361c62bbdf6a4121a / bump e65f9cbed13f8c33cb9cccb612e70402
+  / gtao bdba7092ba406907321903650e8d7f33)。**非検出カウンタ 26→19**。
+- 先行作業で環境再リセット発生 (HEAD→base 回帰、ワークツリー完全残存を
+  検出後 git reset --mixed FETCH_HEAD 整列 + restore-env.sh + rspeed 再
+  構築、消失 wave 183 コミット内容は残存ワークツリーから同一内容で
+  4e8d257 として再コミット → push 成功・CI run 30419726961 success 検証)。
+- strict +7 net 1377 全緑 (機械検算 1370+7、gtao.rs 1 系のみ pin 追加、
+  src ロジック変更ゼロで digest 不変確実)。api 49・replay 16 全緑・警告 0。
+- fmt: 全 7 ファイル自己起因 0 (dashmap_registry HEAD 原生 set 31・
+  instanced_draw 34 を機械分離、残り artifact のみ = 完全保持)。
+  fmt 自己照査: ピン挿入スクリプトでテスト fn 閉じと mod 閉じの間に空行
+  重複を生成 (4 ファイル)、機械分離では `<>` 記号行集合で 0 と誤判定した
+  が seal ゲート2 が FAIL で捕捉 — 正規化 python のスライス境界バグ
+  (tail[:-5] で `}` に過剰空白混入) を二度目 FAIL で特定し、seal 条件
+  (先頭 2 行除去) 準拠の diff 検証で全ファイル dev=0 修正。seal ゲート2
+  機械値: bump_arena 0/0/0・dashmap_registry 10/10/0・gtao 0/0/0・
+  instanced_draw 8/8/0・mimalloc_config 0/0/0・pgo_bolt 1/1/0 (HEAD 原生
+  先頭空行 1 保持)・rayon_job 1/1/0 (全て HEAD 原生完全保持・自己起因 0)。
+  定型改善: fmt 判定は必ず seal 同一条件 (tail -n +3) で採点すること。
+
+## wave 185 以降のフェーズ 2 継続計画

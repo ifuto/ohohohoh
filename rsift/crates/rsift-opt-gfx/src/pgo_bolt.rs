@@ -104,4 +104,17 @@ mod tests {
             "-C lto=fat -C codegen-units=1 -C target-cpu=x86-64-v3"
         );
     }
+    /// 【wave 184 GD】削除済み API `dev()` の再出現 lexeme pin (adversarial
+    /// 173-c・22 例目 非検出回収、wave 26 例未採から 1 回収): 削除 truth 証跡として
+    /// 宣言形が再起しないことを機械 pin。自己言及 vacuous 回避のため検出
+    /// 語彙は分割記述 (doc 証跡条文には `fn ` 接頭で択定範囲外)。
+    #[test]
+    fn gd_removed_dev_lexeme() {
+        let src = include_str!("pgo_bolt.rs");
+        let lex = concat!("pub fn de", "v(");
+        assert!(
+            !src.contains(lex),
+            "削除 API `dev()` の宣言再来を検出 → 死救出は lint/テスト限界で"
+        );
+    }
 }

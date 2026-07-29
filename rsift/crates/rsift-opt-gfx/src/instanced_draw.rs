@@ -77,4 +77,18 @@ mod tests {
         assert_eq!(back[0].ao, 5);
         assert_eq!(back[0].world_pos, [1.0, 2.0, 3.0]);
     }
+    /// 【wave 184 GD】削除済み API `clear()` の再出現 lexeme pin (adversarial
+    /// 174-c・23 例目 非検出回収、wave 26 例未採から 1 回収): 削除 truth 証跡として
+    /// 宣言形が再起しないことを機械 pin。自己言及 vacuous 回避のため検出
+    /// 語彙は分割記述 (doc 証跡条文には `fn ` 接頭で択定範囲外)。
+    #[test]
+    fn gd_removed_clear_lexeme() {
+        let src = include_str!("instanced_draw.rs");
+        let lex = concat!("fn cle", "ar");
+        assert!(
+            !src.contains(lex),
+            "削除 API `clear()` の宣言再来を検出 → 死救出は lint/テスト限界で"
+        );
+    }
+
 }

@@ -139,4 +139,17 @@ mod tests {
         let o = g.occlusion(0.0, &flat);
         assert!((o - 1.0).abs() < 1e-6);
     }
+    /// 【wave 184 GD】削除済み API `wgsl_source` の再出現 lexeme pin (adversarial
+    /// 176-c・25 例目 非検出回収、wave 26 例未採から 1 回収): 削除 truth 証跡として
+    /// 宣言形が再起しないことを機械 pin。自己言及 vacuous 回避のため検出
+    /// 語彙は分割記述 (doc 証跡条文には `fn ` 接頭で択定範囲外)。
+    #[test]
+    fn gd_removed_wgsl_source_lexeme() {
+        let src = include_str!("gtao.rs");
+        let lex = concat!("fn wgsl", "_source");
+        assert!(
+            !src.contains(lex),
+            "削除 API `wgsl_source` の宣言再来を検出 → 死救出は lint/テスト限界で"
+        );
+    }
 }
