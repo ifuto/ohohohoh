@@ -8943,3 +8943,12 @@ census grep: parallel_map_chunks = full_graph_wiring:863 実消費 (morton 局�
 - **FR-2 [低] 捕捉 111 [小]**: §7 消化 34。RayonJobConfig + parallel_for_each_chunk 消費者ゼロ → 不可能証明削除。module は wiring 実消費の parallel_map_chunks 単機能へ truth 縮退。
 
 adversarial 2 系統: (a) 順序逆転変異 2 RED (preserves/fr_deterministic 両側)・(b) pcore 死救出 非検出 (dead code 21 例目)。復元 MD5-VERIFIED 2 回 (固定版 md5 eed00df59afebb7e57c9a982e00b3e34)。strict 削除 2・追加 1 → net -1 で 1345 全緑 (機械検算 1346-1)。api 49・replay 16 全緑・警告 0・fmt 自己起因 0 (seal ゲート2 機械値 HEAD 1/現 1/自己起因 0 = artifact のみ)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
+
+## wave 173 (FS) pgo_bolt.rs 厳密監査 (2026-07-29)
+
+census grep: PgoConfig::release().rustflags() = full_graph_wiring:465 info! ログ実消費。dev()/bolt/pgo_instrument 読み取り消費者ゼロ・CI RUSTFLAGS 未配線 (bench.yml のみ) を機械確定。workspace [profile.release] lto=fat/CU 1 一致で release 値は陽性。
+
+- **FS-1 [低] 捕捉 112 [小]**: rustflags() が pgo_instrument/bolt を完全無視 (bolt: true でも出力同一の計装不整合) → pgo_instrument truth 接続 (-C profile-generate 付加) + bolt 不可能証明削除 (rustc flag 非対応 truth)。TDD value RED 1/1。
+- **FS-2 [低] 捕捉 113 [小]**: §7 消化 35。dev() 消費者ゼロ → 不可能証明削除。
+
+adversarial 3 系統: (a) profile-generate 分岐除去 1 RED・(b) target-cpu v3→v2 変異 2 RED (profile_field/rustflags_string 両側)・(c) bolt 死救出 非検出 (dead code 22 例目)。復元 MD5-VERIFIED 3 回 (最終固定版 md5 a94328a48cad32048e4fc789a7397f00、fmt 正準化で更新)。strict +1 net 1346 全緑 (機械検算 1345+1)。api 49・replay 16 全緑・警告 0。fmt: 自己起因 11 機械分離 (release struct/format!/テスト struct update ×2) → 4 hunk rustfmt 正準化で逸脱 0 → seal ゲート2 機械値 HEAD 4 / 現 1 / 自己起因 0 (現逸脱は artifact のみ)。digest 004c1cf5fb17bfe8 rows=357 不変・seal 全 6 ゲート PASS。
