@@ -9847,6 +9847,126 @@ digest PASS)。
 - GP (196): CGL/GL 直 binding (旧 Intel Mac 向け、正典源: vendor cgl/src/cgl.rs
   + glutin/src/api/cgl/ + glow gl46/native)。
 
+## wave 195 (GQ): Mod ハイジャック防止 capability セキュリティ層 — 「PC 乗っ取り不可・Mod の幅不変」
+(2026-07-30)
+
+ユーザー新規要求: 「Mod がユーザーの PC を乗っ取ったりできないように
+(ハッキング防止のため) セーフティつけて。でもそれで作れる Mod の幅が
+狭まっちゃダメ。」— GO (Metal 4) / GP (GL) は wave 196/197 へ計画繰延し
+本要求を最優先消化 (GO/GP 計画そのものは wave 194 行のとおり維持)。
+
+### 脅威モデルと誠実な境界
+Rsift のネイティブ Mod はプロセス内 DLL/so/dylib であり、**ロード後の
+ネイティブコードを同一プロセス内で OS 級に制限することは原理的に不可能**
+(dll は WinAPI/libc を直接叩ける)。よって防御はロード前に集中する多層構造:
+1. **ロード前静的検査** (`vet_bytes` 純粋関数): PE import 記述子の構造
+   パース (手書き・全境界検査・ordinal/PE32+/section RVA 写像対応) に
+   よる高精度分類 + 全フォーマット (PE/ELF/Mach-O) 横断の文字列
+   シグネチャ走査の 2 層。ホスト危険能力 8 種 (HostCapability:
+   process_exec / file_write_outside_scope / file_read_sensitive /
+   network_egress / native_module_load / jvm_instrumentation /
+   input_capture / persistence_autostart) を証拠つき検出。
+2. **即時拒否 (協議余地なし)**: 認証情報窃取ツール語彙 (mimikatz /
+   sekurlsa:: / lsass.exe / meterpreter / reflective dll injection) と、
+   プロセスインジェクション連鎖語彙 (CreateRemoteThread・
+   WriteProcessMemory・VirtualAllocEx 等 7 語彙の 2 種以上共起) は
+   同意の有無にかかわらず Deny。
+3. **capability + 同意ストア**: 検出能力は `mod_perms.json` (規約名
+   `.rsift_mod_perms.json`、Mod ディレクトリ直下) でユーザーが明示承認
+   したもののみ付与。Mod ファイル SHA-256 (自前実装・NIST 4 ベクタ
+   検証) と同意を対に保存し、**Mod 差替え = ハッシュ変化 = 同意自動
+   失効** (すり替え防止)。付与は least-privilege (検出分のみ)。
+4. **未承認時 scaffold**: `ensure_pending_entry` が hash + requested
+   能力を JSON へ自動記帳 → ユーザーは granted へ移すだけ (摩擦最小化)。
+5. **ランタイムゲート** (`SecurityGate::require`): rsift ブリッジ上の
+   mod 帰属危険操作を能力検査、全件監査 ring (容量 64・OOM なし) に刻印、
+   snapshot/report_string で観測可能。
+6. **JNI op 構造ガード**: Java ブリッジ (`RsiftModBridge.nativeDispatch`)
+   は呼出 Mod を帰属できない (単一ネイティブエントリ) ため、ホスト特権系
+   予約接頭辞 `host.` の op は構造的に拒否 (拒否はゲート計数で観測)。
+
+### 幅不変の機械 pin (本要求の核心制約)
+- 危険能力を使わない Mod (worldgen/rendering/networking/registry/event/
+  GUI 等 = 生態系の大半) は検出 0 → **即 Allow・摩擦ゼロ** (gq_benign/
+  breadth_lock が pin)。
+- ゲーム API 表面: SuiteModuleId::ALL **42 モジュール**全稼働・dispatch
+  既存 op 4 (packet/render/client_tick/channel) は capability 不要で
+  無制限維持 (回帰 lock)。
+- 危険能力が必要な Mod も **禁止しない**: 検出→ユーザー提示→承認で同一
+  能力を付与 (ブラウザ拡張の権限モデル同型)。「無断」だけを殺す。
+- ゼロ信頼ティア: `rsift-jvm::wasm_sandbox` (WASM 隔離) は最小能力既定の
+  並存ティアとして存続 (不明配布元 Mod の安全な受け皿)。
+
+### 配線 (§7 実消費者、全て本番経路)
+- `native_loader::load_single_mod`: `Library::new` (動的リンク実行) **以前**
+  に `vet_mod_binary` → Allow=gate 登録+`ModManifest.capabilities` 記録
+  (least-privilege、Mod は自身の付与能力を manifest から自己参照可能) /
+  RequireConsent=scaffold 記帳+ロード中止 (対処法つき error) / Deny=即中止。
+  1 Mod の遮断は他 Mod のロードを殺さない (従来の per-mod error 継続を維持)。
+- `mod_dispatch::dispatch_op`: match 最前段で `jni_op_allowed` ガード +
+  拒否計数。`mod_api::ModManifest` に capabilities フィールド追加
+  (serde default で後方互換、mod_menu テスト 2 構築点追従)。
+
+### TDD / adversarial / 機械検数
+- strict: rsift-api **66** 全緑 (49+17、gq_ prefix **17** 本を個別フィルタ
+  機械確認)・opt-gfx **1463** 不変全緑 (API 変更非破壊)・警告 0。
+- 機械値 pin 由来の自己照査: SuiteModuleId::ALL を 44 と暗算記述 → 実値
+  **42** を pin テストが RED 捕捉、機械値へ修正 (TDD が仕様誤認を捕捉)。
+- adversarial 4 系統 **6 RED** 全検出・復元 MD5-VERIFIED×4:
+  - A: STRING_SIGS から PowerShell needle 1 行除去 → lattice RED (1)。
+  - B: インジェクション連鎖閾値 2→99 → hard_deny_injection RED (1)。
+  - C: consent SHA-256 照合の無効化 → lattice 差替え腕 + consent tamper
+    の **2 RED** (すり替え耐性の感応度証明)。
+  - D: `jni_op_allowed` 常時 true 化 → prefix guard + dispatch 計数の
+    **2 RED**。
+  - 自己照査 1 件誠実記録: 新規未追跡ファイルを `git restore` で復元不能
+    → needle 再挿入+md5 照合で正確復元、以後は /tmp バックアップ先行に修正。
+- fmt: 新規 mod_security.rs **0 逸脱** (rustfmt 忠実化)・変更既存 4 ファイル
+  自己起因 **0** (mod_dispatch HEAD=現 **15**・mod_menu 46=46・lib.rs
+  110=110 は HEAD 原生保持、native_loader CRLF 原生は LF 正規化同一条件で
+  HEAD **34**=現 **34**・挿入ブロックを rustfmt 忠実形へ移植のうえ CRLF
+  行末を完全保持)。簡体字走査 0 (変更 6 ファイル)。
+- gate 統合テスト: `gq_loader_integration_deny_precedes_linker` で
+  Deny が動的リンク以前に止まること (gate 未登録)・良性 Mod が vet を
+  通過すること (gate 登録済→linker 段階到達) を機械証明。
+- seal 全 6 ゲート PASS ×2 連続 (機械値: 変更追跡 **8** files・ゲート1
+  san **0 findings**・ゲート2 fmdiff 自己起因 **0/0/0/0/0** (lib.rs HEAD
+  55→現 54・mod_api 0=0・mod_dispatch 8=8・mod_menu 12=12・native_loader
+  HEAD 9→現 0)・ゲート3 trailws **0**・台帳 **667** (GQ-1)・ゲート4
+  opt-gfx **1463** 全緑・api **66** (49+17)・replay **16**・ゲート5
+  digest **004c1cf5fb17bfe8 rows=357 不変 PASS**・ゲート6 env 全 OK)。
+
+### 環境運用の決定記録 (CRLF 原生ファイルの取扱変更)
+- gate1 san は変更 file の raw findings に対してゼロ許容 (HEAD 相対なし)
+  であり、wave 182 の「CRLF 約 10 ファイル実害ゼロ保持」判定は **未編集**
+  ファイルへの適用だった。本 wave でセキュリティ配線のため native_loader.rs
+  (CRLF 原生 226 findings) を実編集する必要が生じ、混合行末 (最悪) か
+  全面 LF 正規化かの二者択一を検討 → ゲート絶対基準と今後の編集性から
+  **native_loader.rs のみ LF 正規化 + rustfmt 忠実形**へ転換 (HEAD 原生
+  fmt 逸脱 9 件も同時解消、現 0)。残り CRLF 原生ファイルは未編集で
+  「保持判定」を継続。併せて lib.rs HEAD 原生の行末空白 1 件 (doc
+  コメント `//! `) を hygiene 除去 (gate3 絶対基準のため)。
+- 復旧実績: 本セッションで sandbox が再初期化 (local HEAD base 化・/tmp
+  消失) されたが、remote tip (wave 194) から fetch+reset --mixed で完全
+  復元し、npm @rustbin で toolchain (1.88.0) を再構築後、正規
+  ci/restore-env.sh (vendor ブランチ・sha256 検証つき) で canonical
+  toolchain (1.94.1) + vendor cache (/tmp/rsift-vendor) に統一した。
+
+### 誠実な保証境界 (過剰約束なし)
+- **保証できる**: シグネチャ逸話・既知窃取語彙・インジェクション連鎖・
+  未承認の危険能力使用 Mod のサイレントロードを構造的に防ぐこと、全判定が
+  証拠つきで監査可能であること、Mod を更新すれば同意が自動失効すること、
+  および通常 Mod のロード体験が不変であること (機械 pin 済)。
+- **保証の及ばない範囲**: シグネチャ未収載のゼロデイ的悪性ロジックを含む
+  Mod、および承認したうえで信頼した Mod の行動 (承認モデルの本質的限界;
+  未知配布元は WASM ティア運用を推奨)。文字列検査は難読化 (暗号化
+  ペイロード等) に弱い — fail-closed 緩和として PE import 解析不能時は
+  native_module_load 検出扱いで協議に回す構造とした。
+
+### 次 wave 計画
+- GO (196): Metal 4 (MTL4) 直 binding (wave 194 計画行の番号繰延)。
+- GP (197): CGL/GL 直 binding (旧 Intel Mac 向け、同上)。
+
 ## wave 189 以降の運用 (フェーズ 2 完遂後)
 - adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
   完結 (directive ⑧)。
@@ -9856,4 +9976,5 @@ digest PASS)。
 - 捕捉採番の次空き: 130 (129 は wave 190 で使用)。strict 総数履歴:
   …1398(185)→1402(186)→1404(187)→1408(188)→1418(189、gi_ 10 本)
   →1422(190、gj_ 4 本)→1425(191、gk_ 3 本)→1428(192、gl_ 3 本)
-  →1431(193、gm_ 3 本)→1463(194、gn_ 32 本)。
+  →1431(193、gm_ 3 本)→1463(194、gn_ 32 本)→1463(195、opt-gfx 不変;
+  rsift-api 49→66、gq_ 17 本。捕捉採番次空き 130 据置 = 採番なし機能 wave)。

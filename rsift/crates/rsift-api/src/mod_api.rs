@@ -13,6 +13,10 @@ pub struct ModManifest {
     pub author: String,
     pub description: String,
     pub target_rsift_version: String,
+    /// ロード時にセキュリティ層が記録する付与済みホスト危険能力 (least-privilege:
+    /// 静的検査で検出されユーザー同意済みのもののみ)。既定空 = 危険能力なし。
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 /// DLL Mod側で実装・公開される C ABI エントリポイントの型定義

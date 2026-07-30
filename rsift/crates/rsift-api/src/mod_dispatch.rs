@@ -2,7 +2,7 @@
 
 use crate::mod_suite::mod_suite;
 use crate::runtime::runtime;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Dispatch a network packet to all loaded mod `rsift_mod_on_packet` handlers.
 pub fn dispatch_packet(packet_id: u32, buf_ptr: i64, buf_len: i32) -> bool {
@@ -30,6 +30,17 @@ pub fn dispatch_render(width: u32, height: u32, delta_time: f32) {
 
 /// Generic dispatch entry for Java `RsiftModBridge.nativeDispatch(op, a, b, c)`.
 pub fn dispatch_op(op: &str, a: i64, b: i64, c: i32) {
+    // セキュリティガード (wave 195): JNI ブリッジは呼出 Mod を帰属できないため、
+    // ホスト特権系予約接頭辞 `host.` の op は構造的に拒否する。既存 op
+    // (packet/render/client_tick/channel) はゲーム API 表面として無制限を維持。
+    if !crate::mod_security::jni_op_allowed(op) {
+        crate::mod_security::SecurityGate::note_jni_host_op_refusal(op);
+        warn!(
+            "[modsec] JNI host-privileged op refused (bridge cannot attribute caller): {}",
+            op
+        );
+        return;
+    }
     match op {
         "packet" => {
             let _ = dispatch_packet(a as u32, b, c);

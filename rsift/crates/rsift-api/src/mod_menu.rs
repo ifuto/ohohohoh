@@ -243,6 +243,7 @@ mod tests {
             author: "tester".into(),
             description: "test".into(),
             target_rsift_version: "1.21.11".into(),
+            capabilities: Vec::new(),
         }
     }
 
@@ -308,6 +309,7 @@ mod catalog_protocol_tests {
             author: "tester".into(),
             description: desc.into(),
             target_rsift_version: "1.21.11".into(),
+            capabilities: Vec::new(),
         }
     }
 

@@ -1,7 +1,9 @@
 //! Native DLL mod discovery and loading (shared by launcher + java agent).
 
 use crate::adaptive_perf::AdaptivePerfEngine;
-use crate::mod_api::{ModContext, ModManifest, RsiftModInitFn, RsiftModOnPacketFn, RsiftModOnRenderFn};
+use crate::mod_api::{
+    ModContext, ModManifest, RsiftModInitFn, RsiftModOnPacketFn, RsiftModOnRenderFn,
+};
 use crate::registry::ModRegistry;
 use crate::runtime::RsiftRuntime;
 use crate::TARGET_MINECRAFT_VERSION;
@@ -67,8 +69,14 @@ pub fn discover_mod_paths(mod_dir: &Path) -> Result<Vec<PathBuf>, String> {
     paths.sort_by(|a, b| {
         let stem_a = normalize_mod_id(a.file_stem().and_then(|s| s.to_str()).unwrap_or(""));
         let stem_b = normalize_mod_id(b.file_stem().and_then(|s| s.to_str()).unwrap_or(""));
-        let pri_a = LOAD_PRIORITY.iter().position(|&p| p == stem_a).unwrap_or(999);
-        let pri_b = LOAD_PRIORITY.iter().position(|&p| p == stem_b).unwrap_or(999);
+        let pri_a = LOAD_PRIORITY
+            .iter()
+            .position(|&p| p == stem_a)
+            .unwrap_or(999);
+        let pri_b = LOAD_PRIORITY
+            .iter()
+            .position(|&p| p == stem_b)
+            .unwrap_or(999);
         pri_a.cmp(&pri_b).then_with(|| stem_a.cmp(&stem_b))
     });
     Ok(paths)
@@ -158,11 +166,16 @@ fn schedule_deferred_mod_load(mod_dir: PathBuf) {
         .name("rsift-deferred-mods".into())
         .spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(20));
-            let Some(rt) = crate::runtime::runtime() else { return };
+            let Some(rt) = crate::runtime::runtime() else {
+                return;
+            };
             match load_mods_filtered(&mod_dir, rt, true, SPEED_FIRST_DEFERRED) {
                 Ok(result) => {
                     pin_loaded_libraries(result);
-                    info!("[NativeLoader] Deferred mods loaded: {:?}", SPEED_FIRST_DEFERRED);
+                    info!(
+                        "[NativeLoader] Deferred mods loaded: {:?}",
+                        SPEED_FIRST_DEFERRED
+                    );
                 }
                 Err(e) => error!("[NativeLoader] Deferred load failed: {}", e),
             }
@@ -176,13 +189,55 @@ fn load_single_mod(
     registry: &mut ModRegistry,
     is_client: bool,
 ) -> Result<LoadedModLibrary, String> {
-    let stem = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+    let stem = path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let mod_id = normalize_mod_id(&stem);
     debug!("[NativeLoader] Loading [{}] from {:?}", mod_id, path);
 
-    let library = unsafe {
-        Library::new(path).map_err(|e| format!("Dynamic linker error: {}", e))?
-    };
+    // セキュリティゲート (wave 195): 動的リンク実行より先に静的検査 + 同意照合。
+    // Deny/RequireConsent はここでロード中止 (サイレント乗っ取りの根絶)、
+    // 検出ゼロの通常 Mod は従来どおり摩擦ゼロで通過する (幅不変)。
+    let granted_caps: std::collections::BTreeSet<crate::mod_security::HostCapability> =
+        match crate::mod_security::vet_mod_binary(&mod_id, path) {
+            Ok(outcome) => match &outcome.verdict {
+                crate::mod_security::LoadVerdict::Allow(granted) => {
+                    if !granted.is_empty() {
+                        info!(
+                            "[modsec] {} vetted OK with granted host capabilities: {:?}",
+                            mod_id,
+                            granted.iter().map(|c| c.as_str()).collect::<Vec<_>>()
+                        );
+                    }
+                    crate::mod_security::SecurityGate::register(&mod_id, granted.clone());
+                    granted.clone()
+                }
+                crate::mod_security::LoadVerdict::RequireConsent(missing) => {
+                    crate::mod_security::ensure_pending_entry(&outcome, &mod_id);
+                    return Err(format!(
+                    "[modsec] {} requires user consent for host capabilities [{}] — approve in {:?} ({})。承認後に再ロードされます",
+                    mod_id,
+                    missing.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", "),
+                    outcome.consent_path,
+                    missing.iter().map(|c| c.label_ja()).collect::<Vec<_>>().join(" / ")
+                ));
+                }
+                crate::mod_security::LoadVerdict::Deny(reasons) => {
+                    error!("[modsec] {} HARD-DENIED: {}", mod_id, reasons.join("; "));
+                    return Err(format!(
+                        "[modsec] {} load DENIED (hijack signature): {}",
+                        mod_id,
+                        reasons.join("; ")
+                    ));
+                }
+            },
+            Err(e) => return Err(e),
+        };
+
+    let library =
+        unsafe { Library::new(path).map_err(|e| format!("Dynamic linker error: {}", e))? };
     let lib_arc = Arc::new(library);
 
     let manifest = ModManifest {
@@ -192,6 +247,10 @@ fn load_single_mod(
         author: "Rsift".to_string(),
         description: "Rsift Native DLL Mod".to_string(),
         target_rsift_version: TARGET_MINECRAFT_VERSION.to_string(),
+        capabilities: granted_caps
+            .iter()
+            .map(|c| c.as_str().to_string())
+            .collect(),
     };
 
     if let Ok(init_fn) = unsafe { lib_arc.get::<RsiftModInitFn>(b"rsift_mod_init\0") } {

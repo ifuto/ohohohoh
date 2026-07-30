@@ -1,5 +1,5 @@
 //! # Rsift API (1.21.11 Edition) - Hyper-Optimized Unified Parity Layer
-//! 
+//!
 //! Rsift Mod LoaderのコアAPIライブラリ。
 //! Java JVMとRust間でのゼロコピー通信（bytemuck）、DLL Modローディングインターフェース、
 //! Fabric / NeoForge 1.21.x パリティ、全能 API (`ui_ext`, `image_api`, `os_integ`)、
@@ -40,6 +40,7 @@ pub mod mod_menu;
 pub mod runtime;
 pub mod native_loader;
 pub mod mod_dispatch;
+pub mod mod_security;
 pub mod mod_suite;
 pub mod platform;
 
