@@ -9784,6 +9784,69 @@ gpu_runtime HEAD 0/現 0/自己起因 0 両 PASS**・台帳 **665** 機械表示
 digest PASS)。
 - 台帳 GM-1 (665 行目)。digest 004c1cf5fb17bfe8 rows=357 不変。
 
+## wave 194 (GN): Metal classic 直 binding 完全実装 + 独自静的解析機 (canon 監査) + Mock 動作保証 — 「Mac 実機なしで動くことを保証」
+
+ユーザー要求 (逐語): 「METAL、GL完全実装してね。あと僕Mac持ってないからMETAL APIのドキュメントを見て、完璧な独自の静的解析マシーンをRustで作成して実際に動作するかある程度検証して、動くことは保証して。直 bindingして。」
+→ 設計回答として 3 層の保証機械を実装: ①一次情報 canon との**静的照合機**、②Mock ObjC ランタイムによる**本番コード全行の Linux 動的実行検証**、③`#[cfg(macos)]` Native 経路 (objc_msgSend typed transmute 直 binding、高級ラッパ不使用)。
+
+### 新設モジュール (4) + 生成器
+- `objc_rt.rs`: ObjcRt trait (SEL は全メソッド `&'static CStr` 受け、SEL 定数直渡し)、`NativeObjcRt` (macOS のみ: objc_msgSend/objc_getClass/sel_registerName/objc_autoreleasePoolPush/Pop/MTLCreateSystemDefaultDevice を extern、全 fn で `sel_register_name_link` → typed transmute の正規形)、`MockObjcRt` (script 応答・init family absorb・live 追跡・u64/ptr override・**64KiB arena 実メモリ**で contents 書込みを物理検証、by-value 構造体 MtlClearColor(32B)/MtlViewport(48B)/MtlScissorRect(32B)/CgSize(16B)/MtlSize(24B)/MtlRegion(48B) = repr(C) 一次情報配置)。
+- `metal_direct.rs`: classic Metal 完全実装 (スタブなし)。SEL_ 60・MTLV_ 11・CLASS_ 5 の監査抽出固定形式 + API: create/create_with_format (BGRA8/RGBA8 検証)・update_vertices (newBufferWithLength 容量固定+contents 直書きの Apple 動的データ定石、物理 memcpy 検証)・probe_caps (device 名+supportsFamily:Apple7 実機真値、GO 波 MTL4 ゲート用)・render_frame/render_frame_region (scissor 部分描画、HUD/部分再描画軽量化)・render_textured_quad (lazy 第2 pipeline、UI テクスチャ経路)・render_frame_indexed (UInt16 index 幾何 tier)・create_index_buffer_u16・upload_pixels (CPU raster 転送)・readback (デバイス真値 width/height guard+clamp)・attach_layer (alloc→init Owned)・render_to_layer (nextDrawable→presentDrawable)・shutdown (全 Owned release)。全描画経路は FrameSpec/encode_frame 単一の核に収斂 (順序真理の一点化)。MSL は TRIANGLE_MSL 1 ライブラリ 4 entry (triangle vs/fs + fullscreen quad vs/fs、Apple Fullscreen Triangle 定石)。
+- `apple_canon.rs` 【機械生成・手編集禁止、#[rustfmt::skip] 4 表】: generator `tools/apple_canon_gen.py` が vendor objc2-metal/objc2-foundation/objc2-quartz-core の `#[unsafe(method(...))]` 転記 (全て Apple SDK ヘッダ header-translator 機械転記) から生成。**7840 selectors・92 enums・7 extern C fns・2614 parents**、重複 0 (機械検算)。GN で generator を 4 修正: (i) impl-for/bare-impl 帰属 (Foundation extern_methods! の NSString/NSError 帰属欠損を根治)、(ii) Apple 命名 family 規則による retain 正規化 (init/alloc/new/copy/mutableCopy+次字非小文字、prefix-only)、(iii) `#[unsafe(super(X))]`  superclass 辺抽出 (objc2 0.6 形式、+148 辺)、(iv) NSOBJCORE に init (Owned) 追加。検証: 60 条件解決 MISSING 0・retain spot check 7/7 (newCommandQueue Owned・commandBuffer Borrowed・initWithUTF8String: Owned・localizedDescription Borrowed・contents Borrowed・init Owned・colorAttachments Borrowed)。
+- `apple_ffi_audit.rs`: **独自静的解析マシン** (ユーザー要求本体)。規則 R1 (全 SEL が継承解決込み canon 存在)、R2 (全 MTLV enum 値が canon 厳密一致)、R3 (selector コロン数==trait 宣言データ引数個数==呼出実引数個数の三者一致、80 呼出全件)、R4 (extern link_name が libobjc 既知集合∪CANON_METAL_CFNS・引数個数一致)、R5 (fixture on_make/on_borrow が canon retain 規則と一致の mock 自己照査)、R6 (SEL_/MTLV_/CLASS_ 消費者ゼロ宣言禁止=§7 機械化、単語境界照合)、R7 (CLASS_ が canon 既知クラス)。`logical_statements` 論理フラグメント化 + カーソル走査で **rustfmt 折返し非依存**の構文監査。run_full_audit() は include_str! で実ソース固定配線。go:全違反 0 をテスト pin + 変異サンプルで各規則の検出能力を RED 証明 (11 本)。
+- `apple_backend.rs` 配線: NativeDirectPlan/native_direct_plan (RSIFT_GFX_APPLE_NATIVE 宣言 matrix+ffi_audit_clean ゲート)・ffi_audit_report・`#[cfg(macos)]` native_direct_session (NativeObjcRt 実機起動点、他 OS はシンボル不在 cfg 除外設計)。lib.rs に 3 mod 登録。
+
+### GN 自己照査 (wave 内で全解決、誠実記録)
+1. Mock `u64_0` 常時 0 で `status != Completed(4)` 擬似失敗 → (recv_class,sel) キーの `on_u64` override 追加、fixture に canon 値 4 登録。
+2. fixture が pipeline accessory getter (colorAttachments/objectAtIndexedSubscript:) を **Owned 誤登録** → mock リーク検出 [10,11] で捕捉、canon getter=Borrowed へ修正 (本番は正しく release せず、mock 側が ObjC 規則違反だった症候; R5 規則がこの再発を恒久的に RED 化)。
+3. SEL_INIT 等 13 定数が消費者ゼロ (§7 抵触) → 全部を真の API wiring (§R6 で恒久監査化)。
+4. canon 帰属欠損 4 (NSString×2/NSError/NSObject init) → 上記 generator 4 修正で根治、60/60 機械検証。
+5. upload_pixels テスト calls.clear() 漏れ / 未使用変数 got 残置 / describe シグネチャ誤変更 (Option<u32>→Option<&str>) → 全て即検出復元。
+6. audit 初版の不具合群: class 抽出 +3/+4 オフセット、doc コメント文法例の誤抽出、R6 substring 偽陰性 (SEL_NEW⊂SEL_NEW_COMMAND_QUEUE)、fixture オフセット +4/+5、link_name 走査 base 錯誤、resolve_selector の Box::leak → 全修正のうえ rustfmt 適用で **監査自身のレイアウト耐性も強化** (論理フラグメント+cursor 駆動、adversarial needle も anchor 逆引き化)。
+7. adversarial C 系統 (dispatcher 名差替) は Rust コンパイラが E0061 で捕捉 (= compile 第一防壁が機能) → C' (コンパイル通過する SEL 参照差替) で R3 の RED を別証明。
+
+### adversarial 4 系統 5 RED (全復元 md5 -c ALL OK)
+- A: apple_canon から `("MTLCommandBuffer","commit")` 1 行削除 → R1 RED。
+- B: 実ソース SEL 文字列 `waitUntilCompleted`→typo → R1 RED。
+- C: dispatcher 差替 `void_1p`→`void_2pu` → **コンパイラ捕捉 (E0061)**。
+- C': `SEL_SET_PIPELINE_STATE`→`SEL_DEVICE_NAME` 参照差替 (コンパイル通過形) → R3 RED。
+- D: shutdown の pipeline release 1 行削除 → mock live `[12]` リーク検出 RED。
+
+### 機械検数
+- strict **1463** 全緑 (1431+32、gn_ prefix **32** 本を個別フィルタ機械確認:
+  objc_rt 3・metal_direct 16・apple_ffi_audit 11・apple_backend 2)。
+  警告 0 (lib)。fmt: 変更 6 ファイル 全 **0 逸脱** (HEAD 基準・自己起因 0)。
+  簡体字走査 **0** (変更 7 ファイル)。seal 全 6 ゲート PASS (機械値:
+  **san 26 files 0 findings**・ゲート2: **apple_backend HEAD 0/現 0/自己起因
+  0・lib.rs HEAD 0/現 0/自己起因 0** (新規 4 ファイルは HEAD 未存在のため
+  手動同条件照合で **objc_rt 0・metal_direct 0・apple_canon 0・
+  apple_ffi_audit 0**)・ゲート3 trailws・台帳 **666** 機械表示・ゲート4
+  **1463** 全緑・ゲート5 **digest 004c1cf5fb17bfe8 rows=357 不変 PASS**・
+  ゲート6 env 全 OK)。
+- 台帳 GN-1 (666 行目)。digest `004c1cf5fb17bfe8` rows=357 不変。
+
+### 誠実な保証境界 (捏造なしの明記)
+- **保証できる**: binding 層の Apple 契約 (selector 存在/帰属・全引数形状・
+  enum 値・extern 宣言・retain 所有規則・呼出順序・Owned 全 release) が
+  一次情報 canon と機械完全一致すること、および本番コード全行が mock
+  ObjC ランタイム上で実動 (列・リーク・arena 物理 memcpy) 検証済みであること。
+- **保証の及ばない範囲**: 実機 GPU ドライバ応答・実描画画像・Cargo macOS
+  向けリンク (sandbox ネットワークで apple rust-lang std 取得不能、
+  `curl: (35)` 確認)。Native 経路の transmute 境界 (extern "C" fn 型の
+  翻訳整合) は R3/R4 の契約照合 + 同一シグネチャ強制で静的保証済みだが、
+  実機 EXEC 効果は将来の Mac CI/実機 smoke で閉じる計画 (GO/GP 波で拡張)。
+
+### 次 wave 計画
+- GO (195): Metal 4 (MTL4 API) 直 binding — Apple DocC 一次情報 selectors
+  収集済 (MTL4CommandQueue: commit:count:/signalEvent:value:/waitForEvent:value:
+  /signalDrawable:/waitForDrawable:/addResidencySet:… / MTL4CommandBuffer:
+  beginCommandBufferWithAllocator:/endCommandBuffer/
+  renderCommandEncoderWithDescriptor:/useResidencySet:… / device factory:
+  newMTL4CommandQueue・newCommandBuffer・newCommandAllocator / 3-frame
+  in-flight pattern = Apple「Drawing a triangle with Metal 4」一次情報)。
+- GP (196): CGL/GL 直 binding (旧 Intel Mac 向け、正典源: vendor cgl/src/cgl.rs
+  + glutin/src/api/cgl/ + glow gl46/native)。
+
 ## wave 189 以降の運用 (フェーズ 2 完遂後)
 - adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
   完結 (directive ⑧)。
@@ -9793,4 +9856,4 @@ digest PASS)。
 - 捕捉採番の次空き: 130 (129 は wave 190 で使用)。strict 総数履歴:
   …1398(185)→1402(186)→1404(187)→1408(188)→1418(189、gi_ 10 本)
   →1422(190、gj_ 4 本)→1425(191、gk_ 3 本)→1428(192、gl_ 3 本)
-  →1431(193、gm_ 3 本)。
+  →1431(193、gm_ 3 本)→1463(194、gn_ 32 本)。

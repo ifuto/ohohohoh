@@ -4,6 +4,7 @@
 
 pub mod adaptive_shading;
 pub mod apple_backend;
+pub mod apple_canon;
 pub mod binary_greedy_meshing;
 pub mod boot_splash;
 pub mod branchless_dda;
@@ -254,6 +255,11 @@ pub mod voxel_cone_tracing;
 
 // ---- GPU Runtime (wgpu Device/Queue を実生成し WGSL を実コンパイル検証)
 pub mod gpu_runtime;
+
+// ---- Native Apple direct binding (objc dispatcher 注入 + canon 監査)
+pub mod apple_ffi_audit;
+pub mod metal_direct;
+pub mod objc_rt;
 
 // ---- Complete Wiring Orchestrator (スタブ禁止: 全モジュールを本番フレームに配線)
 pub mod full_graph_wiring;

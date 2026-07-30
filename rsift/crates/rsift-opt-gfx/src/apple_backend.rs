@@ -252,6 +252,66 @@ pub fn describe(
     )
 }
 
+// ---- 【wave 194 GN】native direct binding 経路 (policy 層と直 binding 層の橋) ----
+
+/// native 直 binding 経路の配線宣言。
+/// ユーザー方針「Metal/GL を直 binding で完全実装」(wave 194 GN) に基づき、
+/// wgpu 経路 (BackendChoice) の**隣に** native direct 経路の存在を宣言する:
+/// - 既定は引き続き wgpu 経路 (実績・安全側)。
+/// - env `RSIFT_GFX_APPLE_NATIVE` ("1"/"true"/"yes") で native direct 経路
+///   への切替を*宣言*できる (実セッション起動は native_direct_session)。
+/// - 経路の Apple 契約正しさは apple_ffi_audit が canon 一次情報と全件
+///   照合済 (ffi_audit_clean が起動条件に含まれる設計)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeDirectPlan {
+    /// ホスト OS が macOS (compile-time 真値)。
+    pub host_is_macos: bool,
+    /// env 宣言で native direct 経路が選択されたか。
+    pub env_declared_native: bool,
+    /// FFI 監査 (apple_ffi_audit::run_full_audit) が clean か。
+    /// native 経路起動の前提条件 (canon との完全一致)。
+    pub ffi_audit_clean: bool,
+}
+
+/// native direct 経路の plan 生成。`env` は `RSIFT_GFX_APPLE_NATIVE` の値。
+/// 選択 matrix: 値 "1"/"true"/"yes" で宣言 ON (trim+lowercase 後)、
+/// それ以外/未指定は OFF。ffi_audit_clean は plan 生成時に実監査を実行。
+pub fn native_direct_plan(env: Option<&str>) -> NativeDirectPlan {
+    let declared = env
+        .map(|s| s.trim().to_ascii_lowercase())
+        .map(|v| v == "1" || v == "true" || "yes" == v)
+        .unwrap_or(false);
+    NativeDirectPlan {
+        host_is_macos: cfg!(target_os = "macos"),
+        env_declared_native: declared,
+        ffi_audit_clean: crate::apple_ffi_audit::run_full_audit().is_empty(),
+    }
+}
+
+/// FFI 監査レポート (人間可読 1 行/件)。空 = canon との完全一致。
+/// policy 層から audit への実消費配線 (rspeed seal 等の外部検査が
+/// 本 API 経由で監査結果を参照できる)。
+pub fn ffi_audit_report() -> Vec<String> {
+    crate::apple_ffi_audit::run_full_audit()
+        .iter()
+        .map(|v| v.to_string())
+        .collect()
+}
+
+/// WSL headless 検証用のネイティブセッション起動 (macOS のみ実体)。
+/// plan で宣言選択された経路の実起動点 — 直 binding (objc_msgSend
+/// typed transmute) で device→queue→MSL→pipeline→target 全構築する。
+/// 他 OS ではシンボル不在のため cfg 除外 (plan 側が host_is_macos=false
+/// を返し本関数の存在自体を配線から外す設計)。
+#[cfg(target_os = "macos")]
+pub fn native_direct_session(
+    width: u32,
+    height: u32,
+) -> Result<crate::metal_direct::DirectMetal, crate::metal_direct::DirectMetalError> {
+    let mut rt = crate::objc_rt::NativeObjcRt;
+    crate::metal_direct::DirectMetal::create(&mut rt, width, height)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,6 +419,41 @@ mod tests {
                 "未知値 {junk:?} は既定再帰"
             );
         }
+    }
+
+    /// 【wave 194 GN】native direct plan の選択 matrix と FFI 監査ゲートの
+    /// 実動作 pin (policy 層 ⇔ 直 binding 層の橋の消費者)。
+    #[test]
+    fn gn_native_direct_plan_matrix() {
+        // 既定/未指定は OFF (wgpu 経路が引き続き既定)。
+        assert!(!native_direct_plan(None).env_declared_native);
+        assert!(!native_direct_plan(Some("0")).env_declared_native);
+        assert!(!native_direct_plan(Some("metal")).env_declared_native);
+        // ON 値 trim+lowercase matrix。
+        for on in ["1", "true", "TRUE", " yes ", "Yes"] {
+            assert!(
+                native_direct_plan(Some(on)).env_declared_native,
+                "on={on:?}"
+            );
+        }
+        // ホスト OS 真値 (sandbox では false、Mac では true)。
+        assert_eq!(
+            native_direct_plan(None).host_is_macos,
+            cfg!(target_os = "macos")
+        );
+        // FFI 監査が実起動ゲートとして組み込まれ、現状 canon と完全一致。
+        assert!(
+            native_direct_plan(None).ffi_audit_clean,
+            "canon 差分ゼロが前提"
+        );
+    }
+
+    /// FFI 監査レポートが空 (canon 完全一致) であることの配線 pin。
+    /// (report API 自体の消費者としても機能)
+    #[test]
+    fn gn_ffi_audit_report_empty() {
+        let report = ffi_audit_report();
+        assert!(report.is_empty(), "canon 差分がある: {report:?}");
     }
 
     /// usable は常に false — external metal 依存が未導入である現行の政策を
