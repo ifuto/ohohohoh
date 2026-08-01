@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 6
+- run: 7
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm) +
   2 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay)** をビルドし、
   zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
@@ -25,13 +25,12 @@ diag_upload() {
   mkdir -p dist-ci
   {
     echo "== DIAG $RUNNER_OS exit=$st time=$(date -u +%FT%TZ) =="
-    echo "-- 直近の cargo 出力は job log 参照。cargo 失敗時はここに error 行が来る --"
     echo "-- target/release cdylib 候補 --"
     ls -la target/release/*.dll target/release/*.dylib target/release/*.so 2>&1 | head -30
     ls -la target/aarch64-apple-darwin/release/*.dylib target/x86_64-apple-darwin/release/*.dylib 2>&1 | head -20
     echo "-- dist-ci --"
     ls -la dist-ci 2>&1 | head -20
-  } > "dist-ci/DIAG-$RUNNER_OS.txt"
+  } >> "dist-ci/DIAG-$RUNNER_OS.txt"
   if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null; then
     gh release create setup-diag --title "setup diag (自動診断)" --notes "trigger2 DIAG 集約先" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
     gh release upload setup-diag "dist-ci/DIAG-$RUNNER_OS.txt" --clobber --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
