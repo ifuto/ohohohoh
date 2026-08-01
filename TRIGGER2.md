@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 5
+- run: 6
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm) +
   2 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay)** をビルドし、
   zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
@@ -15,6 +15,7 @@ run 番号を1つ増やして push するのが「実行の合図」(起動条�
 ```bash
 echo "[trigger2] start os=$RUNNER_OS arch=$(uname -m) time=$(date -u +%FT%TZ)"
 set -euo pipefail -x
+ROOT=$(pwd)
 cd rsift
 
 # どこで死んでも診断を Release に残す (logs 経路遮断でも原因追跡できる)
@@ -24,6 +25,7 @@ diag_upload() {
   mkdir -p dist-ci
   {
     echo "== DIAG $RUNNER_OS exit=$st time=$(date -u +%FT%TZ) =="
+    echo "-- 直近の cargo 出力は job log 参照。cargo 失敗時はここに error 行が来る --"
     echo "-- target/release cdylib 候補 --"
     ls -la target/release/*.dll target/release/*.dylib target/release/*.so 2>&1 | head -30
     ls -la target/aarch64-apple-darwin/release/*.dylib target/x86_64-apple-darwin/release/*.dylib 2>&1 | head -20
@@ -34,6 +36,21 @@ diag_upload() {
     gh release create setup-diag --title "setup diag (自動診断)" --notes "trigger2 DIAG 集約先" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
     gh release upload setup-diag "dist-ci/DIAG-$RUNNER_OS.txt" --clobber --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
   fi
+  # 主要経路: git push (runner の GITHUB_TOKEN は contents: write 同意済)。
+  # 3 台同時 push の race は pull --rebase のリトライで吸収する。
+  cd "$ROOT" 2>/dev/null || true
+  mkdir -p dist-ci-diag
+  cp "rsift/dist-ci/DIAG-$RUNNER_OS.txt" "dist-ci-diag/" 2>/dev/null
+  cp "rsift/dist-ci/DIAG-build-$RUNNER_OS.txt" "dist-ci-diag/" 2>/dev/null
+  git config user.email "setup-bot@ifuto.local"
+  git config user.name "setup-bot"
+  git add dist-ci-diag/
+  git commit -m "diag($RUNNER_OS): exit=$st" >/dev/null 2>&1
+  for i in 1 2 3 4 5; do
+    git pull --rebase origin "${GITHUB_REF_NAME}" >/dev/null 2>&1 && \
+      git push origin "HEAD:${GITHUB_REF_NAME}" >/dev/null 2>&1 && break
+    sleep 5
+  done
   exit $st
 }
 trap diag_upload EXIT
@@ -41,11 +58,21 @@ trap diag_upload EXIT
 rustc --version && cargo --version
 mkdir -p dist-ci
 HASH() { sha256sum "$@" 2>/dev/null || shasum -a 256 "$@"; }
+RB() {
+  echo "+ $*"
+  "$@" > /tmp/rb.log 2>&1 || {
+    local st=$?
+    echo "FATAL: $* (exit=$st)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+    tail -120 /tmp/rb.log >> dist-ci/DIAG-$RUNNER_OS.txt 2>/dev/null
+    exit $st
+  }
+  tail -3 /tmp/rb.log
+}
 
 case "$RUNNER_OS" in
   Windows)
-    cargo build -p rsift-setup --release --locked
-    cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked
+    RB cargo build -p rsift-setup --release --locked
+    RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked
     for F in rsift_api.dll rsift_jvm.dll rsgraphics.dll rsreplay.dll; do
       [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
     done
@@ -62,8 +89,8 @@ case "$RUNNER_OS" in
     rustup target add aarch64-apple-darwin x86_64-apple-darwin || true
     mkdir -p dist-ci/macos
     for T in aarch64-apple-darwin x86_64-apple-darwin; do
-      cargo build -p rsift-setup --release --locked --target "$T"
-      cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked --target "$T"
+      RB cargo build -p rsift-setup --release --locked --target "$T"
+      RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked --target "$T"
       for F in librsift_api.dylib librsift_jvm.dylib librsgraphics.dylib librsreplay.dylib; do
         [ -f "target/$T/release/$F" ] || { echo "FATAL: target/$T/release/$F が無い"; exit 1; }
       done
@@ -95,8 +122,8 @@ PLIST
     done
     ;;
   Linux)
-    cargo build -p rsift-setup --release --locked
-    cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked
+    RB cargo build -p rsift-setup --release --locked
+    RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked
     for F in librsift_api.so librsift_jvm.so librsgraphics.so librsreplay.so; do
       [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
     done
