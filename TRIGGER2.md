@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 3
+- run: 4
 - 目的: rsift-setup バイナリ + **エンジン dll (rsift_api cdylib) + 2 Mod cdylib
   (RsGraphics=rsgraphics, RsReplay=rsreplay)** をビルドし、zip 展開したら
   全部同じフォルダに dll が並ぶ 1 梱包形式で `rsift/dist-ci/` へ出力。
@@ -13,7 +13,7 @@ run 番号を1つ増やして push するのが「実行の合図」(起動条�
 
 ```bash
 echo "[trigger2] start os=$RUNNER_OS arch=$(uname -m) time=$(date -u +%FT%TZ)"
-set -x
+set -euo pipefail -x
 cd rsift
 rustc --version && cargo --version
 mkdir -p dist-ci
@@ -25,6 +25,9 @@ case "$RUNNER_OS" in
     cargo build -p rsift-api -p rsgraphics -p rsreplay --release --locked
     mkdir -p dist-ci/windows
     cp target/release/rsift-setup.exe dist-ci/windows/rsift-setup.exe
+    for F in rsift_api.dll rsgraphics.dll rsreplay.dll; do
+      [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
+    done
     cp target/release/rsift_api.dll    dist-ci/windows/rsift.dll
     cp target/release/rsgraphics.dll   dist-ci/windows/rsgraphics.dll
     cp target/release/rsreplay.dll     dist-ci/windows/rsreplay.dll
@@ -54,9 +57,13 @@ case "$RUNNER_OS" in
  <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-      cp "target/$T/release/librsift_api.dylib"  "dist-ci/stage-$T/librsift.dylib"
-      cp "target/$T/release/librsgraphics.dylib" "dist-ci/stage-$T/librsgraphics.dylib"
-      cp "target/$T/release/librsreplay.dylib"   "dist-ci/stage-$T/librsreplay.dylib"
+      for PAIR in "librsift_api.dylib:librsift.dylib" "librsgraphics.dylib:librsgraphics.dylib" "librsreplay.dylib:librsreplay.dylib"; do
+        SRC="${PAIR%%:*}"; DST="${PAIR##*:}"
+        if [ ! -f "target/$T/release/$SRC" ]; then
+          echo "FATAL: target/$T/release/$SRC が無い (dylib ビルド未生成)"; exit 1
+        fi
+        cp "target/$T/release/$SRC" "dist-ci/stage-$T/$DST"
+      done
       cp docs/user/SETUP_BOOTSTRAPPER_JA.md "dist-ci/stage-$T/README_JA.md"
       SFX=$(echo "$T" | sed 's/aarch64/arm64/;s/-apple-darwin//')
       (cd "dist-ci/stage-$T" && zip -qr "../rsift-bundle-macos-$SFX.zip" .)
@@ -67,6 +74,9 @@ PLIST
     cargo build -p rsift-api -p rsgraphics -p rsreplay --release --locked
     mkdir -p dist-ci/linux
     cp target/release/rsift-setup dist-ci/linux/rsift-setup
+    for F in librsift_api.so librsgraphics.so librsreplay.so; do
+      [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
+    done
     cp target/release/librsift_api.so  dist-ci/linux/librsift.so
     cp target/release/librsgraphics.so dist-ci/linux/librsgraphics.so
     cp target/release/librsreplay.so   dist-ci/linux/librsreplay.so
@@ -90,7 +100,12 @@ cp -r "$D"/. dist-ci/$RUNNER_OS-selftest/ \
       else ./rsift-setup --self-test ; fi ; \
       echo "selftest_exit=$?" > result.txt)
 
-ls -la dist-ci/ && HASH dist-ci/*.zip || true
+ls -la dist-ci/ 
+for Z in dist-ci/*.zip; do
+  echo "== 内容物検査: $Z =="
+  if command -v unzip >/dev/null; then unzip -l "$Z"; else tar -tf "$Z" || true; fi
+done
+HASH dist-ci/*.zip || true
 
 # Release へ添付 (権限 contents: write が殻 yml で付いている場合のみ)
 if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null; then
