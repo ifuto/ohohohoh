@@ -1,0 +1,46 @@
+name: setup-artifacts-trigger
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["TRIGGER2.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Release 添付用 (通常 push には使わない)
+
+concurrency:
+  group: setup-artifacts-trigger
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: extract embedded script from TRIGGER2.md
+        shell: bash
+        run: |
+          awk '/^```bash$/{f=1;next}/^```$/{f=0}f' TRIGGER2.md > trigger2.sh
+          test -s trigger2.sh || { echo "TRIGGER2.md に bash ブロックが無い"; exit 1; }
+          echo "--- extracting ok ($(wc -l < trigger2.sh) 行) ---"
+      - name: run trigger2 script
+        shell: bash
+        run: bash trigger2.sh 2>&1 | tee trigger2.log
+      - name: upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trigger2-${{ matrix.os }}
+          path: |
+            trigger2.log
+            rsift/dist-ci/**
+          if-no-files-found: ignore
