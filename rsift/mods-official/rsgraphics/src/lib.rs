@@ -1,15 +1,10 @@
 //! # RsGraphics - Official Graphics Migration Mod
 
 use rsift_api::{
-    ModContext, RsiftStatus, TARGET_MINECRAFT_VERSION, ImageRegistry,
-    ClothConfigBuilder, ModManifest, AdaptivePerfEngine,
+    AdaptivePerfEngine, ClothConfigBuilder, ImageRegistry, ModContext, ModManifest, RsiftStatus,
+    TARGET_MINECRAFT_VERSION,
 };
-use rsift_opt_gfx::{
-    open_global_settings,
-    RsiftModernBootSplash,
-    init_pipeline,
-    on_render_frame,
-};
+use rsift_opt_gfx::{init_pipeline, on_render_frame, open_global_settings, RsiftModernBootSplash};
 use tracing::info;
 
 #[no_mangle]
@@ -21,9 +16,12 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
 
     let hw = AdaptivePerfEngine::hardware();
     let rp = AdaptivePerfEngine::render_profile(hw);
-    info!("[RsGraphics] tier={} speed_first={} profile={}",
-        rp.tier.label(), rp.speed_first,
-        rsift_api::AdaptivePerfEngine::render_profile_summary(&rp));
+    info!(
+        "[RsGraphics] tier={} speed_first={} profile={}",
+        rp.tier.label(),
+        rp.speed_first,
+        rsift_api::AdaptivePerfEngine::render_profile_summary(&rp)
+    );
 
     let game_dir = std::env::var("APPDATA")
         .map(|a| std::path::PathBuf::from(a).join(".minecraft"))
@@ -38,7 +36,10 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
     }
 
     let _ = rsift_api::mod_suite::init_mod_suite();
-    let _ = ctx.suite().renderer_api.register_mesh_provider("rsgraphics");
+    let _ = ctx
+        .suite()
+        .renderer_api
+        .register_mesh_provider("rsgraphics");
 
     if !rp.speed_first {
         let mut boot = RsiftModernBootSplash::new();
@@ -57,15 +58,60 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
     let mut gfx_config = ClothConfigBuilder::new();
     gfx_config.set_title("RsGraphics");
     let cat = gfx_config.add_category("Rendering");
-    let _ = gfx_config.add_int_slider(cat, "Chunk Builder Threads", 1, 16, rp.chunk_builder_threads as i32, Some("Parallel meshing threads"));
-    let _ = gfx_config.add_bool_toggle(cat, "Binary Greedy Meshing", rp.binary_greedy_meshing, Some("Bitwise mesh (flagship)"));
-    let _ = gfx_config.add_bool_toggle(cat, "GPU MDI Culling", rp.gpu_compute_culling, Some("Off until DX12 ExecuteIndirect; CPU cull active"));
-    let _ = gfx_config.add_bool_toggle(cat, "CPU Soft Occlusion", rp.hzb_occlusion, Some("Software occlusion (not GPU Hi-Z)"));
-    let _ = gfx_config.add_bool_toggle(cat, "Mesh Disk Cache", rp.mesh_disk_cache, Some("Skip rebuild on revisit"));
-    let _ = gfx_config.add_bool_toggle(cat, "Eco Mode (weak PC)", matches!(rp.tier, rsift_api::PerformanceTier::Minimal | rsift_api::PerformanceTier::Low), Some("Auto for low-end hardware"));
+    let _ = gfx_config.add_int_slider(
+        cat,
+        "Chunk Builder Threads",
+        1,
+        16,
+        rp.chunk_builder_threads as i32,
+        Some("Parallel meshing threads"),
+    );
+    let _ = gfx_config.add_bool_toggle(
+        cat,
+        "Binary Greedy Meshing",
+        rp.binary_greedy_meshing,
+        Some("Bitwise mesh (flagship)"),
+    );
+    let _ = gfx_config.add_bool_toggle(
+        cat,
+        "GPU MDI Culling",
+        rp.gpu_compute_culling,
+        Some("Off until DX12 ExecuteIndirect; CPU cull active"),
+    );
+    let _ = gfx_config.add_bool_toggle(
+        cat,
+        "CPU Soft Occlusion",
+        rp.hzb_occlusion,
+        Some("Software occlusion (not GPU Hi-Z)"),
+    );
+    let _ = gfx_config.add_bool_toggle(
+        cat,
+        "Mesh Disk Cache",
+        rp.mesh_disk_cache,
+        Some("Skip rebuild on revisit"),
+    );
+    let _ = gfx_config.add_bool_toggle(
+        cat,
+        "Eco Mode (weak PC)",
+        matches!(
+            rp.tier,
+            rsift_api::PerformanceTier::Minimal | rsift_api::PerformanceTier::Low
+        ),
+        Some("Auto for low-end hardware"),
+    );
     if rp.feather.enabled {
-        let _ = gfx_config.add_bool_toggle(cat, "Feather Tile Binning", rp.feather.software_tile_binning, Some("TBDR-style software binning"));
-        let _ = gfx_config.add_bool_toggle(cat, "Feather Pseudo-VRS", rp.feather.software_vrs_checkerboard, Some("No resolution change"));
+        let _ = gfx_config.add_bool_toggle(
+            cat,
+            "Feather Tile Binning",
+            rp.feather.software_tile_binning,
+            Some("TBDR-style software binning"),
+        );
+        let _ = gfx_config.add_bool_toggle(
+            cat,
+            "Feather Pseudo-VRS",
+            rp.feather.software_vrs_checkerboard,
+            Some("No resolution change"),
+        );
     }
 
     let mod_menu = ctx.mod_menu();
@@ -77,6 +123,7 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
             author: "Rsift".into(),
             description: "HZB culling, 12B verts, bindless SSBO".into(),
             target_rsift_version: TARGET_MINECRAFT_VERSION.into(),
+            capabilities: vec![],
         },
         Some(gfx_icon),
         Some("https://github.com/rsift-mc/rsgraphics"),
@@ -90,6 +137,7 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
             author: "Rsift".into(),
             description: "Native compute migration".into(),
             target_rsift_version: TARGET_MINECRAFT_VERSION.into(),
+            capabilities: vec![],
         },
         Some(calc_icon),
         None,
@@ -103,6 +151,7 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
             author: "Ifuto_mitai".into(),
             description: "First-person replay".into(),
             target_rsift_version: TARGET_MINECRAFT_VERSION.into(),
+            capabilities: vec!["process_exec".into()],
         },
         Some(replay_icon),
         None,
@@ -118,7 +167,10 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
     screen_reg.add_button(
         "net.minecraft.client.gui.screens.TitleScreen",
         "Mods",
-        8, 8, 120, 20,
+        8,
+        8,
+        120,
+        20,
         Some("Open Rsift mod catalog"),
         move |_| {
             info!("[TitleScreen] Mods button clicked");
@@ -129,7 +181,10 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
     screen_reg.add_button(
         "net.minecraft.client.gui.screens.TitleScreen",
         "動画設定",
-        8, 32, 120, 20,
+        8,
+        32,
+        120,
+        20,
         Some("RsGraphics — DX12 video settings"),
         move |_| {
             open_global_settings();

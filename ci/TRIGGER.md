@@ -289,3 +289,5 @@ wave 196 GO Metal 4 (MTL4) 直 binding 完全実装 + SDK 26.5 canon 区画 (202
 - 2026-07-31 (count 226): wave 196 GO 上記の CI 緑確認用
 wave 197 GS セットアップ bootstrapper 新設 (rsift-setup): std オンリー自己完結 exe/app 用 (同階層 dll 走査・SHA-256 自前+manifest 検証・renderer 決定 policy・rsift_launch.json 生成・self-log txt/jsonl)。20/20 全緑・adversarial 2 系統 RED MD5-VERIFIED・ci/build-setup-artifacts.sh・SETUP_BOOTSTRAPPER_JA.md
 - 2026-08-01 (count 227): wave 197 GS 上記の CI 緑確認用
+wave 198 GU 2 Mod 一体 zip (2026-08-01): rsgraphics caps 宣言完治・rsreplay FFI 検定 7 新設・setup 正規名統一・TRIGGER2 run 3 で engine+2Mod dll 同梱ビルド配線
+- 2026-08-01 (count 228): wave 198 GU 上記の CI 緑確認用

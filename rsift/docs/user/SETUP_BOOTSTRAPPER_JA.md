@@ -4,17 +4,19 @@
 
 | OS | 実行ファイル | 置くもの (例) |
 |---|---|---|
-| Windows | `rsift-setup.exe` | `rsift.dll` / `rsift_gfx_vulkan.dll` または `rsift_gfx_dx12.dll` |
-| Mac | `Rsift Setup.app` (中身は `rsift-setup`) | `librsift.dylib` / `librsift_gfx_metal4.dylib` / `librsift_gfx_metal.dylib` / `librsift_gfx_gl.dylib` |
+| Windows | `rsift-setup.exe` | `rsift.dll` (エンジン) / `rsgraphics.dll` (RsGraphics) / `rsreplay.dll` (RsReplay) |
+| Mac | `Rsift Setup.app` (中身は `rsift-setup`) | `librsift.dylib` / `librsgraphics.dylib` / `librsreplay.dylib` |
+
+Release `setup-v1` の zip はこれらが全部入った一体梱包です。展開したフォルダでそのまま実行してください。
 
 実行すると自動で:
 
 1. 同じ階層の dll/dylib を検出して SHA-256 を計算
 2. 検証 (初期配布はハッシュ記録のみ。次回リリースから改竄検出が有効化)
 3. あなたの PC に合った RsGraphics 経路を決定
-   - Mac (Apple Silicon + macOS 26+) → **Metal 4**
-   - Mac (上記以外) → classic Metal / GL(後続 wave で供給)
-   - Windows → Vulkan 優先、無ければ DX12
+   - Mac (Apple Silicon + macOS 26+) → **Metal 4** (RsGraphics 内で自動選択)
+   - Mac (上記以外) → classic Metal (同、自動選択)
+   - Windows → RsGraphics 内の wgpu が最適 backend を自動選択 (Vulkan 優先/DX12)
 4. `rsift_launch.json` (起動構成) を生成
 5. 全工程をログに記録
 

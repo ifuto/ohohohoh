@@ -39,15 +39,19 @@ pub const EXIT_SELFTEST_FAIL: i32 = 5;
 pub const SETUP_MANIFEST: &[(&str, &str)] = &[];
 
 /// RsGraphics/エンジン DLL のファイル名正規名 (セレクタ正典)。
+/// 実物 cdylib (mods-official 由来): エンジン rsift.*、RsGraphics rsgraphics.*
+/// (内部に wgpu/Vulkan/DX12 および macOS では Metal4/classic Metal の両経路を
+/// 持ち実行時自動選択)、RsReplay rsreplay.*。旧 rsift_gfx_* 系名は wave 198
+/// で正規化 (エイリアス重複配布を避ける)。
 pub const LIB_WINDOWS_ENGINE: &str = "rsift.dll";
-pub const LIB_WINDOWS_VULKAN: &str = "rsift_gfx_vulkan.dll";
-pub const LIB_WINDOWS_DX12: &str = "rsift_gfx_dx12.dll";
+pub const LIB_WINDOWS_GFX: &str = "rsgraphics.dll";
+pub const LIB_WINDOWS_REPLAY: &str = "rsreplay.dll";
 pub const LIB_MACOS_ENGINE: &str = "librsift.dylib";
-pub const LIB_MACOS_METAL4: &str = "librsift_gfx_metal4.dylib";
-pub const LIB_MACOS_METAL: &str = "librsift_gfx_metal.dylib";
-pub const LIB_MACOS_GL: &str = "librsift_gfx_gl.dylib";
+pub const LIB_MACOS_GFX: &str = "librsgraphics.dylib";
+pub const LIB_MACOS_REPLAY: &str = "librsreplay.dylib";
 pub const LIB_LINUX_ENGINE: &str = "librsift.so";
-pub const LIB_LINUX_VULKAN: &str = "librsift_gfx_vulkan.so";
+pub const LIB_LINUX_GFX: &str = "librsgraphics.so";
+pub const LIB_LINUX_REPLAY: &str = "librsreplay.so";
 
 pub const LAUNCH_CONFIG_NAME: &str = "rsift_launch.json";
 pub const LOG_TXT_NAME: &str = "rsift_setup_log.txt";
@@ -210,55 +214,42 @@ pub fn decide(host: &HostInfo) -> LaunchDecision {
     let mut notes = Vec::new();
     let (engine_name, renderer, gfx) = match host.os {
         TargetOs::MacOs => {
+            // rsgraphics dylib 内部に Metal 4 (aarch64+macOS 26+) と
+            // classic Metal の両経路があり、実行時に適格側を自動選択する。
             let metal4_eligible =
                 host.arch == "aarch64" && host.macos_ver.map(|(maj, _)| maj >= 26).unwrap_or(false);
-            if metal4_eligible && has(LIB_MACOS_METAL4) {
-                (LIB_MACOS_ENGINE, Renderer::Metal4, Some(LIB_MACOS_METAL4))
-            } else if has(LIB_MACOS_METAL) {
-                if !metal4_eligible && has(LIB_MACOS_METAL4) {
-                    notes.push(format!(
-                        "Metal 4 ライブラリはあるが非対応環境 (arch={} macos={:?}) のため classic Metal に降格",
-                        host.arch, host.macos_ver
-                    ));
-                } else if metal4_eligible && !has(LIB_MACOS_METAL4) {
-                    notes.push(format!(
-                        "Metal 4 対応環境 (arch={} macos={:?}) だが {} が同階層に無いため classic Metal に降格",
-                        host.arch,
-                        host.macos_ver,
-                        LIB_MACOS_METAL4
-                    ));
+            if has(LIB_MACOS_GFX) {
+                if metal4_eligible {
+                    (LIB_MACOS_ENGINE, Renderer::Metal4, Some(LIB_MACOS_GFX))
+                } else {
+                    notes.push(
+                        "RsGraphics は実行時に classic Metal 経路を選択 (Metal 4 は aarch64+macOS 26+)"
+                            .to_string(),
+                    );
+                    (
+                        LIB_MACOS_ENGINE,
+                        Renderer::MetalClassic,
+                        Some(LIB_MACOS_GFX),
+                    )
                 }
-                (
-                    LIB_MACOS_ENGINE,
-                    Renderer::MetalClassic,
-                    Some(LIB_MACOS_METAL),
-                )
-            } else if has(LIB_MACOS_GL) {
-                notes.push(
-                    "GL 経路のライブラリは見つかったが、GL 直 binding 本体は後続 wave で供給予定 (未搭載) のため ready=false"
-                        .to_string(),
-                );
-                (LIB_MACOS_ENGINE, Renderer::Gl, Some(LIB_MACOS_GL))
             } else {
                 (LIB_MACOS_ENGINE, Renderer::None, None)
             }
         }
         TargetOs::Windows => {
-            if has(LIB_WINDOWS_VULKAN) {
-                (
-                    LIB_WINDOWS_ENGINE,
-                    Renderer::Vulkan,
-                    Some(LIB_WINDOWS_VULKAN),
-                )
-            } else if has(LIB_WINDOWS_DX12) {
-                (LIB_WINDOWS_ENGINE, Renderer::Dx12, Some(LIB_WINDOWS_DX12))
+            if has(LIB_WINDOWS_GFX) {
+                notes.push(
+                    "RsGraphics は実行時に wgpu が最適 backend を自動選択 (Vulkan 優先/DX12)"
+                        .to_string(),
+                );
+                (LIB_WINDOWS_ENGINE, Renderer::Vulkan, Some(LIB_WINDOWS_GFX))
             } else {
                 (LIB_WINDOWS_ENGINE, Renderer::None, None)
             }
         }
         TargetOs::Linux => {
-            if has(LIB_LINUX_VULKAN) {
-                (LIB_LINUX_ENGINE, Renderer::Vulkan, Some(LIB_LINUX_VULKAN))
+            if has(LIB_LINUX_GFX) {
+                (LIB_LINUX_ENGINE, Renderer::Vulkan, Some(LIB_LINUX_GFX))
             } else {
                 (LIB_LINUX_ENGINE, Renderer::None, None)
             }
@@ -271,6 +262,28 @@ pub fn decide(host: &HostInfo) -> LaunchDecision {
     }
     if renderer == Renderer::None {
         notes.push("RsGraphics ライブラリが同階層に見つからない".to_string());
+    }
+    let replay_name = match host.os {
+        TargetOs::Windows => LIB_WINDOWS_REPLAY,
+        TargetOs::MacOs => LIB_MACOS_REPLAY,
+        TargetOs::Linux => LIB_LINUX_REPLAY,
+        TargetOs::Other => "",
+    };
+    if !replay_name.is_empty() && has(replay_name) {
+        notes.push(format!(
+            "RsReplay 同梱検出: {replay_name} (録画/export mod として準備)"
+        ));
+    }
+    let replay_name = match host.os {
+        TargetOs::Windows => LIB_WINDOWS_REPLAY,
+        TargetOs::MacOs => LIB_MACOS_REPLAY,
+        TargetOs::Linux => LIB_LINUX_REPLAY,
+        TargetOs::Other => "",
+    };
+    if !replay_name.is_empty() && has(replay_name) {
+        notes.push(format!(
+            "RsReplay 同梱検出: {replay_name} (録画/export mod として準備)"
+        ));
     }
     let ready = engine_present && matches!(gfx, Some(_)) && renderer != Renderer::Gl;
     LaunchDecision {
@@ -859,63 +872,61 @@ mod tests {
     // ---- decide: 全分岐 matrix ----
     #[test]
     fn decide_mac_metal4_ready() {
+        // aarch64 + macOS 26+ + rsgraphics.dylib → Metal 4 経路で ready。
         let d = decide(&host(
             TargetOs::MacOs,
             "aarch64",
             Some((26, 0)),
-            &[LIB_MACOS_ENGINE, LIB_MACOS_METAL4],
+            &[LIB_MACOS_ENGINE, LIB_MACOS_GFX],
         ));
         assert_eq!(d.renderer, Renderer::Metal4);
         assert!(d.ready);
-        assert_eq!(d.graphics_lib.as_deref(), Some(LIB_MACOS_METAL4));
+        assert_eq!(d.graphics_lib.as_deref(), Some(LIB_MACOS_GFX));
     }
 
     #[test]
-    fn decide_mac_metal4_lib_present_but_ineligible_host_stays_classic() {
-        // 非対応ホスト (Intel または macOS 25 以下) に metal4 dylib があっても
-        // Metal 4 を選んではいけない (誤 ready を構造拒否、系統A 変異の網)。
+    fn decide_mac_ineligible_host_uses_classic_metal() {
+        // Intel または macOS 25 以下では classic Metal 経路 (誤 Metal4 構造拒否)。
         for (arch, ver) in [("x86_64", Some((26, 0))), ("aarch64", Some((25, 5)))] {
             let d = decide(&host(
                 TargetOs::MacOs,
                 arch,
                 ver,
-                &[LIB_MACOS_ENGINE, LIB_MACOS_METAL4, LIB_MACOS_METAL],
+                &[LIB_MACOS_ENGINE, LIB_MACOS_GFX],
             ));
             assert_eq!(
                 d.renderer,
                 Renderer::MetalClassic,
-                "arch={arch} ver={ver:?} では classic へ降格必須"
+                "arch={arch} ver={ver:?} では classic 必須"
             );
-            assert!(d.notes.iter().any(|n| n.contains("降格")));
+            assert!(d.notes.iter().any(|n| n.contains("classic Metal")));
         }
     }
 
     #[test]
-    fn decide_mac_metal4_capable_but_lib_missing_downgrades() {
+    fn decide_mac_no_gfx_not_ready() {
+        // gfx dylib が無ければ renderer None で not-ready。
         let d = decide(&host(
             TargetOs::MacOs,
             "aarch64",
-            Some((26, 1)),
-            &[LIB_MACOS_ENGINE, LIB_MACOS_METAL],
+            Some((26, 0)),
+            &[LIB_MACOS_ENGINE],
         ));
-        assert_eq!(d.renderer, Renderer::MetalClassic);
-        assert!(d.ready);
-        // 降格の理由が notes に残る (ユーザーへ正直に伝える)。
-        assert!(d.notes.iter().any(|n| n.contains("降格")));
+        assert_eq!(d.renderer, Renderer::None);
+        assert!(!d.ready);
     }
 
     #[test]
-    fn decide_mac_intel_old_goes_gl_not_ready() {
+    fn decide_mac_replay_only_not_ready_but_noted() {
+        // replay だけあって gfx/エンジンが無い: not-ready、かつ replay 検出は notes に残る。
         let d = decide(&host(
             TargetOs::MacOs,
-            "x86_64",
-            Some((15, 3)),
-            &[LIB_MACOS_ENGINE, LIB_MACOS_GL],
+            "aarch64",
+            Some((26, 0)),
+            &[LIB_MACOS_REPLAY],
         ));
-        assert_eq!(d.renderer, Renderer::Gl);
-        // GL 直 binding 本体は未供給 — 嘘で ready=true にしない。
         assert!(!d.ready);
-        assert!(d.notes.iter().any(|n| n.contains("未搭載")));
+        assert!(d.notes.iter().any(|n| n.contains("RsReplay")));
     }
 
     #[test]
@@ -924,7 +935,7 @@ mod tests {
             TargetOs::MacOs,
             "aarch64",
             Some((26, 0)),
-            &[LIB_MACOS_METAL4],
+            &[LIB_MACOS_GFX],
         ));
         assert!(!d.ready);
         assert!(d.engine_lib.is_none());
@@ -932,26 +943,29 @@ mod tests {
     }
 
     #[test]
-    fn decide_windows_prefers_vulkan() {
+    fn decide_windows_gfx_ready() {
+        // windows は rsgraphics.dll (wgpu 自動選択) で ready。
         let d = decide(&host(
             TargetOs::Windows,
             "x86_64",
             None,
-            &[LIB_WINDOWS_ENGINE, LIB_WINDOWS_VULKAN, LIB_WINDOWS_DX12],
+            &[LIB_WINDOWS_ENGINE, LIB_WINDOWS_GFX, LIB_WINDOWS_REPLAY],
         ));
-        assert_eq!(d.renderer, Renderer::Vulkan);
         assert!(d.ready);
+        assert!(d.notes.iter().any(|n| n.contains("wgpu")));
+        assert!(d.notes.iter().any(|n| n.contains("RsReplay")));
     }
 
     #[test]
-    fn decide_windows_dx12_fallback() {
+    fn decide_windows_replay_same_zip_detected() {
+        // zip 同梱の replay.dll があれば notes に載る (2 Mod 同梱形式の検証)。
         let d = decide(&host(
             TargetOs::Windows,
             "x86_64",
             None,
-            &[LIB_WINDOWS_ENGINE, LIB_WINDOWS_DX12],
+            &[LIB_WINDOWS_ENGINE, LIB_WINDOWS_GFX, LIB_WINDOWS_REPLAY],
         ));
-        assert_eq!(d.renderer, Renderer::Dx12);
+        assert!(d.notes.iter().any(|n| n.contains(LIB_WINDOWS_REPLAY)));
         assert!(d.ready);
     }
 
@@ -968,12 +982,12 @@ mod tests {
     }
 
     #[test]
-    fn decide_linux_vulkan() {
+    fn decide_linux_gfx() {
         let d = decide(&host(
             TargetOs::Linux,
             "x86_64",
             None,
-            &[LIB_LINUX_ENGINE, LIB_LINUX_VULKAN],
+            &[LIB_LINUX_ENGINE, LIB_LINUX_GFX],
         ));
         assert_eq!(d.renderer, Renderer::Vulkan);
         assert!(d.ready);
@@ -1029,7 +1043,7 @@ mod tests {
             TargetOs::MacOs,
             "aarch64",
             Some((26, 0)),
-            &[LIB_MACOS_ENGINE, LIB_MACOS_METAL4],
+            &[LIB_MACOS_ENGINE, LIB_MACOS_GFX],
         );
         let d = decide(&h);
         let s = render_launch_config(&h, &d);
@@ -1039,6 +1053,7 @@ mod tests {
         assert!(s.contains("\"macos_version\": \"26.0\""));
         assert!(s.contains("\"prepared\": true"));
         assert!(s.contains(&format!("\"{LIB_MACOS_ENGINE}\"")));
+        assert!(s.contains(&format!("\"{LIB_MACOS_GFX}\"")));
         assert!(s.ends_with("}\n"));
     }
 
@@ -1069,7 +1084,8 @@ mod tests {
     fn run_end_to_end_writes_config_and_logs() {
         let d = tmpdir("e2e");
         fs::write(d.join(LIB_LINUX_ENGINE), b"engine").unwrap();
-        fs::write(d.join(LIB_LINUX_VULKAN), b"gfx").unwrap();
+        fs::write(d.join(LIB_LINUX_GFX), b"gfx").unwrap();
+        fs::write(d.join(LIB_LINUX_REPLAY), b"replay").unwrap();
         let cli = Cli {
             dir: d.clone(),
             self_test: true,
@@ -1079,9 +1095,11 @@ mod tests {
         assert_eq!(code, EXIT_OK);
         let cfg = fs::read_to_string(d.join(LAUNCH_CONFIG_NAME)).unwrap();
         assert!(cfg.contains("\"renderer\": \"vulkan\""));
+        assert!(cfg.contains("librsgraphics.so"));
         let log_txt = fs::read_to_string(d.join(LOG_TXT_NAME)).unwrap();
         assert!(log_txt.contains("rsift.setup.log/1"));
         assert!(log_txt.contains("sha256="), "lib ハッシュが記録される");
+        assert!(log_txt.contains("RsReplay"), "2 Mod 同梱検出がログに残る");
         let log_jl = fs::read_to_string(d.join(LOG_JSONL_NAME)).unwrap();
         assert!(log_jl.contains("\"exit_code\":0"));
         let _ = fs::remove_dir_all(&d);
@@ -1108,7 +1126,7 @@ mod tests {
     fn run_dry_run_skips_config_but_logs() {
         let d = tmpdir("dry");
         fs::write(d.join(LIB_LINUX_ENGINE), b"e").unwrap();
-        fs::write(d.join(LIB_LINUX_VULKAN), b"g").unwrap();
+        fs::write(d.join(LIB_LINUX_GFX), b"g").unwrap();
         let cli = Cli {
             dir: d.clone(),
             self_test: false,
