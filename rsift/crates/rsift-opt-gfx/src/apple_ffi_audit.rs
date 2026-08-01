@@ -32,7 +32,8 @@
 //!   (objc2 header-translator 転記 / Apple DocC) との照合で静的保証。
 
 use crate::apple_canon::{
-    RetainRule, CANON_METAL_CFNS, CANON_METAL_ENUMS, CANON_PARENTS, CANON_SELS,
+    RetainRule, CANON_METAL_CFNS, CANON_METAL_ENUMS, CANON_PARENTS, CANON_SDK26_CLASSES,
+    CANON_SDK26_ENUMS, CANON_SDK26_PARENTS, CANON_SDK26_SELS, CANON_SELS,
 };
 
 /// 監査違反 1 件。
@@ -85,7 +86,18 @@ pub fn logical_statements(src: &str) -> Vec<(usize, String)> {
             cur.push(' ');
         }
         cur.push_str(line.trim());
-        for ch in line.chars() {
+        // char リテラルと lifetime 引用符の区別 (wave 196 GO 改善):
+        // `'` 直後が「任意 1 文字 + `'`」or `\` + 1 文字 + `'` の形のみ
+        // char リテラルとみなす (配列内部 index 参照で決定的判定)。
+        // それ以外 (`'static` 等の lifetime 引用符、1 行に奇数個出現し得る)
+        // は状態非遷移 — 旧実装は lifetime `'` で in_char に誤入し、
+        // 次の `'` までの全 `;`/`{}` 分割を喪失して文を丸呑みする
+        // 構造バグがあった (metal4_direct.rs で go- 系の消費者検査が
+        // 陰性化する形で発覚・ironclad に根治)。
+        let chars: Vec<char> = line.chars().collect();
+        let mut ci = 0usize;
+        while ci < chars.len() {
+            let ch = chars[ci];
             if in_str {
                 if ch == '"' && prev != '\\' {
                     in_str = false;
@@ -97,7 +109,15 @@ pub fn logical_statements(src: &str) -> Vec<(usize, String)> {
             } else {
                 match ch {
                     '"' => in_str = true,
-                    '\'' => in_char = true,
+                    '\'' => {
+                        let char_lit = (ci + 2 < chars.len() && chars[ci + 2] == '\'')
+                            || (ci + 3 < chars.len()
+                                && chars[ci + 1] == '\\'
+                                && chars[ci + 3] == '\'');
+                        if char_lit {
+                            in_char = true;
+                        }
+                    }
                     ';' | '{' | '}' => {
                         flush(&mut cur, start, &mut out);
                         start = ln + 1;
@@ -106,6 +126,7 @@ pub fn logical_statements(src: &str) -> Vec<(usize, String)> {
                 }
             }
             prev = ch;
+            ci += 1;
         }
     }
     flush(&mut cur, start, &mut out);
@@ -370,12 +391,12 @@ pub fn resolve_selector(class_name: &str, selector: &str) -> Option<(&'static st
             continue;
         }
         seen.push(c.clone());
-        for cs in CANON_SELS {
+        for cs in CANON_SELS.iter().chain(CANON_SDK26_SELS) {
             if cs.class_name == c && cs.selector == selector {
                 return Some((cs.class_name, cs.retain));
             }
         }
-        for p in CANON_PARENTS {
+        for p in CANON_PARENTS.iter().chain(CANON_SDK26_PARENTS) {
             if p.child == c && !seen.iter().any(|x| x == p.parent) {
                 todo.push(p.parent.to_string());
             }
@@ -425,6 +446,7 @@ pub fn audit_enum_consts(src: &str) -> Vec<Violation> {
     for c in &consts {
         let hit = CANON_METAL_ENUMS
             .iter()
+            .chain(CANON_SDK26_ENUMS)
             .any(|e| e.enum_name == c.enum_name && e.variant == c.variant);
         if !hit {
             v.push(Violation {
@@ -438,6 +460,7 @@ pub fn audit_enum_consts(src: &str) -> Vec<Violation> {
         }
         let canon_val = CANON_METAL_ENUMS
             .iter()
+            .chain(CANON_SDK26_ENUMS)
             .filter(|e| e.enum_name == c.enum_name && e.variant == c.variant)
             .map(|e| e.value)
             .next()
@@ -460,8 +483,11 @@ pub fn audit_class_consts(src: &str) -> Vec<Violation> {
     let mut v = Vec::new();
     for (name, cls) in extract_class_consts(src) {
         let known = CANON_SELS.iter().any(|s| s.class_name == cls)
+            || CANON_SDK26_SELS.iter().any(|s| s.class_name == cls)
+            || CANON_SDK26_CLASSES.iter().any(|c| *c == cls)
             || CANON_PARENTS
                 .iter()
+                .chain(CANON_SDK26_PARENTS)
                 .any(|p| p.child == cls || p.parent == cls);
         if !known {
             v.push(Violation {
@@ -661,9 +687,21 @@ pub fn extract_dispatch_calls(use_src: &str) -> Vec<DispatchCall> {
 
 /// R3: three-way 一致の全件照合。
 pub fn audit_dispatch_shapes(rt_src: &str, use_src: &str) -> Vec<Violation> {
+    audit_dispatch_shapes_with_decls(rt_src, use_src, use_src)
+}
+
+/// R3 の宣言解決元を別指定する亜種 (wave 196 GO)。
+/// metal_direct.rs / metal4_direct.rs は単一の binding 層として相互の SEL
+/// 宣言を参照し合うため、呼出抽出は走査対象ファイル、宣言解決は層全体の
+/// 連結ソースで行う必要がある。`decl_src` には宣言が集約されたソースを渡す。
+pub fn audit_dispatch_shapes_with_decls(
+    rt_src: &str,
+    use_src: &str,
+    decl_src: &str,
+) -> Vec<Violation> {
     let mut v = Vec::new();
     let table = extract_dispatch_table(rt_src);
-    let (sel_decls, _) = extract_sel_decls(use_src);
+    let (sel_decls, _) = extract_sel_decls(decl_src);
     let calls = extract_dispatch_calls(use_src);
     for c in &calls {
         // インフラメソッド (dispatcher 非該当) は照合対象外。
@@ -921,15 +959,26 @@ pub fn audit_const_consumers(src: &str) -> Vec<Violation> {
 /// 空 Vec = Apple 契約と binding 層の完全一致 (canon 真値との差分ゼロ)。
 pub fn run_full_audit() -> Vec<Violation> {
     let use_src = include_str!("metal_direct.rs");
+    let use_src4 = include_str!("metal4_direct.rs");
     let rt_src = include_str!("objc_rt.rs");
     let mut v = Vec::new();
-    v.extend(audit_sel_decls(use_src));
-    v.extend(audit_enum_consts(use_src));
-    v.extend(audit_class_consts(use_src));
-    v.extend(audit_dispatch_shapes(rt_src, use_src));
+    for u in [use_src, use_src4] {
+        v.extend(audit_sel_decls(u));
+        v.extend(audit_enum_consts(u));
+        v.extend(audit_class_consts(u));
+        v.extend(audit_fixture_retain(u));
+        v.extend(audit_const_consumers(u));
+    }
+    // R3 三件照合: metal_direct / metal4_direct は単一 binding 層として
+    // 相互の SEL 宣言を共有消費する (例: metal4_direct が SEL_CONTENTS を
+    // 参照)。呼出抽出は各ファイル単位、宣言解決は層全体の連結ソースで行う。
+    let decl_merged = format!("{use_src}\n{use_src4}");
+    for u in [use_src, use_src4] {
+        v.extend(audit_dispatch_shapes_with_decls(rt_src, u, &decl_merged));
+    }
     v.extend(audit_extern_cfns(rt_src));
-    v.extend(audit_fixture_retain(use_src));
-    v.extend(audit_const_consumers(use_src));
+    // R6 相当の相互消費補完: metal4_direct.rs が classic の共有 SEL/MTLV/CLASS
+    // 名前を追加消費することを許容する (metal_direct.rs 側の消費数は不変)。
     v
 }
 
@@ -1091,5 +1140,177 @@ mod tests {
         };
         assert_eq!(on, "MTLCommandEncoder");
         assert_eq!(retain, RetainRule::Borrowed);
+    }
+
+    fn use_src4() -> &'static str {
+        include_str!("metal4_direct.rs")
+    }
+
+    /// SDK26 canon 表の存在と機械量 pin (生成値の不変条件)。
+    #[test]
+    fn go_canon_sdk26_table_shape_pins() {
+        // 生成量 (tools/apple_canon_gen.py 機械値、98 Metal ヘッダから転記)。
+        assert_eq!(CANON_SDK26_SELS.len(), 2476, "SDK26 SEL 件数 pin");
+        assert_eq!(CANON_SDK26_ENUMS.len(), 902, "SDK26 enum 件数 pin");
+        assert_eq!(CANON_SDK26_CLASSES.len(), 231, "SDK26 class 件数 pin");
+        assert_eq!(CANON_SDK26_PARENTS.len(), 316, "SDK26 parent 件数 pin");
+        // 重複ゼロ (機械生成契約)。
+        let mut seen = std::collections::BTreeSet::new();
+        for s in CANON_SDK26_SELS {
+            assert!(
+                seen.insert((s.class_name, s.selector)),
+                "duplicate SDK26 sel: {:?}",
+                (s.class_name, s.selector)
+            );
+        }
+        let mut seen_e = std::collections::BTreeSet::new();
+        for e in CANON_SDK26_ENUMS {
+            assert!(
+                seen_e.insert((e.enum_name, e.variant)),
+                "duplicate SDK26 enum: {:?}",
+                (e.enum_name, e.variant)
+            );
+        }
+    }
+
+    /// Metal 4 硬値の canon 存在 (MTLGPUFamilyMetal4=5002 は MTLDevice.h:255
+    /// の逐語、MTLStages/MTLRenderStages は bit 位置厳密)。
+    #[test]
+    fn go_canon_sdk26_metal4_enum_exact() {
+        let has = |e: &str, v: &str, val: i64| {
+            CANON_SDK26_ENUMS
+                .iter()
+                .any(|x| x.enum_name == e && x.variant == v && x.value == val)
+        };
+        assert!(
+            has("MTLGPUFamily", "Metal4", 5002),
+            "Metal4=5002 canon 必須"
+        );
+        assert!(has("MTLStages", "Vertex", 1));
+        assert!(has("MTLStages", "Fragment", 2));
+        assert!(has("MTLStages", "Dispatch", 1 << 27));
+        assert!(has("MTLRenderStages", "Vertex", 1));
+        assert!(has("MTLRenderStages", "Fragment", 2));
+        assert!(has("MTL4CommandQueueError", "Timeout", 1));
+        assert!(has("MTL4VisibilityOptions", "Device", 1));
+    }
+
+    /// 消費する全 MTL4 SEL が canon union で継承解決込み解決できる
+    /// (metal4_direct.rs の実 selector 集合との対応を直接 pin)。
+    #[test]
+    fn go_canon_sdk26_mtl4_consumed_sels_resolve() {
+        let need: &[(&str, &str)] = &[
+            ("MTLDevice", "newMTL4CommandQueue"),
+            ("MTLDevice", "newCommandBuffer"),
+            ("MTLDevice", "newCommandAllocatorWithDescriptor:error:"),
+            ("MTLDevice", "newArgumentTableWithDescriptor:error:"),
+            ("MTLDevice", "newCompilerWithDescriptor:error:"),
+            ("MTLDevice", "newResidencySetWithDescriptor:error:"),
+            ("MTLDevice", "newSharedEvent"),
+            (
+                "MTL4Compiler",
+                "newRenderPipelineStateWithDescriptor:compilerTaskOptions:error:",
+            ),
+            ("MTL4CommandQueue", "addResidencySet:"),
+            ("MTL4CommandQueue", "commit:count:"),
+            ("MTL4CommandQueue", "signalEvent:value:"),
+            ("MTL4CommandQueue", "signalDrawable:"),
+            ("MTL4CommandQueue", "waitForDrawable:"),
+            ("MTL4CommandAllocator", "reset"),
+            ("MTL4CommandBuffer", "beginCommandBufferWithAllocator:"),
+            ("MTL4CommandBuffer", "endCommandBuffer"),
+            ("MTL4CommandBuffer", "renderCommandEncoderWithDescriptor:"),
+            ("MTL4CommandBuffer", "useResidencySet:"),
+            ("MTL4ArgumentTable", "setAddress:atIndex:"),
+            ("MTL4ArgumentTable", "setTexture:atIndex:"),
+            ("MTL4RenderCommandEncoder", "setArgumentTable:atStages:"),
+            ("MTL4RenderCommandEncoder", "setRenderPipelineState:"),
+            ("MTL4RenderCommandEncoder", "setViewport:"),
+            (
+                "MTL4RenderCommandEncoder",
+                "drawPrimitives:vertexStart:vertexCount:",
+            ),
+            ("MTLSharedEvent", "waitUntilSignaledValue:timeoutMS:"),
+            ("MTLBuffer", "gpuAddress"),
+            ("MTLTexture", "gpuResourceID"),
+            ("MTLResidencySet", "addAllocation:"),
+            ("MTLResidencySet", "commit"),
+            ("MTLDrawable", "present"),
+        ];
+        for (c, s) in need {
+            assert!(
+                resolve_selector(c, s).is_some(),
+                "consumed sel ({c}, \"{s}\") が canon union に必要"
+            );
+        }
+        // endEncoding は親 MTL4CommandEncoder 帰属の継承解決を直接 pin。
+        let (on, retain) = match resolve_selector("MTL4RenderCommandEncoder", "endEncoding") {
+            Some(v) => v,
+            None => panic!("MTL4 endEncoding 継承解決失敗"),
+        };
+        assert_eq!(on, "MTL4CommandEncoder");
+        assert_eq!(retain, RetainRule::Borrowed);
+    }
+
+    /// 変異: SDK26 帰属 selector の typo を R1 が検出する。
+    #[test]
+    fn go_audit_detects_sdk26_selector_typo() {
+        let src = use_src4().replace("c\"commit:count:\"", "c\"conmit:count:\"");
+        assert!(src.contains("conmit"), "変異適用確認");
+        let v = audit_sel_decls(&src);
+        assert!(
+            v.iter().any(|x| x.rule == "R1"),
+            "SDK26 sel typo を R1 が検出: {v:?}"
+        );
+    }
+
+    /// 変異: Metal4 family 値の改竄 (5002→5003) を R2 が検出する。
+    #[test]
+    fn go_audit_detects_sdk26_enum_tamper() {
+        let src = use_src4().replace(
+            "(\"MTLGPUFamily\", \"Metal4\", 5002)",
+            "(\"MTLGPUFamily\", \"Metal4\", 5003)",
+        );
+        assert!(src.contains("5003"), "変異適用確認");
+        let v = audit_enum_consts(&src);
+        assert!(
+            v.iter().any(|x| x.rule == "R2"),
+            "Metal4=5003 改竄を R2 が検出: {v:?}"
+        );
+    }
+
+    /// 変異: metal4_direct の dispatcher 名差替 (arg 個数不整合) を R3 が検出。
+    #[test]
+    fn go_audit_detects_sdk26_arg_shape_mismatch() {
+        let src = use_src4().replacen(
+            "SEL_MTL4_DRAW_PRIMITIVES.1,\n            MTLV_PRIM_TRIANGLE.2 as u64,",
+            "SEL_MTL4_DRAW_PRIMITIVES.1,\n            MTLV_PRIM_TRIANGLE.2 as u64,\n            0,",
+            1,
+        );
+        // replacen 失効時は源不一致 → 代替 marker 変異
+        let src = if src.contains(",\n            0,\n            verts.len()") {
+            src
+        } else {
+            use_src4().replacen("rt.void_3uuu(", "rt.void_2pu(", 1)
+        };
+        let v = audit_dispatch_shapes(rt_src(), &src);
+        assert!(
+            v.iter().any(|x| x.rule == "R3"),
+            "MTL4 呼出引数形状改竄を R3 が検出: {v:?}"
+        );
+    }
+
+    /// 変異: SDK26 SEL 宣言の消費者ゼロ死蔵を R6 が検出する。
+    #[test]
+    fn go_audit_detects_dead_sdk26_const() {
+        let src = format!(
+            "{}\npub const SEL_MTL4_DEAD: (&str, &CStr) = (\"MTL4CommandQueue\", c\"commit:count:\");\n",
+            use_src4()
+        );
+        let v = audit_const_consumers(&src);
+        assert!(
+            v.iter().any(|x| x.rule == "R6"),
+            "SDK26 消費者ゼロ宣言を R6 が検出: {v:?}"
+        );
     }
 }

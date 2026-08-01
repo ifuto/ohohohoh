@@ -9964,8 +9964,111 @@ Rsift のネイティブ Mod はプロセス内 DLL/so/dylib であり、**ロ�
   native_module_load 検出扱いで協議に回す構造とした。
 
 ### 次 wave 計画
-- GO (196): Metal 4 (MTL4) 直 binding (wave 194 計画行の番号繰延)。
+- GO (196): Metal 4 (MTL4) 直 binding — **完遂** (本節 wave 196 参照)。
 - GP (197): CGL/GL 直 binding (旧 Intel Mac 向け、同上)。
+
+## wave 196 (GO): Metal 4 (MTL4) 直 binding 完全実装 + Apple SDK 26 (26.5) canon 区画 + 静的解析機 union 拡張 (2026-07-31)
+
+ユーザー要求 (最上位)「METAL、GL 完全実装 / Mac 実機なしで METAL API ドキュメントの
+一次情報で完璧な独自静的解析マシーンを Rust で作成し、実際に動作するかある程度検証、
+動くことは保証して / 直 binding」の Metal 4 部。wave 194 GN (classic Metal) の 3 層
+保証設計をそのまま MTL4 に適用した。
+
+### 一次情報 (推測ゼロ規則の厳守)
+- 正典源: Apple SDK **26.5** (macOS Tahoe) Metal.framework 全 98 ヘッダを
+  alexey-lysiuk/macos-sdk (GitHub) から gh api raw で取得し実パース
+  (=/home/user/rsift-scratch/sdk26/ に一次保存)。
+- tools/apple_canon_gen.py に SDK26 parser を拡張: C コメント状態機除去・
+  API_AVAILABLE 系 availability マクロ 599 個の paren 平衡除去 (個数 inventory 閉鎖確認)・
+  プリプロセッサ除去・bare token 除去 (MTL_EXPORT/NS_ASSUME_NONNULL 等他 9 種)・
+  `;` 深度 0 文分割・enum 定数式評価 (shift 再帰下降・NSIntegerMax/NSUIntegerMax・
+  同 enum alias・#define object-like 数値マクロ (MTLResource*Shift)・16 round fixpoint)・
+  i64 two's complement wrap (NSUIntegerMax → -1 を C 規則で厳密再現)・
+  enum variant LCP strip (MTLGPUFamilyMetal4 → Metal4 等、objc2 命名規則との一致)。
+- 生成機械値: CANON_SDK26_SELS=**2476** / CANON_SDK26_ENUMS=**902** /
+  CANON_SDK26_CLASSES=**231** / CANON_SDK26_PARENTS=**316**、再生成 idempotent 確定
+  (md5=668e91f1978ff16eb756ee4b41595c6c を 2 連続生成で一致)。既存 CANON_* 4 区画
+  (7840/92/7/2614) は無改変温存 (既存テスト 1463 件の不変根拠)。
+- 一次情報で確定した重要事実 (旧来のモデル記憶との差分を全て機械捕捉):
+  MTL4ArgumentTableDescriptor.maxBufferBindCount 上限=**31** (記憶値 128 は誤り)・
+  maxTextureBindCount≤128・maxSamplerStateBindCount≤16・gpuResourceID は MTLResource
+  でなく MTLTexture (MTLTexture.h:478)・MTLGPUFamilyMetal4=5002・MTLStages ビット位置
+  (Vertex=1/…/Blit=1<<28/AccelStruct=1<<29)・MTLRenderStages Vertex=1/Fragment=2
+  (MTLRenderCommandEncoder.h の 1UL<<0/1UL<<1 逐語)・MTLPixelFormat BGRA8=80/RGBA8=70。
+- Hello Triangle (Metal4) 厳密 frame 順序をヘッダ記述から固定: frame_value+=1 →
+  idx=frame%3 → frame>=3 なら waitUntilSignaledValue:(frame-3) timeoutMS:10 →
+  allocator reset → beginCommandBufferWithAllocator: → pass descriptor 都度生成 →
+  encoder → setRenderPipelineState → setViewport → argument table setAddress: atIndex:0
+  → setArgumentTable:atStages: (MTLRenderStageVertex=1) → drawPrimitives → endEncoding →
+  endCommandBuffer → commit:count:1 → signalEvent:value:。present 経路は
+  waitForDrawable → commit → signalDrawable → present → signalEvent。
+  residency: 都度 addAllocation: → commit → queue addResidencySet:。
+
+### 実装 (直 binding、高級ラッパ不使用)
+- objc_rt.rs: trait に void_2uu (setAddress:atIndex:) / bool_2uu
+  (waitUntilSignaledValue:timeoutMS:) 追加 + NativeObjcRt transmute 実装 (macOS 実体) +
+  Mock 実装。Mock に u64_value_log (呼出実値列 pin)・log_vals 配線・on_u64 の
+  上書き (後勝ち) 根治 (旧先勝ちは異常系注入不能の構造欠陥、単一登録 fixture 非破壊)・
+  on_ptr_off (ptr override 解除、fixture 命名規則 on_* 統一)・bool_1u/bool_2uu の
+  u64_overrides 駆動 (未登録=既定 true=旧互換)。
+- metal_direct.rs: DirectMetalError に Metal4Unsupported / FrameSyncTimeout 追加、
+  ns_str/err_string を pub(crate) 化 (metal4_direct 消費)。
+- **metal4_direct.rs 新設** (1301 行): SEL_MTL4_* **42** 本 (class 帰属 const)・
+  MTLV_* 4 本 (MTLV_FAMILY_METAL4=5002/MTLV_RSTAGE_VERTEX=1/FRAGMENT=2 等)・
+  CLASS_MTL4_* 7 本・MTL4_FRAMES_IN_FLIGHT=3・MTL4_WAIT_TIMEOUT_MS=10・
+  VBUF4_CAP_FLOAT4=1024。DirectMetal4 全構造 (base/queue4/cmd/allocator×3/
+  shared_event/pipeline4 2 本/arg_table 2 本/vbuf×3+gpuAddress/residency) と
+  create4/render_frame4/render_textured_quad4/render_to_layer4/shutdown。
+  所有規則 canon 厳密 (生成=Owned、device=Borrowed、pass descriptor は frame 毎
+  alloc→encoder 後 release)。
+- apple_ffi_audit.rs: canon union 拡張 (R1=SELS+PARENTS・R2=ENUMS・R7=CLASSES 各
+  SDK26 chain)、run_full_audit を per-file 走査化、**audit_dispatch_shapes_with_decls**
+  新設 (R3 の宣言解決元を層連結ソースで供給 — metal_direct/metal4_direct は単一
+  binding 層として相互の SEL を共有消費する事実の形式化)。logical_statements の
+  char リテラル判別根治 (lifetime 'static の ' で in_char 誤入し ';' 分割喪失
+  → SEL 42 中 41 しか抽出されず監査陰性化していた構造バグを捕捉・根治、誠実記録)。
+- apple_backend.rs: **native_direct4_route** (4 条件 AND policy、非 cfg=
+  Linux CI pin 可能) + #[cfg(macos)] **native_direct4_session** (NativeObjcRt+create4)
+  — §7 真消費者配線。
+
+### 検証 (TDD RED→GREEN、機械値)
+- strict opt-gfx 全量 **1480 全緑** (HEAD 1463 (stash 検証で機械確定) + go_ **17**
+  本新設: metal4_direct 9・audit canon/R1/R2/R3/R6 系 7・backend route 1)。
+  go_ フィルタは pgo_bolt 4 本を部分一致で併計するため 21 表示 (初版記載の
+  「21 本新設」はこの併計を見落とした誤計上 — #[test] 件数の HEAD 対比
+  (+7/+1/新規 9 = +17) と stash 前後計数 (1463→1480) の交差検証で根治、
+  誠実記録)。api 66・replay 16 不変。警告 0・fmt 逸脱 0 (新規 6 ファイル、
+  rustfmt 同一条件)・簡体字 0 (gen.py 含む)。
+- 破壊的 TDD (adversarial 4 系統、全て RED 検出→復元 MD5-VERIFIED):
+  A canon SDK26 enum 値改竄 (MTLStages Vertex 1→2) → go_canon_sdk26_metal4_enum_exact RED。
+  B SEL typo (commit:count:→conmit:count:) → gn_audit_full_clean が R1 RED。
+  C dispatcher SEL トークン差替 (commit 呼出に setViewport: SEL) → R3 コロン数 RED。
+  D frame-sync 条件改竄 (>= → >) → go_frame4_rotation_wait_mechanism_golden RED
+  (u64_value_log の実値 pin が wait 欠落を検出)。
+- 自己照査 (誠実記録): adversarial A 初回 sed タプル形式不一致で未適用 (0 件置換)
+  を grep 検査で捕捉し struct-literal 形式で再変異 / B 初回 sed backslash 過剰で未
+  適用を同様に捕捉 / 監査陰性化バグ (lifetime 誤解析)・descriptor alloc の self-class
+  登録必須 (spawn 解決不能教訓)・MTLV4→MTLV_ 接頭辞監査整合・stale fixpoint 切除・
+  i64 wrap を全て記録。
+- R3 修復履歴 (wave 内完結、directive ⑧): per-file 走査化で顕在化した 3 失敗
+  (gn_audit_full_clean / gn_ffi_audit_report_empty / gn_native_direct_plan_matrix)
+  の根治 — (a) 跨ファイル SEL 宣言解決を decl_merged 化、(b) write_vertices4 の
+  完全修飾パスを use インポート形に統一、(c) mock メソッド ptr_off を dispatcher
+  抽出 prefix と衝突する命名から on_ptr_off へ根治。修復後 1479 全緑 → route 追加
+  で 1480。
+
+### 誠実な保証境界 (過剰約束なし)
+- **保証できる**: 全 SEL/enum/class が Apple SDK 26.5 一次情報と機械完全一致である
+  こと (差分 0 件の恒常監査)・全 dispatcher 呼出の引数形状と selector コロン数の
+  三件照合・本番全行の Linux 動的実行 (MockObjcRt、frame 順序実値 pin つき)・
+  macOS 実体経路 (NativeObjcRt objc_msgSend typed transmute) が cfg で配線済であること。
+- **保証の及ばない範囲**: macOS 実機での GPU 応答・リンク・描画結果 (sandbox に
+  Apple Silicon が無く非計測、ユーザーへは「実機未検証」を明記済)。MTL4 residency/
+  shared event の実ハード挙動も同様。
+
+### 次 wave 計画
+- GP (197): CGL/GL 直 binding (旧 Intel Mac 向け、同一正典リポジトリの
+  OpenGL.framework ヘッダを一次情報化して 3 層保証を複製)。
 
 ## wave 189 以降の運用 (フェーズ 2 完遂後)
 - adversarial 非検出の棚卸運用は終了。新規 adversarial 非検出は発生 wave 内
@@ -9977,4 +10080,5 @@ Rsift のネイティブ Mod はプロセス内 DLL/so/dylib であり、**ロ�
   …1398(185)→1402(186)→1404(187)→1408(188)→1418(189、gi_ 10 本)
   →1422(190、gj_ 4 本)→1425(191、gk_ 3 本)→1428(192、gl_ 3 本)
   →1431(193、gm_ 3 本)→1463(194、gn_ 32 本)→1463(195、opt-gfx 不変;
-  rsift-api 49→66、gq_ 17 本。捕捉採番次空き 130 据置 = 採番なし機能 wave)。
+  rsift-api 49→66、gq_ 17 本)→1480(196、go_ 17 本新設; R3 修復経過 1479
+  は誠実記録。捕捉採番次空き 130 据置 = 採番なし機能 wave)。

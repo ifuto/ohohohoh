@@ -285,3 +285,5 @@ wave 194 GN Metal classic 直 binding 完全実装 + 独自静的解析機 (cano
 - 2026-07-30 (count 224): wave 194 GN 上記の CI 緑確認用
 wave 195 GQ Mod ハイジャック防止 capability セキュリティ層 (2026-07-30): ユーザー要求「Mod が PC を乗っ取れないセーフティ・Mod の幅不変」— mod_security 新設 (HostCapability 8・2 層静的検査 vet・SHA-256 consent ハッシュ固定・SecurityGate 監査 ring・JNI host. op 構造拒否) + native_loader 動的リンク前ゲート + ModManifest.capabilities + dispatch_op ガード。幅不変 pin (検出 0=即 Allow・SuiteModule 42/op 4 無制限)。api +17 = 66 全緑・opt-gfx 1463 不変・adversarial 4 系統 6 RED 復元 md5 ALL OK・fmt 自己起因 0
 - 2026-07-30 (count 225): wave 195 GQ 上記の CI 緑確認用
+wave 196 GO Metal 4 (MTL4) 直 binding 完全実装 + SDK 26.5 canon 区画 (2026-07-31): 98 Metal ヘッダ一次情報から CANON_SDK26 (2476/902/231/316, md5 668e91f1 idempotent) 生成・DirectMetal4 全構造 (residency/argument table/shared event/frame 正規順序)・監査機 SDK26 union + R3 層連結宣言解決 + char literal 根治・native_direct4_route/session 配線。opt-gfx 1463→1480 全緑 (go_ 17)・adversarial 4 系統全 RED 復元 MD5-VERIFIED×4・seal 全 PASS・api 66/replay 16 不変
+- 2026-07-31 (count 226): wave 196 GO 上記の CI 緑確認用

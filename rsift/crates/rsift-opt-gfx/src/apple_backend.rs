@@ -312,6 +312,35 @@ pub fn native_direct_session(
     crate::metal_direct::DirectMetal::create(&mut rt, width, height)
 }
 
+// ---- 【wave 196 GO】Metal 4 (MTL4) 直 binding 経路の policy 橋 ----
+
+/// Metal 4 direct 経路を選ぶべきかの純粋 policy 判定。
+/// 全条件を AND で要求 (ひとつでも欠ければ classic Metal direct/wgpu 側):
+/// - `plan.env_declared_native`: ユーザー宣言 (RSIFT_GFX_APPLE_NATIVE)。
+/// - `plan.host_is_macos`: compile-time 真値。
+/// - `plan.ffi_audit_clean`: canon 完全一致 (SDK26 区画を含む全件照合)。
+/// - `surface.declared`: Apple Silicon + macOS 26+ の MTL4 宣言的条件。
+/// 非 cfg 関数であり Linux CI でも route matrix を機械 pin できる
+/// (mock 不要・実セッション起動は native_direct4_session のみ cfg 実体)。
+pub fn native_direct4_route(surface: &Metal4Surface, plan: &NativeDirectPlan) -> bool {
+    plan.env_declared_native && plan.host_is_macos && plan.ffi_audit_clean && surface.declared
+}
+
+/// Metal 4 (MTL4) 直 binding セッション起動 (macOS のみ実体)。
+/// classic native_direct_session と同じ配置規則: queue4/allocator×3/
+/// residency/argument table/shared event までを DirectMetal4::create4 が
+/// Apple SDK 26 canon 順序で構築する。起動前に native_direct4_route が
+/// true であることを呼出側で確認する契約 (本関数自体は route を再評価
+/// しない: OS バージョン供給値は呼出側の純粋性維持設計に従う)。
+#[cfg(target_os = "macos")]
+pub fn native_direct4_session(
+    width: u32,
+    height: u32,
+) -> Result<crate::metal4_direct::DirectMetal4, crate::metal_direct::DirectMetalError> {
+    let mut rt = crate::objc_rt::NativeObjcRt;
+    crate::metal4_direct::DirectMetal4::create4(&mut rt, width, height)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,6 +475,59 @@ mod tests {
             native_direct_plan(None).ffi_audit_clean,
             "canon 差分ゼロが前提"
         );
+    }
+
+    /// 【wave 196 GO】MTL4 route policy の全分岐 pin (非 cfg・mock 不要)。
+    /// 4 条件 AND の各欠落パターンで必ず false、全充足でのみ true。
+    #[test]
+    fn go_native_direct4_route_matrix() {
+        let plan_on_mac = NativeDirectPlan {
+            host_is_macos: true,
+            env_declared_native: true,
+            ffi_audit_clean: true,
+        };
+        let surf_declared = Metal4Surface {
+            declared: true,
+            usable: false,
+        };
+        let surf_undeclared = Metal4Surface {
+            declared: false,
+            usable: false,
+        };
+        // 全充足のみ true。
+        assert!(native_direct4_route(&surf_declared, &plan_on_mac));
+        // surface 未宣言 (Intel Mac / macOS 25 以下相当) → false。
+        assert!(!native_direct4_route(&surf_undeclared, &plan_on_mac));
+        // env 未宣言 → false (既定は classic/wgpu 側のまま)。
+        assert!(!native_direct4_route(
+            &surf_declared,
+            &NativeDirectPlan {
+                env_declared_native: false,
+                ..plan_on_mac
+            }
+        ));
+        // 非 macOS → false。
+        assert!(!native_direct4_route(
+            &surf_declared,
+            &NativeDirectPlan {
+                host_is_macos: false,
+                ..plan_on_mac
+            }
+        ));
+        // 監査差分あり → false (canon 不一致での MTL4 起動を構造拒否)。
+        assert!(!native_direct4_route(
+            &surf_declared,
+            &NativeDirectPlan {
+                ffi_audit_clean: false,
+                ..plan_on_mac
+            }
+        ));
+        // 実 plan (env 未指定) は sandbox で必ず false に落ちる。
+        let declared_here = metal4_surface(classify(host_os(), host_arch(), "Apple M4"), 26);
+        assert!(!native_direct4_route(
+            &declared_here,
+            &native_direct_plan(None)
+        ));
     }
 
     /// FFI 監査レポートが空 (canon 完全一致) であることの配線 pin。

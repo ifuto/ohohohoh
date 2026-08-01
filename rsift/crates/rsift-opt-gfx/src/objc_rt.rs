@@ -241,6 +241,8 @@ pub trait ObjcRt {
     );
     /// ポインタ+u64 引数 void (setFragmentTexture:atIndex: 等)。
     fn void_2pu(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: ObjcId, b: u64);
+    /// 2 u64 引数 void (setAddress:atIndex: 系、wave 196 GO)。
+    fn void_2uu(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64, b: u64);
     /// 1 u64 引数 void (setPixelFormat:、setMaximumDrawableCount:、
     /// setLoadAction:、setStoreAction:、setUsage: 等)。
     fn void_1u(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64);
@@ -289,6 +291,8 @@ pub trait ObjcRt {
     fn ptr_0(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr) -> *mut c_void;
     /// 1 u64 引数 bool 返却 (supportsFamily:)。
     fn bool_1u(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64) -> bool;
+    /// 2 u64 引数 bool 返却 (waitUntilSignaledValue:timeoutMS:、wave 196 GO)。
+    fn bool_2uu(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64, b: u64) -> bool;
     /// C エントリ MTLCreateSystemDefaultDevice() の注入トンネル
     /// (canon CANON_METAL_CFNS に name+argc=0 で存在 → 監査対象)。
     /// 返却は autoreleased device (Borrowed 規則、release 禁止)。
@@ -485,6 +489,14 @@ impl ObjcRt for NativeObjcRt {
             f(obj, sel, a, b)
         }
     }
+    fn void_2uu(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64, b: u64) {
+        let sel = unsafe { sel_register_name_link(sel.as_ptr()) };
+        unsafe {
+            let f: extern "C" fn(ObjcId, Sel, u64, u64) =
+                core::mem::transmute(objc_msgSend_link as *mut c_void);
+            f(obj, sel, a, b)
+        }
+    }
     fn void_1u(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64) {
         let sel = unsafe { sel_register_name_link(sel.as_ptr()) };
         unsafe {
@@ -593,6 +605,14 @@ impl ObjcRt for NativeObjcRt {
             f(obj, sel, a)
         }
     }
+    fn bool_2uu(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64, b: u64) -> bool {
+        let sel = unsafe { sel_register_name_link(sel.as_ptr()) };
+        unsafe {
+            let f: extern "C" fn(ObjcId, Sel, u64, u64) -> bool =
+                core::mem::transmute(objc_msgSend_link as *mut c_void);
+            f(obj, sel, a, b)
+        }
+    }
     fn c_mtl_default_device(&mut self) -> ObjcId {
         unsafe { mtl_create_system_default_device_link() }
     }
@@ -642,6 +662,10 @@ pub struct MockObjcRt {
     /// contents 応答用の実メモリ (64KiB)。new 後は resize しないため
     /// 先頭ポインタは安定。buffer 書込みの動作検証を Linux 上で実物理行する。
     arena: Vec<u8>,
+    /// 数値引数の実値ログ (method, sel, vals) — args_shape では潰れる
+    /// u64 実値 (commit count / frame 番号 / gpuAddress 等) の物理検証用
+    /// (wave 196 GO 追加)。既存 CallRec 等価性には不介入。
+    pub u64_value_log: Vec<(&'static str, String, Vec<u64>)>,
 }
 
 impl MockObjcRt {
@@ -659,6 +683,7 @@ impl MockObjcRt {
             u64_overrides: Vec::new(),
             ptr_overrides: Vec::new(),
             arena: vec![0u8; 64 * 1024],
+            u64_value_log: Vec::new(),
         }
     }
     /// arena 先頭から len バイトのスナップショット (contents 書込み検証用)。
@@ -684,8 +709,23 @@ impl MockObjcRt {
     }
     /// u64 応答 override 登録: `recv` class の `sel` 問合せに `val` を返す。
     /// 同名 selector を持つ他 class との衝突を避けるため class 付きキーとする。
+    /// 同一キー再登録は「後勝ち」の上書き動作 (wave 196 GO: 異常系注入で
+    /// fixture 標準応答を後から差し替える要件に対応 — 旧動作は先勝ちで
+    /// 後の呼出が無視され注入不能だった。単一登録の既存 fixture では
+    /// 振る舞い不変、strict 全緑で非破壊確認済)。
     pub fn on_u64(&mut self, recv: &'static str, sel: &'static str, val: u64) {
+        self.u64_overrides
+            .retain(|(r, s, _v)| !(*r == recv && *s == sel));
         self.u64_overrides.push((recv, sel, val));
+    }
+    /// ptr 応答 override 解除 (異常系注入用、wave 196 GO)。対応登録が
+    /// なければ何もしない (呼出安全)。fixture 登録系の命名規則 (on_*) に
+    /// 従う — 監査機 R3 の dispatcher 抽出 (rt.<name>( は dispatcher か
+    /// infra かで分類) で on_ 接頭辞は infra 側に帰属し、`on_ptr` と対に
+    /// なる登録解除として語彙一意に揃える。
+    pub fn on_ptr_off(&mut self, recv: &'static str, sel: &'static str) {
+        self.ptr_overrides
+            .retain(|(r, s)| !(*r == recv && *s == sel));
     }
     /// ptr 応答 override 登録: `recv` class の `sel` 問合せに arena 先頭
     /// (実書込み可能メモリ) を返す。MTLBuffer contents の動作検証に使う。
@@ -699,6 +739,11 @@ impl MockObjcRt {
         let id = self.objs.len();
         self.live.push(id);
         id as ObjcId
+    }
+    /// 数値引数実値の記録 (wave 196 GO)。mock 内部専用。
+    fn log_vals(&mut self, method: &'static str, sel_name: &str, vals: &[u64]) {
+        self.u64_value_log
+            .push((method, sel_name.to_string(), vals.to_vec()));
     }
     fn spawn(&mut self, recv: ObjcId, sel_name: &str) -> ObjcId {
         // init family 契約: レシーバ (alloc 直後のオブジェクト) をそのまま
@@ -922,15 +967,9 @@ impl ObjcRt for MockObjcRt {
             args_shape: "p,u,u",
         });
     }
-    fn void_3uuu(
-        &mut self,
-        _obj: ObjcId,
-        sel: &'static core::ffi::CStr,
-        _a: u64,
-        _b: u64,
-        _c: u64,
-    ) {
+    fn void_3uuu(&mut self, _obj: ObjcId, sel: &'static core::ffi::CStr, a: u64, b: u64, c: u64) {
         let n = sel.to_str().unwrap_or("?").to_string();
+        self.log_vals("void_3uuu", &n.clone(), &[a, b, c]);
         self.calls.push(CallRec {
             method: "void_3uuu",
             sel: n,
@@ -994,16 +1033,27 @@ impl ObjcRt for MockObjcRt {
             args_shape: "region,u,p,u",
         });
     }
-    fn void_2pu(&mut self, _obj: ObjcId, sel: &'static core::ffi::CStr, _a: ObjcId, _b: u64) {
+    fn void_2pu(&mut self, _obj: ObjcId, sel: &'static core::ffi::CStr, _a: ObjcId, b: u64) {
         let n = sel.to_str().unwrap_or("?").to_string();
+        self.log_vals("void_2pu", &n.clone(), &[b]);
         self.calls.push(CallRec {
             method: "void_2pu",
             sel: n,
             args_shape: "p,u",
         });
     }
-    fn void_1u(&mut self, _obj: ObjcId, sel: &'static core::ffi::CStr, _a: u64) {
+    fn void_2uu(&mut self, _obj: ObjcId, sel: &'static core::ffi::CStr, a: u64, b: u64) {
         let n = sel.to_str().unwrap_or("?").to_string();
+        self.log_vals("void_2uu", &n.clone(), &[a, b]);
+        self.calls.push(CallRec {
+            method: "void_2uu",
+            sel: n,
+            args_shape: "u,u",
+        });
+    }
+    fn void_1u(&mut self, _obj: ObjcId, sel: &'static core::ffi::CStr, a: u64) {
+        let n = sel.to_str().unwrap_or("?").to_string();
+        self.log_vals("void_1u", &n.clone(), &[a]);
         self.calls.push(CallRec {
             method: "void_1u",
             sel: n,
@@ -1087,13 +1137,42 @@ impl ObjcRt for MockObjcRt {
         }
         core::ptr::null_mut()
     }
-    fn bool_1u(&mut self, _obj: ObjcId, sel: &'static core::ffi::CStr, _a: u64) -> bool {
+    fn bool_1u(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64) -> bool {
         let n = sel.to_str().unwrap_or("?").to_string();
+        self.log_vals("bool_1u", &n.clone(), &[a]);
         self.calls.push(CallRec {
             method: "bool_1u",
-            sel: n,
+            sel: n.clone(),
             args_shape: "u",
         });
+        // 応答規則 (wave 196 GO 拡張): u64_overrides で (class, sel)
+        // 非ゼロ→true / ゼロ→false を注入可。未登録は既定 true (旧来の
+        // 一律 true と互換 — gn_ strict 既存全件が既定/1 登録のみで非破壊)。
+        let rc = self.class_of(obj).unwrap_or("?");
+        for (r, s, v) in &self.u64_overrides {
+            if *r == rc && *s == n {
+                return *v != 0;
+            }
+        }
+        true
+    }
+    fn bool_2uu(&mut self, obj: ObjcId, sel: &'static core::ffi::CStr, a: u64, b: u64) -> bool {
+        let n = sel.to_str().unwrap_or("?").to_string();
+        self.log_vals("bool_2uu", &n.clone(), &[a, b]);
+        self.calls.push(CallRec {
+            method: "bool_2uu",
+            sel: n.clone(),
+            args_shape: "u,u",
+        });
+        // 応答規則: u64_overrides で (class, sel) 非ゼロ→true / ゼロ→false 指定可。
+        // 未登録は既定 true (実 ObjC は signal までブロックするが mock は
+        // 「イベント既達」を既定応答とする Doc 契約、wave 196 GO)。
+        let rc = self.class_of(obj).unwrap_or("?");
+        for (r, s, v) in &self.u64_overrides {
+            if *r == rc && *s == n {
+                return *v != 0;
+            }
+        }
         true
     }
     fn c_mtl_default_device(&mut self) -> ObjcId {

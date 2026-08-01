@@ -321,6 +321,17 @@ pub enum DirectMetalError {
     },
     /// ピクセルデータ長不足 (upload_pixels 検証)。
     PixelDataShort { have: usize, want: usize },
+    /// Metal 4 family 非対応 (supportsFamily: MTLGPUFamilyMetal4=5002 が
+    /// false、wave 196 GO — MTL4 経路の硬ゲート応答)。
+    Metal4Unsupported,
+    /// MTL4 frame 同期 event 待機 timeout (waitUntilSignaledValue: が
+    /// false 応答、wave 196 GO — Hello Triangle 待機機構の fail-loud 化)。
+    FrameSyncTimeout {
+        /// 現在 frame 番号。
+        frame: u64,
+        /// 完了を待っていた番号 (frame - kMaxFramesInFlight)。
+        awaited: u64,
+    },
 }
 
 /// 三角形の頂点 (x,y,r,g)、float4 揃え 3 頂点 = 48 byte。
@@ -334,7 +345,8 @@ pub const TRIANGLE_VERTS: [f32; 12] = [
 
 /// `&str` → NSString (Owned)。失敗時 None。
 /// alloc (Owned) → initWithUTF8String: (init family absorb)。
-fn ns_str(rt: &mut dyn ObjcRt, s: &str) -> Option<ObjcId> {
+/// metal4_direct も消費 (crate 内共有、wave 196 GO)。
+pub(crate) fn ns_str(rt: &mut dyn ObjcRt, s: &str) -> Option<ObjcId> {
     let mut bytes = s.as_bytes().to_vec();
     bytes.push(0);
     let cls = rt.get_class(CLASS_NSSTRING);
@@ -353,8 +365,8 @@ fn ns_str(rt: &mut dyn ObjcRt, s: &str) -> Option<ObjcId> {
 }
 
 /// NSError から localizedDescription UTF-8 文字列を取り出す。
-/// err が null の場合は既定文。
-fn err_string(rt: &mut dyn ObjcRt, err: ObjcId, fallback: &str) -> String {
+/// err が null の場合は既定文。metal4_direct も消費 (wave 196 GO)。
+pub(crate) fn err_string(rt: &mut dyn ObjcRt, err: ObjcId, fallback: &str) -> String {
     if err.is_null() {
         return fallback.to_string();
     }

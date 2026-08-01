@@ -258,6 +258,7 @@ pub mod gpu_runtime;
 
 // ---- Native Apple direct binding (objc dispatcher 注入 + canon 監査)
 pub mod apple_ffi_audit;
+pub mod metal4_direct;
 pub mod metal_direct;
 pub mod objc_rt;
 
