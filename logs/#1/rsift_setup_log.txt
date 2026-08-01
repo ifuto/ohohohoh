@@ -1,0 +1,5 @@
+# rsift-setup 実行ログ
+# schema=rsift.setup.log/1 started_unix=1785575330 exit_code=2
+[ok  ] env          os=windows arch=x86_64 dir=C:\Users\seinr\Downloads\rsift-setup-windows-x64
+[ok  ] scan         0 個の lib を検出
+[fail] scan         同階層に dll が 1 つも無い。zip の中身を実行ファイルと同じ場所に置いてください
