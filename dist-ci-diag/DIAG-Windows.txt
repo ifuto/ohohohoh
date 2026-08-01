@@ -1,21 +1,22 @@
-== DIAG Windows exit=0 time=2026-08-01T10:52:48Z ==
+== DIAG Windows exit=0 time=2026-08-01T12:17:03Z ==
 -- target/release cdylib 候補 --
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
--rwxr-xr-x 2 runneradmin 197121 6316032 Aug  1 10:52 target/release/rsgraphics.dll
--rwxr-xr-x 2 runneradmin 197121  104960 Aug  1 10:47 target/release/rsift_api.dll
--rwxr-xr-x 2 runneradmin 197121 6570496 Aug  1 10:52 target/release/rsift_jvm.dll
--rwxr-xr-x 2 runneradmin 197121 1033728 Aug  1 10:51 target/release/rsreplay.dll
+-rwxr-xr-x 2 runneradmin 197121 6319616 Aug  1 12:16 target/release/rsgraphics.dll
+-rwxr-xr-x 2 runneradmin 197121  104960 Aug  1 12:11 target/release/rsift_api.dll
+-rwxr-xr-x 2 runneradmin 197121 6582272 Aug  1 12:16 target/release/rsift_jvm.dll
+-rwxr-xr-x 2 runneradmin 197121 1034240 Aug  1 12:16 target/release/rsreplay.dll
+-rwxr-xr-x 2 runneradmin 197121  553984 Aug  1 12:16 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 13952
-drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:52 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:44 ..
--rw-r--r-- 1 runneradmin 197121      747 Aug  1 10:52 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 14274560 Aug  1 10:52 rsift-bundle-windows-x64.zip
-drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:52 selftest-win
-drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:52 windows
+total 14528
+drwxr-xr-x 1 runneradmin 197121        0 Aug  1 12:17 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug  1 12:09 ..
+-rw-r--r-- 1 runneradmin 197121      826 Aug  1 12:17 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 14858240 Aug  1 12:16 rsift-bundle-windows-x64.zip
+drwxr-xr-x 1 runneradmin 197121        0 Aug  1 12:16 selftest-win
+drwxr-xr-x 1 runneradmin 197121        0 Aug  1 12:16 windows
 -- selftest result --
 selftest_exit=0
 dist-ci/selftest-win/README_JA.md
