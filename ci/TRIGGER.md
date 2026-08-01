@@ -291,3 +291,5 @@ wave 197 GS セットアップ bootstrapper 新設 (rsift-setup): std オンリ�
 - 2026-08-01 (count 227): wave 197 GS 上記の CI 緑確認用
 wave 198 GU 2 Mod 一体 zip (2026-08-01): rsgraphics caps 宣言完治・rsreplay FFI 検定 7 新設・setup 正規名統一・TRIGGER2 run 3 で engine+2Mod dll 同梱ビルド配線
 - 2026-08-01 (count 228): wave 198 GU 上記の CI 緑確認用
+wave 199 GV 起動構成自動登録 + versions フォルダ完備 (2026-08-01): 最小 JSON/upsert/version json natives/mac .app 内 dylib 同梱化 (同階層必須の構造欠陥根治)/agent 同梱/DIAG 診断機構。setup 28 緑。
+- 2026-08-01 (count 229): wave 199 GV 上記の CI 緑確認用

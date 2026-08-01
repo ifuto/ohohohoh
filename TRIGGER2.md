@@ -4,17 +4,40 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 4
-- 目的: rsift-setup バイナリ + **エンジン dll (rsift_api cdylib) + 2 Mod cdylib
-  (RsGraphics=rsgraphics, RsReplay=rsreplay)** をビルドし、zip 展開したら
-  全部同じフォルダに dll が並ぶ 1 梱包形式で `rsift/dist-ci/` へ出力。
-  ワークフローが Artifacts + Release `setup-v1` へ添付する。
-- 収録物 (Windows 例): rsift-setup.exe / rsift.dll / rsgraphics.dll / rsreplay.dll
+- run: 5
+- 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm) +
+  2 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay)** をビルドし、
+  zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
+  (macOS では dylib は .app/Contents/MacOS/ 内部に同梱 — バイナリと同階層
+  必須のため。外に置くと検出 0 で exit 2 になる構造欠陥が run 4 に顕在化した)
+- 失敗時診断: 終了時に DIAG-<OS>.txt を Release setup-diag へ添付する。
 
 ```bash
 echo "[trigger2] start os=$RUNNER_OS arch=$(uname -m) time=$(date -u +%FT%TZ)"
 set -euo pipefail -x
 cd rsift
+
+# どこで死んでも診断を Release に残す (logs 経路遮断でも原因追跡できる)
+diag_upload() {
+  local st=$?
+  set +e
+  mkdir -p dist-ci
+  {
+    echo "== DIAG $RUNNER_OS exit=$st time=$(date -u +%FT%TZ) =="
+    echo "-- target/release cdylib 候補 --"
+    ls -la target/release/*.dll target/release/*.dylib target/release/*.so 2>&1 | head -30
+    ls -la target/aarch64-apple-darwin/release/*.dylib target/x86_64-apple-darwin/release/*.dylib 2>&1 | head -20
+    echo "-- dist-ci --"
+    ls -la dist-ci 2>&1 | head -20
+  } > "dist-ci/DIAG-$RUNNER_OS.txt"
+  if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null; then
+    gh release create setup-diag --title "setup diag (自動診断)" --notes "trigger2 DIAG 集約先" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
+    gh release upload setup-diag "dist-ci/DIAG-$RUNNER_OS.txt" --clobber --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
+  fi
+  exit $st
+}
+trap diag_upload EXIT
+
 rustc --version && cargo --version
 mkdir -p dist-ci
 HASH() { sha256sum "$@" 2>/dev/null || shasum -a 256 "$@"; }
@@ -22,13 +45,14 @@ HASH() { sha256sum "$@" 2>/dev/null || shasum -a 256 "$@"; }
 case "$RUNNER_OS" in
   Windows)
     cargo build -p rsift-setup --release --locked
-    cargo build -p rsift-api -p rsgraphics -p rsreplay --release --locked
-    mkdir -p dist-ci/windows
-    cp target/release/rsift-setup.exe dist-ci/windows/rsift-setup.exe
-    for F in rsift_api.dll rsgraphics.dll rsreplay.dll; do
+    cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked
+    for F in rsift_api.dll rsift_jvm.dll rsgraphics.dll rsreplay.dll; do
       [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
     done
+    mkdir -p dist-ci/windows
+    cp target/release/rsift-setup.exe dist-ci/windows/rsift-setup.exe
     cp target/release/rsift_api.dll    dist-ci/windows/rsift.dll
+    cp target/release/rsift_jvm.dll    dist-ci/windows/rsift_jvm.dll
     cp target/release/rsgraphics.dll   dist-ci/windows/rsgraphics.dll
     cp target/release/rsreplay.dll     dist-ci/windows/rsreplay.dll
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/windows/README_JA.md
@@ -39,11 +63,19 @@ case "$RUNNER_OS" in
     mkdir -p dist-ci/macos
     for T in aarch64-apple-darwin x86_64-apple-darwin; do
       cargo build -p rsift-setup --release --locked --target "$T"
-      cargo build -p rsift-api -p rsgraphics -p rsreplay --release --locked --target "$T"
+      cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked --target "$T"
+      for F in librsift_api.dylib librsift_jvm.dylib librsgraphics.dylib librsreplay.dylib; do
+        [ -f "target/$T/release/$F" ] || { echo "FATAL: target/$T/release/$F が無い"; exit 1; }
+      done
       APP="dist-ci/stage-$T/Rsift Setup.app/Contents"
       mkdir -p "$APP/MacOS"
       cp "target/$T/release/rsift-setup" "$APP/MacOS/rsift-setup"
       chmod +x "$APP/MacOS/rsift-setup"
+      # dylib はバイナリと同階層 (MacOS 内) に配置 — setup は exe の親ディレクトリを探す
+      cp "target/$T/release/librsift_api.dylib"  "$APP/MacOS/librsift.dylib"
+      cp "target/$T/release/librsift_jvm.dylib"  "$APP/MacOS/librsift_jvm.dylib"
+      cp "target/$T/release/librsgraphics.dylib" "$APP/MacOS/librsgraphics.dylib"
+      cp "target/$T/release/librsreplay.dylib"   "$APP/MacOS/librsreplay.dylib"
       cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -57,13 +89,6 @@ case "$RUNNER_OS" in
  <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-      for PAIR in "librsift_api.dylib:librsift.dylib" "librsgraphics.dylib:librsgraphics.dylib" "librsreplay.dylib:librsreplay.dylib"; do
-        SRC="${PAIR%%:*}"; DST="${PAIR##*:}"
-        if [ ! -f "target/$T/release/$SRC" ]; then
-          echo "FATAL: target/$T/release/$SRC が無い (dylib ビルド未生成)"; exit 1
-        fi
-        cp "target/$T/release/$SRC" "dist-ci/stage-$T/$DST"
-      done
       cp docs/user/SETUP_BOOTSTRAPPER_JA.md "dist-ci/stage-$T/README_JA.md"
       SFX=$(echo "$T" | sed 's/aarch64/arm64/;s/-apple-darwin//')
       (cd "dist-ci/stage-$T" && zip -qr "../rsift-bundle-macos-$SFX.zip" .)
@@ -71,13 +96,14 @@ PLIST
     ;;
   Linux)
     cargo build -p rsift-setup --release --locked
-    cargo build -p rsift-api -p rsgraphics -p rsreplay --release --locked
-    mkdir -p dist-ci/linux
-    cp target/release/rsift-setup dist-ci/linux/rsift-setup
-    for F in librsift_api.so librsgraphics.so librsreplay.so; do
+    cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked
+    for F in librsift_api.so librsift_jvm.so librsgraphics.so librsreplay.so; do
       [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
     done
+    mkdir -p dist-ci/linux
+    cp target/release/rsift-setup dist-ci/linux/rsift-setup
     cp target/release/librsift_api.so  dist-ci/linux/librsift.so
+    cp target/release/librsift_jvm.so  dist-ci/linux/librsift_jvm.so
     cp target/release/librsgraphics.so dist-ci/linux/librsgraphics.so
     cp target/release/librsreplay.so   dist-ci/linux/librsreplay.so
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/linux/README_JA.md
@@ -85,22 +111,26 @@ PLIST
     ;;
 esac
 
-# セルフテスト + 動作ログを成果物として残す (zip 同梱 dll と一緒に実行 = 本番形)
+# セルフテスト: 同梱 dll と一緒に実行 = 本番形 (mac は app 内 MacOS 位置で)
 case "$RUNNER_OS" in
-  Windows) D=dist-ci/windows ;;
-  macOS)   D=dist-ci/stage-aarch64-apple-darwin ;;
-  *)       D=dist-ci/linux ;;
+  Windows)
+    ST=dist-ci/selftest-win
+    mkdir -p "$ST" && cp -r dist-ci/windows/. "$ST"/
+    EXE=./rsift-setup.exe
+    ;;
+  macOS)
+    ST="dist-ci/stage-aarch64-apple-darwin/Rsift Setup.app/Contents/MacOS"
+    EXE=./rsift-setup
+    ;;
+  *)
+    ST=dist-ci/selftest-linux
+    mkdir -p "$ST" && cp -r dist-ci/linux/. "$ST"/
+    EXE=./rsift-setup
+    ;;
 esac
-mkdir -p dist-ci/$RUNNER_OS-selftest
-cp -r "$D"/. dist-ci/$RUNNER_OS-selftest/ \
-  && (cd dist-ci/$RUNNER_OS-selftest && \
-      if [ -f "Rsift Setup.app/Contents/MacOS/rsift-setup" ]; then \
-        cd "Rsift Setup.app/Contents/MacOS" && ./rsift-setup --self-test ; \
-      elif [ -f rsift-setup.exe ]; then ./rsift-setup.exe --self-test ; \
-      else ./rsift-setup --self-test ; fi ; \
-      echo "selftest_exit=$?" > result.txt)
+(cd "$ST" && $EXE --self-test; echo "selftest_exit=$?" > result.txt; ls -la)
 
-ls -la dist-ci/ 
+ls -la dist-ci/
 for Z in dist-ci/*.zip; do
   echo "== 内容物検査: $Z =="
   if command -v unzip >/dev/null; then unzip -l "$Z"; else tar -tf "$Z" || true; fi
@@ -110,8 +140,8 @@ HASH dist-ci/*.zip || true
 # Release へ添付 (権限 contents: write が殻 yml で付いている場合のみ)
 if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null; then
   gh release create setup-v1 \
-    --title "Rsift Setup v1 (.exe / .app + engine & 2 Mod dll 同梱)" \
-    --notes "zip を展開して rsift-setup(.exe) を実行。rsift_setup_log.txt/jsonl ができます。使い方は zip 内 README_JA.md。" \
+    --title "Rsift Setup v1 (.exe/.app + engine & agent & 2 Mod dll 同梱 + 起動構成自動登録版)" \
+    --notes "zip を展開して rsift-setup(.exe) / Rsift Setup.app を実行。起動構成 (versions/rsift-1.21.11 + launcher profile) も自動登録。rsift_setup_log.txt/jsonl ができたら送ってください。" \
     --repo "$GITHUB_REPOSITORY" || true
   for Z in dist-ci/*.zip; do
     gh release upload setup-v1 "$Z" --clobber --repo "$GITHUB_REPOSITORY" || true

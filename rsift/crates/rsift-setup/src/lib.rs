@@ -57,6 +57,22 @@ pub const LAUNCH_CONFIG_NAME: &str = "rsift_launch.json";
 pub const LOG_TXT_NAME: &str = "rsift_setup_log.txt";
 pub const LOG_JSONL_NAME: &str = "rsift_setup_log.jsonl";
 
+/// JVMTI agent (rsift-jvm cdylib、-agentpath 対象) の OS 別ファイル名。
+pub const LIB_WINDOWS_AGENT: &str = "rsift_jvm.dll";
+pub const LIB_MACOS_AGENT: &str = "librsift_jvm.dylib";
+pub const LIB_LINUX_AGENT: &str = "librsift_jvm.so";
+
+/// 起動構成として登録する profile / version の識別子 (ユーザ仕様
+/// 「versions に rsift-1.21.11 みたいなフォルダ」)。
+pub const LAUNCHER_PROFILE_ID: &str = "rsift";
+pub const LAUNCHER_PROFILE_NAME: &str = "Rsift";
+pub const RSIFT_MC_VERSION: &str = "1.21.11";
+
+/// バージョン識別子 (`versions/<id>/<id>.json`)。
+pub fn rsift_version_id() -> String {
+    format!("rsift-{RSIFT_MC_VERSION}")
+}
+
 // ------------------------------------------------------------------
 // SHA-256 (自前実装: std オンリー維持のため。NIST 既知答えテストで pin)
 // ------------------------------------------------------------------
@@ -398,7 +414,8 @@ fn json_str_array(items: &[String]) -> String {
 }
 
 /// 起動構成 JSON をレンダー (手書き・依存ゼロ; フィールドは schema "rsift.launch/1" で pin)。
-pub fn render_launch_config(host: &HostInfo, dec: &LaunchDecision) -> String {
+/// `launcher_json` には launcher 統合結果の JSON 断片 (または "null") を渡す。
+pub fn render_launch_config(host: &HostInfo, dec: &LaunchDecision, launcher_json: &str) -> String {
     let os_name = match host.os {
         TargetOs::Windows => "windows",
         TargetOs::MacOs => "macos",
@@ -437,7 +454,8 @@ pub fn render_launch_config(host: &HostInfo, dec: &LaunchDecision) -> String {
     s.push_str(&format!("  \"graphics_lib\": {gfx},\n"));
     s.push_str(&format!("  \"load_libs\": {},\n", json_str_array(&libs)));
     s.push_str(&format!("  \"prepared\": {},\n", dec.ready));
-    s.push_str(&format!("  \"notes\": {}\n", json_str_array(&dec.notes)));
+    s.push_str(&format!("  \"notes\": {},\n", json_str_array(&dec.notes)));
+    s.push_str(&format!("  \"launcher\": {}\n", launcher_json));
     s.push_str("}\n");
     s
 }
@@ -450,7 +468,7 @@ pub fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepStatus {
     Ok,
     Warn,
@@ -777,7 +795,62 @@ pub fn run(cli: &Cli) -> i32 {
         ),
     );
 
-    let config = render_launch_config(&host, &dec);
+    // Minecraft ランチャー統合: versions/rsift-1.21.11/ + 起動構成登録
+    let mut launcher_json = "null".to_string();
+    if cli.dry_run {
+        log.step("launcher", StepStatus::Ok, "dry-run: 起動構成登録は未実施");
+    } else {
+        match find_minecraft_dir(os) {
+            None => log.step(
+                "launcher",
+                StepStatus::Warn,
+                "minecraft ディレクトリ検出不可 (RSIFT_MC_DIR 未設定) → 登録スキップ",
+            ),
+            Some(mc) if !mc.is_dir() => log.step(
+                "launcher",
+                StepStatus::Warn,
+                format!(
+                    "{} が存在しない (Minecraft 本体の導入後に再実行すると起動構成を登録します)",
+                    mc.display()
+                ),
+            ),
+            Some(mc) => match setup_launcher(&mc, os, &cli.dir, &libs, dec.renderer.as_str()) {
+                Ok(out) => {
+                    let status = if out.profile_registered {
+                        StepStatus::Ok
+                    } else {
+                        StepStatus::Warn
+                    };
+                    for n in &out.notes {
+                        log.step("launcher", status, n.clone());
+                    }
+                    log.step(
+                        "launcher",
+                        status,
+                        format!(
+                            "version_dir={} natives={:?} mods={:?}",
+                            out.version_dir.display(),
+                            out.natives_deployed,
+                            out.mods_deployed
+                        ),
+                    );
+                    launcher_json = format!(
+                        "{{\"registered\": {}, \"profile_id\": \"{}\", \"version_id\": \"{}\", \"minecraft_dir\": \"{}\"}}",
+                        out.profile_registered,
+                        LAUNCHER_PROFILE_ID,
+                        rsift_version_id(),
+                        json_escape(&mc.display().to_string())
+                    );
+                }
+                Err(e) => {
+                    log.step("launcher", StepStatus::Fail, e);
+                    return finish(&cli.dir, log, EXIT_IO);
+                }
+            },
+        }
+    }
+
+    let config = render_launch_config(&host, &dec, &launcher_json);
     if cli.dry_run {
         log.step(
             "config",
@@ -822,6 +895,539 @@ fn finish(dir: &Path, log: SetupLog, code: i32) -> i32 {
         );
     }
     code
+}
+
+// ------------------------------------------------------------------
+// 最小 JSON (std オンリー): launcher_profiles.json の安全な upsert に必要。
+// 文字列継ぎ足しではプロファイルを壊し得るため、構造理解のあるパーサを
+// 自前で持つ (round-trip 忠実性はテストで pin)。
+// ------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Json {
+    Null,
+    Bool(bool),
+    Num(String), // リテラル保持 (1.0 / 1e3 等を失わない)
+    Str(String),
+    Arr(Vec<Json>),
+    Obj(Vec<(String, Json)>), // 挿入順保持 (BTreeMap だと書き戻しで順が揺れる)
+}
+
+impl Json {
+    pub fn obj_get<'a>(&'a self, key: &str) -> Option<&'a Json> {
+        if let Json::Obj(m) = self {
+            m.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+        } else {
+            None
+        }
+    }
+
+    pub fn obj_get_mut<'a>(&'a mut self, key: &str) -> Option<&'a mut Json> {
+        if let Json::Obj(m) = self {
+            m.iter_mut().find(|(k, _)| k == key).map(|(_, v)| v)
+        } else {
+            None
+        }
+    }
+
+    pub fn obj_insert(&mut self, key: &str, val: Json) {
+        if let Json::Obj(m) = self {
+            if let Some(e) = m.iter_mut().find(|(k, _)| k == key) {
+                e.1 = val;
+            } else {
+                m.push((key.to_string(), val));
+            }
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        if let Json::Str(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    pub fn parse(text: &str) -> Result<Json, String> {
+        let b = text.as_bytes();
+        let mut i = 0usize;
+        let v = parse_value(b, &mut i)?;
+        skip_ws(b, &mut i);
+        if i != b.len() {
+            return Err(format!("JSON 末尾に余計なデータ (byte {i})"));
+        }
+        Ok(v)
+    }
+
+    pub fn render(&self) -> String {
+        let mut s = String::new();
+        render_json(self, &mut s, 0);
+        s
+    }
+}
+
+fn skip_ws(b: &[u8], i: &mut usize) {
+    while *i < b.len() && matches!(b[*i], b' ' | b'\t' | b'\n' | b'\r') {
+        *i += 1;
+    }
+}
+
+fn parse_value(b: &[u8], i: &mut usize) -> Result<Json, String> {
+    skip_ws(b, i);
+    if *i >= b.len() {
+        return Err("JSON 値が途中で終了".to_string());
+    }
+    match b[*i] {
+        b'{' => {
+            *i += 1;
+            let mut m = Vec::new();
+            skip_ws(b, i);
+            if *i < b.len() && b[*i] == b'}' {
+                *i += 1;
+                return Ok(Json::Obj(m));
+            }
+            loop {
+                skip_ws(b, i);
+                let key = match parse_value(b, i)? {
+                    Json::Str(s) => s,
+                    other => return Err(format!("オブジェクトキーが文字列でない: {other:?}")),
+                };
+                skip_ws(b, i);
+                if *i >= b.len() || b[*i] != b':' {
+                    return Err(format!("キー {key} の後に ':' が無い"));
+                }
+                *i += 1;
+                let v = parse_value(b, i)?;
+                m.push((key, v));
+                skip_ws(b, i);
+                match b.get(*i) {
+                    Some(b',') => *i += 1,
+                    Some(b'}') => {
+                        *i += 1;
+                        return Ok(Json::Obj(m));
+                    }
+                    other => return Err(format!("オブジェクト区切り不正: {other:?}")),
+                }
+            }
+        }
+        b'[' => {
+            *i += 1;
+            let mut a = Vec::new();
+            skip_ws(b, i);
+            if *i < b.len() && b[*i] == b']' {
+                *i += 1;
+                return Ok(Json::Arr(a));
+            }
+            loop {
+                let v = parse_value(b, i)?;
+                a.push(v);
+                skip_ws(b, i);
+                match b.get(*i) {
+                    Some(b',') => *i += 1,
+                    Some(b']') => {
+                        *i += 1;
+                        return Ok(Json::Arr(a));
+                    }
+                    other => return Err(format!("配列区切り不正: {other:?}")),
+                }
+            }
+        }
+        b'"' => Ok(Json::Str(parse_string(b, i)?)),
+        b't' => {
+            if b[*i..].starts_with(b"true") {
+                *i += 4;
+                Ok(Json::Bool(true))
+            } else {
+                Err(format!("リテラル不正 (byte {i})"))
+            }
+        }
+        b'f' => {
+            if b[*i..].starts_with(b"false") {
+                *i += 5;
+                Ok(Json::Bool(false))
+            } else {
+                Err(format!("リテラル不正 (byte {i})"))
+            }
+        }
+        b'n' => {
+            if b[*i..].starts_with(b"null") {
+                *i += 4;
+                Ok(Json::Null)
+            } else {
+                Err(format!("リテラル不正 (byte {i})"))
+            }
+        }
+        c if c == b'-' || c.is_ascii_digit() => {
+            let st = *i;
+            if c == b'-' {
+                *i += 1;
+            }
+            while *i < b.len()
+                && (b[*i].is_ascii_digit() || matches!(b[*i], b'.' | b'e' | b'E' | b'+' | b'-'))
+            {
+                *i += 1;
+            }
+            let lit = std::str::from_utf8(&b[st..*i]).map_err(|e| e.to_string())?;
+            if lit.is_empty() || lit == "-" {
+                return Err(format!("数値リテラル不正 (byte {st})"));
+            }
+            Ok(Json::Num(lit.to_string()))
+        }
+        other => Err(format!("JSON 値の先頭が不正: 0x{other:02x} (byte {i})")),
+    }
+}
+
+fn parse_string(b: &[u8], i: &mut usize) -> Result<String, String> {
+    debug_assert_eq!(b[*i], b'"');
+    *i += 1;
+    let mut s = String::new();
+    loop {
+        if *i >= b.len() {
+            return Err("文字列が閉じていない".to_string());
+        }
+        match b[*i] {
+            b'"' => {
+                *i += 1;
+                return Ok(s);
+            }
+            b'\\' => {
+                *i += 1;
+                if *i >= b.len() {
+                    return Err("エスケープ途中で終了".to_string());
+                }
+                let e = b[*i];
+                *i += 1;
+                match e {
+                    b'"' => s.push('"'),
+                    b'\\' => s.push('\\'),
+                    b'/' => s.push('/'),
+                    b'b' => s.push('\u{0008}'),
+                    b'f' => s.push('\u{000c}'),
+                    b'n' => s.push('\n'),
+                    b'r' => s.push('\r'),
+                    b't' => s.push('\t'),
+                    b'u' => {
+                        if *i + 4 > b.len() {
+                            return Err("\\u エスケープが短い".to_string());
+                        }
+                        let hex = std::str::from_utf8(&b[*i..*i + 4]).map_err(|e| e.to_string())?;
+                        let cp = u32::from_str_radix(hex, 16).map_err(|e| e.to_string())?;
+                        *i += 4;
+                        // サロゲートペア処理
+                        if (0xD800..=0xDBFF).contains(&cp) && b[*i..].starts_with(b"\\u") {
+                            let hex2 = std::str::from_utf8(&b[*i + 2..*i + 6])
+                                .map_err(|e| e.to_string())?;
+                            let lo = u32::from_str_radix(hex2, 16).map_err(|e| e.to_string())?;
+                            if (0xDC00..=0xDFFF).contains(&lo) {
+                                *i += 6;
+                                let c = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                                s.push(char::from_u32(c).unwrap_or('\u{FFFD}'));
+                                continue;
+                            }
+                        }
+                        s.push(char::from_u32(cp).unwrap_or('\u{FFFD}'));
+                    }
+                    other => return Err(format!("不明なエスケープ: \\{}", other as char)),
+                }
+            }
+            c if c < 0x80 => {
+                s.push(c as char);
+                *i += 1;
+            }
+            c => {
+                // UTF-8 マルチバイトをそのまま通す
+                let len = if c >= 0xF0 {
+                    4
+                } else if c >= 0xE0 {
+                    3
+                } else {
+                    2
+                };
+                if *i + len > b.len() {
+                    return Err("UTF-8 シーケンス途中で終了".to_string());
+                }
+                let chunk = std::str::from_utf8(&b[*i..*i + len]).map_err(|e| e.to_string())?;
+                s.push_str(chunk);
+                *i += len;
+            }
+        }
+    }
+}
+
+fn render_json(v: &Json, out: &mut String, indent: usize) {
+    let pad = "  ".repeat(indent);
+    let pad1 = "  ".repeat(indent + 1);
+    match v {
+        Json::Null => out.push_str("null"),
+        Json::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Json::Num(n) => out.push_str(n),
+        Json::Str(s) => {
+            out.push('"');
+            out.push_str(&json_escape(s));
+            out.push('"');
+        }
+        Json::Arr(a) => {
+            if a.is_empty() {
+                out.push_str("[]");
+                return;
+            }
+            out.push_str("[\n");
+            for (k, item) in a.iter().enumerate() {
+                out.push_str(&pad1);
+                render_json(item, out, indent + 1);
+                if k + 1 < a.len() {
+                    out.push(',');
+                }
+                out.push('\n');
+            }
+            out.push_str(&pad);
+            out.push(']');
+        }
+        Json::Obj(m) => {
+            if m.is_empty() {
+                out.push_str("{}");
+                return;
+            }
+            out.push_str("{\n");
+            for (k, (key, val)) in m.iter().enumerate() {
+                out.push_str(&pad1);
+                out.push('"');
+                out.push_str(&json_escape(key));
+                out.push_str("\": ");
+                render_json(val, out, indent + 1);
+                if k + 1 < m.len() {
+                    out.push(',');
+                }
+                out.push('\n');
+            }
+            out.push_str(&pad);
+            out.push('}');
+        }
+    }
+}
+
+// ------------------------------------------------------------------
+// Minecraft ランチャー統合 (起動構成への追加 + versions フォルダ完備)
+// スキーマは rsift-installer 本流と同一:
+//   <mc>/versions/rsift-<mcver>/rsift-<mcver>.json  (inheritsFrom + jvm args)
+//   <mc>/launcher_profiles.json の profiles に rsift エントリ upsert
+// 破壊回避: 書き戻し前に .bak を1回だけ作成、書き込みは tmp→rename。
+// ------------------------------------------------------------------
+
+/// minecraft ディレクトリ検出。環境変数 RSIFT_MC_DIR が最優先 (テスト/上級者)。
+pub fn find_minecraft_dir(os: TargetOs) -> Option<PathBuf> {
+    if let Ok(v) = std::env::var("RSIFT_MC_DIR") {
+        if !v.is_empty() {
+            return Some(PathBuf::from(v));
+        }
+    }
+    match os {
+        TargetOs::Windows => std::env::var("APPDATA")
+            .ok()
+            .map(|a| PathBuf::from(a).join(".minecraft")),
+        TargetOs::MacOs => std::env::var("HOME").ok().map(|h| {
+            PathBuf::from(h)
+                .join("Library")
+                .join("Application Support")
+                .join("minecraft")
+        }),
+        _ => std::env::var("HOME")
+            .ok()
+            .map(|h| PathBuf::from(h).join(".minecraft")),
+    }
+}
+
+/// UNIX 秒 → ISO-8601 UTC (例 2026-08-01T12:34:56Z)。Howard Hinnant の
+/// civil calendar アルゴリズムで std のみで換算する (chrono 非依存)。
+pub fn iso8601_utc(unix: u64) -> String {
+    let secs = unix % 86400;
+    let days = (unix / 86400) as i64;
+    let z = days + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    let (hh, mm, ss) = (secs / 3600, (secs % 3600) / 60, secs % 60);
+    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let tmp = path.with_extension("tmp_rsift");
+    fs::write(&tmp, bytes).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("rename {}: {e}", path.display())
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct LauncherOutcome {
+    pub profile_registered: bool,
+    pub version_dir: PathBuf,
+    pub natives_deployed: Vec<String>,
+    pub mods_deployed: Vec<String>,
+    pub java_args: String,
+    pub notes: Vec<String>,
+}
+
+pub fn agent_name(os: TargetOs) -> &'static str {
+    match os {
+        TargetOs::Windows => LIB_WINDOWS_AGENT,
+        TargetOs::MacOs => LIB_MACOS_AGENT,
+        TargetOs::Linux => LIB_LINUX_AGENT,
+        TargetOs::Other => LIB_WINDOWS_AGENT,
+    }
+}
+
+/// ランチャー統合の本工程。`libs` は同階層に実在する lib (scan 結果)。
+/// agent (rsift_jvm) が存在しない環境では profile/version 登録はせず
+/// notes に理由を残す (壊れた起動構成を登録しない: fail-loud with note)。
+pub fn setup_launcher(
+    mc_dir: &Path,
+    os: TargetOs,
+    source_dir: &Path,
+    libs: &[LibFile],
+    renderer: &str,
+) -> Result<LauncherOutcome, String> {
+    let mut notes = Vec::new();
+    let agent = agent_name(os);
+    let has_agent = libs.iter().any(|l| l.name == agent);
+    let version_id = rsift_version_id();
+    let versions_root = mc_dir.join("versions");
+    let version_dir = versions_root.join(&version_id);
+
+    let (engine_name, gfx_name, replay_name) = match os {
+        TargetOs::Windows => (LIB_WINDOWS_ENGINE, LIB_WINDOWS_GFX, LIB_WINDOWS_REPLAY),
+        TargetOs::MacOs => (LIB_MACOS_ENGINE, LIB_MACOS_GFX, LIB_MACOS_REPLAY),
+        TargetOs::Linux => (LIB_LINUX_ENGINE, LIB_LINUX_GFX, LIB_LINUX_REPLAY),
+        TargetOs::Other => {
+            return Err("launcher 登録は windows/macos/linux のみ対象".to_string());
+        }
+    };
+
+    if !has_agent {
+        notes.push(format!(
+            "JVMTI agent {agent} が同階層に無いため profile/version 登録は未実施 (zip 同梱版で再実行してください)"
+        ));
+        return Ok(LauncherOutcome {
+            profile_registered: false,
+            version_dir,
+            natives_deployed: vec![],
+            mods_deployed: vec![],
+            java_args: String::new(),
+            notes,
+        });
+    }
+
+    // 1) versions/rsift-<mcver>/ フォルダ + natives 配置
+    fs::create_dir_all(&version_dir)
+        .map_err(|e| format!("create {}: {e}", version_dir.display()))?;
+    let mut natives = Vec::new();
+    for name in [engine_name, agent, gfx_name, replay_name] {
+        if libs.iter().any(|l| l.name == name) {
+            let src = source_dir.join(name);
+            let dst = version_dir.join(name);
+            fs::copy(&src, &dst).map_err(|e| format!("copy {}: {e}", dst.display()))?;
+            natives.push(name.to_string());
+        }
+    }
+
+    // 2) version JSON (inheritsFrom + jvm args、本流スキーマ準拠)
+    let agent_path = version_dir.join(agent).display().to_string();
+    let java_args = format!(
+        "-agentpath:{agent_path} -Drsift.gfx={renderer} -Drsift.home={}",
+        version_dir.display()
+    );
+    let now = iso8601_utc(unix_now());
+    let version_json = Json::Obj(vec![
+        ("id".into(), Json::Str(version_id.clone())),
+        ("inheritsFrom".into(), Json::Str(RSIFT_MC_VERSION.into())),
+        ("releaseTime".into(), Json::Str(now.clone())),
+        ("time".into(), Json::Str(now)),
+        ("type".into(), Json::Str("release".into())),
+        (
+            "mainClass".into(),
+            Json::Str("net.minecraft.client.main.Main".into()),
+        ),
+        (
+            "arguments".into(),
+            Json::Obj(vec![(
+                "jvm".into(),
+                Json::Arr(vec![
+                    Json::Str(format!("-Drsift.gfx={renderer}")),
+                    Json::Str(format!("-Drsift.home={}", version_dir.display())),
+                ]),
+            )]),
+        ),
+    ]);
+    let json_path = version_dir.join(format!("{version_id}.json"));
+    write_atomic(&json_path, version_json.render().as_bytes())
+        .map_err(|e| format!("version json: {e}"))?;
+
+    // 3) mods 配置 (rsgraphics / rsreplay を <mc>/mods/ へ)
+    let mods_dir = mc_dir.join("mods");
+    fs::create_dir_all(&mods_dir).map_err(|e| format!("create {}: {e}", mods_dir.display()))?;
+    let mut mods = Vec::new();
+    for name in [gfx_name, replay_name] {
+        if libs.iter().any(|l| l.name == name) {
+            let dst = mods_dir.join(name);
+            fs::copy(source_dir.join(name), &dst)
+                .map_err(|e| format!("copy {}: {e}", dst.display()))?;
+            mods.push(name.to_string());
+        }
+    }
+
+    // 4) launcher_profiles.json upsert (壊れていたら bak を残して失敗する、上書き破壊はしない)
+    let profiles_path = mc_dir.join("launcher_profiles.json");
+    let mut root = if profiles_path.is_file() {
+        let text = fs::read_to_string(&profiles_path)
+            .map_err(|e| format!("read {}: {e}", profiles_path.display()))?;
+        Json::parse(&text)
+            .map_err(|e| format!("launcher_profiles.json を壊さないために中止: {e}"))?
+    } else {
+        Json::Obj(vec![])
+    };
+    if root.obj_get("profiles").is_none() {
+        root.obj_insert("profiles", Json::Obj(vec![]));
+    }
+    let profile = Json::Obj(vec![
+        ("created".into(), Json::Str(iso8601_utc(unix_now()))),
+        ("gameDir".into(), Json::Str(mc_dir.display().to_string())),
+        ("icon".into(), Json::Str("Furnace".into())),
+        ("javaArgs".into(), Json::Str(java_args.clone())),
+        ("lastVersionId".into(), Json::Str(version_id.clone())),
+        ("name".into(), Json::Str(LAUNCHER_PROFILE_NAME.into())),
+        ("type".into(), Json::Str("custom".into())),
+    ]);
+    // 破壊前に1回だけバックアップ (既存 .bak は温存 = 最初の状態を保護)
+    if profiles_path.is_file() {
+        let bak = mc_dir.join("launcher_profiles.json.bak_rsift");
+        if !bak.exists() {
+            fs::copy(&profiles_path, &bak).map_err(|e| format!("backup: {e}"))?;
+        }
+    }
+    if let Some(profiles) = root.obj_get_mut("profiles") {
+        profiles.obj_insert(LAUNCHER_PROFILE_ID, profile);
+    }
+    write_atomic(&profiles_path, root.render().as_bytes())
+        .map_err(|e| format!("profiles write: {e}"))?;
+
+    notes.push(format!(
+        "起動構成 '{LAUNCHER_PROFILE_NAME}' (lastVersionId={version_id}) をランチャーに登録"
+    ));
+    Ok(LauncherOutcome {
+        profile_registered: true,
+        version_dir,
+        natives_deployed: natives,
+        mods_deployed: mods,
+        java_args,
+        notes,
+    })
 }
 
 #[cfg(test)]
@@ -1046,7 +1652,7 @@ mod tests {
             &[LIB_MACOS_ENGINE, LIB_MACOS_GFX],
         );
         let d = decide(&h);
-        let s = render_launch_config(&h, &d);
+        let s = render_launch_config(&h, &d, "null");
         assert!(s.contains("\"schema\": \"rsift.launch/1\""));
         assert!(s.contains("\"target\": \"macos\""));
         assert!(s.contains("\"renderer\": \"metal4\""));
@@ -1153,5 +1759,173 @@ mod tests {
         assert_eq!(cli.dir, PathBuf::from("/tmp/x"));
         assert!(Cli::parse(vec!["--dir".to_string()].into_iter()).is_err());
         assert!(Cli::parse(vec!["--wat".to_string()].into_iter()).is_err());
+    }
+    // ---- 最小 JSON ----
+    #[test]
+    fn json_roundtrip_nested_and_escapes() {
+        let src = r#"{"profiles": {"abc": {"name": "Rsift \"x\"", "n": 1, "f": false, "a": [1, 2.5, "e\n"], "o": {}}}, "top": true}"#;
+        let v = Json::parse(src).unwrap();
+        let out = v.render();
+        let v2 = Json::parse(&out).unwrap();
+        assert_eq!(v, v2, "parse→render→parse で構造が完全一致");
+        let name = v
+            .obj_get("profiles")
+            .and_then(|p| p.obj_get("abc"))
+            .and_then(|p| p.obj_get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap();
+        assert_eq!(name, "Rsift \"x\"");
+    }
+
+    #[test]
+    fn json_malformed_fails_with_position() {
+        assert!(Json::parse("{").is_err());
+        assert!(Json::parse(r#"{"a": }"#).is_err());
+        assert!(Json::parse("not json").is_err());
+        assert!(Json::parse(r#"[1, 2"#).is_err());
+    }
+
+    #[test]
+    fn iso8601_utc_known_values() {
+        assert_eq!(iso8601_utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(iso8601_utc(1_000_000_000), "2001-09-09T01:46:40Z");
+        assert_eq!(iso8601_utc(1_785_571_200), "2026-08-01T08:00:00Z");
+    }
+
+    // ---- ランチャー統合 ----
+    fn fake_lib(name: &str) -> LibFile {
+        LibFile {
+            name: name.to_string(),
+            size: 3,
+            sha256: "0".repeat(64),
+        }
+    }
+
+    fn full_linux_libs() -> Vec<LibFile> {
+        vec![
+            fake_lib(LIB_LINUX_ENGINE),
+            fake_lib(LIB_LINUX_AGENT),
+            fake_lib(LIB_LINUX_GFX),
+            fake_lib(LIB_LINUX_REPLAY),
+        ]
+    }
+
+    #[test]
+    fn launcher_full_setup_creates_version_dir_and_profile() {
+        let home = tmpdir("launcher");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_linux_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let mc = home.join(".minecraft");
+        fs::create_dir_all(&mc).unwrap();
+        fs::write(
+            mc.join("launcher_profiles.json"),
+            r#"{"profiles": {"vanilla": {"name": "release", "type": "latest-release"}}}"#,
+        )
+        .unwrap();
+
+        let out = setup_launcher(&mc, TargetOs::Linux, &src, &full_linux_libs(), "vulkan")
+            .expect("setup_launcher Ok");
+        assert!(out.profile_registered);
+        let vdir = mc.join("versions").join("rsift-1.21.11");
+        assert!(vdir.is_dir(), "versions フォルダが実在する");
+        let vjson = vdir.join("rsift-1.21.11.json");
+        let vtext = fs::read_to_string(&vjson).unwrap();
+        assert!(vtext.contains("\"id\": \"rsift-1.21.11\""));
+        assert!(vtext.contains("\"inheritsFrom\": \"1.21.11\""));
+        // version json の jvm は -Drsift.* のみ (本流準拠: agentpath は profile 側)
+        assert!(vtext.contains("-Drsift.gfx=vulkan"));
+        assert!(vtext.contains("net.minecraft.client.main.Main"));
+        assert!(
+            out.java_args.contains("-agentpath:"),
+            "JVM agent 配線は javaArgs に"
+        );
+        for n in &out.natives_deployed {
+            assert!(vdir.join(n).is_file(), "native {n} 実在");
+        }
+        assert!(mc.join("mods").join(LIB_LINUX_GFX).is_file());
+        assert!(mc.join("mods").join(LIB_LINUX_REPLAY).is_file());
+        let pv =
+            Json::parse(&fs::read_to_string(mc.join("launcher_profiles.json")).unwrap()).unwrap();
+        let profs = pv.obj_get("profiles").unwrap();
+        let rs = profs.obj_get("rsift").expect("rsift プロファイル登録");
+        assert_eq!(
+            rs.obj_get("lastVersionId").and_then(|x| x.as_str()),
+            Some("rsift-1.21.11")
+        );
+        assert!(profs.obj_get("vanilla").is_some(), "既存プロファイルは温存");
+        assert!(mc.join("launcher_profiles.json.bak_rsift").is_file());
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn launcher_second_run_idempotent_no_duplicate_no_new_backup() {
+        let home = tmpdir("idem");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_linux_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let mc = home.join(".minecraft");
+        fs::create_dir_all(&mc).unwrap();
+        fs::write(mc.join("launcher_profiles.json"), r#"{"profiles": {}}"#).unwrap();
+        setup_launcher(&mc, TargetOs::Linux, &src, &full_linux_libs(), "vulkan").unwrap();
+        let bak1 = fs::read(mc.join("launcher_profiles.json.bak_rsift")).unwrap();
+        setup_launcher(&mc, TargetOs::Linux, &src, &full_linux_libs(), "vulkan").unwrap();
+        let bak2 = fs::read(mc.join("launcher_profiles.json.bak_rsift")).unwrap();
+        assert_eq!(bak1, bak2, "2 回目で初期バックアップは上書きしない");
+        let text = fs::read_to_string(mc.join("launcher_profiles.json")).unwrap();
+        assert_eq!(
+            text.matches("\"rsift\"").count(),
+            1,
+            "rsift エントリは 1 個のみ"
+        );
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn launcher_malformed_profiles_aborts_without_clobber() {
+        let home = tmpdir("badprof");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_linux_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let mc = home.join(".minecraft");
+        fs::create_dir_all(&mc).unwrap();
+        fs::write(mc.join("launcher_profiles.json"), "{ broken").unwrap();
+        let r = setup_launcher(&mc, TargetOs::Linux, &src, &full_linux_libs(), "vulkan");
+        assert!(r.is_err(), "壊れたプロファイルは登録中止");
+        assert!(r.unwrap_err().contains("壊さないために中止"));
+        assert_eq!(
+            fs::read_to_string(mc.join("launcher_profiles.json")).unwrap(),
+            "{ broken"
+        );
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn launcher_missing_agent_skips_registration_with_note() {
+        let home = tmpdir("noagent");
+        let mc = home.join(".minecraft");
+        fs::create_dir_all(&mc).unwrap();
+        let libs = vec![fake_lib(LIB_LINUX_ENGINE), fake_lib(LIB_LINUX_GFX)];
+        let out = setup_launcher(&mc, TargetOs::Linux, &home, &libs, "vulkan").unwrap();
+        assert!(
+            !out.profile_registered,
+            "agent 無しでは登録しない (壊れた構成を置かない)"
+        );
+        assert!(out.notes.iter().any(|n| n.contains("JVMTI agent")));
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn find_minecraft_dir_env_override_wins() {
+        std::env::set_var("RSIFT_MC_DIR", "/tmp/rsift_mc_override_test");
+        let d = find_minecraft_dir(TargetOs::Linux);
+        std::env::remove_var("RSIFT_MC_DIR");
+        assert_eq!(d, Some(PathBuf::from("/tmp/rsift_mc_override_test")));
     }
 }

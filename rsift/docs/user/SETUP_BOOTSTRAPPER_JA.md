@@ -4,8 +4,8 @@
 
 | OS | 実行ファイル | 置くもの (例) |
 |---|---|---|
-| Windows | `rsift-setup.exe` | `rsift.dll` (エンジン) / `rsgraphics.dll` (RsGraphics) / `rsreplay.dll` (RsReplay) |
-| Mac | `Rsift Setup.app` (中身は `rsift-setup`) | `librsift.dylib` / `librsgraphics.dylib` / `librsreplay.dylib` |
+| Windows | `rsift-setup.exe` | `rsift.dll` / `rsift_jvm.dll` (起動 agent) / `rsgraphics.dll` / `rsreplay.dll` |
+| Mac | `Rsift Setup.app` (内側に `rsift-setup` と dylib 群) | `.app/Contents/MacOS/` 内に `librsift.dylib` / `librsift_jvm.dylib` / `librsgraphics.dylib` / `librsreplay.dylib` |
 
 Release `setup-v1` の zip はこれらが全部入った一体梱包です。展開したフォルダでそのまま実行してください。
 
@@ -18,7 +18,13 @@ Release `setup-v1` の zip はこれらが全部入った一体梱包です。�
    - Mac (上記以外) → classic Metal (同、自動選択)
    - Windows → RsGraphics 内の wgpu が最適 backend を自動選択 (Vulkan 優先/DX12)
 4. `rsift_launch.json` (起動構成) を生成
-5. 全工程をログに記録
+5. **Minecraft ランチャーへ起動構成を自動登録** (Minecraft 導入済みの場合):
+   - `<.minecraft>/versions/rsift-1.21.11/` フォルダ作成 (version JSON + natives)
+   - `<.minecraft>/mods/` に RsGraphics / RsReplay を配置
+   - `launcher_profiles.json` に起動構成「Rsift」を追加 (既存構成は壊さず、
+     上書き前に `launcher_profiles.json.bak_rsift` バックアップを作成)
+   - ランチャーを開くと「Rsift」が選べます (初回は数秒の読み込み後に表示)
+6. 全工程をログに記録
 
 ## ログを送ってください (後で診断します)
 
