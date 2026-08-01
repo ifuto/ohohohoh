@@ -4,9 +4,10 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 9
+- run: 10
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm) +
-  2 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay)** をビルドし、
+  **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /
+  RsZoom=rszoom = C キー・イーズアウトズーム Mod)** をビルドし、
   zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
   (macOS では dylib は .app/Contents/MacOS/ 内部に同梱 — バイナリと同階層
   必須のため。外に置くと検出 0 で exit 2 になる構造欠陥が run 4 に顕在化した)
@@ -74,8 +75,8 @@ RB() {
 case "$RUNNER_OS" in
   Windows)
     RB cargo build -p rsift-setup --release --locked
-    RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked
-    for F in rsift_api.dll rsift_jvm.dll rsgraphics.dll rsreplay.dll; do
+    RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay -p rszoom --release --locked
+    for F in rsift_api.dll rsift_jvm.dll rsgraphics.dll rsreplay.dll rszoom.dll; do
       [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
     done
     mkdir -p dist-ci/windows
@@ -84,6 +85,7 @@ case "$RUNNER_OS" in
     cp target/release/rsift_jvm.dll    dist-ci/windows/rsift_jvm.dll
     cp target/release/rsgraphics.dll   dist-ci/windows/rsgraphics.dll
     cp target/release/rsreplay.dll     dist-ci/windows/rsreplay.dll
+    cp target/release/rszoom.dll       dist-ci/windows/rszoom.dll
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/windows/README_JA.md
     (cd dist-ci/windows && tar -a -c -f ../rsift-bundle-windows-x64.zip .)
     ;;
@@ -92,8 +94,8 @@ case "$RUNNER_OS" in
     mkdir -p dist-ci/macos
     for T in aarch64-apple-darwin x86_64-apple-darwin; do
       RB cargo build -p rsift-setup --release --locked --target "$T"
-      RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked --target "$T"
-      for F in librsift_api.dylib librsift_jvm.dylib librsgraphics.dylib librsreplay.dylib; do
+      RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay -p rszoom --release --locked --target "$T"
+      for F in librsift_api.dylib librsift_jvm.dylib librsgraphics.dylib librsreplay.dylib librszoom.dylib; do
         [ -f "target/$T/release/$F" ] || { echo "FATAL: target/$T/release/$F が無い"; exit 1; }
       done
       APP="dist-ci/stage-$T/Rsift Setup.app/Contents"
@@ -105,6 +107,7 @@ case "$RUNNER_OS" in
       cp "target/$T/release/librsift_jvm.dylib"  "$APP/MacOS/librsift_jvm.dylib"
       cp "target/$T/release/librsgraphics.dylib" "$APP/MacOS/librsgraphics.dylib"
       cp "target/$T/release/librsreplay.dylib"   "$APP/MacOS/librsreplay.dylib"
+      cp "target/$T/release/librszoom.dylib"     "$APP/MacOS/librszoom.dylib"
       cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -125,8 +128,8 @@ PLIST
     ;;
   Linux)
     RB cargo build -p rsift-setup --release --locked
-    RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay --release --locked
-    for F in librsift_api.so librsift_jvm.so librsgraphics.so librsreplay.so; do
+    RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay -p rszoom --release --locked
+    for F in librsift_api.so librsift_jvm.so librsgraphics.so librsreplay.so librszoom.so; do
       [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
     done
     mkdir -p dist-ci/linux
@@ -135,6 +138,7 @@ PLIST
     cp target/release/librsift_jvm.so  dist-ci/linux/librsift_jvm.so
     cp target/release/librsgraphics.so dist-ci/linux/librsgraphics.so
     cp target/release/librsreplay.so   dist-ci/linux/librsreplay.so
+    cp target/release/librszoom.so     dist-ci/linux/librszoom.so
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/linux/README_JA.md
     (cd dist-ci/linux && zip -qr ../rsift-bundle-linux-x64.zip .)
     ;;
@@ -169,8 +173,8 @@ HASH dist-ci/*.zip || true
 # Release へ添付 (権限 contents: write が殻 yml で付いている場合のみ)
 if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null; then
   gh release create setup-v1 \
-    --title "Rsift Setup v1 (.exe/.app + engine & agent & 2 Mod dll 同梱 + 起動構成自動登録版)" \
-    --notes "zip を展開して rsift-setup(.exe) / Rsift Setup.app を実行。起動構成 (versions/rsift-1.21.11 + launcher profile) も自動登録。rsift_setup_log.txt/jsonl ができたら送ってください。" \
+    --title "Rsift Setup v1 (.exe/.app + engine & agent & 3 Mod dll 同梱 + 起動構成 & PrismLauncher インスタンス自動登録版)" \
+    --notes "zip を展開して rsift-setup(.exe) / Rsift Setup.app を実行。起動構成 (versions/rsift-1.21.11 + launcher profile) と PrismLauncher インスタンス (instances/rsift) も自動登録 (検出時のみ・外部製 rsift 名インスタンスは絶対に上書きしない)。RsZoom: ゲーム内で C キー押下中ズーム、倍率はタイトル→Mods→RsZoom→Config。rsift_setup_log.txt/jsonl ができたら送ってください。" \
     --repo "$GITHUB_REPOSITORY" || true
   for Z in dist-ci/*.zip; do
     gh release upload setup-v1 "$Z" --clobber --repo "$GITHUB_REPOSITORY" || true

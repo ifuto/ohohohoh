@@ -46,12 +46,15 @@ pub const SETUP_MANIFEST: &[(&str, &str)] = &[];
 pub const LIB_WINDOWS_ENGINE: &str = "rsift.dll";
 pub const LIB_WINDOWS_GFX: &str = "rsgraphics.dll";
 pub const LIB_WINDOWS_REPLAY: &str = "rsreplay.dll";
+pub const LIB_WINDOWS_ZOOM: &str = "rszoom.dll";
 pub const LIB_MACOS_ENGINE: &str = "librsift.dylib";
 pub const LIB_MACOS_GFX: &str = "librsgraphics.dylib";
 pub const LIB_MACOS_REPLAY: &str = "librsreplay.dylib";
+pub const LIB_MACOS_ZOOM: &str = "librszoom.dylib";
 pub const LIB_LINUX_ENGINE: &str = "librsift.so";
 pub const LIB_LINUX_GFX: &str = "librsgraphics.so";
 pub const LIB_LINUX_REPLAY: &str = "librsreplay.so";
+pub const LIB_LINUX_ZOOM: &str = "librszoom.so";
 
 pub const LAUNCH_CONFIG_NAME: &str = "rsift_launch.json";
 pub const LOG_TXT_NAME: &str = "rsift_setup_log.txt";
@@ -415,7 +418,12 @@ fn json_str_array(items: &[String]) -> String {
 
 /// 起動構成 JSON をレンダー (手書き・依存ゼロ; フィールドは schema "rsift.launch/1" で pin)。
 /// `launcher_json` には launcher 統合結果の JSON 断片 (または "null") を渡す。
-pub fn render_launch_config(host: &HostInfo, dec: &LaunchDecision, launcher_json: &str) -> String {
+pub fn render_launch_config(
+    host: &HostInfo,
+    dec: &LaunchDecision,
+    launcher_json: &str,
+    prism_json: &str,
+) -> String {
     let os_name = match host.os {
         TargetOs::Windows => "windows",
         TargetOs::MacOs => "macos",
@@ -455,7 +463,8 @@ pub fn render_launch_config(host: &HostInfo, dec: &LaunchDecision, launcher_json
     s.push_str(&format!("  \"load_libs\": {},\n", json_str_array(&libs)));
     s.push_str(&format!("  \"prepared\": {},\n", dec.ready));
     s.push_str(&format!("  \"notes\": {},\n", json_str_array(&dec.notes)));
-    s.push_str(&format!("  \"launcher\": {}\n", launcher_json));
+    s.push_str(&format!("  \"launcher\": {},\n", launcher_json));
+    s.push_str(&format!("  \"prism\": {}\n", prism_json));
     s.push_str("}\n");
     s
 }
@@ -850,7 +859,52 @@ pub fn run(cli: &Cli) -> i32 {
         }
     }
 
-    let config = render_launch_config(&host, &dec, &launcher_json);
+    // PrismLauncher 統合: instances/rsift/ 生成 (Windows 10 標準構成を第一級)
+    let mut prism_json = "null".to_string();
+    if cli.dry_run {
+        log.step("prism", StepStatus::Ok, "dry-run: Prism 登録は未実施");
+    } else if let Some(prism_root) = find_prism_dir(os) {
+        if !prism_root.is_dir() {
+            log.step(
+                "prism",
+                StepStatus::Ok,
+                format!(
+                    "{} が存在しない (PrismLauncher 未導入 → スキップ。導入後に再実行で登録)",
+                    prism_root.display()
+                ),
+            );
+        } else {
+            match setup_prism(&prism_root, os, &cli.dir, &libs, dec.renderer.as_str()) {
+                Ok(out) => {
+                    let status = if out.instance_created {
+                        StepStatus::Ok
+                    } else if out.foreign_conflict {
+                        StepStatus::Fail
+                    } else {
+                        StepStatus::Warn
+                    };
+                    for n in &out.notes {
+                        log.step("prism", status, n.clone());
+                    }
+                    if out.foreign_conflict {
+                        return finish(&cli.dir, log, EXIT_IO);
+                    }
+                    prism_json = format!(
+                        "{{\"created\": {}, \"instance_id\": \"{}\", \"instance_dir\": \"{}\"}}",
+                        out.instance_created,
+                        PRISM_INSTANCE_ID,
+                        json_escape(&out.instance_dir.display().to_string())
+                    );
+                }
+                Err(e) => {
+                    log.step("prism", StepStatus::Fail, e);
+                    return finish(&cli.dir, log, EXIT_IO);
+                }
+            }
+        }
+    }
+
+    let config = render_launch_config(&host, &dec, &launcher_json, &prism_json);
     if cli.dry_run {
         log.step(
             "config",
@@ -1301,10 +1355,25 @@ pub fn setup_launcher(
     let versions_root = mc_dir.join("versions");
     let version_dir = versions_root.join(&version_id);
 
-    let (engine_name, gfx_name, replay_name) = match os {
-        TargetOs::Windows => (LIB_WINDOWS_ENGINE, LIB_WINDOWS_GFX, LIB_WINDOWS_REPLAY),
-        TargetOs::MacOs => (LIB_MACOS_ENGINE, LIB_MACOS_GFX, LIB_MACOS_REPLAY),
-        TargetOs::Linux => (LIB_LINUX_ENGINE, LIB_LINUX_GFX, LIB_LINUX_REPLAY),
+    let (engine_name, gfx_name, replay_name, zoom_name) = match os {
+        TargetOs::Windows => (
+            LIB_WINDOWS_ENGINE,
+            LIB_WINDOWS_GFX,
+            LIB_WINDOWS_REPLAY,
+            LIB_WINDOWS_ZOOM,
+        ),
+        TargetOs::MacOs => (
+            LIB_MACOS_ENGINE,
+            LIB_MACOS_GFX,
+            LIB_MACOS_REPLAY,
+            LIB_MACOS_ZOOM,
+        ),
+        TargetOs::Linux => (
+            LIB_LINUX_ENGINE,
+            LIB_LINUX_GFX,
+            LIB_LINUX_REPLAY,
+            LIB_LINUX_ZOOM,
+        ),
         TargetOs::Other => {
             return Err("launcher 登録は windows/macos/linux のみ対象".to_string());
         }
@@ -1328,7 +1397,7 @@ pub fn setup_launcher(
     fs::create_dir_all(&version_dir)
         .map_err(|e| format!("create {}: {e}", version_dir.display()))?;
     let mut natives = Vec::new();
-    for name in [engine_name, agent, gfx_name, replay_name] {
+    for name in [engine_name, agent, gfx_name, replay_name, zoom_name] {
         if libs.iter().any(|l| l.name == name) {
             let src = source_dir.join(name);
             let dst = version_dir.join(name);
@@ -1369,11 +1438,11 @@ pub fn setup_launcher(
     write_atomic(&json_path, version_json.render().as_bytes())
         .map_err(|e| format!("version json: {e}"))?;
 
-    // 3) mods 配置 (rsgraphics / rsreplay を <mc>/mods/ へ)
+    // 3) mods 配置 (rsgraphics / rsreplay / rszoom を <mc>/mods/ へ)
     let mods_dir = mc_dir.join("mods");
     fs::create_dir_all(&mods_dir).map_err(|e| format!("create {}: {e}", mods_dir.display()))?;
     let mut mods = Vec::new();
-    for name in [gfx_name, replay_name] {
+    for name in [gfx_name, replay_name, zoom_name] {
         if libs.iter().any(|l| l.name == name) {
             let dst = mods_dir.join(name);
             fs::copy(source_dir.join(name), &dst)
@@ -1426,6 +1495,274 @@ pub fn setup_launcher(
         natives_deployed: natives,
         mods_deployed: mods,
         java_args,
+        notes,
+    })
+}
+
+// ============================================================
+// PrismLauncher 統合 (wave 202)。対象は Windows 10 の標準構成を第一級とし、
+// macOS/Linux も同一スキーマで扱う。レイアウト一次情報:
+// - インスタンス: <root>/instances/<id>/{instance.cfg, mmc-pack.json, patches/, .minecraft/}
+//   (PrismLauncher 公式アーキテクチャ文書・rubenerd 実測ツリー)
+// - instance.cfg: INISettingsObject、必須キー InstanceType (InstanceList.cpp:694)
+// - mmc-pack.json: {"formatVersion": 1, "components": [{uid, version, cachedName?, cachedVersion?}]}
+//   (PackProfile.cpp:152-157 toJson)
+// - patches/rsift.json: OneSixVersionFormat.cpp の formatVersion 1 パッチ。
+//   "+jvmArgs" (追記型) で -agentpath/-Drsift.* を載せる (同:144-149,
+//   VersionFile::applyTo → applyAddnJvmArguments)。mainClass 等は設定しない
+//   ため適用順に依存しない (順不同でも安全なキーだけを使う設計)。
+// ============================================================
+
+/// Prism インスタンスのフォルダ名 (= Prisma 画面の instance id)。
+pub const PRISM_INSTANCE_ID: &str = "rsift";
+/// 画面表示名。
+pub const PRISM_INSTANCE_NAME: &str = "Rsift";
+/// Rsift パッチの component UID (uid 正規表現 [a-zA-Z0-9-_]+(\....)* 準拠)。
+pub const PRISM_COMPONENT_UID: &str = "rsift";
+
+/// PrismLauncher データルート検出。`RSIFT_PRISM_DIR` 環境変数が最優先
+/// (RSIFT_MC_DIR と同じ説明可能な上書き規則)。既定:
+/// - windows: %APPDATA%\PrismLauncher
+/// - macos:   ~/Library/Application Support/PrismLauncher
+/// - linux:   ~/.local/share/PrismLauncher、無ければ flatpak 配置
+pub fn find_prism_dir(os: TargetOs) -> Option<PathBuf> {
+    if let Ok(v) = std::env::var("RSIFT_PRISM_DIR") {
+        if !v.is_empty() {
+            return Some(PathBuf::from(v));
+        }
+    }
+    match os {
+        TargetOs::Windows => std::env::var("APPDATA")
+            .ok()
+            .map(|a| PathBuf::from(a).join("PrismLauncher")),
+        TargetOs::MacOs => std::env::var("HOME").ok().map(|h| {
+            PathBuf::from(h)
+                .join("Library")
+                .join("Application Support")
+                .join("PrismLauncher")
+        }),
+        TargetOs::Linux => std::env::var("HOME").ok().map(|h| {
+            let home = PathBuf::from(h);
+            let standard = home.join(".local").join("share").join("PrismLauncher");
+            if standard.is_dir() {
+                standard
+            } else {
+                home.join(".var")
+                    .join("app")
+                    .join("org.prismlauncher.PrismLauncher")
+                    .join("data")
+                    .join("PrismLauncher")
+            }
+        }),
+        TargetOs::Other => None,
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PrismOutcome {
+    pub instance_created: bool,
+    /// "rsift" 名の外部製インスタンスと衝突して中止した場合 true (非破壊保証)。
+    pub foreign_conflict: bool,
+    pub instance_dir: PathBuf,
+    pub natives_deployed: Vec<String>,
+    pub mods_deployed: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+/// Prism インスタンス生成の本工程。launcher 版と同じガード思想:
+/// - agent (rsift_jvm) 不在 → 登録しない (notes に理由、created=false)
+/// - 外部製 "rsift" インスタンスがある → 触らず中止 (foreign_conflict=true)
+/// - 2 回目の実行は自家マーカー経由で冪等更新 (ファイルは tmp→rename)
+pub fn setup_prism(
+    prism_root: &Path,
+    os: TargetOs,
+    source_dir: &Path,
+    libs: &[LibFile],
+    renderer: &str,
+) -> Result<PrismOutcome, String> {
+    let mut notes = Vec::new();
+    let agent = agent_name(os);
+    let version_id = rsift_version_id();
+    let instance_dir = prism_root.join("instances").join(PRISM_INSTANCE_ID);
+
+    let (engine_name, gfx_name, replay_name, zoom_name) = match os {
+        TargetOs::Windows => (
+            LIB_WINDOWS_ENGINE,
+            LIB_WINDOWS_GFX,
+            LIB_WINDOWS_REPLAY,
+            LIB_WINDOWS_ZOOM,
+        ),
+        TargetOs::MacOs => (
+            LIB_MACOS_ENGINE,
+            LIB_MACOS_GFX,
+            LIB_MACOS_REPLAY,
+            LIB_MACOS_ZOOM,
+        ),
+        TargetOs::Linux => (
+            LIB_LINUX_ENGINE,
+            LIB_LINUX_GFX,
+            LIB_LINUX_REPLAY,
+            LIB_LINUX_ZOOM,
+        ),
+        TargetOs::Other => {
+            return Err("prism 登録は windows/macos/linux のみ対象".to_string());
+        }
+    };
+
+    if !libs.iter().any(|l| l.name == agent) {
+        notes.push(format!(
+            "JVMTI agent {agent} が同階層に無いため Prism インスタンス登録は未実施 (zip 同梱版で再実行してください)"
+        ));
+        return Ok(PrismOutcome {
+            instance_created: false,
+            foreign_conflict: false,
+            instance_dir,
+            natives_deployed: vec![],
+            mods_deployed: vec![],
+            notes,
+        });
+    }
+
+    // 外部製インスタンスの保護: Rsift 生成印 (自家パッチ + mmc-pack 内の
+    // rsift 成分) が無い "rsift" 名フォルダは絶対に上書きしない。
+    if instance_dir.exists() {
+        let marker_patch = instance_dir
+            .join("patches")
+            .join(format!("{PRISM_COMPONENT_UID}.json"));
+        let marker_pack = instance_dir.join("mmc-pack.json");
+        let ours = marker_patch.is_file()
+            && marker_pack.is_file()
+            && fs::read_to_string(&marker_pack)
+                .map(|t| t.contains("\"uid\": \"rsift\""))
+                .unwrap_or(false);
+        if !ours {
+            return Ok(PrismOutcome {
+                instance_created: false,
+                foreign_conflict: true,
+                instance_dir,
+                natives_deployed: vec![],
+                mods_deployed: vec![],
+                notes: vec![format!(
+                    "Prism インスタンス '{}' が既に存在しますが Rsift 生成印がありません。ユーザーの大切な構成かもしれないため中止しました (手動で退避するか RSIFT_PRISM_DIR で別 root を指定してください)",
+                    PRISM_INSTANCE_ID
+                )],
+            });
+        }
+    }
+
+    // 1) natives 配置 (agentpath 実体): <inst>/rsift-natives/
+    let natives_dir = instance_dir.join("rsift-natives");
+    fs::create_dir_all(&natives_dir)
+        .map_err(|e| format!("create {}: {e}", natives_dir.display()))?;
+    let mut natives = Vec::new();
+    for name in [engine_name, agent, gfx_name, replay_name, zoom_name] {
+        if libs.iter().any(|l| l.name == name) {
+            let dst = natives_dir.join(name);
+            fs::copy(source_dir.join(name), &dst)
+                .map_err(|e| format!("copy {}: {e}", dst.display()))?;
+            natives.push(name.to_string());
+        }
+    }
+
+    // 2) instance.cfg (InstanceList が読む必須キー InstanceType を必ず書く)
+    let cfg_text = concat!(
+        "[General]\n",
+        "InstanceType=OneSix\n",
+        "iconKey=default\n",
+        "name=Rsift\n",
+        "notes=Rsift native loader (generated by rsift-setup; safe to re-run)\n",
+    );
+    write_atomic(&instance_dir.join("instance.cfg"), cfg_text.as_bytes())
+        .map_err(|e| format!("instance.cfg: {e}"))?;
+
+    // 3) mmc-pack.json (PackProfile.cpp toJson 準拠)
+    let pack = Json::Obj(vec![
+        (
+            "components".into(),
+            Json::Arr(vec![
+                Json::Obj(vec![
+                    ("cachedName".into(), Json::Str("Minecraft".into())),
+                    ("cachedVersion".into(), Json::Str(RSIFT_MC_VERSION.into())),
+                    ("uid".into(), Json::Str("net.minecraft".into())),
+                    ("version".into(), Json::Str(RSIFT_MC_VERSION.into())),
+                ]),
+                Json::Obj(vec![
+                    ("cachedName".into(), Json::Str(PRISM_INSTANCE_NAME.into())),
+                    ("cachedVersion".into(), Json::Str(RSIFT_MC_VERSION.into())),
+                    ("uid".into(), Json::Str(PRISM_COMPONENT_UID.into())),
+                    ("version".into(), Json::Str(RSIFT_MC_VERSION.into())),
+                ]),
+            ]),
+        ),
+        ("formatVersion".into(), Json::Num("1".into())),
+    ]);
+    write_atomic(
+        &instance_dir.join("mmc-pack.json"),
+        pack.render().as_bytes(),
+    )
+    .map_err(|e| format!("mmc-pack.json: {e}"))?;
+
+    // 4) patches/rsift.json ("+jvmArgs" 追記型 → 既定 JVM 引数を壊さない)
+    //    パスに空白を含んでも JVM には argv として 1 要素で渡るため安全
+    //    (QProcess の引数配列経路; shell 展開ではない)。
+    let patches_dir = instance_dir.join("patches");
+    fs::create_dir_all(&patches_dir)
+        .map_err(|e| format!("create {}: {e}", patches_dir.display()))?;
+    let agent_path = natives_dir.join(agent).display().to_string();
+    let java_args = format!(
+        "-agentpath:{agent_path} -Drsift.gfx={renderer} -Drsift.home={}",
+        natives_dir.display()
+    );
+    let patch = Json::Obj(vec![
+        ("formatVersion".into(), Json::Num("1".into())),
+        (
+            "name".into(),
+            Json::Str("Rsift (native engine + JVMTI agent)".into()),
+        ),
+        ("uid".into(), Json::Str(PRISM_COMPONENT_UID.into())),
+        ("version".into(), Json::Str(RSIFT_MC_VERSION.into())),
+        (
+            "+jvmArgs".into(),
+            Json::Arr(vec![
+                Json::Str(format!("-agentpath:{agent_path}")),
+                Json::Str(format!("-Drsift.gfx={renderer}")),
+                Json::Str(format!("-Drsift.home={}", natives_dir.display())),
+            ]),
+        ),
+    ]);
+    write_atomic(
+        &patches_dir.join(format!("{PRISM_COMPONENT_UID}.json")),
+        patch.render().as_bytes(),
+    )
+    .map_err(|e| format!("patch json: {e}"))?;
+
+    // 5) mods 配置: <inst>/.minecraft/mods/
+    let mods_dir = instance_dir.join(".minecraft").join("mods");
+    fs::create_dir_all(&mods_dir).map_err(|e| format!("create {}: {e}", mods_dir.display()))?;
+    let mut mods = Vec::new();
+    for name in [gfx_name, replay_name, zoom_name] {
+        if libs.iter().any(|l| l.name == name) {
+            let dst = mods_dir.join(name);
+            fs::copy(source_dir.join(name), &dst)
+                .map_err(|e| format!("copy {}: {e}", dst.display()))?;
+            mods.push(name.to_string());
+        }
+    }
+
+    notes.push(format!(
+        "Prism インスタンス '{PRISM_INSTANCE_NAME}' (id={PRISM_INSTANCE_ID}, mc={}) を登録",
+        RSIFT_MC_VERSION
+    ));
+    notes.push(format!(
+        "PrismLauncher を再起動するとインスタンス一覧に現れます (jvm args: {java_args})"
+    ));
+    let _ = version_id;
+    Ok(PrismOutcome {
+        instance_created: true,
+        foreign_conflict: false,
+        instance_dir,
+        natives_deployed: natives,
+        mods_deployed: mods,
         notes,
     })
 }
@@ -1652,7 +1989,7 @@ mod tests {
             &[LIB_MACOS_ENGINE, LIB_MACOS_GFX],
         );
         let d = decide(&h);
-        let s = render_launch_config(&h, &d, "null");
+        let s = render_launch_config(&h, &d, "null", "null");
         assert!(s.contains("\"schema\": \"rsift.launch/1\""));
         assert!(s.contains("\"target\": \"macos\""));
         assert!(s.contains("\"renderer\": \"metal4\""));
@@ -1807,6 +2144,17 @@ mod tests {
             fake_lib(LIB_LINUX_AGENT),
             fake_lib(LIB_LINUX_GFX),
             fake_lib(LIB_LINUX_REPLAY),
+            fake_lib(LIB_LINUX_ZOOM),
+        ]
+    }
+
+    fn full_windows_libs() -> Vec<LibFile> {
+        vec![
+            fake_lib(LIB_WINDOWS_ENGINE),
+            fake_lib(LIB_WINDOWS_AGENT),
+            fake_lib(LIB_WINDOWS_GFX),
+            fake_lib(LIB_WINDOWS_REPLAY),
+            fake_lib(LIB_WINDOWS_ZOOM),
         ]
     }
 
@@ -1847,6 +2195,7 @@ mod tests {
         }
         assert!(mc.join("mods").join(LIB_LINUX_GFX).is_file());
         assert!(mc.join("mods").join(LIB_LINUX_REPLAY).is_file());
+        assert!(mc.join("mods").join(LIB_LINUX_ZOOM).is_file());
         let pv =
             Json::parse(&fs::read_to_string(mc.join("launcher_profiles.json")).unwrap()).unwrap();
         let profs = pv.obj_get("profiles").unwrap();
@@ -1927,5 +2276,251 @@ mod tests {
         let d = find_minecraft_dir(TargetOs::Linux);
         std::env::remove_var("RSIFT_MC_DIR");
         assert_eq!(d, Some(PathBuf::from("/tmp/rsift_mc_override_test")));
+    }
+    // ============================================================
+    // wave 202: PrismLauncher 統合の検定
+    // ============================================================
+    #[test]
+    fn prism_dir_env_override_wins_and_has_priority_shape() {
+        let d = tmpdir("prism_env");
+        std::env::set_var("RSIFT_PRISM_DIR", &d);
+        assert_eq!(find_prism_dir(TargetOs::Windows), Some(d.clone()));
+        std::env::remove_var("RSIFT_PRISM_DIR");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn prism_full_setup_creates_instance_layout_verified_against_format() {
+        let home = tmpdir("prism_full");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_windows_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let root = home.join("PrismLauncher");
+        fs::create_dir_all(&root).unwrap();
+
+        let out = setup_prism(
+            &root,
+            TargetOs::Windows,
+            &src,
+            &full_windows_libs(),
+            "vulkan",
+        )
+        .expect("setup_prism Ok");
+        assert!(out.instance_created);
+        assert!(!out.foreign_conflict);
+        let inst = root.join("instances").join("rsift");
+        // instance.cfg: InstanceList 必須キー InstanceType を実検証
+        let cfg = fs::read_to_string(inst.join("instance.cfg")).unwrap();
+        assert!(cfg.contains("InstanceType=OneSix"), "必須キー実在: {cfg}");
+        assert!(cfg.contains("name=Rsift"));
+        assert!(cfg.contains("[General]"));
+        // mmc-pack.json: PackProfile.cpp toJson 準拠の完全形
+        let pack_text = fs::read_to_string(inst.join("mmc-pack.json")).unwrap();
+        assert!(
+            pack_text.contains("\"formatVersion\": 1"),
+            "formatVersion 1 実在: {pack_text}"
+        );
+        let pack = Json::parse(&pack_text).expect("mmc-pack parse");
+        let comps = match pack.obj_get("components") {
+            Some(Json::Arr(v)) => v,
+            other => panic!("components は配列: {other:?}"),
+        };
+        assert_eq!(comps.len(), 2);
+        assert_eq!(
+            comps[0].obj_get("uid").and_then(|u| u.as_str()),
+            Some("net.minecraft")
+        );
+        assert_eq!(
+            comps[0].obj_get("version").and_then(|u| u.as_str()),
+            Some("1.21.11")
+        );
+        assert_eq!(
+            comps[1].obj_get("uid").and_then(|u| u.as_str()),
+            Some("rsift")
+        );
+        // patches/rsift.json: OneSixVersionFormat の "+jvmArgs" + uid 規格
+        let patch =
+            Json::parse(&fs::read_to_string(inst.join("patches").join("rsift.json")).unwrap())
+                .expect("patch parse");
+        assert_eq!(patch.obj_get("uid").and_then(|u| u.as_str()), Some("rsift"));
+        let args = match patch.obj_get("+jvmArgs") {
+            Some(Json::Arr(v)) => v,
+            other => panic!("+jvmArgs は配列: {other:?}"),
+        };
+        let argstrs: Vec<String> = args
+            .iter()
+            .filter_map(|a| a.as_str().map(|x| x.to_string()))
+            .collect();
+        assert!(
+            argstrs
+                .iter()
+                .any(|a| a.starts_with("-agentpath:") && a.contains(LIB_WINDOWS_AGENT)),
+            "agentpath 実在: {argstrs:?}"
+        );
+        assert!(argstrs
+            .iter()
+            .any(|a| a == &"-Drsift.gfx=vulkan".to_string()));
+        assert!(argstrs.iter().any(|a| a.starts_with("-Drsift.home=")));
+        // natives + mods の実体
+        for n in &out.natives_deployed {
+            assert!(inst.join("rsift-natives").join(n).is_file(), "native {n}");
+        }
+        assert_eq!(
+            out.natives_deployed.len(),
+            5,
+            "engine/agent/gfx/replay/zoom"
+        );
+        for m in ["rsgraphics.dll", "rsreplay.dll", "rszoom.dll"] {
+            assert!(
+                inst.join(".minecraft").join("mods").join(m).is_file(),
+                "mod {m}"
+            );
+        }
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn prism_second_run_idempotent_updates_not_duplicates() {
+        let home = tmpdir("prism_idem");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_windows_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let root = home.join("PrismLauncher");
+        fs::create_dir_all(&root).unwrap();
+        setup_prism(
+            &root,
+            TargetOs::Windows,
+            &src,
+            &full_windows_libs(),
+            "vulkan",
+        )
+        .unwrap();
+        setup_prism(
+            &root,
+            TargetOs::Windows,
+            &src,
+            &full_windows_libs(),
+            "vulkan",
+        )
+        .unwrap();
+        let inst = root.join("instances").join("rsift");
+        let pack = fs::read_to_string(inst.join("mmc-pack.json")).unwrap();
+        assert_eq!(
+            pack.matches("\"uid\": \"rsift\"").count(),
+            1,
+            "成分は重複しない"
+        );
+        assert_eq!(pack.matches("net.minecraft").count(), 1);
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn prism_foreign_instance_named_rsift_is_never_overwritten() {
+        let home = tmpdir("prism_foreign");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_windows_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let root = home.join("PrismLauncher");
+        let inst = root.join("instances").join("rsift");
+        fs::create_dir_all(&inst).unwrap();
+        // 外部製 (Rsift 印の無い) rsift 名インスタンス
+        fs::write(
+            inst.join("instance.cfg"),
+            b"[General]\nname=My Precious Pack\n",
+        )
+        .unwrap();
+        let before = fs::read(inst.join("instance.cfg")).unwrap();
+        let out = setup_prism(
+            &root,
+            TargetOs::Windows,
+            &src,
+            &full_windows_libs(),
+            "vulkan",
+        )
+        .expect("Ok (中止は Ok+Conflict)");
+        assert!(out.foreign_conflict, "衝突検出");
+        assert!(!out.instance_created, "作成しない");
+        assert!(out.notes.iter().any(|n| n.contains("生成印がありません")));
+        assert_eq!(
+            fs::read(inst.join("instance.cfg")).unwrap(),
+            before,
+            "外部製は 1 バイトも触らない"
+        );
+        assert!(
+            !inst.join("mmc-pack.json").exists(),
+            "新規ファイルも作らない"
+        );
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn prism_without_agent_skips_with_note_nothing_created() {
+        let home = tmpdir("prism_noagent");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        let libs = vec![fake_lib(LIB_WINDOWS_GFX)]; // agent 無し
+        fs::write(src.join(LIB_WINDOWS_GFX), b"g").unwrap();
+        let root = home.join("PrismLauncher");
+        fs::create_dir_all(&root).unwrap();
+        let out = setup_prism(&root, TargetOs::Windows, &src, &libs, "none").unwrap();
+        assert!(!out.instance_created);
+        assert!(out.notes.iter().any(|n| n.contains("agent")));
+        assert!(
+            !root
+                .join("instances")
+                .join("rsift")
+                .join("instance.cfg")
+                .is_file(),
+            "agent 無しでは何も登録しない = 壊れた起動構成を量産しない"
+        );
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn prism_jvm_args_are_single_string_argvs_even_with_spaces() {
+        // ユーザー名に空白を含む環境 (例 "C:\Users\Sei San\...") でも、
+        // agentpath/home は各々 1 つの argv 要素として JVM へ届く構造を pin。
+        let home = tmpdir("prism sp ace");
+        let src = home.join("s r c");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_windows_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let root = home.join("Pr ism");
+        fs::create_dir_all(&root).unwrap();
+        let out = setup_prism(
+            &root,
+            TargetOs::Windows,
+            &src,
+            &full_windows_libs(),
+            "vulkan",
+        )
+        .unwrap();
+        let inst = root.join("instances").join("rsift");
+        let patch =
+            Json::parse(&fs::read_to_string(inst.join("patches").join("rsift.json")).unwrap())
+                .unwrap();
+        let args = match patch.obj_get("+jvmArgs") {
+            Some(Json::Arr(v)) => v,
+            other => panic!("+jvmArgs は配列: {other:?}"),
+        };
+        let argstrs: Vec<String> = args
+            .iter()
+            .filter_map(|a| a.as_str().map(|x| x.to_string()))
+            .collect();
+        assert!(
+            argstrs
+                .iter()
+                .all(|a| a.contains(" ") && a.contains("Pr ism") || !a.contains("Pr ism")),
+            "空白を含んでも 1 要素のまま: {argstrs:?}"
+        );
+        assert!(out.notes.iter().any(|n| n.contains("再起動")));
+        let _ = fs::remove_dir_all(&home);
     }
 }

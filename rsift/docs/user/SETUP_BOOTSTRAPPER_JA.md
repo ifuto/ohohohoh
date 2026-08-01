@@ -4,8 +4,8 @@
 
 | OS | 実行ファイル | 置くもの (例) |
 |---|---|---|
-| Windows | `rsift-setup.exe` | `rsift.dll` / `rsift_jvm.dll` (起動 agent) / `rsgraphics.dll` / `rsreplay.dll` |
-| Mac | `Rsift Setup.app` (内側に `rsift-setup` と dylib 群) | `.app/Contents/MacOS/` 内に `librsift.dylib` / `librsift_jvm.dylib` / `librsgraphics.dylib` / `librsreplay.dylib` |
+| Windows | `rsift-setup.exe` | `rsift.dll` / `rsift_jvm.dll` (起動 agent) / `rsgraphics.dll` / `rsreplay.dll` / `rszoom.dll` |
+| Mac | `Rsift Setup.app` (内側に `rsift-setup` と dylib 群) | `.app/Contents/MacOS/` 内に `librsift.dylib` / `librsift_jvm.dylib` / `librsgraphics.dylib` / `librsreplay.dylib` / `librszoom.dylib` |
 
 Release `setup-v1` の zip はこれらが全部入った一体梱包です。展開したフォルダでそのまま実行してください。
 
@@ -20,11 +20,34 @@ Release `setup-v1` の zip はこれらが全部入った一体梱包です。�
 4. `rsift_launch.json` (起動構成) を生成
 5. **Minecraft ランチャーへ起動構成を自動登録** (Minecraft 導入済みの場合):
    - `<.minecraft>/versions/rsift-1.21.11/` フォルダ作成 (version JSON + natives)
-   - `<.minecraft>/mods/` に RsGraphics / RsReplay を配置
+   - `<.minecraft>/mods/` に RsGraphics / RsReplay / RsZoom を配置
    - `launcher_profiles.json` に起動構成「Rsift」を追加 (既存構成は壊さず、
      上書き前に `launcher_profiles.json.bak_rsift` バックアップを作成)
    - ランチャーを開くと「Rsift」が選べます (初回は数秒の読み込み後に表示)
-6. 全工程をログに記録
+6. **PrismLauncher へインスタンスを自動登録** (PrismLauncher 検出時のみ):
+   - `<PrismLauncher>/instances/rsift/` を作成
+     (`instance.cfg` / `mmc-pack.json` / `patches/rsift.json` = 起動引数
+     `-agentpath` と `-Drsift.*` を追記型 `+jvmArgs` で登録)
+   - `<instance>/.minecraft/mods/` に RsGraphics / RsReplay / RsZoom を配置
+   - native 本体は `<instance>/rsift-natives/` に配置
+   - **「rsift」名の外部製インスタンスが既にある場合は絶対に上書きせず中止します**
+     (ログに理由を記録。手動で退避するか別アカウントで試してください)
+   - PrismLauncher を再起動すると「Rsift」が一覧に現れます (Windows 10 想定、
+     macOS/Linux も同じ構成で登録)
+   - 既定パス: Windows=`%APPDATA%\PrismLauncher`、
+     環境変数 `RSIFT_PRISM_DIR` で任意の場所を指定できます
+7. 全工程をログに記録
+
+## 同梱 Mod: RsZoom (ズーム)
+
+- ゲーム内で **C キーを押している間**、視線の先へ滑らかにズームします
+  (cubic イーズアウト: 始まりも戻りも速く立ち上がって、しっとり止まる)
+- 倍率・速度は **タイトル画面 → Mods → RsZoom → Config** で変更できます
+  画面はマイクラ本来のボタン/文字スタイルです (行をクリックすると値が変わり、
+  `.minecraft/config/rszoom.cfg` に自動保存)
+- セキュリティ審査: 生キー状態の読取りに `input_capture` 能力を正直に申告しています
+- 現状の正直な制約: キー検出は Windows 直結のみ (Mac/Linux のキー取得は後続 wave)。
+  チャット入力中にも反応します。
 
 ## ログを送ってください (後で診断します)
 

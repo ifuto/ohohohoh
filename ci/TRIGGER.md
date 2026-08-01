@@ -293,3 +293,6 @@ wave 198 GU 2 Mod 一体 zip (2026-08-01): rsgraphics caps 宣言完治・rsrepl
 - 2026-08-01 (count 228): wave 198 GU 上記の CI 緑確認用
 wave 199 GV 起動構成自動登録 + versions フォルダ完備 (2026-08-01): 最小 JSON/upsert/version json natives/mac .app 内 dylib 同梱化 (同階層必須の構造欠陥根治)/agent 同梱/DIAG 診断機構。setup 28 緑。
 - 2026-08-01 (count 229): wave 199 GV 上記の CI 緑確認用
+wave 201 GW UI マイクラ味 + RsZoom (2026-08-01): cloth 書き戻し路 (press_row→on_change→再描画) 完全実装・mc_style バニラ定数・rszoom(cubic ease-out 両向き/GetAsyncKeyState/input_capture 正直申告)・FOV 実消費 = rsift_mod_get_fov_scale → sanitize 総積 → camera_zoom → DX12 実 present+FrameInputs。rszoom 9・api 79・opt-gfx 1485・adversarial 3 系統全 RED・seal 全 PASS
+wave 202 GX PrismLauncher インストーラ (2026-08-01): 一次情報 (InstanceList/PackProfile/OneSixVersionFormat/VersionFile) 突合の instance.cfg/mmc-pack.json/patches rsift.json (+jvmArgs) 生成・外部製 rsift 名インスタンス絶対非上書き・agent 不在登録拒否・natives 5/mods 3 配置。setup 34 緑。
+- 2026-08-01 (count 230): wave 201 GW + wave 202 GX 上記の CI 緑確認用 (TRIGGER2 run 10 = rszoom.dll 同梱ビルド)

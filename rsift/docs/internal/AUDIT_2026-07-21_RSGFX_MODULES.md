@@ -10082,3 +10082,24 @@ Rsift のネイティブ Mod はプロセス内 DLL/so/dylib であり、**ロ�
   →1431(193、gm_ 3 本)→1463(194、gn_ 32 本)→1463(195、opt-gfx 不変;
   rsift-api 49→66、gq_ 17 本)→1480(196、go_ 17 本新設; R3 修復経過 1479
   は誠実記録。捕捉採番次空き 130 据置 = 採番なし機能 wave)。
+
+## wave 201 GW (2026-08-01) — Mod UI のバニラ味担保 + RsZoom (C キー・イーズアウトズーム)
+
+- 対象: rsift-api (cloth_config 書き戻し路・mc_style・runtime/mod_api/mod_dispatch/native_loader)、rsift-jvm platform_bridge、rsift-opt-gfx camera_zoom+render_pipeline、mods-official/rszoom (新設)
+- 構造的欠陥の根治: cloth 設定画面は表示専用だった (行押下 no-op)。press_row → 値サイクル/反転 → on_change 永続化 → 新値再描画要求の書き戻し路を実装し、platform_bridge の closure へ配線。表示はバニラ設定ボタン語彙 ("項目: 値"、"ON/OFF"、カテゴリ見出し §e)
+- RsZoom: ZoomEase (cubic ease-out、押下/解放両向き、途中方向転換も現在値から再開=連続性保証)、C キーは Windows GetAsyncKeyState 生ポーリング (manifest capability input_capture 正直申告)。設定 (倍率 e10 既定 4.0x・アニメ ms 既定 200・滑らか移動) は Mods→Config から変更、rszoom.cfg 保存 (tmp→rename/範囲 clamp/malformed 行読み飛ばし)
+- FOV 実消費路: 任意 export rsift_mod_get_fov_scale → runtime.query_fov_scale (非有限/非正=恒等置換+総積 clamp) → mod_dispatch → opt-gfx camera_zoom.effective_camera (fov/=scale、[0.001,2.967] rad clamp) → production_frame_constants (DX12 実 present) + FrameWiringInputs.camera_fov_y。両経路で同一実効カメラ = 片側ズームは構造的に不能
+- 誠実境界: GL パススルー中は rsift 側射影不在のため視覚ズーム非適用 (1 回明示ログ)、mac/linux キー検出未配線、チャット入力中にも C で発動
+- 検定: rszoom 9・api 79・opt-gfx 1485・jvm 1 全緑。adversarial 3 系統 (ease-in 変異/step floor 変異/clamp 除去) 全 RED 捕捉・復元 MD5-VERIFIED。fmt 自己起因 0 (api/lib.rs の未整列 legacy を rustfmt 正規化=宣言順のみ)・簡体字 0・seal 全 PASS
+
+## wave 202 GX (2026-08-01) — PrismLauncher 専用インストーラ (Windows 10 第一級)
+
+- 対象: rsift-setup (setup_prism / find_prism_dir / PRISM 定数 / LIB_ZOOM×3 定数 / run 統合)
+- 一次情報検索+ソース突合 (ユーザー指示どおり): InstanceList.cpp (instance.cfg + InstanceType 必須)、PackProfile.cpp (mmc-pack.json toJson = formatVersion 1 + components [uid/version/cachedName/cachedVersion])、OneSixVersionFormat.cpp (patch formatVersion 1、`"+jvmArgs"` 追記型配列)、VersionFile.cpp (applyAddnJvmArguments で起動引数へ反映)
+- 生成物: `<root>/instances/rsift/` に instance.cfg (InstanceType=OneSix)・mmc-pack.json (net.minecraft 1.21.11 + rsift)・patches/rsift.json (+jvmArgs=[-agentpath, -Drsift.gfx, -Drsift.home])・rsift-natives/ (5 dll)・.minecraft/mods/ (3 Mod)
+- 非破壊保証: Rsift 生成印 (自家 patch + mmc-pack 成分) の無い外部製 "rsift" 名インスタンスは絶対に触らず中止 (Fail log 記録)。agent 不在なら登録自体を行わない。全ファイル tmp→rename
+- 空白を含むユーザー名でも agentpath/-D は 1 argv 要素で届く (QProcess 引数配列構造、shell 展開なし) — 空白パス fixture で pin
+- 併行: setup_launcher の natives/mods に rszoom を採用 (一体 zip に dll 同梱される版の配置機)
+- 検定: setup 34 緑 (環境変数 override・full layout JSON 厳密照合・idempotent・foreign 非破壊 (1 バイト一致)・no-agent skip・空白パス)。fmt 自己起因 0・簡体字 0・seal 全 PASS
+- 誠実境界: Prism 実機でのインスタンス表示・起動確認はユーザー環境での検証待ち (rsift_setup_log.txt/jsonl を共有いただく経路は既存どおり)
+
