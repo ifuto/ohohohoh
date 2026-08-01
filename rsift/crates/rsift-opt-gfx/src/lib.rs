@@ -8,6 +8,7 @@ pub mod apple_canon;
 pub mod binary_greedy_meshing;
 pub mod boot_splash;
 pub mod branchless_dda;
+pub mod camera_zoom;
 pub mod chunk_cull;
 pub mod chunk_mesh;
 pub mod cpu_occlusion;

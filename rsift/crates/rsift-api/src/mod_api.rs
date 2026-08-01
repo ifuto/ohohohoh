@@ -24,6 +24,13 @@ pub type RsiftModInitFn = extern "C" fn(ctx: &mut ModContext) -> i32;
 pub type RsiftModOnPacketFn = extern "C" fn(packet_id: u32, buf_ptr: i64, buf_len: i32) -> bool;
 pub type RsiftModOnRenderFn = extern "C" fn(width: u32, height: u32, delta_time: f32);
 
+/// Mod 任意 export `rsift_mod_get_fov_scale() -> f32` (wave 201: RsZoom)。
+/// 1.0 = 変更なし。2.0 = 2倍ズーム (実効 FOV は /2)。0.5 未満の縮小方向も
+/// 許容するが、エンジン側消費者 (`camera_zoom`) が非有限/非正値を 1.0 へ
+/// 無害化した上で総積を最終クランプするため、mod 側が NaN や 0 を返しても
+/// 他 mod・射影計算を破壊できない (wave 195 の最少権限と同じ設計原則)。
+pub type RsiftModOnFovScaleFn = extern "C" fn() -> f32;
+
 /// Mod に渡される実行コンテキスト
 pub struct ModContext<'a> {
     pub manifest: ModManifest,

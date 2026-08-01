@@ -291,6 +291,11 @@ fn pending_screen_slot() -> &'static Mutex<Option<String>> {
     PENDING_SCREEN.get_or_init(|| Mutex::new(None))
 }
 
+#[cfg(test)]
+pub(crate) fn test_take_cloth_request() -> Option<(String, Vec<String>)> {
+    cloth_open_slot().lock().unwrap().take()
+}
+
 fn cloth_open_slot() -> &'static Mutex<Option<(String, Vec<String>)>> {
     CLOTH_OPEN.get_or_init(|| Mutex::new(None))
 }

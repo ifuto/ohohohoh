@@ -1,0 +1,15 @@
+[package]
+name = "rszoom"
+version.workspace = true
+authors = ["Ifuto_mitai", "Rsift Project Contributors"]
+edition.workspace = true
+description = "RsZoom: OptiFine-style ease-out zoom mod for Rsift (C key)"
+
+[dependencies]
+tracing.workspace = true
+rsift-api = { path = "../../crates/rsift-api" }
+rsift-render = { path = "../../crates/rsift-render" }
+
+[lib]
+name = "rszoom"
+crate-type = ["cdylib", "rlib"]

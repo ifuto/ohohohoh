@@ -28,6 +28,19 @@ pub fn dispatch_render(width: u32, height: u32, delta_time: f32) {
     mod_suite().on_client_render(width, height, delta_time);
 }
 
+/// Query the combined FOV scale declared by mods (wave 201: RsZoom).
+/// Runtime 未到達 / mod 未ロード / export 無し mod のみ、のいずれでも恒等 1.0。
+/// 消費者はレンダースレッド (opt-gfx camera_zoom → DX12/wgpu 射影) のみ。
+pub fn query_fov_scale() -> f32 {
+    let Some(rt) = runtime() else {
+        return 1.0;
+    };
+    if !rt.mods_loaded() {
+        return 1.0;
+    }
+    rt.query_fov_scale()
+}
+
 /// Generic dispatch entry for Java `RsiftModBridge.nativeDispatch(op, a, b, c)`.
 pub fn dispatch_op(op: &str, a: i64, b: i64, c: i32) {
     // セキュリティガード (wave 195): JNI ブリッジは呼出 Mod を帰属できないため、

@@ -2911,6 +2911,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rszoom"
+version = "0.1.0-alpha.1.21.11"
+dependencies = [
+ "rsift-api",
+ "rsift-render",
+ "tracing",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

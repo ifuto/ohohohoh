@@ -679,8 +679,12 @@ impl RsiftRenderPipeline {
             coords.sort_by_key(|c| self.wiring_priority.get(c).copied().unwrap_or(usize::MAX));
         }
 
+        // wave 201 (RsZoom): mod 宣言の FOV スケールを射影入力へ一意に適用。
+        // view_proj と FrameWiringInputs.camera_fov_y が同一カメラを見るため、
+        // ズーム中も culling 系と present 系が乖離しない (片側ズーム禁止)。
+        let frame_camera = crate::camera_zoom::current_effective_camera(&self.camera);
         let view_proj =
-            TerrainFrameConstants::from_camera(&self.camera, self.world.mesh_origin).view_proj;
+            TerrainFrameConstants::from_camera(&frame_camera, self.world.mesh_origin).view_proj;
         if self.low_spec.pre_mesh_occlusion && self.soft_occlusion.is_none() {
             self.soft_occlusion = Some(SoftwareOcclusion::new(256, 256));
         }
@@ -1161,7 +1165,7 @@ impl RsiftRenderPipeline {
                 quad_materials,
                 quad_bytes: self.gpu_quad_bytes.len(),
                 camera_speed: self.last_camera_speed,
-                camera_fov_y: self.camera.fov_y,
+                camera_fov_y: frame_camera.fov_y,
                 svo: wiring_svo.as_ref(),
             };
             let report = self.full_wiring.tick_world(&inputs);
@@ -1388,6 +1392,8 @@ pub fn production_frame_constants() -> Option<TerrainFrameConstants> {
         } else {
             p.camera
         };
+        // wave 201 (RsZoom): 実 present 定数も同一の実効カメラから作る。
+        let cam = crate::camera_zoom::current_effective_camera(&cam);
         TerrainFrameConstants::from_camera(&cam, p.world.mesh_origin)
     })
 }

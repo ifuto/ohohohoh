@@ -2,7 +2,8 @@
 
 use crate::adaptive_perf::AdaptivePerfEngine;
 use crate::mod_api::{
-    ModContext, ModManifest, RsiftModInitFn, RsiftModOnPacketFn, RsiftModOnRenderFn,
+    ModContext, ModManifest, RsiftModInitFn, RsiftModOnFovScaleFn, RsiftModOnPacketFn,
+    RsiftModOnRenderFn,
 };
 use crate::registry::ModRegistry;
 use crate::runtime::RsiftRuntime;
@@ -13,8 +14,8 @@ use std::sync::Arc;
 use std::sync::{Mutex, OnceLock};
 use tracing::{debug, error, info, warn};
 
-const LOAD_PRIORITY: &[&str] = &["rscalc", "rsgraphics", "rsreplay"];
-const SPEED_FIRST_IMMEDIATE: &[&str] = &["rsgraphics", "rsreplay"];
+const LOAD_PRIORITY: &[&str] = &["rscalc", "rsgraphics", "rsreplay", "rszoom"];
+const SPEED_FIRST_IMMEDIATE: &[&str] = &["rsgraphics", "rsreplay", "rszoom"];
 const SPEED_FIRST_DEFERRED: &[&str] = &["rscalc"];
 
 #[inline]
@@ -268,6 +269,10 @@ fn load_single_mod(
     }
     if let Ok(f) = unsafe { lib_arc.get::<RsiftModOnRenderFn>(b"rsift_mod_on_render\0") } {
         runtime.add_render_handler(*f);
+    }
+    // 任意 export `rsift_mod_get_fov_scale` (wave 201): 無い mod は恒等扱い。
+    if let Ok(f) = unsafe { lib_arc.get::<RsiftModOnFovScaleFn>(b"rsift_mod_get_fov_scale\0") } {
+        runtime.add_fov_scale_handler(*f);
     }
 
     Ok(LoadedModLibrary {

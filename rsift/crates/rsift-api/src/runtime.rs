@@ -1,7 +1,7 @@
 //! Global Rsift runtime — shared across launcher, JVMTI agent, and DLL mods.
 
 use crate::advancements::{AdvancementRegistry, PlayerAdvancementState};
-use crate::mod_api::{RsiftModOnPacketFn, RsiftModOnRenderFn};
+use crate::mod_api::{RsiftModOnFovScaleFn, RsiftModOnPacketFn, RsiftModOnRenderFn};
 use crate::mod_menu::RsiftModMenuScreen;
 use crate::registry::ModRegistry;
 use crate::ui_ext::ScreenRegistry;
@@ -17,6 +17,10 @@ pub struct RsiftRuntime {
     pub mod_dir: RwLock<PathBuf>,
     pub packet_handlers: RwLock<Vec<RsiftModOnPacketFn>>,
     pub render_handlers: RwLock<Vec<RsiftModOnRenderFn>>,
+    /// 任意 export `rsift_mod_get_fov_scale` を持つ mod の一覧 (wave 201)。
+    /// 毎フレーム `query_fov_scale` が総積を評価する (export が無い mod は
+    /// そもそも登録されない = 恒等 1.0 扱いで呼出コストも掛からない)。
+    pub fov_scale_handlers: RwLock<Vec<RsiftModOnFovScaleFn>>,
     pub mods_loaded: RwLock<bool>,
     /// Mod 登録アドバンスメントの単一真実 (register 後は全クレートから可視)。
     pub advancements: Mutex<AdvancementRegistry>,
@@ -35,6 +39,7 @@ impl RsiftRuntime {
             mod_dir: RwLock::new(mod_dir),
             packet_handlers: RwLock::new(Vec::new()),
             render_handlers: RwLock::new(Vec::new()),
+            fov_scale_handlers: RwLock::new(Vec::new()),
             mods_loaded: RwLock::new(false),
             advancements: Mutex::new(AdvancementRegistry::new()),
             advancement_state: Mutex::new(PlayerAdvancementState::new()),
@@ -85,6 +90,26 @@ impl RsiftRuntime {
 
     pub fn add_render_handler(&self, f: RsiftModOnRenderFn) {
         self.render_handlers.write().unwrap().push(f);
+    }
+
+    pub fn add_fov_scale_handler(&self, f: RsiftModOnFovScaleFn) {
+        self.fov_scale_handlers.write().unwrap().push(f);
+    }
+
+    pub fn has_fov_scale_handlers(&self) -> bool {
+        !self.fov_scale_handlers.read().unwrap().is_empty()
+    }
+
+    /// 全 mod の FOV スケール宣言を総積で評価 (`[sanitize_fov_scales]` 適用)。
+    /// 呼出はレンダースレッドのフレーム境界のみ (mod export は即時復帰契約)。
+    pub fn query_fov_scale(&self) -> f32 {
+        let handlers = self.fov_scale_handlers.read().unwrap();
+        if handlers.is_empty() {
+            return 1.0;
+        }
+        let raw: Vec<f32> = handlers.iter().map(|f| f()).collect();
+        drop(handlers);
+        sanitize_fov_scales(&raw)
     }
 
     pub fn dispatch_packet(&self, packet_id: u32, ptr: i64, len: i32) -> bool {
@@ -161,4 +186,66 @@ pub fn runtime() -> Option<&'static RsiftRuntime> {
 
 pub fn runtime_or_init(mod_dir: PathBuf) -> &'static RsiftRuntime {
     RUNTIME.get_or_init(|| RsiftRuntime::new(mod_dir))
+}
+
+/// 1 mod が返せる FOV スケールの絶対域 (悪質 mod の暴走防止柵)。
+pub const FOV_SCALE_PER_MOD_MIN: f32 = 0.01;
+pub const FOV_SCALE_PER_MOD_MAX: f32 = 100.0;
+/// 全 mod 総積の最終域。20 mod が全部 100x を返しても射影が負転倒しない。
+pub const FOV_SCALE_TOTAL_MIN: f32 = FOV_SCALE_PER_MOD_MIN;
+pub const FOV_SCALE_TOTAL_MAX: f32 = FOV_SCALE_PER_MOD_MAX;
+
+/// mod 宣言スケール列の無害化 + 総積 (wave 201)。
+/// - 非有限 (NaN/±inf)・非正値の mod 貢献は恒等 1.0 に置換 (mod が壊れても
+///   他 mod と射影計算を道連れにしない)。
+/// - 各 mod は [PER_MOD_MIN, PER_MOD_MAX] にクランプ。
+/// - 総積は [TOTAL_MIN, TOTAL_MAX] にクランプ (積爆発の構造的抑止)。
+pub fn sanitize_fov_scales(scales: &[f32]) -> f32 {
+    let mut acc: f64 = 1.0;
+    for &s in scales {
+        let clean = if s.is_finite() && s > 0.0 {
+            s.clamp(FOV_SCALE_PER_MOD_MIN, FOV_SCALE_PER_MOD_MAX)
+        } else {
+            1.0
+        };
+        acc *= clean as f64;
+    }
+    (acc as f32).clamp(FOV_SCALE_TOTAL_MIN, FOV_SCALE_TOTAL_MAX)
+}
+
+#[cfg(test)]
+mod fov_scale_tests {
+    use super::*;
+
+    #[test]
+    fn empty_and_identity_are_1() {
+        assert_eq!(sanitize_fov_scales(&[]), 1.0);
+        assert_eq!(sanitize_fov_scales(&[1.0, 1.0, 1.0]), 1.0);
+    }
+
+    #[test]
+    fn product_of_valid_scales() {
+        assert_eq!(sanitize_fov_scales(&[2.0, 3.0]), 6.0);
+        assert!((sanitize_fov_scales(&[0.5, 4.0]) - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn broken_mod_neutralized_not_contagious() {
+        // NaN/inf/0/負を返す mod が居ても正常 mod の 2x はそのまま効く。
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, -3.0] {
+            assert_eq!(
+                sanitize_fov_scales(&[2.0, bad]),
+                2.0,
+                "bad={bad} は恒等置換されること"
+            );
+        }
+    }
+
+    #[test]
+    fn per_mod_and_total_clamps_hold() {
+        assert_eq!(sanitize_fov_scales(&[1e9]), FOV_SCALE_PER_MOD_MAX);
+        assert_eq!(sanitize_fov_scales(&[1e-9]), FOV_SCALE_PER_MOD_MIN);
+        assert_eq!(sanitize_fov_scales(&[100.0, 100.0]), FOV_SCALE_TOTAL_MAX);
+        assert_eq!(sanitize_fov_scales(&[0.01, 0.01]), FOV_SCALE_TOTAL_MIN);
+    }
 }

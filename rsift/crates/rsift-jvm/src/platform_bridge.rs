@@ -343,10 +343,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativePrepareHo
     let mut y = 40;
     rt.screen_registry().add_button(
         screen_key,
-        &format!("§l{}", title_s),
+        &rsift_api::mc_style::title_text(&title_s),
         20,
         y,
-        200,
+        rsift_api::mc_style::BUTTON_W_FULL,
         20,
         Some("Rsift host screen"),
         |_| {},
@@ -359,7 +359,9 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativePrepareHo
         let display = if mod_menu != 0 {
             rsift_api::mod_menu::row_label(line)
         } else {
-            line.to_string()
+            // 設定画面行はバニラ設定ボタン風ラベル ("<項目>: <値><単位>")。
+            // raw の `int:min:max:cur` 仕様は表示に出さない (wave 201)。
+            rsift_api::cloth_config::cloth_display_label(line)
         };
         // 行頭 40 chars で省略。旧実装は &line[..40] のバイト切断で、
         // マルチバイト文字の途中を割るとパニックする潜伏バグがあった。
@@ -399,6 +401,9 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativePrepareHo
                             | rsift_api::mod_menu::ModRowAction::Unknown => {}
                         }
                     }
+                } else {
+                    // 設定画面行: 値サイクル → on_change(永続化) → 再描画要求。
+                    rsift_api::cloth_config::press_row(&callback_line);
                 }
                 let _ = idx;
             },
