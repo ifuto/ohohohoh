@@ -1,18 +1,30 @@
-== DIAG Windows exit=9 time=2026-08-01T10:43:13Z ==
+== DIAG Windows exit=0 time=2026-08-01T10:52:48Z ==
 -- target/release cdylib 候補 --
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
--rwxr-xr-x 2 runneradmin 197121 6316544 Aug  1 10:42 target/release/rsgraphics.dll
--rwxr-xr-x 2 runneradmin 197121  104960 Aug  1 10:37 target/release/rsift_api.dll
--rwxr-xr-x 2 runneradmin 197121 6570496 Aug  1 10:43 target/release/rsift_jvm.dll
--rwxr-xr-x 2 runneradmin 197121 1034240 Aug  1 10:42 target/release/rsreplay.dll
+-rwxr-xr-x 2 runneradmin 197121 6316032 Aug  1 10:52 target/release/rsgraphics.dll
+-rwxr-xr-x 2 runneradmin 197121  104960 Aug  1 10:47 target/release/rsift_api.dll
+-rwxr-xr-x 2 runneradmin 197121 6570496 Aug  1 10:52 target/release/rsift_jvm.dll
+-rwxr-xr-x 2 runneradmin 197121 1033728 Aug  1 10:51 target/release/rsreplay.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
 total 13952
-drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:43 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:35 ..
--rw-r--r-- 1 runneradmin 197121      747 Aug  1 10:43 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 14274560 Aug  1 10:43 rsift-bundle-windows-x64.zip
-drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:43 selftest-win
-drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:43 windows
+drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:52 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:44 ..
+-rw-r--r-- 1 runneradmin 197121      747 Aug  1 10:52 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 14274560 Aug  1 10:52 rsift-bundle-windows-x64.zip
+drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:52 selftest-win
+drwxr-xr-x 1 runneradmin 197121        0 Aug  1 10:52 windows
+-- selftest result --
+selftest_exit=0
+dist-ci/selftest-win/README_JA.md
+dist-ci/selftest-win/result.txt
+dist-ci/selftest-win/rsgraphics.dll
+dist-ci/selftest-win/rsift-setup.exe
+dist-ci/selftest-win/rsift.dll
+dist-ci/selftest-win/rsift_jvm.dll
+dist-ci/selftest-win/rsift_launch.json
+dist-ci/selftest-win/rsift_setup_log.jsonl
+dist-ci/selftest-win/rsift_setup_log.txt
+dist-ci/selftest-win/rsreplay.dll
