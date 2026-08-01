@@ -2858,6 +2858,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsift-setup"
+version = "0.1.0-alpha.1.21.11"
+
+[[package]]
 name = "rsift-sim"
 version = "0.1.0-alpha.1.21.11"
 dependencies = [

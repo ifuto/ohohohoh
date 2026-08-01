@@ -1,0 +1,18 @@
+[package]
+name = "rsift-setup"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Zero-dependency drop-in setup bootstrapper: place next to Rsift/RsGraphics DLLs (Windows .exe / macOS .app), writes launch config, self-logs everything"
+
+[[bin]]
+name = "rsift-setup"
+path = "src/main.rs"
+
+[lib]
+name = "rsift_setup"
+crate-type = ["rlib"]
+
+[dependencies]
+# std のみ。セットアップ物は環境になにも依存しない自己完結性が必須条件
+# (ユーザー環境に Rust も Java も無い前提で動く必要がある)。

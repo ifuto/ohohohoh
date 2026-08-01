@@ -11,6 +11,7 @@ members = [
     "crates/rsift-opt-gfx",
     "crates/rsift-installer",
     "crates/rsift-gui-installer",
+    "crates/rsift-setup",
     "crates/rsift-transpiler",
     "crates/rsift-replay",
     "crates/rsift-sim",

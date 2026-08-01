@@ -287,3 +287,5 @@ wave 195 GQ Mod ハイジャック防止 capability セキュリティ層 (2026-
 - 2026-07-30 (count 225): wave 195 GQ 上記の CI 緑確認用
 wave 196 GO Metal 4 (MTL4) 直 binding 完全実装 + SDK 26.5 canon 区画 (2026-07-31): 98 Metal ヘッダ一次情報から CANON_SDK26 (2476/902/231/316, md5 668e91f1 idempotent) 生成・DirectMetal4 全構造 (residency/argument table/shared event/frame 正規順序)・監査機 SDK26 union + R3 層連結宣言解決 + char literal 根治・native_direct4_route/session 配線。opt-gfx 1463→1480 全緑 (go_ 17)・adversarial 4 系統全 RED 復元 MD5-VERIFIED×4・seal 全 PASS・api 66/replay 16 不変
 - 2026-07-31 (count 226): wave 196 GO 上記の CI 緑確認用
+wave 197 GS セットアップ bootstrapper 新設 (rsift-setup): std オンリー自己完結 exe/app 用 (同階層 dll 走査・SHA-256 自前+manifest 検証・renderer 決定 policy・rsift_launch.json 生成・self-log txt/jsonl)。20/20 全緑・adversarial 2 系統 RED MD5-VERIFIED・ci/build-setup-artifacts.sh・SETUP_BOOTSTRAPPER_JA.md
+- 2026-08-01 (count 227): wave 197 GS 上記の CI 緑確認用
