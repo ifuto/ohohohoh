@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 8
+- run: 9
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm) +
   2 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay)** をビルドし、
   zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
@@ -30,6 +30,9 @@ diag_upload() {
     ls -la target/aarch64-apple-darwin/release/*.dylib target/x86_64-apple-darwin/release/*.dylib 2>&1 | head -20
     echo "-- dist-ci --"
     ls -la dist-ci 2>&1 | head -20
+    echo "-- selftest result --"
+    cat dist-ci/selftest-*/result.txt 2>&1 | head -5
+    find dist-ci/selftest-win -type f 2>/dev/null | head -10
   } >> "dist-ci/DIAG-$RUNNER_OS.txt"
   if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null; then
     gh release create setup-diag --title "setup diag (自動診断)" --notes "trigger2 DIAG 集約先" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
@@ -159,7 +162,7 @@ esac
 ls -la dist-ci/
 for Z in dist-ci/*.zip; do
   echo "== 内容物検査: $Z =="
-  if command -v unzip >/dev/null; then unzip -l "$Z"; else tar -tf "$Z" || true; fi
+  tar -tf "$Z" 2>&1 | head -40 || echo "(list 不可だが継続)"
 done
 HASH dist-ci/*.zip || true
 
