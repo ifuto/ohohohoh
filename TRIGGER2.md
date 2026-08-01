@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 1
+- run: 2
 - 目的: rsift-setup の Windows .exe / macOS .app / Linux バイナリをビルドし、
   `rsift/dist-ci/` に zip として出力 → ワークフローが Artifacts + Release
   `setup-v1` へ添付する。
