@@ -768,6 +768,8 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeOnHook(
     match hook.as_str() {
         "client_tick" | "client_run" => {
             rsift_api::mod_dispatch::dispatch_op("client_tick", 0, 0, 0);
+            // wave 203: Mod 宣言のバニラ KeyMapping を install+isDown 同期。
+            super::keybind_bridge::poll_and_sync(&mut env);
         }
         "network_packet" => {
             // Packet tap is primary; this is a secondary HEAD marker.
@@ -778,9 +780,14 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeOnHook(
                     rt.dispatch_render(0, 0, 0.016);
                 }
             }
+            // フレーム粒度でもキー状態を同期 (押し始め遅延を tick より短く)。
+            super::keybind_bridge::poll_and_sync(&mut env);
         }
         "screen_init" => {
             // Button injection runs from client_tick path.
+            // ただし最初のタイトル画面 init = ユーザーが Controls を開く前の
+            // 最早点 → ここで KeyMapping を install しておく (wave 203)。
+            super::keybind_bridge::poll_and_sync(&mut env);
         }
         "mob_ai_step" | "entity_travel" | "redstone" | "chunk_tick" | "hopper_tick"
         | "server_level_tick" | "fluid_tick" | "generic_compute" => {

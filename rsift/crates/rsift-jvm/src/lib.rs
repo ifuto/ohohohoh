@@ -9,6 +9,7 @@ pub mod agent_log;
 pub mod agent_opts;
 pub mod agent_bridge;
 pub mod chunk_bridge;
+pub mod keybind_bridge;
 pub mod mod_bridge;
 pub mod platform_bridge;
 pub mod render_bridge;

@@ -4,10 +4,12 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 10
-- 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm) +
+- run: 11
+- 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
+  keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /
-  RsZoom=rszoom = C キー・イーズアウトズーム Mod)** をビルドし、
+  RsZoom=rszoom = バニラキーバインド式イーズアウトズーム Mod: 既定 C キー、
+  ゲーム内「設定→コントロール」で再割当可・全 OS 共通)** をビルドし、
   zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
   (macOS では dylib は .app/Contents/MacOS/ 内部に同梱 — バイナリと同階層
   必須のため。外に置くと検出 0 で exit 2 になる構造欠陥が run 4 に顕在化した)
@@ -174,7 +176,7 @@ HASH dist-ci/*.zip || true
 if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null; then
   gh release create setup-v1 \
     --title "Rsift Setup v1 (.exe/.app + engine & agent & 3 Mod dll 同梱 + 起動構成 & PrismLauncher インスタンス自動登録版)" \
-    --notes "zip を展開して rsift-setup(.exe) / Rsift Setup.app を実行。起動構成 (versions/rsift-1.21.11 + launcher profile) と PrismLauncher インスタンス (instances/rsift) も自動登録 (検出時のみ・外部製 rsift 名インスタンスは絶対に上書きしない)。RsZoom: ゲーム内で C キー押下中ズーム、倍率はタイトル→Mods→RsZoom→Config。rsift_setup_log.txt/jsonl ができたら送ってください。" \
+    --notes "zip を展開して rsift-setup(.exe) / Rsift Setup.app を実行。起動構成 (versions/rsift-1.21.11 + launcher profile) と PrismLauncher インスタンス (instances/rsift) も自動登録 (検出時のみ・外部製 rsift 名インスタンスは絶対に上書きしない)。RsZoom: ズームキー (既定 C) 押下中ズーム — キーはゲーム内「設定→コントロール」で変更可・倍率はタイトル→Mods→RsZoom→Config。rsift_setup_log.txt/jsonl ができたら送ってください。" \
     --repo "$GITHUB_REPOSITORY" || true
   for Z in dist-ci/*.zip; do
     gh release upload setup-v1 "$Z" --clobber --repo "$GITHUB_REPOSITORY" || true

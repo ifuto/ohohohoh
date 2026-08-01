@@ -1,6 +1,7 @@
 //! Global Rsift runtime — shared across launcher, JVMTI agent, and DLL mods.
 
 use crate::advancements::{AdvancementRegistry, PlayerAdvancementState};
+use crate::keybinds::KeybindRegistry;
 use crate::mod_api::{RsiftModOnFovScaleFn, RsiftModOnPacketFn, RsiftModOnRenderFn};
 use crate::mod_menu::RsiftModMenuScreen;
 use crate::registry::ModRegistry;
@@ -24,6 +25,9 @@ pub struct RsiftRuntime {
     pub mods_loaded: RwLock<bool>,
     /// Mod 登録アドバンスメントの単一真実 (register 後は全クレートから可視)。
     pub advancements: Mutex<AdvancementRegistry>,
+    /// バニラ KeyMapping 橋渡しの登録表 (wave 203: Mod の宣言をエージェントが
+    /// 拾って `Options.keyMappings` へ追記し、isDown() 状態を書き戻す)。
+    pub keybinds: KeybindRegistry,
     /// ローカルプレイヤーの進捗状態機械 (grant_progress が実grant判定を実施)。
     pub advancement_state: Mutex<PlayerAdvancementState>,
     render_tick_wanted: AtomicU32,
@@ -42,6 +46,7 @@ impl RsiftRuntime {
             fov_scale_handlers: RwLock::new(Vec::new()),
             mods_loaded: RwLock::new(false),
             advancements: Mutex::new(AdvancementRegistry::new()),
+            keybinds: KeybindRegistry::new(),
             advancement_state: Mutex::new(PlayerAdvancementState::new()),
             render_tick_wanted: AtomicU32::new(0),
             idle_mode: AtomicBool::new(false),
@@ -78,6 +83,32 @@ impl RsiftRuntime {
 
     pub fn screen_registry(&self) -> &ScreenRegistry {
         &self.screen_registry
+    }
+
+    pub fn keybinds(&self) -> &KeybindRegistry {
+        &self.keybinds
+    }
+
+    /// バニラ KeyMapping 登録宣言 (Mod は戻りセルを保持し描画 tick で読む)。
+    pub fn register_keybind(
+        &self,
+        name: &str,
+        category: &str,
+        default_code: i32,
+    ) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        let arc = self.keybinds.register(name, category, default_code);
+        crate::platform::mark_dirty();
+        arc
+    }
+
+    /// 状態読取り (登録名のみ真を返す)。
+    pub fn keybind_is_down(&self, name: &str) -> bool {
+        self.keybinds.is_down(name)
+    }
+
+    /// エージェント側の isDown() ポーリング結果の書き戻し (変化検出つき)。
+    pub fn keybind_set_state(&self, name: &str, down: bool) -> bool {
+        self.keybinds.set_state(name, down)
     }
 
     pub fn mod_menu(&self) -> &RsiftModMenuScreen {

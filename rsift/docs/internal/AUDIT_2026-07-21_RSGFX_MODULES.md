@@ -10103,3 +10103,17 @@ Rsift のネイティブ Mod はプロセス内 DLL/so/dylib であり、**ロ�
 - 検定: setup 34 緑 (環境変数 override・full layout JSON 厳密照合・idempotent・foreign 非破壊 (1 バイト一致)・no-agent skip・空白パス)。fmt 自己起因 0・簡体字 0・seal 全 PASS
 - 誠実境界: Prism 実機でのインスタンス表示・起動確認はユーザー環境での検証待ち (rsift_setup_log.txt/jsonl を共有いただく経路は既存どおり)
 
+## wave 203 GY (2026-08-01) — RsZoom バニラキーバインド方式転換 (生ポーリング全廃)
+
+- 対象: rsift-api (keybinds.rs 新設・runtime・mod_api・lib.rs)、rsift-jvm (keybind_bridge.rs 新設・agent_bridge・lib.rs)、mods-official/rszoom v2.0.0 全書換
+- ユーザー要求 (逐語): 「いや、MinecraftのModとして、Minecraftが読み取るキーを取ればいいじゃん。そしてCキーかどうかは設定のキーバインド画面で変更できるようにしたり。」
+- 設計転換: wave 201 の GetAsyncKeyState 生ポーリングを撤廃し、**Minecraft 本体の入力機構に準拠**。MOD API 側は `ModContext::register_keybind(name, category, default_code) -> Arc<AtomicBool>` で宣言し受け取った共有セルを描画フレームで読むだけ。JVM エージェント側はリフレクションで本物の `net.minecraft.client.KeyMapping` を生成し `Minecraft.getInstance().options.keyMappings` 配列へ追記 (欠損分のみ、options.txt 復元済みは既存照合で再利用)。状態は各 `KeyMapping.isDown()` のポーリング結果を `runtime.keybind_set_state` が共有セルへ書き戻す
+- ctor 戦略: mojmap 1.21.x 実名を対象に 4 シグネチャを新世代順に試行 ((String,KeyMapping$Category,InputConstants$Type,int) → (String,Type,int,String) → (String,int,String) → (String,String,int))。enum 実値は `Class.getEnumConstants()[0]` で取得 (定数名を世代横断で知る必要を排除した唯一の頑健経路)。find_class 失敗時は screen_inject::game_class_loader の loadClass fallback。各失敗は exception_clear で潰して次戦略へ。全失敗時は 1 回だけ警告、以後静黙 (嘘の代替入力を読まない)
+- 呼出点: nativeOnHook の screen_init (最早 install 点) / client_tick / client_run / render_flip に poll_and_sync を挿入 (tick/frame 粒度、登録表が空なら即 return)
+- 副次効果 = wave 201 誠実境界 3 件の構造的同時解消: (1) mac/linux キー未配線 → バニラ機構経由で全 OS 共通 (2) チャット中にも反応 → KeyMapping が UI 入力中に立たないバニラ規約で解消 (3) input_capture 申告 → 不要化で rszoom capabilities 空 (least-privilege 面の改善、幅は狭めず)。再割当・options.txt 永続化はバニラが担う (当方実装ゼロで正しい)
+- rszoom v2.0.0: extern GetAsyncKeyState / physical_zoom_key_down / TEST_KEY_HELD を全削除。統合テストを keybind 経路へ書換 (init → 宣言検査 → runtime への状態書き戻し (エージェント同期の代替注入点) → render 10 回 → 満倍率 4.0 → false → 復帰 1.0、加えて mod_menu 登録 + press_row 書き戻し路の統合退行防止)
+- 検定 (機械値): api 82 (+3 = register 冪等セル共有 / state roundtrip + unknown no-op / snapshot 宣言保持)・jvm 3 (+2 = 戦略順+重複なし pin / mojmap クラス名 pin)・rszoom 9 全緑・opt-gfx 1485・setup 34 不変
+- adversarial 3 系統全 RED 検出: (1) CTOR_STRATEGIES を legacy-first 化 → ctor_strategies_are_newest_first RED (2) register の冪等性破壊 (毎回新セル) → register_is_idempotent_and_shares_one_cell RED (3) init のセル差替抹消 → init_registers_..._full_keybind_path RED (捕捉 assert「keybind 経路で満倍率に到達」)。復元 MD5-VERIFIED×3
+- fmt: 新規 2 ファイル rustfmt in-place 正規化。rszoom v2 書換の初版は rustfmt 逸脱 25 行を自己起因として検出→in-place 修復で 0。jvm lib.rs は挿入 1 行で 26=26 HEAD 包含容認 (自己起因 +0)。変更 4 ファイル (runtime/mod_api/api lib/agent_bridge) fmt-diff 0
+- 簡体字 0 (seal ゲート1 san: 27 files scanned, 0 findings = 本プロジェクト正典ゲート)。seal 全ゲート PASS (digest 004c1cf5fb17bfe8 rows=357 不変)
+- 誠実境界: (i) 全 4 戦略が不一致となる未来の MC バージョンではズームは静かに不発 (1 回警告のみ。嘘の代替入力読替はしない) (ii) 実機 Minecraft 上での Controls 画面への表示・再割当・options.txt 永続化の目視確認はユーザー環境検証待ち (リフレクション対象は mojmap 1.21.x の実名・実シグネチャに厳密整合済) (iii) rsreplay の rsift_mod_on_key_event は引き続き未接続 export (本 wave 対象外、既知 orphaned 経路として記録継続)

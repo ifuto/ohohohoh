@@ -80,6 +80,18 @@ impl<'a> ModContext<'a> {
         self.runtime.screen_registry()
     }
 
+    /// バニラキーバインドの宣言 (wave 203)。返り値の共有セルはエージェントが
+    /// 本物の KeyMapping.isDown() ポーリングで書き戻す描画 tick 用の一次情報。
+    /// 例: ctx.register_keybind("key.rsift.zoom", "key.categories.misc", 67)
+    pub fn register_keybind(
+        &self,
+        name: &str,
+        category: &str,
+        default_code: i32,
+    ) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        self.runtime.register_keybind(name, category, default_code)
+    }
+
     pub fn mod_menu(&self) -> &crate::mod_menu::RsiftModMenuScreen {
         self.runtime.mod_menu()
     }

@@ -5,25 +5,32 @@
 //! 倍率とアニメ時間はゲーム内の「タイトル → Mods → RsZoom → Config」
 //! (バニラ外観のホスト設定画面) で変更でき、`config/rszoom.cfg` に保存する。
 //!
+//! ## キー入力の取り方 (wave 203: バニラ機構に準拠)
+//! 生ポーリング (GetAsyncKeyState 等) は使わない。`rsift_mod_init` が
+//! `ctx.register_keybind("key.rsift.zoom", "key.categories.misc", 67=C)` で
+//! **バニラの KeyMapping を宣言**し、JVM エージェントが実物を
+//! `Options.keyMappings` へ追記する。これにより:
+//! - **バニラの「設定 → コントロール (キー設定)」画面に表示され、ユーザーが
+//!   ズームキーを自由に再割当できる** (options.txt にもバニラ側で永続化)
+//! - チャット等の UI 入力中は KeyMapping が立たない (バニラ規約) ので、
+//!   「タイプ中にズームしてしまう」副作用は構造的に消える
+//! - 全 OS で同一経路 (ゲームの入力系を読むため OS 依存コードは 0 行)
+//! - `input_capture` 能力の申告は不要になった (capabilities = 空)
+//!
 //! ## 実配線の構成 (偽装なし)
 //! - ズーム本体: `rsift_mod_get_fov_scale` (本 mod) → `mod_dispatch::query_fov_scale`
 //!   → opt-gfx `camera_zoom::current_effective_camera` → DX12 present 定数と
 //!   culling の両方に同一実効カメラが届く (片側ズームは構造的に不可能)。
-//! - キー検出: Windows は `GetAsyncKeyState(VK=0x43)` の生ポーリングを
-//!   各描画フレームで実行 (押下/解放エッジ両対応)。manifest の capability
-//!   `input_capture` を正直に申告する = セキュリティ審査対象。
-//!   **macOS/Linux は現状キー検出経路が無い** (GLFW キーフックは後続 wave)。
-//!   非 Windows ではズームは発動せず、起動時に 1 行だけ明示ログを出す。
-//! - 設定画面: `cloth_config` ホスト画面 = 本物の Minecraft Screen にバニラ
-//!   Button を並べるため、背景ブラー・フォント・ボタンは全てマイクラ味。
-//!   行押下で値がサイクルし、即座に cfg 保存 + 画面再描画される。
+//! - キー状態: エージェントが KeyMapping.isDown() を毎 tick/frame で同期し、
+//!   共有セル (登録時に受け取る Arc<AtomicBool>) を書き換える。Mod は描画
+//!   フレームでそのセルを読むだけ (一次情報はバニラ状態の写し)。
+//! - 設定画面: 本物の Minecraft Screen にバニラ Button を並べるため、
+//!   背景ブラー・フォント・ボタンは全てマイクラ味。行押下で値がサイクルし、
+//!   即座に cfg 保存 + 画面再描画される。
 //!
-//! ## 既知の正直な制約
-//! - チャット等で「c」をタイプしても反応する (生ポーリングの副作用)。
-//!   画面状態ガードはホスト側スクリーン判定 API の実装待ち。
-//! - キー固定 C (GLFW 67) — バニラのキー設定画面への再割当は未実装。
-//! - GL パススルー (描画をバニラ GL に戻したモード) では FOV 消費者が
-//!   rsift 側に無いため視覚ズームは掛からない。発動時に 1 回だけ明示ログ。
+//! ## 正直な残制約
+//! - KeyMapping の生成リフレクションが失敗する未来の MC バージョンでは
+//!   ズームが立たない (一度だけ警告。嘘の代替入力読み替えはしない)
 
 use rsift_api::{
     ClothChangeFn, ClothConfigBuilder, ModContext, ModManifest, RsiftStatus,
@@ -31,11 +38,14 @@ use rsift_api::{
 };
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use tracing::{info, warn};
 
-/// ズームキー (C)。GLFW key code と Win32 VK が一致して 0x43。
-pub const ZOOM_KEY_CODE: i32 = 0x43;
+/// バニラ KeyMapping の登録名/カテゴリ/既定コードの一次情報。
+pub const ZOOM_KEY_NAME: &str = "key.rsift.zoom";
+pub const ZOOM_KEY_CATEGORY: &str = "key.categories.misc";
+/// 既定キー (C)。再割当はバニラの Controls 画面で行う (mod 側は既定値のみ持つ)。
+pub const ZOOM_KEY_DEFAULT_CODE: i32 = 0x43;
 /// 倍率の内部表現は e10 整数 (40 = 4.0x)。UI スライダーと cfg を同一表現に。
 pub const FACTOR_MIN_E10: i32 = 20; // 2.0x
 pub const FACTOR_MAX_E10: i32 = 100; // 10.0x
@@ -124,14 +134,22 @@ impl ZoomEase {
 pub struct ZoomState {
     pub ease: Mutex<ZoomEase>,
     /// Arc セルは cloth 設定画面と共有 (画面操作 = 即 mod 反映の単一真実)。
-    pub factor_e10: std::sync::Arc<std::sync::RwLock<i32>>,
-    pub anim_ms: std::sync::Arc<std::sync::RwLock<i32>>,
-    pub smooth: std::sync::Arc<std::sync::RwLock<bool>>,
+    pub factor_e10: Arc<RwLock<i32>>,
+    pub anim_ms: Arc<RwLock<i32>>,
+    pub smooth: Arc<RwLock<bool>>,
+    /// バニラ KeyMapping.isDown() ポーリングが流し込む状態セル。init 時に
+    /// runtime 登録セルへ差し替わる (差替え前は誰も書かない = 常に false)。
+    zoom_cell: RwLock<Arc<AtomicBool>>,
 }
 
 impl ZoomState {
     pub fn factor(&self) -> f32 {
         *self.factor_e10.read().unwrap() as f32 / 10.0
+    }
+
+    /// ズームキー押下中か (一次情報はバニラ KeyMapping 状態の写し)。
+    pub fn zoom_down(&self) -> bool {
+        self.zoom_cell.read().unwrap().load(Ordering::Relaxed)
     }
 
     pub fn current_fov_scale(&self) -> f32 {
@@ -140,8 +158,7 @@ impl ZoomState {
             self.ease.lock().unwrap().fov_scale(self.factor())
         } else {
             // 滑らか移動 OFF = バニラ的な即時切替 (ease 状態は進めない)。
-            let ease = self.ease.lock().unwrap();
-            if ease.held {
+            if self.ease.lock().unwrap().held {
                 self.factor()
             } else {
                 1.0
@@ -155,9 +172,10 @@ static STATE: OnceLock<ZoomState> = OnceLock::new();
 fn state() -> &'static ZoomState {
     STATE.get_or_init(|| ZoomState {
         ease: Mutex::new(ZoomEase::new(ANIM_MS_DEFAULT as f32 / 1000.0)),
-        factor_e10: std::sync::Arc::new(std::sync::RwLock::new(FACTOR_DEFAULT_E10)),
-        anim_ms: std::sync::Arc::new(std::sync::RwLock::new(ANIM_MS_DEFAULT)),
-        smooth: std::sync::Arc::new(std::sync::RwLock::new(true)),
+        factor_e10: Arc::new(RwLock::new(FACTOR_DEFAULT_E10)),
+        anim_ms: Arc::new(RwLock::new(ANIM_MS_DEFAULT)),
+        smooth: Arc::new(RwLock::new(true)),
+        zoom_cell: RwLock::new(Arc::new(AtomicBool::new(false))),
     })
 }
 
@@ -244,7 +262,7 @@ pub fn build_config(st: &'static ZoomState) -> ClothConfigBuilder {
         *st.factor_e10.read().unwrap(),
         0.1,
         Some("x"),
-        Some("C キー押下時の拡大率 (既定 4.0x)"),
+        Some("ズームキー押下時の拡大率 (既定 4.0x)。キー自体は「設定 → コントロール」で変更"),
     );
     // 設計: builder が生成する表示セル (押下で直接変化) と mod 状態セルは
     // 2 系に分け、on_change → sync_from_builder で単方向に同期する。
@@ -269,7 +287,7 @@ pub fn build_config(st: &'static ZoomState) -> ClothConfigBuilder {
 
 /// on_change hook: 画面のセル値を mod 状態へ同期し cfg へ保存する。
 fn save_on_change() -> ClothChangeFn {
-    std::sync::Arc::new(|b: &ClothConfigBuilder| {
+    Arc::new(|b: &ClothConfigBuilder| {
         let st = state();
         sync_from_builder(st, b);
         save_config(st, &config_path());
@@ -297,53 +315,13 @@ pub fn sync_from_builder(st: &ZoomState, b: &ClothConfigBuilder) {
     }
 }
 
-// ============================================================
-// キー状態供給 (押下/解放エッジの一次情報)。
-// ============================================================
-#[cfg(all(windows, not(test)))]
-fn physical_zoom_key_down() -> bool {
-    // user32!GetAsyncKeyState (0x43 = 'C')。上位ビットが押下中の一次情報。
-    // 代理入力フックを介さないため、ゲームのスクリーン状態は考慮されない
-    // (既知制約として文書に記載済)。
-    #[link(name = "user32")]
-    extern "system" {
-        fn GetAsyncKeyState(v_key: i32) -> i16;
-    }
-    unsafe { GetAsyncKeyState(ZOOM_KEY_CODE) as u16 & 0x8000 != 0 }
-}
-
-#[cfg(all(windows, test))]
-fn physical_zoom_key_down() -> bool {
-    TEST_KEY_HELD.load(Ordering::Relaxed)
-}
-
-#[cfg(not(windows))]
-fn physical_zoom_key_down() -> bool {
-    // 現状 GLFW キーフック未配線のため macOS/Linux では発動しない。
-    // 黙って無効化するのではなく、初回のみ明示ログを出す (後述 once)。
-    #[cfg(test)]
-    {
-        TEST_KEY_HELD.load(Ordering::Relaxed)
-    }
-    #[cfg(not(test))]
-    {
-        static NOTICED: AtomicBool = AtomicBool::new(false);
-        if !NOTICED.swap(true, Ordering::Relaxed) {
-            warn!("[RsZoom] この OS ではまだキー検出経路がありません (現在 Windows 直結のみ)。ズームは発動しません");
-        }
-        false
-    }
-}
-
-#[cfg(test)]
-static TEST_KEY_HELD: AtomicBool = AtomicBool::new(false);
-
 static PASSTHROUGH_NOTICED: AtomicBool = AtomicBool::new(false);
 
 #[no_mangle]
 pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
     info!("==============================================================================");
-    info!(" 🔭 [RsZoom v1.0] OptiFine-style ease-out zoom — hold [C] to zoom");
+    info!(" 🔭 [RsZoom v2.0] Vanilla-keybind ease-out zoom — hold the zoom key");
+    info!("    Key rebindable: Options → Controls (バニラのキー設定画面)");
     info!("    Config: Title → Mods → RsZoom → Config (vanilla-styled screen)");
     info!("==============================================================================");
 
@@ -354,24 +332,30 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
         ease.anim_secs = *st.anim_ms.read().unwrap() as f32 / 1000.0;
     }
 
+    // バニラ KeyMapping 宣言: エージェントが実物を生成して Options.keyMappings
+    // へ追記し、その isDown() 状態をこの共有セルへ同期してくれる。
+    let cell = ctx.register_keybind(ZOOM_KEY_NAME, ZOOM_KEY_CATEGORY, ZOOM_KEY_DEFAULT_CODE);
+    *st.zoom_cell.write().unwrap() = cell;
+
     let manifest = ModManifest {
         id: "rszoom".into(),
         name: "RsZoom".into(),
-        version: "1.0.0".into(),
+        version: "2.0.0".into(),
         author: "Rsift Project".into(),
-        description:
-            "C キーで視線先へ滑らかにズーム (イーズアウト)。倍率は Mods メニューから変更可".into(),
+        description: "ズームキーで視線先へ滑らかにズーム (イーズアウト)。キーはバニラのキー設定画面で変更可・倍率は Mods メニューから"
+            .into(),
         target_rsift_version: TARGET_MINECRAFT_VERSION.into(),
-        // 生キー状態ポーリング = input_capture を正直に申告 (審査・同意対象)。
-        capabilities: vec!["input_capture".into()],
+        // wave 203: 入力はバニラ機構経由のため危険能力の申告は不要 (空)。
+        capabilities: Vec::new(),
     };
     ctx.mod_menu()
         .register_mod(manifest, None, None, Some(build_config(st)));
     ctx.request_render_ticks();
     info!(
-        "[RsZoom] initialized for {} (factor={}x)",
+        "[RsZoom] initialized for {} (factor={}x, keybind={})",
         TARGET_MINECRAFT_VERSION,
-        st.factor()
+        st.factor(),
+        ZOOM_KEY_NAME
     );
     RsiftStatus::Success as i32
 }
@@ -379,7 +363,7 @@ pub extern "C" fn rsift_mod_init(ctx: &mut ModContext) -> i32 {
 #[no_mangle]
 pub extern "C" fn rsift_mod_on_render(_width: u32, _height: u32, delta_time: f32) {
     let st = state();
-    let held = physical_zoom_key_down();
+    let held = st.zoom_down();
     let mut ease = st.ease.lock().unwrap();
     if ease.set_held(held)
         && held
@@ -415,6 +399,16 @@ mod tests {
 
     static SERIAL: Mutex<()> = Mutex::new(());
 
+    /// エージェントが runtime 経由でもたらす押下状態の注入点 (テストは
+    /// この入口で同じ写しを与える)。
+    fn force_down(held: bool) {
+        state()
+            .zoom_cell
+            .read()
+            .unwrap()
+            .store(held, Ordering::Relaxed);
+    }
+
     fn reset_state(anim_ms: i32) {
         let st = state();
         *st.factor_e10.write().unwrap() = FACTOR_DEFAULT_E10;
@@ -422,6 +416,8 @@ mod tests {
         *st.smooth.write().unwrap() = true;
         let mut e = st.ease.lock().unwrap();
         *e = ZoomEase::new(anim_ms as f32 / 1000.0);
+        drop(e);
+        force_down(false);
     }
 
     #[test]
@@ -438,7 +434,6 @@ mod tests {
             assert!(v <= 1.0, "オーバーシュートしない");
             prev = v;
         }
-        // 定義域外クランプ
         assert_eq!(ease_out_cubic(-0.5), 0.0);
         assert_eq!(ease_out_cubic(1.5), 1.0);
     }
@@ -447,10 +442,8 @@ mod tests {
     fn press_zooms_in_with_ease_out_and_release_returns() {
         let _g = SERIAL.lock().unwrap();
         reset_state(200); // 200ms
-        TEST_KEY_HELD.store(false, Ordering::Relaxed);
-        let st = state();
-        // 押下: 100ms でどこまで進むか (ease-out: t=0.5 → 1-0.125=0.875)
-        TEST_KEY_HELD.store(true, Ordering::Relaxed);
+                          // 押下: 100ms でどこまで進むか (ease-out: t=0.5 → 1-0.125=0.875)
+        force_down(true);
         for _ in 0..5 {
             rsift_mod_on_render(1920, 1080, 0.02);
         }
@@ -469,9 +462,9 @@ mod tests {
             (rsift_mod_get_fov_scale() - 4.0).abs() < 1e-6,
             "満倍率 4.0x"
         );
-        assert!(st.ease.lock().unwrap().held);
+        assert!(state().ease.lock().unwrap().held);
         // 解放: 同じ時間で同じカーブを逆走 (ease-out で戻る)
-        TEST_KEY_HELD.store(false, Ordering::Relaxed);
+        force_down(false);
         rsift_mod_on_render(1920, 1080, 0.02);
         let back_early = rsift_mod_get_fov_scale();
         assert!(back_early < 4.0, "解放で戻り開始: {back_early}");
@@ -488,17 +481,16 @@ mod tests {
     fn mid_animation_release_is_continuous_no_jump() {
         let _g = SERIAL.lock().unwrap();
         reset_state(400);
-        TEST_KEY_HELD.store(true, Ordering::Relaxed);
+        force_down(true);
         rsift_mod_on_render(0, 0, 0.05); // 50ms 押下 (t=0.125)
         let before = rsift_mod_get_fov_scale();
-        TEST_KEY_HELD.store(false, Ordering::Relaxed);
+        force_down(false);
         rsift_mod_on_render(0, 0, 0.0); // エッジのみ、時間経過なし
         let after = rsift_mod_get_fov_scale();
         assert!(
             (after - before).abs() < 1e-6,
             "方向転換の瞬間に値が跳ばない: {before} → {after}"
         );
-        // 戻り始めは単調減少
         let mut prev = after;
         for _ in 0..4 {
             rsift_mod_on_render(0, 0, 0.05);
@@ -515,7 +507,7 @@ mod tests {
         // 240fps 刻みで回して同じ到達値になること。
         let run = |dt: f32, steps: usize| -> f32 {
             reset_state(500);
-            TEST_KEY_HELD.store(true, Ordering::Relaxed);
+            force_down(true);
             for _ in 0..steps {
                 rsift_mod_on_render(0, 0, dt);
             }
@@ -536,7 +528,7 @@ mod tests {
     fn dt_guards_survive_nan_negative_and_huge() {
         let _g = SERIAL.lock().unwrap();
         reset_state(200);
-        TEST_KEY_HELD.store(true, Ordering::Relaxed);
+        force_down(true);
         rsift_mod_on_render(0, 0, f32::NAN); // 0 として扱う
         assert!((rsift_mod_get_fov_scale() - 1.0).abs() < 1e-6);
         rsift_mod_on_render(0, 0, -1.0); // 負は 0
@@ -551,10 +543,10 @@ mod tests {
         let _g = SERIAL.lock().unwrap();
         reset_state(200);
         *state().smooth.write().unwrap() = false;
-        TEST_KEY_HELD.store(true, Ordering::Relaxed);
+        force_down(true);
         rsift_mod_on_render(0, 0, 0.001);
         assert!((rsift_mod_get_fov_scale() - 4.0).abs() < 1e-6, "即時満倍率");
-        TEST_KEY_HELD.store(false, Ordering::Relaxed);
+        force_down(false);
         rsift_mod_on_render(0, 0, 0.001);
         assert!((rsift_mod_get_fov_scale() - 1.0).abs() < 1e-6, "即時等倍");
     }
@@ -573,7 +565,7 @@ mod tests {
         let mut body = std::fs::read_to_string(&path).unwrap();
         body.push_str("broken line\nfactor_e10=notanumber\nunknown_key=1\n");
         std::fs::write(&path, body).unwrap();
-        reset_state(200); // 既定に戻す
+        reset_state(200);
         load_config(state(), &path);
         assert_eq!(*state().factor_e10.read().unwrap(), 65);
         assert_eq!(*state().anim_ms.read().unwrap(), 123);
@@ -587,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn init_registers_menu_and_config_flow_changes_factor_end_to_end() {
+    fn init_registers_menu_keybind_and_full_keybind_path_engages_zoom() {
         let _g = SERIAL.lock().unwrap();
         reset_state(200);
         let mut registry = rsift_api::ModRegistry::new();
@@ -595,15 +587,15 @@ mod tests {
         let manifest = ModManifest {
             id: "rszoom".into(),
             name: "RsZoom".into(),
-            version: "1.0.0".into(),
+            version: "2.0.0".into(),
             author: "test".into(),
             description: "t".into(),
             target_rsift_version: TARGET_MINECRAFT_VERSION.into(),
-            capabilities: vec!["input_capture".into()],
+            capabilities: Vec::new(),
         };
         let mut ctx = ModContext::new(manifest, &mut registry, true, &runtime);
         assert_eq!(rsift_mod_init(&mut ctx), 0, "init success");
-        // Mods メニューに登録され、config 画面 builder が抱えている
+        // Mods メニュー登録 + config builder
         let entry = runtime
             .mod_menu
             .entries
@@ -612,10 +604,35 @@ mod tests {
             .get("rszoom")
             .cloned()
             .expect("menu へ登録");
-        let cfg = entry.cloth_config_screen.clone().expect("config builder");
-        // 設定画面を開く → セル値 40 (4.0x)
+        assert!(entry.cloth_config_screen.is_some(), "config builder を保持");
+        // バニラ KeyMapping 宣言が runtime に来ている (既定 C=0x43、category misc)
+        let regs = runtime.keybinds().registrations();
+        let zoom = regs
+            .iter()
+            .find(|r| r.name == ZOOM_KEY_NAME)
+            .expect("keybind 宣言");
+        assert_eq!(zoom.default_code, ZOOM_KEY_DEFAULT_CODE);
+        assert_eq!(zoom.category, ZOOM_KEY_CATEGORY);
+        // 宣言セルと mod の読むセルが同一次情報 (エージェント経路の写し先)
+        assert!(!state().zoom_down());
+        // 全結線: runtime への状態書き戻し (jvm の isDown 同期に相当) →
+        // 描画フレームでズームが立ち上がる
+        assert!(runtime.keybind_set_state(ZOOM_KEY_NAME, true));
+        for _ in 0..10 {
+            rsift_mod_on_render(0, 0, 0.02); // 200ms = 満倍率
+        }
+        assert!(
+            (rsift_mod_get_fov_scale() - 4.0).abs() < 1e-6,
+            "keybind 経路で満倍率に到達"
+        );
+        runtime.keybind_set_state(ZOOM_KEY_NAME, false);
+        for _ in 0..10 {
+            rsift_mod_on_render(0, 0, 0.02);
+        }
+        assert!((rsift_mod_get_fov_scale() - 1.0).abs() < 1e-6, "解放で復帰");
+        // config 書き戻し路も引き続き緑 (wave 201 からの統合退行防止)
+        let cfg = entry.cloth_config_screen.clone().expect("config");
         cfg.open_screen();
-        // ホスト画面行押下 (バニラボタン) → 値サイクル → sync → cfg 保存
         let dir = std::env::temp_dir().join(format!("rszoom_ui_{}", std::process::id()));
         std::env::set_var("RSZOOM_CONFIG_PATH", dir.join("rszoom.cfg"));
         rsift_api::press_row("Zoom 倍率|int:20:100:40");
@@ -624,11 +641,12 @@ mod tests {
             44,
             "1 押下で step4 (0.4x) 上昇"
         );
-        assert!(
-            dir.join("rszoom.cfg").is_file(),
-            "on_change で cfg が保存される"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(dir.join("rszoom.cfg").is_file(), "on_change で保存");
+        let _ = fs_remove(&dir);
+    }
+
+    fn fs_remove(dir: &PathBuf) {
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
