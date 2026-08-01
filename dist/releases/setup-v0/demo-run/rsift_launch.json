@@ -1,0 +1,12 @@
+{
+  "schema": "rsift.launch/1",
+  "target": "linux",
+  "arch": "x86_64",
+  "macos_version": null,
+  "renderer": "vulkan",
+  "engine_lib": "librsift.so",
+  "graphics_lib": "librsift_gfx_vulkan.so",
+  "load_libs": ["librsift.so", "librsift_gfx_vulkan.so"],
+  "prepared": true,
+  "notes": []
+}

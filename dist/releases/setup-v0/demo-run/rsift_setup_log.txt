@@ -1,0 +1,13 @@
+# rsift-setup 実行ログ
+# schema=rsift.setup.log/1 started_unix=1785565231 exit_code=0
+[ok  ] env          os=linux arch=x86_64 dir=/tmp/rel/demo-run
+[ok  ] selftest     sha256 empty vector
+[ok  ] selftest     sha256 abc vector
+[ok  ] selftest     macos version parse
+[ok  ] selftest     内蔵自己診断 全緑
+[ok  ] scan         2 個の lib を検出
+[ok  ] lib          librsift.so size=23 sha256=83d211e199b79d4be8afe3fe05f652a7d52cb4c2f77b0988ceafc2951f2b4356
+[ok  ] lib          librsift_gfx_vulkan.so size=27 sha256=2edc968f6fb06f40d30b8ae949b1d7db4ac3284339b7b31503822e602ba5a792
+[warn] verify       manifest 未登録 (初期配布): ハッシュを記録のみ。次回リリースで pin されます
+[ok  ] decide       renderer=vulkan engine=Some("librsift.so") gfx=Some("librsift_gfx_vulkan.so") ready=true
+[ok  ] config       /tmp/rel/demo-run/rsift_launch.json を生成

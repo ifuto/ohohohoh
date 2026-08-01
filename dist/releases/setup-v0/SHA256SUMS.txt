@@ -1,0 +1,3 @@
+0bc669d387c9aa8038be2861bb315f14f96bbbe7e267934f99c6a541a141c49b  rsift-setup
+568f931490dccff8a84f664d32a645ef4bff188d275d63caaf2c9c6ed17c13de  demo-run/rsift_setup_log.txt
+3a8b2685ebb77632ab4e6ee5191df2b4e15fcee2bed1b7a6cd9310285025fd2d  demo-run/rsift_setup_log.jsonl

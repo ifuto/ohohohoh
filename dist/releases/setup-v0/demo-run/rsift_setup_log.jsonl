@@ -1,0 +1,12 @@
+{"schema":"rsift.setup.log/1","started_unix":1785565231,"exit_code":0}
+{"step":"env","status":"ok","detail":"os=linux arch=x86_64 dir=/tmp/rel/demo-run"}
+{"step":"selftest","status":"ok","detail":"sha256 empty vector"}
+{"step":"selftest","status":"ok","detail":"sha256 abc vector"}
+{"step":"selftest","status":"ok","detail":"macos version parse"}
+{"step":"selftest","status":"ok","detail":"内蔵自己診断 全緑"}
+{"step":"scan","status":"ok","detail":"2 個の lib を検出"}
+{"step":"lib","status":"ok","detail":"librsift.so size=23 sha256=83d211e199b79d4be8afe3fe05f652a7d52cb4c2f77b0988ceafc2951f2b4356"}
+{"step":"lib","status":"ok","detail":"librsift_gfx_vulkan.so size=27 sha256=2edc968f6fb06f40d30b8ae949b1d7db4ac3284339b7b31503822e602ba5a792"}
+{"step":"verify","status":"warn","detail":"manifest 未登録 (初期配布): ハッシュを記録のみ。次回リリースで pin されます"}
+{"step":"decide","status":"ok","detail":"renderer=vulkan engine=Some(\"librsift.so\") gfx=Some(\"librsift_gfx_vulkan.so\") ready=true"}
+{"step":"config","status":"ok","detail":"/tmp/rel/demo-run/rsift_launch.json を生成"}
