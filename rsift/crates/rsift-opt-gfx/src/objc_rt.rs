@@ -530,6 +530,7 @@ impl ObjcRt for NativeObjcRt {
         region: MtlRegion,
         level: u64,
     ) {
+        let sel = unsafe { sel_register_name_link(sel.as_ptr()) };
         unsafe {
             let f: extern "C" fn(ObjcId, Sel, *mut c_void, u64, MtlRegion, u64) =
                 core::mem::transmute(objc_msgSend_link as *mut c_void);
@@ -575,6 +576,7 @@ impl ObjcRt for NativeObjcRt {
         bytes: ObjcId,
         bpr: u64,
     ) {
+        let sel = unsafe { sel_register_name_link(sel.as_ptr()) };
         unsafe {
             let f: extern "C" fn(ObjcId, Sel, MtlRegion, u64, ObjcId, u64) =
                 core::mem::transmute(objc_msgSend_link as *mut c_void);

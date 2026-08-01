@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 7
+- run: 8
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm) +
   2 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay)** をビルドし、
   zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
