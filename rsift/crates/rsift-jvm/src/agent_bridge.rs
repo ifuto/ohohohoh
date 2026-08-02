@@ -100,26 +100,36 @@ pub fn agent_premain(agent_args: &str) {
         }
         Err(e) => agent_log_warn("agent_premain", &format!("mod candidate scan failed: {e}")),
     }
-    if let Some(home) = agent_opts::dll_directory() {
-        match rsift_api::native_loader::restore_official_mods(&mod_dir, &home) {
-            Ok(out) => {
-                if !out.restored.is_empty() {
-                    agent_log_step(
-                        "agent_premain",
-                        &format!(
-                            "official mods auto-restored from rsift home: {:?}",
-                            out.restored
-                        ),
-                    );
-                } else if let Some(reason) = out.skip_reason {
-                    agent_log_step("agent_premain", &format!("official mod restore: {reason}"));
-                }
+    // wave 211 HG: 復旧源を複数化 (rsift home → バニラ .minecraft/mods →
+    // バニラ version dir)。実機ユーザーは dll を手動差替えする運用履歴があり
+    // (ログ #2→#5 の dll size 遷移)、natives に公式 mod が無い実機では
+    // 単一源のままでは復旧できない。バニラ側は setup の launcher flow が
+    // 配備済み (ログ #2 で機械確認) のため、そこから拾えば実機が収束する。
+    let restore_sources = rsift_api::native_loader::default_restore_source_dirs(
+        agent_opts::dll_directory().as_deref(),
+    );
+    match rsift_api::native_loader::restore_official_mods_search(&mod_dir, &restore_sources) {
+        Ok(out) => {
+            if !out.restored.is_empty() {
+                agent_log_step(
+                    "agent_premain",
+                    &format!(
+                        "official mods auto-restored from {}: {:?}",
+                        out.source_dir
+                            .as_ref()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| "(unknown)".to_string()),
+                        out.restored
+                    ),
+                );
+            } else if let Some(reason) = out.skip_reason {
+                agent_log_step("agent_premain", &format!("official mod restore: {reason}"));
             }
-            Err(e) => agent_log_warn(
-                "agent_premain",
-                &format!("official mod restore failed (non-fatal): {e}"),
-            ),
         }
+        Err(e) => agent_log_warn(
+            "agent_premain",
+            &format!("official mod restore failed (non-fatal): {e}"),
+        ),
     }
     if !mod_dir.exists() {
         agent_log("[RsiftAgent] WARN mod_dir does not exist");

@@ -86,11 +86,13 @@ pub struct OfficialModRestore {
     pub restored: Vec<String>,
     /// 復旧が行われなかった理由 (復旧できた場合は None)。
     pub skip_reason: Option<&'static str>,
+    /// 実際にコピー元として使ったディレクトリ (復旧が行われた場合のみ Some)。
+    /// wave 211 HG: 複数源探索で「どの源から拾ったか」の監査情報。
+    pub source_dir: Option<PathBuf>,
 }
 
-/// 公式 mod を `home_dir` (rsift home / natives) から `mod_dir` へ欠損分のみ
-/// コピーする。非破壊 (上書き禁止) で冪等 (marker 管理)。
-pub fn restore_official_mods(
+/// 単一源コア。`restore_official_mods` と複数源探索の共通本体。
+fn restore_official_mods_core(
     mod_dir: &Path,
     home_dir: &Path,
 ) -> Result<OfficialModRestore, String> {
@@ -98,6 +100,7 @@ pub fn restore_official_mods(
         Ok(OfficialModRestore {
             restored: Vec::new(),
             skip_reason: Some(reason),
+            source_dir: None,
         })
     };
     // 防御: 同一 dir 指定は「復旧」ではない。canonicalize は失敗しうるので
@@ -161,6 +164,99 @@ pub fn restore_official_mods(
     Ok(OfficialModRestore {
         restored,
         skip_reason: None,
+        source_dir: Some(home_dir.to_path_buf()),
+    })
+}
+
+/// 公式 mod を `home_dir` (rsift home / natives) から `mod_dir` へ欠損分のみ
+/// コピーする。非破壊 (上書き禁止) で冪等 (marker 管理)。
+pub fn restore_official_mods(
+    mod_dir: &Path,
+    home_dir: &Path,
+) -> Result<OfficialModRestore, String> {
+    restore_official_mods_core(mod_dir, home_dir)
+}
+
+/// バニラの既定 `.minecraft` ディレクトリ (環境変数由来・存在検査は行わない)。
+/// wave 211 HG: 自動復旧の副次源解決に使用。実機ユーザーの setup は
+/// launcher flow (バニラ側) と prism flow (インスタンス側) の**両方**に
+/// 公式 mod を配備するため、natives 側に公式 mod が無い実機でもバニラ側に
+/// 残っていることがある (実機 #2 setup ログで両方への配備を機械確認)。
+pub fn vanilla_minecraft_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join(".minecraft"))
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|h| {
+            PathBuf::from(h)
+                .join("Library")
+                .join("Application Support")
+                .join("minecraft")
+        })
+    } else {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".minecraft"))
+    }
+}
+
+/// 自動復旧の探索源 (優先度順): rsift home (agent dll 所在) →
+/// バニラ `.minecraft/mods` → バニラ version dir (`versions/rsift-<mc>`)。
+/// 全て「rsift 自身が過去に配備した固定 3 名のみをコピー元にしうる場所」であり、
+/// 任意パスを源にする経路は存在しない (least-privilege 維持)。
+pub fn default_restore_source_dirs(home_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(h) = home_dir {
+        dirs.push(h.to_path_buf());
+    }
+    if let Some(vm) = vanilla_minecraft_dir() {
+        dirs.push(vm.join("mods"));
+        dirs.push(
+            vm.join("versions")
+                .join(format!("rsift-{TARGET_MINECRAFT_VERSION}")),
+        );
+    }
+    dirs
+}
+
+/// wave 211 HG: 複数源フォールバック復旧。`source_dirs` を優先度順に試し、
+/// **公式 mod が見つかった最初の源からのみ**コピーする (探索打切)。
+/// 単一源版の全保証 (上書き禁止/marker 尊重/modsec 非迂回) を継承する。
+/// mod_dir 側の確定状態 (marker 残存・全本揃い) が検出された時点でも打切る
+/// (後続の源を試しても結果が変わらないため)。
+pub fn restore_official_mods_search(
+    mod_dir: &Path,
+    source_dirs: &[PathBuf],
+) -> Result<OfficialModRestore, String> {
+    if source_dirs.is_empty() {
+        return Ok(OfficialModRestore {
+            restored: Vec::new(),
+            skip_reason: Some("no restore sources"),
+            source_dir: None,
+        });
+    }
+    for src in source_dirs {
+        let out = restore_official_mods_core(mod_dir, src)?;
+        if !out.restored.is_empty() {
+            return Ok(out);
+        }
+        match out.skip_reason {
+            // mod_dir 側の確定状態: 後続の源を試しても同じ結果になるため打切
+            Some(r)
+                if r == "restore marker present — user intent respected"
+                    || r == "all official mods already present" =>
+            {
+                return Ok(OfficialModRestore {
+                    restored: Vec::new(),
+                    skip_reason: Some(r),
+                    source_dir: None,
+                });
+            }
+            // 源側の問題 (公式 mod 無し / home==mods 防御): 次の源へ進む
+            _ => continue,
+        }
+    }
+    Ok(OfficialModRestore {
+        restored: Vec::new(),
+        skip_reason: Some("no official mods in any source dir"),
+        source_dir: None,
     })
 }
 
@@ -623,5 +719,146 @@ mod tests {
             second.skip_reason,
             Some("restore marker present — user intent respected")
         );
+    }
+
+    // ---- wave 211 HG: 複数源フォールバック ----
+
+    #[test]
+    fn hg_search_falls_back_to_second_source() {
+        let src1 = tmpdir("src1"); // 公式 mod 無し (実機の rsift-natives 相当)
+        let src2 = tmpdir("src2"); // 公式 mod 有り (実機のバニラ .minecraft\mods 相当)
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(src1.clone());
+        let _g2 = DirGuard(src2.clone());
+        let _g3 = DirGuard(mods.clone());
+        plant_official_mods(&src2);
+
+        let out = restore_official_mods_search(&mods, &[src1.clone(), src2.clone()]).unwrap();
+        assert_eq!(out.restored.len(), 3, "第2源から復旧される");
+        assert_eq!(out.source_dir, Some(src2.clone()), "実際に使われた源を報告");
+        for name in official_names() {
+            assert_eq!(
+                fs::read(mods.join(&name)).unwrap(),
+                format!("OFFICIAL:{name}").as_bytes()
+            );
+        }
+    }
+
+    #[test]
+    fn hg_search_prefers_first_available_source() {
+        let src1 = tmpdir("src1");
+        let src2 = tmpdir("src2");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(src1.clone());
+        let _g2 = DirGuard(src2.clone());
+        let _g3 = DirGuard(mods.clone());
+        plant_official_mods(&src1);
+        plant_official_mods(&src2);
+
+        let out = restore_official_mods_search(&mods, &[src1.clone(), src2]).unwrap();
+        assert_eq!(out.restored.len(), 3);
+        assert_eq!(
+            out.source_dir,
+            Some(src1),
+            "最初に成立した源を使う (探索打切)"
+        );
+    }
+
+    #[test]
+    fn hg_search_empty_when_no_source_has_official() {
+        let src1 = tmpdir("src1");
+        let src2 = tmpdir("src2");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(src1.clone());
+        let _g2 = DirGuard(src2.clone());
+        let _g3 = DirGuard(mods.clone());
+
+        let out = restore_official_mods_search(&mods, &[src1, src2]).unwrap();
+        assert!(out.restored.is_empty());
+        assert_eq!(out.skip_reason, Some("no official mods in any source dir"));
+        assert!(out.source_dir.is_none());
+        assert!(!mods.join(OFFICIAL_MOD_MARKER).exists());
+    }
+
+    #[test]
+    fn hg_search_marker_stops_scan_regardless_of_sources() {
+        let src1 = tmpdir("src1");
+        let src2 = tmpdir("src2");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(src1.clone());
+        let _g2 = DirGuard(src2.clone());
+        let _g3 = DirGuard(mods.clone());
+        plant_official_mods(&src2);
+        fs::write(mods.join(OFFICIAL_MOD_MARKER), b"restored=x\n").unwrap();
+
+        let out = restore_official_mods_search(&mods, &[src1, src2]).unwrap();
+        assert!(out.restored.is_empty());
+        assert_eq!(
+            out.skip_reason,
+            Some("restore marker present — user intent respected")
+        );
+        for name in official_names() {
+            assert!(!mods.join(&name).exists());
+        }
+    }
+
+    #[test]
+    fn hg_search_source_equal_to_mod_dir_does_not_block_fallback() {
+        let mods = tmpdir("mods");
+        let src2 = tmpdir("src2");
+        let _g1 = DirGuard(mods.clone());
+        let _g2 = DirGuard(src2.clone());
+        plant_official_mods(&src2);
+        // 第1源が mods dir 自身 (= 防御 reject) でも、第2源へ進む
+        let out = restore_official_mods_search(&mods, &[mods.clone(), src2.clone()]).unwrap();
+        assert_eq!(out.restored.len(), 3);
+        assert_eq!(out.source_dir, Some(src2));
+    }
+
+    #[test]
+    fn hg_default_restore_source_dirs_order_pin() {
+        let home = PathBuf::from("Z:/rsift-natives");
+        let dirs = default_restore_source_dirs(Some(&home));
+        assert_eq!(dirs[0], home, "第1源は rsift home (natives)");
+        // バニラ既定パスが環境変数から解決できる環境なら 2 源追加
+        if vanilla_minecraft_dir().is_some() {
+            assert_eq!(dirs.len(), 3);
+            assert!(
+                dirs[1].ends_with("mods"),
+                "第2源 = バニラ mods: {:?}",
+                dirs[1]
+            );
+            assert!(
+                dirs[2].ends_with(Path::new("versions").join("rsift-1.21.11")),
+                "第3源 = バニラ version dir: {:?}",
+                dirs[2]
+            );
+        } else {
+            assert_eq!(dirs.len(), 1);
+        }
+        // home 未指定でもバニラ源は返る
+        let bare = default_restore_source_dirs(None);
+        assert!(!bare.iter().any(|d| d == &PathBuf::from("Z:/rsift-natives")));
+    }
+
+    #[test]
+    fn hg_vanilla_minecraft_dir_platform_shape_pin() {
+        // env が揃っている場合の形状 pin (実機の既定ランチャーパス構成)
+        if let Some(d) = vanilla_minecraft_dir() {
+            if cfg!(target_os = "windows") {
+                assert!(d.ends_with(".minecraft"), "{d:?}");
+            } else if cfg!(target_os = "macos") {
+                assert!(
+                    d.ends_with(
+                        Path::new("Library")
+                            .join("Application Support")
+                            .join("minecraft")
+                    ),
+                    "{d:?}"
+                );
+            } else {
+                assert!(d.ends_with(".minecraft"), "{d:?}");
+            }
+        }
     }
 }

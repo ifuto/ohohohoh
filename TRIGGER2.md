@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 21  (wave 210 HF 同梱 + ユーザー向け README_JA 刷新: 「Mods 一覧が空の場合の自動復旧」の説明節を追加 (公式 Mod 自動補充の挙動・ログの見方 `mod candidates`/`official mods auto-restored`/`mods loaded OK`・記録印 `.rsift-official-mods-restored` の意味) + rsift-bootstrap.log の格納場所を実測値に修正 (Prism は `<instance>/rsift-natives/` が本命)。コードは run 20 (wave 210 HF) と同一、同梱ドキュメントのみ更新)
+- run: 22  (wave 211 HG: 自動復旧の複数源フォールバック版を同梱 — natives に公式 mod が無い実機 (dll 手動差替え運用 = 実機ログ dll size 遷移で機械確定) でも、バニラ側 .minecraft/mods ・ versions/rsift-1.21.11 から公式 3 本を非破壊復旧。探索源順 pin + source_dir 監査ログ。実 JVM ハーネス D/E 機械確認 + F3 GREEN 維持。README_JA に補充元 3 源の優先度を明記)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /

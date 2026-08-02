@@ -80,8 +80,15 @@ Mod ロードの成否) が全部分かります。
 
 同梱の公式 Mod (RsGraphics / RsReplay / RsZoom) は、通常は setup が
 `<mods フォルダ>` に配置します。万が一そこが空でも、**最新版ではゲーム起動時に
-ゲーム側の agent が自分の置き場所 (rsift-natives) から公式 3 本を自動で補充します**
-(ログに `official mods auto-restored` の行が出ます)。つまり:
+ゲーム側の agent が公式 3 本を自動で補充します**
+(ログに `official mods auto-restored` の行が出ます)。
+補充元は次の順で探します (ここには setup が置いた本物が残っています):
+
+1. ゲーム側 agent の置き場所 (Prism なら `<instance>/rsift-natives/`)
+2. バニラランチャー側の `mods` フォルダ (`%APPDATA%\.minecraft\mods`)
+3. バニラランチャー側の `versions\rsift-1.21.11` フォルダ
+
+つまり:
 
 - setup のあと mods フォルダが空になってしまっても、**起動すれば自動で直ります**
 - 直ったかどうかは `rsift-bootstrap.log` の次の行で分かります:
