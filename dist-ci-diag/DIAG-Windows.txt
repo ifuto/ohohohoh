@@ -1,31 +1,32 @@
-== DIAG Windows exit=0 time=2026-08-02T02:43:42Z ==
+FATAL: cargo build -p rsift-setup --release --locked (exit=101)
+    Updating crates.io index
+warning: spurious network error (3 tries remaining): [28] Timeout was reached (Failed to connect to index.crates.io port 443 after 21072 ms: Could not connect to server)
+warning: spurious network error (2 tries remaining): [28] Timeout was reached (Failed to connect to index.crates.io port 443 after 21042 ms: Could not connect to server)
+warning: spurious network error (1 try remaining): [28] Timeout was reached (Failed to connect to index.crates.io port 443 after 21034 ms: Could not connect to server)
+error: failed to get `anyhow` as a dependency of package `rsift-launcher v0.1.0-alpha.1.21.11 (D:\a\rsift\rsift\rsift\crates\rsift-launcher)`
+
+Caused by:
+  failed to load source for dependency `anyhow`
+
+Caused by:
+  unable to update registry `crates-io`
+
+Caused by:
+  download of config.json failed
+
+Caused by:
+  [28] Timeout was reached (Failed to connect to index.crates.io port 443 after 22051 ms: Could not connect to server)
+== DIAG Windows exit=101 time=2026-08-02T03:42:17Z ==
 -- target/release cdylib 候補 --
+ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
--rwxr-xr-x 2 runneradmin 197121 6318080 Aug  2 02:43 target/release/rsgraphics.dll
--rwxr-xr-x 2 runneradmin 197121  104960 Aug  2 02:38 target/release/rsift_api.dll
--rwxr-xr-x 2 runneradmin 197121 6707200 Aug  2 02:43 target/release/rsift_jvm.dll
--rwxr-xr-x 2 runneradmin 197121 1033728 Aug  2 02:43 target/release/rsreplay.dll
--rwxr-xr-x 2 runneradmin 197121  557056 Aug  2 02:43 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 14708
-drwxr-xr-x 1 runneradmin 197121        0 Aug  2 02:43 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  2 02:35 ..
--rw-r--r-- 1 runneradmin 197121      826 Aug  2 02:43 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 15042560 Aug  2 02:43 rsift-bundle-windows-x64.zip
-drwxr-xr-x 1 runneradmin 197121        0 Aug  2 02:43 selftest-win
-drwxr-xr-x 1 runneradmin 197121        0 Aug  2 02:43 windows
+total 8
+drwxr-xr-x 1 runneradmin 197121    0 Aug  2 03:42 .
+drwxr-xr-x 1 runneradmin 197121    0 Aug  2 03:40 ..
+-rw-r--r-- 1 runneradmin 197121 1520 Aug  2 03:42 DIAG-Windows.txt
 -- selftest result --
-selftest_exit=0
-dist-ci/selftest-win/README_JA.md
-dist-ci/selftest-win/result.txt
-dist-ci/selftest-win/rsgraphics.dll
-dist-ci/selftest-win/rsift-bootstrap.jar
-dist-ci/selftest-win/rsift-setup.exe
-dist-ci/selftest-win/rsift.dll
-dist-ci/selftest-win/rsift_jvm.dll
-dist-ci/selftest-win/rsift_launch.json
-dist-ci/selftest-win/rsift_setup_log.jsonl
-dist-ci/selftest-win/rsift_setup_log.txt
+cat: 'dist-ci/selftest-*/result.txt': No such file or directory
