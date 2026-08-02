@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 12
+- run: 13  (run 12: jar パスを `rsift/bootstrap/...` と誤記し `cd rsift` 後のパス解決で ubuntu/macos/windows 全滅 → `bootstrap/...` に修正。既存 cp 行と同じ相対基準)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /
@@ -91,7 +91,7 @@ case "$RUNNER_OS" in
     cp target/release/rsgraphics.dll   dist-ci/windows/rsgraphics.dll
     cp target/release/rsreplay.dll     dist-ci/windows/rsreplay.dll
     cp target/release/rszoom.dll       dist-ci/windows/rszoom.dll
-    cp rsift/bootstrap/prebuilt/rsift-bootstrap.jar dist-ci/windows/rsift-bootstrap.jar
+    cp bootstrap/prebuilt/rsift-bootstrap.jar dist-ci/windows/rsift-bootstrap.jar
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/windows/README_JA.md
     (cd dist-ci/windows && tar -a -c -f ../rsift-bundle-windows-x64.zip .)
     ;;
@@ -114,7 +114,7 @@ case "$RUNNER_OS" in
       cp "target/$T/release/librsgraphics.dylib" "$APP/MacOS/librsgraphics.dylib"
       cp "target/$T/release/librsreplay.dylib"   "$APP/MacOS/librsreplay.dylib"
       cp "target/$T/release/librszoom.dylib"     "$APP/MacOS/librszoom.dylib"
-      cp "rsift/bootstrap/prebuilt/rsift-bootstrap.jar" "$APP/MacOS/rsift-bootstrap.jar"
+      cp "bootstrap/prebuilt/rsift-bootstrap.jar" "$APP/MacOS/rsift-bootstrap.jar"
       cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -146,7 +146,7 @@ PLIST
     cp target/release/librsgraphics.so dist-ci/linux/librsgraphics.so
     cp target/release/librsreplay.so   dist-ci/linux/librsreplay.so
     cp target/release/librszoom.so     dist-ci/linux/librszoom.so
-    cp rsift/bootstrap/prebuilt/rsift-bootstrap.jar dist-ci/linux/rsift-bootstrap.jar
+    cp bootstrap/prebuilt/rsift-bootstrap.jar dist-ci/linux/rsift-bootstrap.jar
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/linux/README_JA.md
     (cd dist-ci/linux && zip -qr ../rsift-bundle-linux-x64.zip .)
     ;;
