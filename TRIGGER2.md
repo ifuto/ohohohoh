@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 19  (wave 209 HE: 実機 #5「bridge 準備完了後も全 vanilla クラス CNFE 永続」の根治版を同梱 — ClassLoad イベント jclass jcache (ローダー非依存) + f3 静的 spec 先行登録 (RefTrans 非依存) + CNFE throttle。2-loader ハーネスで RED→GREEN 機械証明 = 「HB_F3_LINES=[base line, RsGraphics Render (Rsift)]」)
+- run: 20  (wave 210 HF: 実機 #4/#5「mods loaded OK: []」(mods フォルダ空) の根治版を同梱 — 公式 Mod 自動復旧 (rsift home の固定 3 名のみ非破壊コピー・marker 冪等・modsec 非迂回) + mods 候補列挙ログ + 空時日本語ガイド行 + rsift-setup prism 配備ログ対称化。実 JVM ハーネス A/B/C 機械確認 + F3 GREEN 維持。前回分 = wave 209 HE (ClassLoad jcache + f3 spec 先行登録 + CNFE throttle) 完全同梱の上に本 wave を積層)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /

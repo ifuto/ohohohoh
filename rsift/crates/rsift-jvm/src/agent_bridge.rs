@@ -80,6 +80,47 @@ pub fn agent_premain(agent_args: &str) {
     );
     let mod_dir = agent_opts::resolve_mod_dir(agent_args);
     agent_log_step("agent_premain", &format!("mod_dir={:?}", mod_dir));
+    // wave 210 HF: mods パイプラインの可観測性 + 公式 mod 自動復旧 (存在検査の
+    // **前**に置く — mods dir 自体が削除された実機でも自壊復旧できるように)。
+    // 実機では mods フォルダ空の `mods loaded OK: []` が再現され、setup 側
+    // Prism 配備ログ欠落と併せて切り分け不能だった (launch ログ #4/#5)。
+    // ここでは候補列挙を毎回記録し、mods が欠けている場合は rsift home
+    // (natives = この agent dll の所在) から固定 3 名だけを**非破壊**コピー
+    // する (既存上書き禁止・marker 冪等・modsec ゲートは通常どおり適用)。
+    match rsift_api::native_loader::discover_mod_paths(&mod_dir) {
+        Ok(paths) => {
+            let names: Vec<String> = paths
+                .iter()
+                .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                .collect();
+            agent_log_step(
+                "agent_premain",
+                &format!("mod candidates ({}): {:?}", names.len(), names),
+            );
+        }
+        Err(e) => agent_log_warn("agent_premain", &format!("mod candidate scan failed: {e}")),
+    }
+    if let Some(home) = agent_opts::dll_directory() {
+        match rsift_api::native_loader::restore_official_mods(&mod_dir, &home) {
+            Ok(out) => {
+                if !out.restored.is_empty() {
+                    agent_log_step(
+                        "agent_premain",
+                        &format!(
+                            "official mods auto-restored from rsift home: {:?}",
+                            out.restored
+                        ),
+                    );
+                } else if let Some(reason) = out.skip_reason {
+                    agent_log_step("agent_premain", &format!("official mod restore: {reason}"));
+                }
+            }
+            Err(e) => agent_log_warn(
+                "agent_premain",
+                &format!("official mod restore failed (non-fatal): {e}"),
+            ),
+        }
+    }
     if !mod_dir.exists() {
         agent_log("[RsiftAgent] WARN mod_dir does not exist");
         return;
@@ -114,6 +155,24 @@ pub fn agent_premain(agent_args: &str) {
                 "agent_premain",
                 &format!("mods loaded OK: {:?}", result.loaded),
             );
+            // wave 210 HF: ロード 0 件かつフォルダ自体が空の場合は、非エンジニア
+            // でも自己解決できる日本語ガイド行を残す (沈黙の「空 = 正常」誤認を根治)。
+            // ファイルがあるのに 0 件ロードの場合は modsec/リンカ由来の個別
+            // エラーが既に残っているのでガイドは出さない (誤誘導防止)。
+            if result.loaded.is_empty() {
+                let still_empty = rsift_api::native_loader::discover_mod_paths(&mod_dir)
+                    .map(|p| p.is_empty())
+                    .unwrap_or(false);
+                if still_empty {
+                    agent_log_step(
+                        "agent_premain",
+                        &format!(
+                            "mods フォルダにロード可能な mod がありません: {} — 公式 mod (rsgraphics/rsreplay/rszoom) を使うには rsift-setup を再実行するか、mod ファイルをこのフォルダにコピーしてください",
+                            mod_dir.display()
+                        ),
+                    );
+                }
+            }
         }
         Err(e) => agent_log_err("agent_premain", &format!("mod load FAILED: {}", e)),
     }

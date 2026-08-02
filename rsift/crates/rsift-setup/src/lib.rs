@@ -744,6 +744,20 @@ fn self_test_steps(log: &mut SetupLog) -> bool {
 
 /// セットアップ本体。ログ 2 ファイルを必ず (失敗時も) 書いてから終了コードを返す。
 /// --dry-run では構成 JSON を書かない (ログは書く)。
+/// wave 210 HF: prism ステップの mods/natives 配備サマリ行 (launcher 側の
+/// `version_dir=... natives={:?} mods={:?}` 行と対称)。実機 #4/#5 で
+/// 「setup 成功 -> でも mods フォルダ空」が起きた際、prism 側は配備結果を
+/// ログに残さず切り分け不能だった構造的欠陥の根治。#6 以降のセットアップ
+/// ログでは `mods=[...]` の有無で配備成否が一目で判別できる。
+pub fn prism_summary_line(out: &PrismOutcome) -> String {
+    format!(
+        "instance_dir={} natives={:?} mods={:?}",
+        out.instance_dir.display(),
+        out.natives_deployed,
+        out.mods_deployed
+    )
+}
+
 pub fn run(cli: &Cli) -> i32 {
     let mut log = SetupLog::new();
     log.step(
@@ -923,6 +937,8 @@ pub fn run(cli: &Cli) -> i32 {
                     for n in &out.notes {
                         log.step("prism", status, n.clone());
                     }
+                    // wave 210 HF: launcher 側と対称に mods/natives 配備結果を残す。
+                    log.step("prism", status, prism_summary_line(&out));
                     if out.foreign_conflict {
                         return finish(&cli.dir, log, EXIT_IO);
                     }
@@ -1896,6 +1912,36 @@ pub fn setup_prism(
 mod tests {
     use super::*;
     use std::fs;
+
+    // wave 210 HF pin: prism ステップの配備サマリ行は mods/natives/instance_dir
+    // を必ず含む (実機「setup 成功 -> mods 空」の切り分け不能を二度と起こさない)。
+    #[test]
+    fn hf_prism_summary_line_lists_deployed_mods() {
+        let out = PrismOutcome {
+            instance_created: true,
+            foreign_conflict: false,
+            instance_dir: PathBuf::from("C:/instances/rsift"),
+            natives_deployed: vec!["rsift_jvm.dll".to_string(), "rsift.dll".to_string()],
+            mods_deployed: vec!["rsgraphics.dll".to_string(), "rsreplay.dll".to_string()],
+            notes: vec![],
+        };
+        let line = prism_summary_line(&out);
+        assert!(line.contains("instance_dir=C:/instances/rsift"));
+        assert!(line.contains("natives=[\"rsift_jvm.dll\", \"rsift.dll\"]"));
+        assert!(line.contains("mods=[\"rsgraphics.dll\", \"rsreplay.dll\"]"));
+        // 空配備でも省略せず mods=[] と出ること (0 件の沈黙こそが観測欠陥だった)
+        let empty = PrismOutcome {
+            instance_created: true,
+            foreign_conflict: false,
+            instance_dir: PathBuf::from("C:/instances/rsift"),
+            natives_deployed: vec![],
+            mods_deployed: vec![],
+            notes: vec![],
+        };
+        let line2 = prism_summary_line(&empty);
+        assert!(line2.contains("mods=[]"));
+        assert!(line2.contains("natives=[]"));
+    }
 
     fn tmpdir(tag: &str) -> PathBuf {
         let d =

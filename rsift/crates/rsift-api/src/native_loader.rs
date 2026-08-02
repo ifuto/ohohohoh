@@ -39,6 +39,131 @@ pub fn normalize_mod_id(stem: &str) -> String {
     s.to_string()
 }
 
+/// wave 210 HF: 公式 Mod 自動復旧。
+///
+/// 背景 (実機観測): rsift-setup は公式 mod (rsgraphics/rsreplay/rszoom) を
+/// `<game>/mods/` へ配備するが、その配備ログは Prism 経路では残らず、実機では
+/// ゲーム起動時に `mods loaded OK: []` (mods フォルダ空) という状態が再現され
+/// た。復旧にはユーザーによる手作業が必要で、非エンジニアには自力切り分けが
+/// 困難だった。エージェント自身のインストールディレクトリ (rsift home =
+/// rsift-natives) には公式 mod が一式あるので、**ゲーム起動時に自壊復旧する**。
+///
+/// 権限境界 (least-privilege / 破壊不変条件):
+/// - コピー元は固定 3 名のみ (`official_mod_file_names`)。任意ファイル・
+///   path traversal の余地はゼロ。
+/// - 既存ファイルは絶対に上書きしない (同名が既にあればその mod はスキップ)。
+/// - 自動復旧の事実は marker ファイル (`OFFICIAL_MOD_MARKER`) に記録し、
+///   marker が残る限り二度と実行しない — ユーザーが自動復旧後に公式 mod を
+///   消去した場合、その意思を恒久的に尊重する。
+/// - 復旧された mod も通常経路 (modsec vetting 含む) でロードされるため、
+///   セキュリティゲートの迂回にはならない。
+pub const OFFICIAL_MOD_IDS: [&str; 3] = ["rsgraphics", "rsreplay", "rszoom"];
+
+/// 自動復旧の記録用 marker (mods フォルダ直下のドットファイル)。
+/// platform ext ではないため mod discover には決して拾われない。
+pub const OFFICIAL_MOD_MARKER: &str = ".rsift-official-mods-restored";
+
+/// rsift-setup が同梱・配備する公式 mod のプラットフォーム別ファイル名。
+/// setup 側の命名規則 (rsift-setup/src/lib.rs の LIB_* 定数) と厳密一致が必須。
+pub fn official_mod_file_names() -> [&'static str; 3] {
+    if cfg!(target_os = "windows") {
+        ["rsgraphics.dll", "rsreplay.dll", "rszoom.dll"]
+    } else if cfg!(target_os = "macos") {
+        [
+            "librsgraphics.dylib",
+            "librsreplay.dylib",
+            "librszoom.dylib",
+        ]
+    } else {
+        ["librsgraphics.so", "librsreplay.so", "librszoom.so"]
+    }
+}
+
+/// `restore_official_mods` の結果。`skip_reason` は監査ログ用の機械判別子。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfficialModRestore {
+    /// 実際にコピーしたファイル名 (mods フォルダ内の名前)。
+    pub restored: Vec<String>,
+    /// 復旧が行われなかった理由 (復旧できた場合は None)。
+    pub skip_reason: Option<&'static str>,
+}
+
+/// 公式 mod を `home_dir` (rsift home / natives) から `mod_dir` へ欠損分のみ
+/// コピーする。非破壊 (上書き禁止) で冪等 (marker 管理)。
+pub fn restore_official_mods(
+    mod_dir: &Path,
+    home_dir: &Path,
+) -> Result<OfficialModRestore, String> {
+    let skip = |reason: &'static str| {
+        Ok(OfficialModRestore {
+            restored: Vec::new(),
+            skip_reason: Some(reason),
+        })
+    };
+    // 防御: 同一 dir 指定は「復旧」ではない。canonicalize は失敗しうるので
+    // 正規化成功時のみ正規化済みパスで比較、fallback は生パス比較。
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    if canon(mod_dir) == canon(home_dir) {
+        return skip("home == mods dir");
+    }
+    if !mod_dir.exists() {
+        std::fs::create_dir_all(mod_dir)
+            .map_err(|e| format!("create mods dir {}: {e}", mod_dir.display()))?;
+    }
+    // marker 優先: ユーザーが自動復旧分を消した場合は沈黙して尊重する。
+    if mod_dir.join(OFFICIAL_MOD_MARKER).is_file() {
+        return skip("restore marker present — user intent respected");
+    }
+    let names = official_mod_file_names();
+    let candidates: Vec<&'static str> = names
+        .iter()
+        .copied()
+        .filter(|name| home_dir.join(name).is_file())
+        .collect();
+    if candidates.is_empty() {
+        return skip("no official mods in home dir");
+    }
+    let mut restored: Vec<String> = Vec::new();
+    for name in candidates {
+        let dst = mod_dir.join(name);
+        if dst.exists() {
+            // 既存 (ユーザー版/以前の手動配置) は絶対に上書きしない。
+            continue;
+        }
+        std::fs::copy(home_dir.join(name), &dst)
+            .map_err(|e| format!("restore {}: {e}", dst.display()))?;
+        restored.push(name.to_string());
+    }
+    if restored.is_empty() {
+        return skip("all official mods already present");
+    }
+    let unix_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let marker = format!(
+        "rsift official mod auto-restore (wave 210)\n\
+         source={}\n\
+         restored={}\n\
+         unix_time={unix_time}\n\
+         \n\
+         このフォルダの公式 mod を削除しても、この marker ファイルが残っている限り\n\
+         自動復旧は再実行されません (ユーザーによる削除の意思を尊重します)。\n",
+        home_dir.display(),
+        restored.join(","),
+    );
+    std::fs::write(mod_dir.join(OFFICIAL_MOD_MARKER), marker).map_err(|e| {
+        format!(
+            "marker write {}: {e}",
+            mod_dir.join(OFFICIAL_MOD_MARKER).display()
+        )
+    })?;
+    Ok(OfficialModRestore {
+        restored,
+        skip_reason: None,
+    })
+}
+
 #[derive(Clone)]
 pub struct LoadedModLibrary {
     pub id: String,
@@ -287,4 +412,216 @@ static MOD_LIBRARY_KEEPALIVE: OnceLock<Mutex<Vec<LoadedModLibrary>>> = OnceLock:
 pub fn pin_loaded_libraries(result: NativeModLoadResult) {
     let keep = MOD_LIBRARY_KEEPALIVE.get_or_init(|| Mutex::new(Vec::new()));
     keep.lock().unwrap().extend(result.libraries);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn tmpdir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "rsift_native_loader_test_{}_{}_{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    struct DirGuard(PathBuf);
+
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn official_names() -> Vec<String> {
+        official_mod_file_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    fn plant_official_mods(home: &Path) {
+        for name in official_names() {
+            fs::write(home.join(&name), format!("OFFICIAL:{name}")).unwrap();
+        }
+    }
+
+    // 名称 pin: setup が同梱する公式 mod ファイル名と厳密に一致すること。
+    // 食い違うと実機で復旧元が見つからず沈黙スキップになるため固定する。
+    #[test]
+    fn hf_official_mod_file_names_pin() {
+        let names = official_mod_file_names();
+        assert_eq!(names.len(), 3);
+        if cfg!(target_os = "windows") {
+            assert_eq!(names, ["rsgraphics.dll", "rsreplay.dll", "rszoom.dll"]);
+        } else if cfg!(target_os = "macos") {
+            assert_eq!(
+                names,
+                [
+                    "librsgraphics.dylib",
+                    "librsreplay.dylib",
+                    "librszoom.dylib"
+                ]
+            );
+        } else {
+            assert_eq!(
+                names,
+                ["librsgraphics.so", "librsreplay.so", "librszoom.so"]
+            );
+        }
+    }
+
+    #[test]
+    fn hf_restore_copies_official_mods_when_mods_dir_empty() {
+        let home = tmpdir("home");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(home.clone());
+        let _g2 = DirGuard(mods.clone());
+        plant_official_mods(&home);
+        // 非 mod ファイル (拡張子が platform ext 以外) は干渉対象ではない
+        fs::write(mods.join("readme.txt"), "user notes").unwrap();
+
+        let out = restore_official_mods(&mods, &home).unwrap();
+        let mut restored = out.restored.clone();
+        restored.sort();
+        let mut expect = official_names();
+        expect.sort();
+        assert_eq!(restored, expect, "全公式 mod が復旧される");
+        assert!(out.skip_reason.is_none());
+        for name in official_names() {
+            // コピー内容はバイト完全一致
+            assert_eq!(
+                fs::read(mods.join(&name)).unwrap(),
+                format!("OFFICIAL:{name}").as_bytes(),
+                "copied bytes must be identical: {name}"
+            );
+        }
+        // marker に監査情報 (復旧名・コピー元) を残す
+        let marker = fs::read_to_string(mods.join(OFFICIAL_MOD_MARKER)).unwrap();
+        for name in official_names() {
+            assert!(marker.contains(&name), "marker must list {name}");
+        }
+        assert!(marker.contains(&home.display().to_string()));
+        // 非 mod ファイルを壊していない
+        assert_eq!(
+            fs::read_to_string(mods.join("readme.txt")).unwrap(),
+            "user notes"
+        );
+    }
+
+    #[test]
+    fn hf_restore_fills_missing_only_and_never_overwrites() {
+        let home = tmpdir("home");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(home.clone());
+        let _g2 = DirGuard(mods.clone());
+        plant_official_mods(&home);
+        let names = official_names();
+        // 1 本目だけ mods 側に既存 (ユーザー版) — 絶対に上書きされないこと
+        fs::write(mods.join(&names[0]), b"USER-VERSION").unwrap();
+        // ユーザーの自作 mod も無改変
+        let mine = format!("mymod.{}", platform_extension());
+        fs::write(mods.join(&mine), b"USER-BYTES").unwrap();
+
+        let out = restore_official_mods(&mods, &home).unwrap();
+        assert_eq!(out.restored.len(), 2, "欠けている 2 本のみ復旧");
+        assert!(!out.restored.contains(&names[0]));
+        assert_eq!(
+            fs::read(mods.join(&names[0])).unwrap(),
+            b"USER-VERSION",
+            "既存ファイルは絶対に上書きしない"
+        );
+        assert_eq!(fs::read(mods.join(&mine)).unwrap(), b"USER-BYTES");
+    }
+
+    #[test]
+    fn hf_restore_respects_user_deletion_marker() {
+        let home = tmpdir("home");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(home.clone());
+        let _g2 = DirGuard(mods.clone());
+        plant_official_mods(&home);
+        // 以前の自動復旧後にユーザーが公式 mod を消去した経緯 (marker 残存)
+        fs::write(mods.join(OFFICIAL_MOD_MARKER), b"restored=x\n").unwrap();
+
+        let out = restore_official_mods(&mods, &home).unwrap();
+        assert!(out.restored.is_empty());
+        assert_eq!(
+            out.skip_reason,
+            Some("restore marker present — user intent respected")
+        );
+        for name in official_names() {
+            assert!(
+                !mods.join(&name).exists(),
+                "marker がある限り再コピーしない"
+            );
+        }
+    }
+
+    #[test]
+    fn hf_restore_skips_when_home_lacks_official_mods() {
+        let home = tmpdir("home");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(home.clone());
+        let _g2 = DirGuard(mods.clone());
+
+        let out = restore_official_mods(&mods, &home).unwrap();
+        assert!(out.restored.is_empty());
+        assert_eq!(out.skip_reason, Some("no official mods in home dir"));
+        assert!(!mods.join(OFFICIAL_MOD_MARKER).exists());
+    }
+
+    #[test]
+    fn hf_restore_refuses_when_home_equals_mods_dir() {
+        let home = tmpdir("same");
+        let _g1 = DirGuard(home.clone());
+        plant_official_mods(&home);
+
+        let out = restore_official_mods(&home, &home).unwrap();
+        assert!(out.restored.is_empty());
+        assert_eq!(out.skip_reason, Some("home == mods dir"));
+    }
+
+    #[test]
+    fn hf_restore_only_copies_fixed_official_names() {
+        let home = tmpdir("home");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(home.clone());
+        let _g2 = DirGuard(mods.clone());
+        plant_official_mods(&home);
+        // 固定 3 名以外は rsift home にあっても復旧先へコピーしない
+        let evil = format!("evil.{}", platform_extension());
+        fs::write(home.join(&evil), b"NOT-OFFICIAL").unwrap();
+
+        let out = restore_official_mods(&mods, &home).unwrap();
+        assert!(!mods.join(&evil).exists(), "固定名以外は絶対にコピーしない");
+        assert_eq!(out.restored.len(), 3);
+        assert!(!out.restored.contains(&evil));
+    }
+
+    #[test]
+    fn hf_restore_is_idempotent_second_call_is_noop() {
+        let home = tmpdir("home");
+        let mods = tmpdir("mods");
+        let _g1 = DirGuard(home.clone());
+        let _g2 = DirGuard(mods.clone());
+        plant_official_mods(&home);
+
+        let first = restore_official_mods(&mods, &home).unwrap();
+        assert_eq!(first.restored.len(), 3);
+        let second = restore_official_mods(&mods, &home).unwrap();
+        assert!(second.restored.is_empty(), "2 回目は marker で no-op");
+        assert_eq!(
+            second.skip_reason,
+            Some("restore marker present — user intent respected")
+        );
+    }
 }
