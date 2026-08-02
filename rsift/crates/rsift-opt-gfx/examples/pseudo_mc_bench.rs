@@ -226,12 +226,30 @@ impl PseudoWorld {
 }
 
 const FACES: [([i64; 3], [[f32; 3]; 4]); 6] = [
-    ([0, 1, 0], [[0., 1., 0.], [1., 1., 0.], [1., 1., 1.], [0., 1., 1.]]), // +Y
-    ([0, -1, 0], [[0., 0., 0.], [0., 0., 1.], [1., 0., 1.], [1., 0., 0.]]), // -Y
-    ([0, 0, 1], [[0., 0., 1.], [1., 0., 1.], [1., 1., 1.], [0., 1., 1.]]), // +Z
-    ([0, 0, -1], [[0., 0., 0.], [0., 1., 0.], [1., 1., 0.], [1., 0., 0.]]), // -Z
-    ([1, 0, 0], [[1., 0., 0.], [1., 1., 0.], [1., 1., 1.], [1., 0., 1.]]), // +X
-    ([-1, 0, 0], [[0., 0., 0.], [0., 0., 1.], [0., 1., 1.], [0., 1., 0.]]), // -X
+    (
+        [0, 1, 0],
+        [[0., 1., 0.], [1., 1., 0.], [1., 1., 1.], [0., 1., 1.]],
+    ), // +Y
+    (
+        [0, -1, 0],
+        [[0., 0., 0.], [0., 0., 1.], [1., 0., 1.], [1., 0., 0.]],
+    ), // -Y
+    (
+        [0, 0, 1],
+        [[0., 0., 1.], [1., 0., 1.], [1., 1., 1.], [0., 1., 1.]],
+    ), // +Z
+    (
+        [0, 0, -1],
+        [[0., 0., 0.], [0., 1., 0.], [1., 1., 0.], [1., 0., 0.]],
+    ), // -Z
+    (
+        [1, 0, 0],
+        [[1., 0., 0.], [1., 1., 0.], [1., 1., 1.], [1., 0., 1.]],
+    ), // +X
+    (
+        [-1, 0, 0],
+        [[0., 0., 0.], [0., 0., 1.], [0., 1., 1.], [0., 1., 0.]],
+    ), // -X
 ];
 
 // ---------------- Pipe A: Vanilla 系 ----------------
@@ -295,7 +313,14 @@ fn remesh_vanilla(w: &PseudoWorld, cx: usize, cz: usize) -> MeshStats {
                         vtx[30] = (n[2] * 127) as i8 as u8;
                         bytes.extend_from_slice(&vtx);
                     }
-                    indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                    indices.extend_from_slice(&[
+                        base,
+                        base + 1,
+                        base + 2,
+                        base,
+                        base + 2,
+                        base + 3,
+                    ]);
                 }
             }
         }
@@ -316,7 +341,8 @@ fn vanilla_region_roundtrip(w: &PseudoWorld) -> (usize, std::time::Duration, usi
         for cx in 0..CHUNKS_X {
             let raw = chunk_raw(w, cx, cz);
             total_raw += raw.len();
-            let mut enc = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+            let mut enc =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
             enc.write_all(&raw).unwrap();
             let comp = enc.finish().unwrap();
             file_bytes.extend_from_slice(&comp);
@@ -327,7 +353,8 @@ fn vanilla_region_roundtrip(w: &PseudoWorld) -> (usize, std::time::Duration, usi
     for cz in 0..CHUNKS_Z {
         for cx in 0..CHUNKS_X {
             let raw = chunk_raw(w, cx, cz);
-            let mut enc = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+            let mut enc =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
             enc.write_all(&raw).unwrap();
             let comp = enc.finish().unwrap();
             let mut dec = flate2::read::DeflateDecoder::new(&comp[..]);
@@ -434,8 +461,8 @@ fn sq_light(l: u8) -> u32 {
 #[derive(Clone, Copy)]
 struct WaterQuad {
     c: [f32; 3], // 面 (quad) そのものの中心 (旧実装はブロック中心で ±0.5 の誤差があった)
-    axis: u8, // 法線軸 0=X 1=Y 2=Z
-    sign: i8, // 法線の向き (+1/-1)
+    axis: u8,    // 法線軸 0=X 1=Y 2=Z
+    sign: i8,    // 法線の向き (+1/-1)
 }
 
 struct SodiumSection {
@@ -448,7 +475,13 @@ struct SodiumSection {
 /// セクション (16^3) 単位メッシュ。面カリング規則・AO 4サンプルは Pipe A と
 /// 同一ソース (Sodium LightPipeline もスムース AO) で、差は 20B エンコードのみ。
 /// 水クアッドは半透明ソート計測のため別途収集。
-fn sq_mesh_section(w: &PseudoWorld, sx: usize, sy: usize, sz: usize, water: &mut Vec<WaterQuad>) -> (usize, usize, usize) {
+fn sq_mesh_section(
+    w: &PseudoWorld,
+    sx: usize,
+    sy: usize,
+    sz: usize,
+    water: &mut Vec<WaterQuad>,
+) -> (usize, usize, usize) {
     let mut verts = 0usize;
     let mut indices = 0usize;
     let (x0, y0, z0) = (sx * 16, sy * 16, sz * 16);
@@ -536,7 +569,12 @@ fn sq_mesh_section(w: &PseudoWorld, sx: usize, sy: usize, sz: usize, water: &mut
 /// Sodium の 64bit エンコード (bit=from*8+to) に変換 (VisibilityEncoding.java)。
 fn sq_visibility(w: &PseudoWorld, sx: usize, sy: usize, sz: usize) -> u64 {
     let solid = |lx: i64, ly: i64, lz: i64| -> bool {
-        w.get(sx as i64 * 16 + lx, sy as i64 * 16 + ly, sz as i64 * 16 + lz).opaque()
+        w.get(
+            sx as i64 * 16 + lx,
+            sy as i64 * 16 + ly,
+            sz as i64 * 16 + lz,
+        )
+        .opaque()
     };
     // 各軸の面境界: DOWN ly==0 / UP ly==15 / NORTH lz==0 / SOUTH lz==15 / WEST lx==0 / EAST lx==15
     let face_of = |lx: i64, ly: i64, lz: i64, set: &mut u32| {
@@ -599,7 +637,9 @@ fn sq_visibility(w: &PseudoWorld, sx: usize, sy: usize, sz: usize) -> u64 {
             face_of(lx, ly, lz, &mut reached);
             for d in deltas {
                 let (nx, ny, nz) = (lx + d.0, ly + d.1, lz + d.2);
-                if (0..16).contains(&nx) && (0..16).contains(&ny) && (0..16).contains(&nz)
+                if (0..16).contains(&nx)
+                    && (0..16).contains(&ny)
+                    && (0..16).contains(&nz)
                     && !solid(nx, ny, nz)
                 {
                     stack.push((nx, ny, nz));
@@ -699,8 +739,16 @@ fn sq_nearest_to_zero(min: i64, max: i64) -> i64 {
 /// isWithinRenderDistance (同:202-227): 円筒 fog。
 fn sq_within_distance(cam: [f32; 3], s: usize, max_dist: f32) -> bool {
     let (sx, sy, sz) = sec_coords(s);
-    let ci = [cam[0].floor() as i64, cam[1].floor() as i64, cam[2].floor() as i64];
-    let cf = [cam[0] - ci[0] as f32, cam[1] - ci[1] as f32, cam[2] - ci[2] as f32];
+    let ci = [
+        cam[0].floor() as i64,
+        cam[1].floor() as i64,
+        cam[2].floor() as i64,
+    ];
+    let cf = [
+        cam[0] - ci[0] as f32,
+        cam[1] - ci[1] as f32,
+        cam[2] - ci[2] as f32,
+    ];
     let ox = sx as i64 * 16 - ci[0];
     let oy = sy as i64 * 16 - ci[1];
     let oz = sz as i64 * 16 - ci[2];
@@ -1006,8 +1054,10 @@ fn draw_call_model(build: &SodiumBuild, visible: &[usize]) -> DrawModel {
 /// Vanilla 半透明: クアッド重心の視点距離による大域 Z ソート。
 fn vanilla_tsort(quads: &mut [WaterQuad], cam: [f32; 3], fwd: [f32; 3]) {
     quads.sort_unstable_by(|a, b| {
-        let ka = (a.c[0] - cam[0]) * fwd[0] + (a.c[1] - cam[1]) * fwd[1] + (a.c[2] - cam[2]) * fwd[2];
-        let kb = (b.c[0] - cam[0]) * fwd[0] + (b.c[1] - cam[1]) * fwd[1] + (b.c[2] - cam[2]) * fwd[2];
+        let ka =
+            (a.c[0] - cam[0]) * fwd[0] + (a.c[1] - cam[1]) * fwd[1] + (a.c[2] - cam[2]) * fwd[2];
+        let kb =
+            (b.c[0] - cam[0]) * fwd[0] + (b.c[1] - cam[1]) * fwd[1] + (b.c[2] - cam[2]) * fwd[2];
         kb.total_cmp(&ka) // far → near (back-to-front)
     });
 }
@@ -1023,7 +1073,6 @@ fn wq_corners(q: &WaterQuad) -> [[f32; 3]; 4] {
     }
     out
 }
-
 
 /// クアッドの前計算 (extents + corners)。ペア評価で毎回再構成すると律速。
 fn wq_geom(q: &WaterQuad) -> ([f32; 6], [[f32; 3]; 4]) {
@@ -1135,12 +1184,7 @@ fn sq_visible_through(a: &WaterQuad, ea: &[f32; 6], b: &WaterQuad, eb: &[f32; 6]
 }
 
 /// sq 関係の priority 版 (extents 事前計算を受け取る)。
-fn sq_priority_g(
-    p: &WaterQuad,
-    ep: &[f32; 6],
-    q: &WaterQuad,
-    eq: &[f32; 6],
-) -> Option<bool> {
+fn sq_priority_g(p: &WaterQuad, ep: &[f32; 6], q: &WaterQuad, eq: &[f32; 6]) -> Option<bool> {
     match (
         sq_visible_through(p, ep, q, eq),
         sq_visible_through(q, eq, p, ep),
@@ -1161,9 +1205,9 @@ fn depth_key(d: f32) -> u32 {
 /// 関係別の誤順集計 (評価拘束ペア数, 誤りペア数)。
 #[derive(Default, Clone, Copy)]
 struct WqErr {
-    classic: (usize, usize),   // カメラ依存 古典分離平面
-    sodium: (usize, usize),    // Sodium quadVisibleThrough 関係
-    union: (usize, usize),     // 合併 (矛盾は除外)
+    classic: (usize, usize), // カメラ依存 古典分離平面
+    sodium: (usize, usize),  // Sodium quadVisibleThrough 関係
+    union: (usize, usize),   // 合併 (矛盾は除外)
 }
 
 /// ソート結果のペアワイズ順序誤り率 (サンプリング評価)。
@@ -1412,14 +1456,34 @@ fn topo_tsort(
     enum SecOut {
         Block(Vec<WaterQuad>),
         Cycle(Vec<WaterQuad>),
+        /// Dynamic 門番で topo 試行自体を省略したセクション (集計誠実性のため
+        /// 「topo 断念 (fail)」とは区別して dyn_* 側へ計上する)。
+        Dyn(Vec<WaterQuad>),
     }
     let outs: Vec<SecOut> = secs
         .par_iter_mut()
         .map(|(_, qs)| {
-            if section_topo(qs, cam, fwd, rel, None) {
-                SecOut::Cycle(std::mem::take(qs))
-            } else {
-                SecOut::Block(std::mem::take(qs))
+            // wave 212 HI: sq_sort_plan のしきい値 (Sodium STATIC_TOPO_SORT_
+            // ATTEMPT_LIMITS と同一表) による門番化。既往の欠陥 = 本モードでは
+            // **全**セクションに O(n²) 全ペア topo 試行を行い、99.7% がサイクル
+            // で失敗 → 失敗出力 (クアッド単位ユニット) はセクション内部順を
+            // 使わない大域マージ行き = 3.6s の計算成果を全捨てだった。
+            // limit 超過 (Dynamic) の試行は設計上結果を捨てることが予め分かる
+            // ため試行自体をしない (Sodium の directTrigger と同じ思想)。
+            match sq_sort_plan(qs) {
+                SortPlan::Keep => SecOut::Block(std::mem::take(qs)),
+                SortPlan::NormalRelative => {
+                    normal_relative_sort(qs);
+                    SecOut::Block(std::mem::take(qs))
+                }
+                SortPlan::TopoAttempt => {
+                    if section_topo(qs, cam, fwd, rel, None) {
+                        SecOut::Cycle(std::mem::take(qs))
+                    } else {
+                        SecOut::Block(std::mem::take(qs))
+                    }
+                }
+                SortPlan::Dynamic => SecOut::Dyn(std::mem::take(qs)),
             }
         })
         .collect();
@@ -1433,20 +1497,25 @@ fn topo_tsort(
     // 決定的整列キー: (代表深度降順, 種別, セクションキー, 個体識別子)。
     let mut units: Vec<(u32, u8, (i32, i32, i32), u64, Unit)> = Vec::new();
     for ((skey, _), so) in secs.iter().zip(outs.into_iter()) {
-        match so {
+        let (qs, is_fail) = match so {
             SecOut::Block(qs) => {
                 units.push((depth_key(sec_depth(*skey)), 0, *skey, 0, Unit::Block(qs)));
+                continue;
             }
-            SecOut::Cycle(qs) => {
-                info.fail_secs += 1;
-                info.fail_quads += qs.len();
-                for q in qs {
-                    let ident = (((q.c[0].to_bits() ^ q.c[2].to_bits().rotate_left(17)) as u64)
-                        << 32)
-                        | q.c[1].to_bits() as u64;
-                    units.push((depth_key(cdepth(&q)), 1, *skey, ident, Unit::Single(q)));
-                }
-            }
+            SecOut::Cycle(qs) => (qs, true),
+            SecOut::Dyn(qs) => (qs, false),
+        };
+        if is_fail {
+            info.fail_secs += 1;
+            info.fail_quads += qs.len();
+        } else {
+            info.dyn_secs += 1;
+            info.dyn_quads += qs.len();
+        }
+        for q in qs {
+            let ident = (((q.c[0].to_bits() ^ q.c[2].to_bits().rotate_left(17)) as u64) << 32)
+                | q.c[1].to_bits() as u64;
+            units.push((depth_key(cdepth(&q)), 1, *skey, ident, Unit::Single(q)));
         }
     }
     units.sort_by(|a, b| {
@@ -1571,7 +1640,15 @@ fn section_topo(
     let geoms: Vec<([f32; 6], [[f32; 3]; 4])> = qs.iter().map(wq_geom).collect();
     // n==2 は Sodium も special-case (TopoGraphSorting.java:307-308)
     if n == 2 {
-        if rel(&qs[0], &geoms[0].0, &geoms[0].1, &qs[1], &geoms[1].0, &geoms[1].1) == Some(true) {
+        if rel(
+            &qs[0],
+            &geoms[0].0,
+            &geoms[0].1,
+            &qs[1],
+            &geoms[1].0,
+            &geoms[1].1,
+        ) == Some(true)
+        {
             qs.swap(0, 1);
         }
         return false;
@@ -1668,7 +1745,12 @@ fn rsift_tsort(quads: &mut [WaterQuad], cam: [f32; 3], fwd: [f32; 3]) -> TopoInf
 
 /// 画面 AABB (NDC)。角がカメラ後方 (w<=0) を含む場合は None (評価対象外)。
 fn wq_screen_aabb(q: &WaterQuad, vp: &[[f32; 4]; 4]) -> Option<[f32; 4]> {
-    let mut aabb = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
+    let mut aabb = [
+        f32::INFINITY,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NEG_INFINITY,
+    ];
     for c in wq_corners(q) {
         let x = vp[0][0] * c[0] + vp[1][0] * c[1] + vp[2][0] * c[2] + vp[3][0];
         let y = vp[0][1] * c[0] + vp[1][1] * c[1] + vp[2][1] * c[2] + vp[3][1];
@@ -1712,7 +1794,9 @@ fn vanilla_mesh_section_bytes(w: &PseudoWorld, sx: usize, sy: usize, sz: usize) 
                     continue;
                 }
                 for (n, quad) in FACES {
-                    if w.get(x as i64 + n[0], y as i64 + n[1], z as i64 + n[2]).opaque() {
+                    if w.get(x as i64 + n[0], y as i64 + n[1], z as i64 + n[2])
+                        .opaque()
+                    {
                         continue;
                     }
                     let mut sums = [0u32; 4];
@@ -1757,14 +1841,15 @@ fn rsift_mesh_section_bytes(
                     continue;
                 }
                 for (n, quad) in FACES {
-                    if w.get(x as i64 + n[0], y as i64 + n[1], z as i64 + n[2]).opaque() {
+                    if w.get(x as i64 + n[0], y as i64 + n[1], z as i64 + n[2])
+                        .opaque()
+                    {
                         continue;
                     }
                     let nz = ((n[0] + 1) + (n[1] + 1) * 3 + (n[2] + 1) * 9) as usize;
                     let mut lv = [0u32; 4];
                     for (vi, v) in quad.iter().enumerate() {
-                        let slot = (((x & 15) + v[0] as usize) * 17
-                            + ((y & 15) + v[1] as usize))
+                        let slot = (((x & 15) + v[0] as usize) * 17 + ((y & 15) + v[1] as usize))
                             * 17
                             + ((z & 15) + v[2] as usize);
                         let slot = slot * 27 + nz;
@@ -1837,7 +1922,11 @@ fn edit_sim(_world: &PseudoWorld) -> EditSimOut {
             let mut dirty: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
             for &(x, y, z) in &edits[fr * 2..fr * 2 + 2] {
                 let cur = w.get(x as i64, y as i64, z as i64);
-                let new_b = if cur == Block::Air { Block::Stone } else { Block::Air };
+                let new_b = if cur == Block::Air {
+                    Block::Stone
+                } else {
+                    Block::Air
+                };
                 w.blocks[PseudoWorld::idx(x, y, z)] = new_b as u8;
                 let (cx, cy, cz) = (x / 16, y / 16, z / 16);
                 for dxo in -1i64..=1 {
@@ -2076,13 +2165,23 @@ fn main() {
     println!("# pseudo-Minecraft 測定 (同一ワールド・同一プロセス・release build)");
     let t_world = Instant::now();
     let world = PseudoWorld::generate(0x5253494654);
-    println!("world gen: {:?} ({}x{}x{})", t_world.elapsed(), WORLD_X, WORLD_Z, WORLD_Y);
+    println!(
+        "world gen: {:?} ({}x{}x{})",
+        t_world.elapsed(),
+        WORLD_X,
+        WORLD_Z,
+        WORLD_Y
+    );
 
     // ===== メッシュ再生成 =====
     println!("\n## チャンク再メッシュ (36 chunks, 全量)");
     // A
     let t0 = Instant::now();
-    let mut va = MeshStats { verts: 0, bytes: 0, indices: vec![] };
+    let mut va = MeshStats {
+        verts: 0,
+        bytes: 0,
+        indices: vec![],
+    };
     for cz in 0..CHUNKS_Z {
         for cx in 0..CHUNKS_X {
             let m = remesh_vanilla(&world, cx, cz);
@@ -2116,9 +2215,9 @@ fn main() {
         }
     }
     let _ = t0; // 全体経過はステージ計測に分割済み
-    // C の本番コスト = mesh-loop + tipsify。acmr の before/after 計測は
-    // 品質レポート用の計測器であり実エンジンの本番経路には含まれないため
-    // 合計からは除外する (正直な科目分け)。
+                // C の本番コスト = mesh-loop + tipsify。acmr の before/after 計測は
+                // 品質レポート用の計測器であり実エンジンの本番経路には含まれないため
+                // 合計からは除外する (正直な科目分け)。
     let c_remesh = c_stage.mesh_loop + c_stage.tipsify;
     let acmr_b = acmr_b_sum / (CHUNKS_X * CHUNKS_Z) as f32;
     let acmr_a = acmr_a_sum / (CHUNKS_X * CHUNKS_Z) as f32;
@@ -2165,7 +2264,10 @@ fn main() {
     );
 
     // ===== リージョン I/O =====
-    println!("\n## リージョン I/O (36 chunks, 生{} bytes)", WORLD_X * WORLD_Y * WORLD_Z / (CHUNKS_X * CHUNKS_Z) * 36);
+    println!(
+        "\n## リージョン I/O (36 chunks, 生{} bytes)",
+        WORLD_X * WORLD_Y * WORLD_Z / (CHUNKS_X * CHUNKS_Z) * 36
+    );
     let (a_file_bytes, a_region, a_raw) = vanilla_region_roundtrip(&world);
     let t0 = Instant::now();
     let mut codec = RegionCodec::new(CodecChoice::auto(2, false));
@@ -2376,7 +2478,11 @@ fn main() {
         let fwd_raw = [target[0] - cam[0], target[1] - cam[1], target[2] - cam[2]];
         let fwd_len =
             (fwd_raw[0] * fwd_raw[0] + fwd_raw[1] * fwd_raw[1] + fwd_raw[2] * fwd_raw[2]).sqrt();
-        let fwd = [fwd_raw[0] / fwd_len, fwd_raw[1] / fwd_len, fwd_raw[2] / fwd_len];
+        let fwd = [
+            fwd_raw[0] / fwd_len,
+            fwd_raw[1] / fwd_len,
+            fwd_raw[2] / fwd_len,
+        ];
         let mut qa = sodium.water_quads.clone();
         let t0 = Instant::now();
         vanilla_tsort(&mut qa, *cam, fwd);
@@ -2406,8 +2512,8 @@ fn main() {
             ts_c, cell(ec.classic), cell(ec.sodium), cell(ec.union),
         );
         println!(
-            "フォールバック実績 (水 {} セクション中): B = DYNAMIC 直行 {} secs ({} quads) + topo 断念 {} secs ({} quads)  /  C = topo 断念 {} secs ({} quads → 大域マージへ解放)",
-            ib.sections, ib.dyn_secs, ib.dyn_quads, ib.fail_secs, ib.fail_quads, ic.fail_secs, ic.fail_quads
+            "フォールバック実績 (水 {} セクション中): B = DYNAMIC 直行 {} secs ({} quads) + topo 断念 {} secs ({} quads)  /  C = topo 断念 {} secs ({} quads) + 試行省略 (Dynamic 門番) {} secs ({} quads → 大域マージへ解放)",
+            ib.sections, ib.dyn_secs, ib.dyn_quads, ib.fail_secs, ib.fail_quads, ic.fail_secs, ic.fail_quads, ic.dyn_secs, ic.dyn_quads
         );
     }
 
@@ -2434,7 +2540,8 @@ fn main() {
             let v = y as f32 / ah as f32;
             depth[y * aw + x] = 0.35
                 + 0.25 * (u * 9.0).sin() * (v * 7.5).cos()
-                + 0.04 * ((x.wrapping_mul(73856093) ^ y.wrapping_mul(19349663)) as u64 % 997) as f32
+                + 0.04
+                    * ((x.wrapping_mul(73856093) ^ y.wrapping_mul(19349663)) as u64 % 997) as f32
                     / 997.0;
         }
     }
@@ -2496,11 +2603,9 @@ fn main() {
                     for dz in 0..16 {
                         for dx in 0..16 {
                             for dy in 0..16 {
-                                let b = world.blocks[PseudoWorld::idx(
-                                    cx * 16 + dx,
-                                    cy * 16 + dy,
-                                    cz * 16 + dz,
-                                )] as u16;
+                                let b = world.blocks
+                                    [PseudoWorld::idx(cx * 16 + dx, cy * 16 + dy, cz * 16 + dz)]
+                                    as u16;
                                 sect[(dy * 16 + dz) * 16 + dx] = b;
                             }
                         }
@@ -2517,6 +2622,9 @@ fn main() {
         (WORLD_X * WORLD_Y * WORLD_Z * 2),
         packed_bytes as f64 / (WORLD_X * WORLD_Y * WORLD_Z * 2) as f64 * 100.0
     );
-    println!("\n頂点メモリ/チャンク再メッシュ: A {} B {} C {} bytes (全体)", va.bytes, vb_bytes, vc_bytes);
+    println!(
+        "\n頂点メモリ/チャンク再メッシュ: A {} B {} C {} bytes (全体)",
+        va.bytes, vb_bytes, vc_bytes
+    );
     println!("done.");
 }

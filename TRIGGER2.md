@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 22  (wave 211 HG: 自動復旧の複数源フォールバック版を同梱 — natives に公式 mod が無い実機 (dll 手動差替え運用 = 実機ログ dll size 遷移で機械確定) でも、バニラ側 .minecraft/mods ・ versions/rsift-1.21.11 から公式 3 本を非破壊復旧。探索源順 pin + source_dir 監査ログ。実 JVM ハーネス D/E 機械確認 + F3 GREEN 維持。README_JA に補充元 3 源の優先度を明記)
+- run: 23  (wave 212 HI + 213 HJ: ベンチ実走で機械確定した 2 大律速の根治版を同梱 — Tipsify 同一意味論線形化 507→189 ms (2.7x, rsgraphics のメッシュ再構築に直結) + 半透明ソート評価実装の全損 topo 試行門番化 (3.6 s→25 ms, 143x・誤順も改善)。合成フレームはバニラ系と互角 (0.97x) に到達。前回分 = wave 211 HG (自動復旧複数源フォールバック) 完全同梱の上に積層)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /

@@ -10131,6 +10131,22 @@ Rsift のネイティブ Mod はプロセス内 DLL/so/dylib であり、**ロ�
 - CI 自己照査 (wave 内収束): TRIGGER2 run 12 の jar コピー 3 行を `rsift/bootstrap/prebuilt/...` と誤記 (script は `cd rsift` 後実行 = 正しくは `bootstrap/prebuilt/...`、既存 cp 行と同相対基準)。`set -euo pipefail` で ubuntu/macOS/Windows 3 job 全滅 (DIAG exit=1 で機械捕捉、dist-ci/linux 空・selftest 未実行の構造確認) → パス修正+run 13 bump (count 233)。コード変更を伴わない純 CI スクリプト修復として台帳分離記録
 - 誠実境界: (i) 実機で「Mods ボタンが出る」確認は新版 zip でのユーザー検証待ち (SETUP doc に rsift-bootstrap.log の所在と送付手順を追記。agent ログは version_dir または .minecraft 直下) (ii) RsiftPacketTap 有効化は javac 再ビルドが要 = 別 wave (iii) rsift/prebuilt/rsift-bootstrap.jar (152B スタブ・git 追跡) は無参照残骸として記録 (削除はユーザー管理資産判断待ち) (iv) 152B スタブの存在由来 (pack-jar.ps1 失敗痕跡の可能性) は推測のため断定しない
 
+## wave 213 HJ (2026-08-02) — Tipsify (vertex_cache_opt) 507.3 → 189.1 ms (2.7x) の同一意味論線形化。合成 67.3 → 36.5 ms = バニラ系と互角 (旧 0.54x → 0.97x)
+
+- 背景: ユーザー要求「しっかりベンチマーク実行・様々なカテゴリでバニラと比較」の実走 (pseudo_mc_bench, 同一ワールド同一プロセス release) で、Rsift C pipe の CPU 時間がバニラ系を大きく下回る 2 大律速を機械確定。本 wave は第 2 律速 (Tipsify 507.3 ms ≈ メッシュ再構築時間の 80%、本番 rsift-opt-gfx 本体の `full_graph_wiring` も同関数を消費 = 実機コスト)
+- 真の制約: BV-3a/BV-3b ピンが**出力の厳密系列**を固定 (全点 tie は tri 降順、再スコア計算時系列、LRU 追放モデル) → meshopt 等の近似アルゴリズムへの置換は設計上禁止。同一貪欲意味論のまま定数倍を潰すのが正統
+- 根治 (3 点): (a) ソートキーを単一 u64 に畳み込み — score は非負の有限 f32 のみ (0.0/10.75/2s²) で to_bits() が全順序を保存、同点規則 tri 降順は下位 32bit に載せ比較を u64 1 命令化 (b) 無変化再スコアの version 不変/push 省略 — 従来は touch のたびに同値でも積んでいた (ヒープの有効エントリの値集合が不変と証明、stale は ver 検査で必ず弾かれるため出力不干渉) (c) use_vertex の cache_pos 全書き込みを差分区間化 (空枠 -1 ガードで OOB も根絶 — 初期版で検出・修正)
+- **HJ-1 設計却下の記録 (重要)**: 「emit 三角の 3 頂点を先に一括移動して隣接再計算を 1 度化」(最大 3 倍の削減余地) は**採用しなかった**。LRU 追放が非共有頂点に及び、従来版は「既に再計算した三角には追放の影響を伝播しない」遅延更新のスタレネスを**仕様として含む** — 一括化するとこのスタレネスが消えて bit 不一致となり、`optimality_reduces_acmr` が RED で検出 (ピンが意図どおり番犬として機能)。一括化を即座に撤収し逐次処理順序を維持した。同型の罠: ヒープの整序副次比較 (then_with) は key 埋め込みにより死に枝 (tri は key 下位に載るため常に key 比較が決着) = adversarial 変異 2 件が非観測だったことを honest に台帳
+- 検証 (全機械): vertex_cache_opt 10/10 (厳密系列ピン×2・LRU モデルピン・subset マルチセット・optimality) 全 GREEN、opt-gfx 1485/1485。adversarial 実効変異 ver:0 で RED×3 + MD5-VERIFIED (非観測変異 2 件は上述のとおり記録)。pseudo_mc_bench 再計測: Tipsify 507.3 → 189.1 ms / ACMR 1.669→0.929 (両版で bit 同一) / 合成 67.33 → 36.49 ms (A 35.35 ms と互角) / 編集ワークロード 1.27 s → 825 ms / 半透明ソート誤順カウント wave 212 から bit 不変 (決定性)
+- 誠実境界: 残課題 = 貪欲ヒープの定数倍 (push/pop はスコア変動に比例、セクション単位並列化・GPU compute 化は未実施)。測定ワールドは合成疑似ワールド (実機 MC の絶対値とは異なるが同一比較系)
+
+## wave 212 HI (2026-08-02) — 半透明ソート「全損 O(n²) topo 試行」の門番化: 3.6 s → 25 ms (143x) かつ誤順 7.81% → 7.53% へ改善
+
+- 背景: 同上のベンチ実走で C Rsift 半透明ソートが **3.6 s** (A バニラ 2.6 ms の約 1,400 倍)。原因特定: 係 C パイプライン (RsiftGlobalMerge) が**全セクション**に `section_topo` の O(n²) 全ペア関係構築を適用 (超過セクション ~2,650 クアッド²で各 ~350 万評価 × 33 セクション ≈ 1.1 億回) し、99.7% がサイクルで失敗 → 失敗出力は「クアッド単位ユニットへ分解して大域マージ」= **内部順を一切使わないた 3.6 s の計算成果を全捨て**の二重欠陥
+- 根治: `sq_sort_plan` のしきい値 (Sodium STATIC_TOPO_SORT_ATTEMPT_LIMITS `{-1,-1,250,100,50,30}` と同一表) で門番化 — limit 超過 (Dynamic) は topo 試行自体をしない (Sodium の directTrigger と同思想)。NormalRelative は高速特殊パスへ。集計の誠実化: 試行省略セクションは「topo 断念 (fail)」と区別して dyn_* に計上 (フォールバック行の誤表示も根治)
+- 検証 (全機械): pseudo_mc_bench 再計測 — S1: 3.609 s → 25.23 ms (**143x**)、誤順 (合併) **7.81% → 7.53% 改善** (門番化で全大域クアッドマージ一貫化により、旧版で「limit 超過でもまれに topo が成功してブロックユニット化」していた境界フリップ誤順が解消 — 高速化と品質が同時改善する稀なケース)。S2: 3.830 s → 21.38 ms (**179x**)、誤順 5.19% 同等 (bit 同一)。A/B pipe 誤順は変更前後で bit 一致 (決定性)。破壊面なし (bench example 内の評価実装のみ、本番 render 経路は別実装)
+- 誠実境界: 当該 O(n²) は **ベンチ内の評価実装** (Rsift 固有戦略の試作モデル) であり、本番 render の透過ソート本体は別経路 (本欠陥はユーザー実機を直接遅くしていたものではない)。ただしベンチは設計判定の羅針盤であり、C 戦略の評価値を 1,400 倍誤らせていた欠陥として根治した。残課題: 関係評価/Kahn の GPU 化 (現 C は A 比依然 ~10x 低速、誤順 1.1pp 改善との引換)
+
 ## wave 211 HG (2026-08-02) — 自動復旧の複数源フォールバック (実機ユーザー運用形態由来: natives に公式 mod が無い実機でも収束させる)
 
 - 導出 (実機ログの事実連鎖): (1) #2 setup ログでユーザーの rsift_jvm.dll は 6,660,608B、(2) #5 game ログで稼働 dll は 6,715,904B (wave 208 版) — **セットアップ配布後にユーザーが dll を手動差替えしている運用形態が機械確定**。(3) #4 game ログで `<inst>/.minecraft/mods` は空、(4) 一方 #2 setup ログの launcher flow では **バニラ `.minecraft\mods` と `versions\rsift-1.21.11\` に公式 3 dll を配備済み**と記録。⇒ wave 210 HF の復旧源 (rsift home = natives のみ) では「natives には手動コピー分 (agent dll/jar) しか無い実機」で復旧不能 = ユーザー向案内どおり新 setup を再実行しない限り mods 空継続のリスクが構造として残っていた

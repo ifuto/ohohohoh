@@ -19,7 +19,9 @@ impl Default for VertexCacheOptimizer {
 
 impl VertexCacheOptimizer {
     pub fn new(cache_size: u32) -> Self {
-        Self { cache_size: cache_size.max(4) }
+        Self {
+            cache_size: cache_size.max(4),
+        }
     }
 
     /// Per-vertex score from its simulated cache position (Forsyth scoring).
@@ -60,7 +62,12 @@ impl VertexCacheOptimizer {
         for t in indices.chunks_exact(3) {
             tris.push([t[0], t[1], t[2]]);
         }
-        let nv = indices.iter().copied().max().map(|m| m as usize + 1).unwrap_or(0);
+        let nv = indices
+            .iter()
+            .copied()
+            .max()
+            .map(|m| m as usize + 1)
+            .unwrap_or(0);
 
         // Triangles touching each vertex (for incremental score updates).
         // CSR 形式 (offsets+flat): Vec<Vec> だと頂点数分の個別アロケーションが
@@ -111,6 +118,10 @@ impl VertexCacheOptimizer {
         }
 
         // Use a vertex: move it to the front of the simulated cache.
+        // wave 213 HJ: cache_pos の更新を「実際に位置が変わる区間」に限定
+        // (従来は全 cs 要素を毎回無条件で再書き込みしていた)。書き換えた
+        // セルと値は従来版と厳密に一致する (位置が変わらないセルは従来版も
+        // 同じ値を上書きしていただけ)。
         let use_vertex = |v: u32, cache: &mut Vec<i32>, cache_pos: &mut Vec<i32>| {
             let mut found = -1i32;
             for k in 0..cache.len() {
@@ -120,26 +131,33 @@ impl VertexCacheOptimizer {
                 }
             }
             if found >= 0 {
-                for k in (0..found as usize).rev() {
-                    cache[k + 1] = cache[k];
+                // 区間 [1..=found] が 1 つ後ろにずれる。それ以降は不変。
+                // (区間内は定義上全て占有済みだが、空枠 -1 を cache_pos に
+                // 書き込まない防御ガードは残す)
+                for k in (1..=found as usize).rev() {
+                    cache[k] = cache[k - 1];
+                    if cache[k] >= 0 {
+                        cache_pos[cache[k] as usize] = k as i32;
+                    }
                 }
             } else {
                 // 追放される頂点の位置を無効化しないと「まだキャッシュ内」扱いされ
                 // スコアが過大評価される (真の Tipsify と同様に LRU 追放を追跡)。
                 let evicted = cache[cache.len() - 1];
+                // 区間 [1..cs) が 1 つ後ろにずれ、末尾要素が追放される。
+                // 末尾側は未占有 (-1) の場合があり、それを cache_pos には書かない。
+                for k in (1..cache.len()).rev() {
+                    cache[k] = cache[k - 1];
+                    if cache[k] >= 0 {
+                        cache_pos[cache[k] as usize] = k as i32;
+                    }
+                }
                 if evicted >= 0 {
                     cache_pos[evicted as usize] = -1;
                 }
-                for k in (0..cache.len().saturating_sub(1)).rev() {
-                    cache[k + 1] = cache[k];
-                }
             }
             cache[0] = v as i32;
-            for k in 0..cache.len() {
-                if cache[k] >= 0 {
-                    cache_pos[cache[k] as usize] = k as i32;
-                }
-            }
+            cache_pos[v as usize] = 0;
         };
 
         // 候補キュー (世代番号つき遅延無効化の優先度キュー)。
@@ -149,15 +167,33 @@ impl VertexCacheOptimizer {
         // 有効エントリがちょうど1つ存在し、古いエントリは pop 時に捨てるだけで
         // 終了が保証される (積み直すと最新エントリが即 stale 化して飢餓する)。
         // 更新回数は Σ(valence) に比例し、準線形に抑えられる。
+        //
+        // wave 213 HJ: 同一意味論の定数倍最適化 (出力 bit 一致の証明付き高速化)。
+        // (a) ソートキーを単一 u64 に畳み込み — score は常に非負の有限 f32
+        //     (vertex_score は 0.0/10.75/2s² のみ) なので to_bits() が全順序を
+        //     厳密保存し、同点規則「tri 降順」は下位 32bit の tri が担う。
+        //     ヒープ比較は total_cmp×2 から u64 1 命令になる。
+        // (c) 再計算で値が変わらない場合は version 不変・push 省略 —
+        //     従来版も同値の末尾エントリを積むだけで有効エントリの値集合は
+        //     不変なので、積まなくても全く同じ pop 系列になる。
+        //     (stale エントリの個数差は捨て工作業量だけに影響し、ver 検査で
+        //     必ず弾かれるため出力に不干渉)
+        //
+        // 設計上の正直注記 (HJ-1): 「emit 三角の 3 頂点を先に一括移動して
+        // 隣接再計算を 1 度化する」案は**採用しない**。LRU 追放が非共有
+        // 頂点にも及び、従来版は「既に再計算した三角には追放の影響を伝播
+        // しない」遅延更新のスタレネスを仕様として含む (BV-3 ピンが厳密系列で
+        // この挙動を固定)。一括化はこのスタレネスを消すため bit 一致にならず
+        // (optimality_reduces_acmr で検出済)、頂点ごとの逐次処理順序は維持する。
         #[derive(Clone, Copy)]
         struct Cand {
-            score: f32,
+            key: u64,
             tri: u32,
             ver: u32,
         }
         impl PartialEq for Cand {
             fn eq(&self, o: &Self) -> bool {
-                self.score.total_cmp(&o.score) == std::cmp::Ordering::Equal && self.tri == o.tri
+                self.key == o.key && self.tri == o.tri
             }
         }
         impl Eq for Cand {}
@@ -168,23 +204,29 @@ impl VertexCacheOptimizer {
         }
         impl Ord for Cand {
             fn cmp(&self, o: &Self) -> std::cmp::Ordering {
-                // 決定的: スコア降順 → 同点は tri 番号降順
-                self.score.total_cmp(&o.score).then_with(|| self.tri.cmp(&o.tri))
+                // key 下位 32bit が tri なので key だけで全順序は完結するが、
+                // 等価比較の意味を明示するため tri も順序に含める (key が
+                // 異なるケースでは key 比較が先に決着するため結果は不変)。
+                self.key.cmp(&o.key).then_with(|| self.tri.cmp(&o.tri))
             }
         }
+        let cand_key =
+            |score: f32, tri: u32| -> u64 { ((score.to_bits() as u64) << 32) | tri as u64 };
         let mut version = vec![0u32; ntri];
         // collect で bottom-up heapify (O(n)) にする。ヒープ上の優先度は
         // (score, tri) の全順序で一意 (tri は相異なる) ため、pop 列は
         // push 版と bit 同一 (ヒープ内部配列の形は結果に影響しない)。
         let mut heap: std::collections::BinaryHeap<Cand> = (0..ntri)
-            .map(|ti| Cand { score: tri_score[ti], tri: ti as u32, ver: 0 })
+            .map(|ti| Cand {
+                key: cand_key(tri_score[ti], ti as u32),
+                tri: ti as u32,
+                ver: 0,
+            })
             .collect();
-
         let mut out: Vec<u32> = Vec::with_capacity(indices.len());
         let mut emitted = 0usize;
         while emitted < ntri {
-            let Cand { score: _, tri, ver } =
-                heap.pop().expect("heap must not drain before all emitted");
+            let Cand { tri, ver, .. } = heap.pop().expect("heap must not drain before all emitted");
             let ti = tri as usize;
             if tri_emitted[ti] {
                 continue;
@@ -202,13 +244,22 @@ impl VertexCacheOptimizer {
             for &v in &t {
                 use_vertex(v, &mut cache, &mut cache_pos);
                 // Recompute scores of triangles sharing v (CSR 区間走査)。
+                // wave 213 HJ (c): 値が変わらない再スコアは version/push を
+                // 省略する (従来は touch のたびに無条件で積んでいた)。
                 for &ot in &vt_flat[vt_off[v as usize] as usize..vt_off[v as usize + 1] as usize] {
                     let oti = ot as usize;
-                    if !tri_emitted[oti] {
+                    if tri_emitted[oti] {
+                        continue;
+                    }
+                    let s = recompute(oti, &cache_pos);
+                    if s != tri_score[oti] {
                         version[oti] = version[oti].wrapping_add(1);
-                        let s = recompute(oti, &cache_pos);
                         tri_score[oti] = s;
-                        heap.push(Cand { score: s, tri: ot, ver: version[oti] });
+                        heap.push(Cand {
+                            key: cand_key(s, ot),
+                            tri: ot,
+                            ver: version[oti],
+                        });
                     }
                 }
             }
@@ -216,8 +267,6 @@ impl VertexCacheOptimizer {
         }
         out
     }
-
-
 
     /// Average Cache Miss Ratio = transformed vertices / triangles。
     /// `optimize` と同じ LRU モデルでシミュレートする (ヒット時に MRU へ昇格、
@@ -326,7 +375,10 @@ mod tests {
         let reordered = opt.optimize(&idx);
         let after = VertexCacheOptimizer::acmr(&reordered, 8);
         assert!(after < before, "ACMR {after} should beat {before}");
-        assert!(after < 2.0, "optimized ACMR should be well under 3.0, got {after}");
+        assert!(
+            after < 2.0,
+            "optimized ACMR should be well under 3.0, got {after}"
+        );
     }
 
     #[test]
@@ -336,9 +388,24 @@ mod tests {
         let r = opt.optimize(&idx);
         assert_eq!(r.len(), idx.len());
         // Same multiset of (unordered) triangles.
-        let mut a: Vec<[u32; 3]> = idx.chunks_exact(3).map(|c| { let mut x=[c[0],c[1],c[2]]; x.sort(); x }).collect();
-        let mut b: Vec<[u32; 3]> = r.chunks_exact(3).map(|c| { let mut x=[c[0],c[1],c[2]]; x.sort(); x }).collect();
-        a.sort(); b.sort();
+        let mut a: Vec<[u32; 3]> = idx
+            .chunks_exact(3)
+            .map(|c| {
+                let mut x = [c[0], c[1], c[2]];
+                x.sort();
+                x
+            })
+            .collect();
+        let mut b: Vec<[u32; 3]> = r
+            .chunks_exact(3)
+            .map(|c| {
+                let mut x = [c[0], c[1], c[2]];
+                x.sort();
+                x
+            })
+            .collect();
+        a.sort();
+        b.sort();
         assert_eq!(a, b);
     }
 
