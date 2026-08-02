@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 17  (wave 207 HC: 実機 #4「まだvanilla判定」根治版を同梱 — bootstrap jar の major を 68/69→65 (MC Java 21 で UCVE 根治) + Agent_OnLoad AddToBootstrapClassLoaderSearch (RsiftHooks 可視化) + pending exception dump 全配線 + Linux dll_directory dladdr 実装。実 JVM RED→GREEN 全 PASS 済)
+- run: 18  (wave 208 HD: 実機 rc=99 (RetransformClasses MUST_POSSESS_CAPABILITY) 根治版を同梱 — ensure_retransform_caps_on_call_env: 「呼出に使う JVMTI env そのもの」に GetCapabilities→AddCapabilities を必ず経由させ (JVMTI の capability は env オブジェクト単位管理 = OpenJDK jvmti.xml 一次情報)、99 の原因 caps 不足ならその場で根治・VM 制約なら AddCapabilities rc≠0 を実機ログに可視化 (推測で話さない)。f3 静的 spec 先行登録は permission 狙撃テーブル (is_targetable_external) 境界のため設計上見送り — spec 登録は reflection 検証済みのみ (pin テスト固定)。RSIFT_DISABLE_RETRANSFORM テストフック追加で stub 降格経路 (= 実機 rc=99 シグネチャと完全一致) をハーネス機械検証。既定+stub 両モードで実 JVM exit=0、変異 RED×2 + MD5 復元済)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /

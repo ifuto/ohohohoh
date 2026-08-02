@@ -449,22 +449,95 @@ pub unsafe fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
     }
 }
 
+/// wave 208 HD: RetransformClasses 直前に「呼出に使う env そのもの」で
+/// capability を再点検し、未取得ならこの場で AddCapabilities を試みる。
+///
+/// JVMTI 規格上 capability は **env オブジェクト単位** で管理される
+/// (jvmti.xml: "each agent environment has its own separate state,
+/// including capabilities")。Agent_OnLoad で取得した env と、後続の
+/// コード経路で GetEnv から得た env が別オブジェクトの場合、後者は
+/// デフォルト状態の可能性があり、RetransformClasses が
+/// MUST_POSSESS_CAPABILITY (rc=99) を返す。本関数は「実際に呼出に
+/// 使う env」に対して GetCapabilities → (未取得なら) AddCapabilities を
+/// 必ず挟むため、env がどの経路で得られたものでも能力要求が確実に
+/// その env へ届く。VM が本当に retransform を許可しない場合
+/// (AOT 構成等) は AddCapabilities の rc≠0 が残り、99 の原因が
+/// caps 不足か VM の制約かが実機ログで確定できる (推測で話さない)。
+///
+/// AddCapabilities はエージェントの他機能を妨げない additive 要求のみ
+/// (redefine/retransform/retransform_any) で、phase で獲得不能な能力は
+/// VM が rc≠0 で拒否する = 規格準拠の安全動作。
+fn ensure_retransform_caps_on_call_env(jvmti: *mut c_void) {
+    unsafe {
+        let Some(f) = jvmti_fn(jvmti, IDX_GET_CAPABILITIES) else {
+            return;
+        };
+        let get: GetCapabilitiesFn = std::mem::transmute(f);
+        let mut caps = JvmtiCapabilities::new();
+        if get(jvmti, &mut caps) != 0 {
+            return;
+        }
+        if caps.get_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_CLASSES) {
+            return;
+        }
+        let Some(f) = jvmti_fn(jvmti, IDX_ADD_CAPABILITIES) else {
+            return;
+        };
+        let add: AddCapabilitiesFn = std::mem::transmute(f);
+        let mut req = JvmtiCapabilities::new();
+        req.set_bit(JvmtiCapabilities::BIT_CAN_REDEFINE_CLASSES);
+        req.set_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_CLASSES);
+        req.set_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_ANY_CLASS);
+        let arc = add(jvmti, &req);
+        if arc != 0 {
+            agent_log_warn(
+                "jvmti",
+                &format!(
+                    "AddCapabilities(redefine/retransform/retransform_any) \
+                     on call-env rc={} — VM が現 phase/env では付与拒否。\
+                     RetransformClasses は rc=99 予定、CFLH-only パスを継続",
+                    arc
+                ),
+            );
+        }
+    }
+}
+
 /// フック install 前にロード済みのクラスへ後追いパッチ。`java_vm` は生存中
 /// JavaVM。classes は jclass 配列 (loadClass 等で取得済み)。rc と件数を記録。
 pub unsafe fn retransform_classes(java_vm: *mut c_void, classes: &[*mut c_void]) -> i32 {
     if classes.is_empty() {
         return 0;
     }
+    if retransform_disabled_by_env() {
+        // テスト経路: 実 JVM に触れず 99 を返し、降格パス (CFLH/先行登録) の
+        // みで機能が成立することをハーネスで検証可能にする。
+        agent_log_warn(
+            "jvmti",
+            "RSIFT_DISABLE_RETRANSFORM set — retransform stubbed rc=99 (test hook)",
+        );
+        return 99;
+    }
     unsafe {
         let Some(jvmti) = get_jvmti_env(java_vm) else {
             return -1;
         };
+        // wave 208 HD: 呼出 env への caps 要求を必ず経由 (実機 rc=99 根治)。
+        ensure_retransform_caps_on_call_env(jvmti);
         let rt: RetransformClassesFn = match jvmti_fn(jvmti, IDX_RETRANSFORM_CLASSES) {
             Some(f) => std::mem::transmute(f),
             None => return -1,
         };
         rt(jvmti, classes.len() as c_int, classes.as_ptr())
     }
+}
+
+/// wave 208 HD: テストフック。RSIFT_DISABLE_RETRANSFORM=1 環境で呼出を
+/// 99 (MUST_POSSESS_CAPABILITY 相当) のスタブに差し替え、実 JVM ハーネスで
+/// 「retransform 不能 VM での降格動作」を再現検証できるようにする。
+/// 本番経路のデフォルト動作は変わらない (env 未設定時)。
+pub fn retransform_disabled_by_env() -> bool {
+    std::env::var_os("RSIFT_DISABLE_RETRANSFORM").is_some()
 }
 
 type GetLoadedClassesFn =
@@ -609,6 +682,36 @@ mod tests {
         assert_eq!(CALLBACK_SLOT_CLASS_FILE_LOAD_HOOK, 4);
         assert_eq!(IDX_JNI_GET_ENV, 6);
         assert_eq!(IDX_JNI_NEW_GLOBAL_REF, 21);
+    }
+
+    /// wave 208 HD: 環境変数スタブの既定値ピン。本番既定では false (= stub 不発)。
+    /// ハーネスは RSIFT_DISABLE_RETRANSFORM=1 を環境指定して起動する
+    /// (ユニットテスト内で set_var は他テストとの共有状態汚染リスクがあるため、
+    /// ここでは既定側のみを固定する)。
+    #[test]
+    fn retransform_stub_is_off_by_default() {
+        if std::env::var_os("RSIFT_DISABLE_RETRANSFORM").is_none() {
+            assert!(
+                !retransform_disabled_by_env(),
+                "既定で retransform stub は不発"
+            );
+        }
+    }
+
+    /// wave 208 HD: caps 要求の additive 保証ピン。ensure_retransform_caps_on_call_env
+    /// が AddCapabilities に渡すビット集合は define/retransform/any の 3 つだけ —
+    /// VM の他 agent 状態を破壊しない (JVMTI の AddCapabilities は additive で
+    /// 獲得不能ビットは VM 側が rc≠0 で拒否する仕様 = リーク自由変数は無い)。
+    #[test]
+    fn retransform_caps_request_is_additive_only() {
+        let mut req = JvmtiCapabilities::new();
+        req.set_bit(JvmtiCapabilities::BIT_CAN_REDEFINE_CLASSES);
+        req.set_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_CLASSES);
+        req.set_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_ANY_CLASS);
+        assert_eq!(req.words[0], 1 << 9);
+        assert_eq!(req.words[1], (1 << 5) | (1 << 6));
+        assert_eq!(req.words[2], 0);
+        assert_eq!(req.words[3], 0);
     }
 
     #[test]
