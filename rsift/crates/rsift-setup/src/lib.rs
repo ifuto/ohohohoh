@@ -64,6 +64,12 @@ pub const LOG_JSONL_NAME: &str = "rsift_setup_log.jsonl";
 pub const LIB_WINDOWS_AGENT: &str = "rsift_jvm.dll";
 pub const LIB_MACOS_AGENT: &str = "librsift_jvm.dylib";
 pub const LIB_LINUX_AGENT: &str = "librsift_jvm.so";
+/// Java ブリッジ jar (RsiftHooks 等 = Mods ボタン/フック注入の要)。
+/// エージェントは dll と同階層のこの名前で探す (screen_inject::bootstrap_jar_path)。
+/// OS 非依存 (pure Java) のため全ターゲットで同一ファイル。
+pub const BOOTSTRAP_JAR: &str = "rsift-bootstrap.jar";
+/// 破損/スタブ判定の下限サイズ (実物は ~44KB、manifest-only スタブは 152B)。
+pub const BOOTSTRAP_JAR_MIN_SIZE: u64 = 512;
 
 /// 起動構成として登録する profile / version の識別子 (ユーザ仕様
 /// 「versions に rsift-1.21.11 みたいなフォルダ」)。
@@ -322,7 +328,7 @@ pub fn decide(host: &HostInfo) -> LaunchDecision {
 // スキャン + 検証
 // ------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LibFile {
     pub name: String,
     pub size: u64,
@@ -358,6 +364,37 @@ pub fn scan_libs(dir: &Path, os: TargetOs) -> Result<Vec<LibFile>, String> {
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
+}
+
+/// bootstrap jar 状態 (3 値: 有効/不在/破損)。
+/// 破損 (manifest-only スタブ・PK 無し・中途半端) も「ないより悪い」ため分ける。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BootstrapJarState {
+    Present(LibFile),
+    Missing,
+    Corrupt,
+}
+
+/// `BOOTSTRAP_JAR` を dir で探し、有効/不在/破損を返す。
+/// 読取不可は静黙化せず Err (scan_libs と同規則)。
+pub fn probe_bootstrap_jar(dir: &Path) -> Result<BootstrapJarState, String> {
+    let path = dir.join(BOOTSTRAP_JAR);
+    if !path.exists() {
+        return Ok(BootstrapJarState::Missing);
+    }
+    if !path.is_file() {
+        return Ok(BootstrapJarState::Corrupt);
+    }
+    let bytes = fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let valid = bytes.len() as u64 >= BOOTSTRAP_JAR_MIN_SIZE && bytes.starts_with(b"PK\x03\x04");
+    if !valid {
+        return Ok(BootstrapJarState::Corrupt);
+    }
+    Ok(BootstrapJarState::Present(LibFile {
+        name: BOOTSTRAP_JAR.to_string(),
+        size: bytes.len() as u64,
+        sha256: sha256_hex(&bytes),
+    }))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1393,6 +1430,40 @@ pub fn setup_launcher(
         });
     }
 
+    // bootstrap jar 審査: RsiftHooks 等 (Mods ボタン/フック注入) の Java 実体。
+    // 不在/破損のまま agentpath だけ登録すると「ゲームは起動するが Mod が
+    // 一切効かない (Mods ボタンすら出ない)」壊れた構成を量産してしまうため、
+    // agent 不在と同様に登録自体を見送る (wave 204: 実機報告の根治)。
+    let jar = match probe_bootstrap_jar(source_dir)? {
+        BootstrapJarState::Present(j) => j,
+        BootstrapJarState::Missing => {
+            notes.push(format!(
+                "{BOOTSTRAP_JAR} (Java ブリッジ) が同階層に無いため profile/version 登録は未実施 (Mods ボタンが出ない壊れた構成を置かない。最新の一体 zip 同梱版で再実行してください)"
+            ));
+            return Ok(LauncherOutcome {
+                profile_registered: false,
+                version_dir,
+                natives_deployed: vec![],
+                mods_deployed: vec![],
+                java_args: String::new(),
+                notes,
+            });
+        }
+        BootstrapJarState::Corrupt => {
+            notes.push(format!(
+                "{BOOTSTRAP_JAR} が破損/不正 (PK マジック無し又は小さすぎ) のため profile/version 登録は未実施 (再ダウンロード・再展開してください)"
+            ));
+            return Ok(LauncherOutcome {
+                profile_registered: false,
+                version_dir,
+                natives_deployed: vec![],
+                mods_deployed: vec![],
+                java_args: String::new(),
+                notes,
+            });
+        }
+    };
+
     // 1) versions/rsift-<mcver>/ フォルダ + natives 配置
     fs::create_dir_all(&version_dir)
         .map_err(|e| format!("create {}: {e}", version_dir.display()))?;
@@ -1405,6 +1476,17 @@ pub fn setup_launcher(
             natives.push(name.to_string());
         }
     }
+    // bootstrap jar も agent (dll) の探索先と同じ階層へ配置。
+    fs::copy(
+        source_dir.join(BOOTSTRAP_JAR),
+        version_dir.join(BOOTSTRAP_JAR),
+    )
+    .map_err(|e| format!("copy {}: {e}", version_dir.join(BOOTSTRAP_JAR).display()))?;
+    natives.push(BOOTSTRAP_JAR.to_string());
+    notes.push(format!(
+        "{BOOTSTRAP_JAR} sha256={} (Java ブリッジ配置)",
+        jar.sha256
+    ));
 
     // 2) version JSON (inheritsFrom + jvm args、本流スキーマ準拠)
     let agent_path = version_dir.join(agent).display().to_string();
@@ -1623,6 +1705,38 @@ pub fn setup_prism(
         });
     }
 
+    // bootstrap jar 審査 (launcher 経路と同構造): 無ければ Mod が全く
+    // 効かない壊れたインスタンスを量産しない (wave 204: 実機報告の根治)。
+    let jar = match probe_bootstrap_jar(source_dir)? {
+        BootstrapJarState::Present(j) => j,
+        BootstrapJarState::Missing => {
+            notes.push(format!(
+                "{BOOTSTRAP_JAR} (Java ブリッジ) が同階層に無いため Prism インスタンス登録は未実施 (Mods ボタンが出ない壊れた構成を置かない。最新の一体 zip 同梱版で再実行してください)"
+            ));
+            return Ok(PrismOutcome {
+                instance_created: false,
+                foreign_conflict: false,
+                instance_dir,
+                natives_deployed: vec![],
+                mods_deployed: vec![],
+                notes,
+            });
+        }
+        BootstrapJarState::Corrupt => {
+            notes.push(format!(
+                "{BOOTSTRAP_JAR} が破損/不正 (PK マジック無し又は小さすぎ) のため Prism インスタンス登録は未実施 (再ダウンロード・再展開してください)"
+            ));
+            return Ok(PrismOutcome {
+                instance_created: false,
+                foreign_conflict: false,
+                instance_dir,
+                natives_deployed: vec![],
+                mods_deployed: vec![],
+                notes,
+            });
+        }
+    };
+
     // 外部製インスタンスの保護: Rsift 生成印 (自家パッチ + mmc-pack 内の
     // rsift 成分) が無い "rsift" 名フォルダは絶対に上書きしない。
     if instance_dir.exists() {
@@ -1663,6 +1777,17 @@ pub fn setup_prism(
             natives.push(name.to_string());
         }
     }
+    // bootstrap jar も agent (dll) の探索先と同じ階層へ配置。
+    fs::copy(
+        source_dir.join(BOOTSTRAP_JAR),
+        natives_dir.join(BOOTSTRAP_JAR),
+    )
+    .map_err(|e| format!("copy {}: {e}", natives_dir.join(BOOTSTRAP_JAR).display()))?;
+    natives.push(BOOTSTRAP_JAR.to_string());
+    notes.push(format!(
+        "{BOOTSTRAP_JAR} sha256={} (Java ブリッジ配置)",
+        jar.sha256
+    ));
 
     // 2) instance.cfg (InstanceList が読む必須キー InstanceType を必ず書く)
     let cfg_text = concat!(
@@ -2158,6 +2283,15 @@ mod tests {
         ]
     }
 
+    /// 妥当形の偽 bootstrap jar (PK + 下限サイズ超) を dir に書き、内容を返す
+    /// (配置後のバイト一致検証用)。
+    fn write_fake_bootstrap_jar(dir: &Path) -> Vec<u8> {
+        let mut body = b"PK\x03\x04".to_vec();
+        body.resize(600, 0xAB);
+        fs::write(dir.join(BOOTSTRAP_JAR), &body).unwrap();
+        body
+    }
+
     #[test]
     fn launcher_full_setup_creates_version_dir_and_profile() {
         let home = tmpdir("launcher");
@@ -2166,6 +2300,8 @@ mod tests {
         for l in &full_linux_libs() {
             fs::write(src.join(&l.name), b"dll").unwrap();
         }
+        write_fake_bootstrap_jar(&src);
+        let jar_bytes = fs::read(src.join(BOOTSTRAP_JAR)).unwrap();
         let mc = home.join(".minecraft");
         fs::create_dir_all(&mc).unwrap();
         fs::write(
@@ -2193,6 +2329,17 @@ mod tests {
         for n in &out.natives_deployed {
             assert!(vdir.join(n).is_file(), "native {n} 実在");
         }
+        // bootstrap jar (Java ブリッジ) も agent と同階層へバイト一致で配置
+        assert!(
+            out.natives_deployed.iter().any(|n| n == BOOTSTRAP_JAR),
+            "natives に jar: {:?}",
+            out.natives_deployed
+        );
+        assert_eq!(
+            fs::read(vdir.join(BOOTSTRAP_JAR)).unwrap(),
+            jar_bytes,
+            "jar はバイト一致配置 (agent の探索先 = dll 同階層)"
+        );
         assert!(mc.join("mods").join(LIB_LINUX_GFX).is_file());
         assert!(mc.join("mods").join(LIB_LINUX_REPLAY).is_file());
         assert!(mc.join("mods").join(LIB_LINUX_ZOOM).is_file());
@@ -2217,6 +2364,7 @@ mod tests {
         for l in &full_linux_libs() {
             fs::write(src.join(&l.name), b"dll").unwrap();
         }
+        write_fake_bootstrap_jar(&src);
         let mc = home.join(".minecraft");
         fs::create_dir_all(&mc).unwrap();
         fs::write(mc.join("launcher_profiles.json"), r#"{"profiles": {}}"#).unwrap();
@@ -2242,6 +2390,7 @@ mod tests {
         for l in &full_linux_libs() {
             fs::write(src.join(&l.name), b"dll").unwrap();
         }
+        write_fake_bootstrap_jar(&src);
         let mc = home.join(".minecraft");
         fs::create_dir_all(&mc).unwrap();
         fs::write(mc.join("launcher_profiles.json"), "{ broken").unwrap();
@@ -2297,6 +2446,7 @@ mod tests {
         for l in &full_windows_libs() {
             fs::write(src.join(&l.name), b"dll").unwrap();
         }
+        write_fake_bootstrap_jar(&src);
         let root = home.join("PrismLauncher");
         fs::create_dir_all(&root).unwrap();
 
@@ -2369,8 +2519,8 @@ mod tests {
         }
         assert_eq!(
             out.natives_deployed.len(),
-            5,
-            "engine/agent/gfx/replay/zoom"
+            6,
+            "engine/agent/gfx/replay/zoom/bootstrap-jar"
         );
         for m in ["rsgraphics.dll", "rsreplay.dll", "rszoom.dll"] {
             assert!(
@@ -2389,6 +2539,7 @@ mod tests {
         for l in &full_windows_libs() {
             fs::write(src.join(&l.name), b"dll").unwrap();
         }
+        write_fake_bootstrap_jar(&src);
         let root = home.join("PrismLauncher");
         fs::create_dir_all(&root).unwrap();
         setup_prism(
@@ -2426,6 +2577,7 @@ mod tests {
         for l in &full_windows_libs() {
             fs::write(src.join(&l.name), b"dll").unwrap();
         }
+        write_fake_bootstrap_jar(&src);
         let root = home.join("PrismLauncher");
         let inst = root.join("instances").join("rsift");
         fs::create_dir_all(&inst).unwrap();
@@ -2492,6 +2644,7 @@ mod tests {
         for l in &full_windows_libs() {
             fs::write(src.join(&l.name), b"dll").unwrap();
         }
+        write_fake_bootstrap_jar(&src);
         let root = home.join("Pr ism");
         fs::create_dir_all(&root).unwrap();
         let out = setup_prism(
@@ -2521,6 +2674,176 @@ mod tests {
             "空白を含んでも 1 要素のまま: {argstrs:?}"
         );
         assert!(out.notes.iter().any(|n| n.contains("再起動")));
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    // ============================================================
+    // wave 204: bootstrap jar 同梱/配線の検定 (wave 203 実機報告
+    // 「Mods ボタンが無い」= jar 未同梱で Java ブリッジ全ロード失敗の根治)
+    // ============================================================
+    #[test]
+    fn bootstrap_jar_probe_states() {
+        let home = tmpdir("jarprobe");
+        // 不在
+        assert_eq!(
+            probe_bootstrap_jar(&home).unwrap(),
+            BootstrapJarState::Missing
+        );
+        // 破損 (PK マジック無し)
+        fs::write(home.join(BOOTSTRAP_JAR), b"NOPE-not-a-jar").unwrap();
+        assert_eq!(
+            probe_bootstrap_jar(&home).unwrap(),
+            BootstrapJarState::Corrupt,
+            "PK 無しは Corrupt"
+        );
+        // 破損 (PK 有りだが下限未満 = 152B スタブ系)
+        let mut tiny = b"PK\x03\x04".to_vec();
+        tiny.resize(200, 0);
+        fs::write(home.join(BOOTSTRAP_JAR), &tiny).unwrap();
+        assert_eq!(
+            probe_bootstrap_jar(&home).unwrap(),
+            BootstrapJarState::Corrupt,
+            "下限サイズ未満は Corrupt"
+        );
+        // 破損 (サイズ十分だが PK マジック無し — adversarial 変異で露出した
+        // 検査の独立 pin: サイズ条件単独では見抜けないケース)
+        let mut notzip = b"NO".to_vec();
+        notzip.resize(600, 0xCD);
+        fs::write(home.join(BOOTSTRAP_JAR), &notzip).unwrap();
+        assert_eq!(
+            probe_bootstrap_jar(&home).unwrap(),
+            BootstrapJarState::Corrupt,
+            "サイズ >= 512 でも PK マジック無しは Corrupt (jar ではない)"
+        );
+        // 有効
+        let body = write_fake_bootstrap_jar(&home);
+        let st = probe_bootstrap_jar(&home).unwrap();
+        match st {
+            BootstrapJarState::Present(l) => {
+                assert_eq!(l.name, BOOTSTRAP_JAR);
+                assert_eq!(l.sha256, sha256_hex(&body), "実内容の SHA-256");
+                assert_eq!(l.size, body.len() as u64);
+            }
+            other => panic!("有効 jar は Present: {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn launcher_missing_bootstrap_jar_skips_registration_with_note() {
+        let home = tmpdir("nojar_l");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_linux_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        // jar は書かない (wave 203 配布物の再現)
+        let mc = home.join(".minecraft");
+        fs::create_dir_all(&mc).unwrap();
+        let out = setup_launcher(&mc, TargetOs::Linux, &src, &full_linux_libs(), "vulkan")
+            .expect("Ok (登録中止はエラーではなく note)");
+        assert!(
+            !out.profile_registered,
+            "jar 無しでは登録しない (起動するが Mod が全く効かない壊れた構成を置かない)"
+        );
+        assert!(
+            out.notes.iter().any(|n| n.contains(BOOTSTRAP_JAR)),
+            "note に jar 欠如の理由: {:?}",
+            out.notes
+        );
+        assert!(
+            !mc.join("versions").join("rsift-1.21.11").exists(),
+            "versions フォルダ自体を作らない"
+        );
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn launcher_corrupt_bootstrap_jar_skips_registration_with_note() {
+        let home = tmpdir("badjar_l");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_linux_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        fs::write(src.join(BOOTSTRAP_JAR), b"PKtiny").unwrap();
+        let mc = home.join(".minecraft");
+        fs::create_dir_all(&mc).unwrap();
+        let out =
+            setup_launcher(&mc, TargetOs::Linux, &src, &full_linux_libs(), "vulkan").expect("Ok");
+        assert!(!out.profile_registered, "破損 jar でも登録しない");
+        assert!(
+            out.notes.iter().any(|n| n.contains("破損")),
+            "note は破損を明示: {:?}",
+            out.notes
+        );
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn prism_missing_bootstrap_jar_skips_with_note_nothing_created() {
+        let home = tmpdir("nojar_p");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_windows_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let root = home.join("PrismLauncher");
+        fs::create_dir_all(&root).unwrap();
+        let out = setup_prism(
+            &root,
+            TargetOs::Windows,
+            &src,
+            &full_windows_libs(),
+            "vulkan",
+        )
+        .expect("Ok");
+        assert!(!out.instance_created, "jar 無しではインスタンス登録しない");
+        assert!(out.notes.iter().any(|n| n.contains(BOOTSTRAP_JAR)));
+        assert!(
+            !root
+                .join("instances")
+                .join("rsift")
+                .join("instance.cfg")
+                .is_file(),
+            "壊れた起動構成を量産しない"
+        );
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn prism_full_setup_deploys_bootstrap_jar_next_to_agent() {
+        // prism_full_setup_* 本体に統合済みのため、ここでは jar 配置の代表 pin:
+        // natives 6 点 (engine/agent/gfx/replay/zoom/jar) とバイト一致を確認。
+        let home = tmpdir("prism_jar");
+        let src = home.join("src");
+        fs::create_dir_all(&src).unwrap();
+        for l in &full_windows_libs() {
+            fs::write(src.join(&l.name), b"dll").unwrap();
+        }
+        let jar_bytes = write_fake_bootstrap_jar(&src);
+        let root = home.join("PrismLauncher");
+        fs::create_dir_all(&root).unwrap();
+        let out = setup_prism(
+            &root,
+            TargetOs::Windows,
+            &src,
+            &full_windows_libs(),
+            "vulkan",
+        )
+        .expect("Ok");
+        assert!(out.instance_created);
+        let inst = root.join("instances").join("rsift");
+        assert!(
+            out.natives_deployed.iter().any(|n| n == BOOTSTRAP_JAR),
+            "natives に jar: {:?}",
+            out.natives_deployed
+        );
+        assert_eq!(
+            fs::read(inst.join("rsift-natives").join(BOOTSTRAP_JAR)).unwrap(),
+            jar_bytes,
+            "agentpath (rsift-natives) と同じフォルダへバイト一致配置"
+        );
         let _ = fs::remove_dir_all(&home);
     }
 }

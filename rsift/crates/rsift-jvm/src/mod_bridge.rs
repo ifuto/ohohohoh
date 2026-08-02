@@ -107,13 +107,24 @@ fn load_hooks_classes(env: &mut JNIEnv, ucl: &JObject) -> Result<(), String> {
         *slot = Some(global);
     }
 
+    // パケットタップは任意機能 (同梱 jar に未収録の場合あり) のためベスト
+    // エフォート。失敗時は pending 例外を必ずクリアする — 残すと同スレッドの
+    // 後続 JNI 呼出しが全て暗黙失敗する (wave 204: 構造的欠陥の根治)。
     let tap_name = env.new_string("com.rsift.RsiftPacketTap").map_err(|e| format!("{:?}", e))?;
-    let _ = env.call_method(
-        ucl,
-        "loadClass",
-        "(Ljava/lang/String;)Ljava/lang/Class;",
-        &[JValue::Object(&tap_name)],
-    );
+    if env
+        .call_method(
+            ucl,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&tap_name)],
+        )
+        .is_err()
+    {
+        let _ = env.exception_clear();
+        crate::agent_log::agent_log(
+            "[Rsift] RsiftPacketTap は同梱 bootstrap jar に未収録のためパケットタップは無効 (継続)",
+        );
+    }
     Ok(())
 }
 

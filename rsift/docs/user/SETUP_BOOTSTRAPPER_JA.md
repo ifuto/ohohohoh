@@ -4,10 +4,15 @@
 
 | OS | 実行ファイル | 置くもの (例) |
 |---|---|---|
-| Windows | `rsift-setup.exe` | `rsift.dll` / `rsift_jvm.dll` (起動 agent) / `rsgraphics.dll` / `rsreplay.dll` / `rszoom.dll` |
-| Mac | `Rsift Setup.app` (内側に `rsift-setup` と dylib 群) | `.app/Contents/MacOS/` 内に `librsift.dylib` / `librsift_jvm.dylib` / `librsgraphics.dylib` / `librsreplay.dylib` / `librszoom.dylib` |
+| Windows | `rsift-setup.exe` | `rsift.dll` / `rsift_jvm.dll` (起動 agent) / `rsgraphics.dll` / `rsreplay.dll` / `rszoom.dll` / **`rsift-bootstrap.jar`** (Java ブリッジ) |
+| Mac | `Rsift Setup.app` (内側に `rsift-setup` と dylib 群) | `.app/Contents/MacOS/` 内に `librsift.dylib` / `librsift_jvm.dylib` / `librsgraphics.dylib` / `librsreplay.dylib` / `librszoom.dylib` / **`rsift-bootstrap.jar`** |
 
 Release `setup-v1` の zip はこれらが全部入った一体梱包です。展開したフォルダでそのまま実行してください。
+
+> **`rsift-bootstrap.jar` は Mod 読み込みの命です** (Mods ボタン・画面フックの Java 側実体)。
+> これが無い・破損しているとゲームは起動しても Mod が一切効きません (Mods ボタンが出ません)。
+> その状態を setup が検出した場合は、壊れた起動構成を作らないよう登録を中止してログに理由を書きます。
+> 2026-08-01 以前の zip には入っていなかったため、必ず最新の zip でやり直してください。
 
 実行すると自動で:
 
@@ -59,6 +64,16 @@ Release `setup-v1` の zip はこれらが全部入った一体梱包です。�
 - `rsift_setup_log.jsonl` … 機械用
 
 この 2 ファイルを送ってもらえれば、環境・dll のハッシュ・判定・失敗箇所が全部分かります。
+
+### ゲームは起動するのに Mods ボタンが無い場合
+
+ゲームを起動した後に作られる **エージェントの起動ログ** があります:
+
+- `rsift-bootstrap.log` … `<.minecraft>/versions/rsift-1.21.11/` 内、
+  または `<.minecraft>/` 直下 (Prism の場合は `<instance>/.minecraft/`)
+
+これを併せて送ってもらえれば、agent がどこまで動いたか (jar 認識・フック注入・
+Mod ロードの成否) が全部分かります。
 
 終了コード: `0`=準備完了 / `2`=dll が見つからない / `3`=検証不一致 / `4`=IO失敗 / `5`=自己診断失敗
 

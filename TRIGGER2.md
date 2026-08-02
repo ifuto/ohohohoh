@@ -4,12 +4,15 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 11
+- run: 12
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /
   RsZoom=rszoom = バニラキーバインド式イーズアウトズーム Mod: 既定 C キー、
-  ゲーム内「設定→コントロール」で再割当可・全 OS 共通)** をビルドし、
+  ゲーム内「設定→コントロール」で再割当可・全 OS 共通)** +
+  **rsift-bootstrap.jar (Java ブリッジ: RsiftHooks / ScreenInitPatcher 等 =
+  Mods ボタンとフック注入の要。run 11 まで未同梱で実機「Mods ボタン無し」
+  不具合の直接原因だった構造的欠陥 = wave 204 根治)** をビルドし、
   zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
   (macOS では dylib は .app/Contents/MacOS/ 内部に同梱 — バイナリと同階層
   必須のため。外に置くと検出 0 で exit 2 になる構造欠陥が run 4 に顕在化した)
@@ -88,6 +91,7 @@ case "$RUNNER_OS" in
     cp target/release/rsgraphics.dll   dist-ci/windows/rsgraphics.dll
     cp target/release/rsreplay.dll     dist-ci/windows/rsreplay.dll
     cp target/release/rszoom.dll       dist-ci/windows/rszoom.dll
+    cp rsift/bootstrap/prebuilt/rsift-bootstrap.jar dist-ci/windows/rsift-bootstrap.jar
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/windows/README_JA.md
     (cd dist-ci/windows && tar -a -c -f ../rsift-bundle-windows-x64.zip .)
     ;;
@@ -110,6 +114,7 @@ case "$RUNNER_OS" in
       cp "target/$T/release/librsgraphics.dylib" "$APP/MacOS/librsgraphics.dylib"
       cp "target/$T/release/librsreplay.dylib"   "$APP/MacOS/librsreplay.dylib"
       cp "target/$T/release/librszoom.dylib"     "$APP/MacOS/librszoom.dylib"
+      cp "rsift/bootstrap/prebuilt/rsift-bootstrap.jar" "$APP/MacOS/rsift-bootstrap.jar"
       cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -141,6 +146,7 @@ PLIST
     cp target/release/librsgraphics.so dist-ci/linux/librsgraphics.so
     cp target/release/librsreplay.so   dist-ci/linux/librsreplay.so
     cp target/release/librszoom.so     dist-ci/linux/librszoom.so
+    cp rsift/bootstrap/prebuilt/rsift-bootstrap.jar dist-ci/linux/rsift-bootstrap.jar
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/linux/README_JA.md
     (cd dist-ci/linux && zip -qr ../rsift-bundle-linux-x64.zip .)
     ;;
@@ -176,7 +182,7 @@ HASH dist-ci/*.zip || true
 if [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null; then
   gh release create setup-v1 \
     --title "Rsift Setup v1 (.exe/.app + engine & agent & 3 Mod dll 同梱 + 起動構成 & PrismLauncher インスタンス自動登録版)" \
-    --notes "zip を展開して rsift-setup(.exe) / Rsift Setup.app を実行。起動構成 (versions/rsift-1.21.11 + launcher profile) と PrismLauncher インスタンス (instances/rsift) も自動登録 (検出時のみ・外部製 rsift 名インスタンスは絶対に上書きしない)。RsZoom: ズームキー (既定 C) 押下中ズーム — キーはゲーム内「設定→コントロール」で変更可・倍率はタイトル→Mods→RsZoom→Config。rsift_setup_log.txt/jsonl ができたら送ってください。" \
+    --notes "zip を展開して rsift-setup(.exe) / Rsift Setup.app を実行。起動構成 (versions/rsift-1.21.11 + launcher profile) と PrismLauncher インスタンス (instances/rsift) も自動登録 (検出時のみ・外部製 rsift 名インスタンスは絶対に上書きしない)。RsZoom: ズームキー (既定 C) 押下中ズーム — キーはゲーム内「設定→コントロール」で変更可・倍率はタイトル→Mods→RsZoom→Config。Mods ボタンが出ない場合は .minecraft/versions/rsift-1.21.11/ または .minecraft/ 直下の rsift-bootstrap.log も併せて送ってください。rsift_setup_log.txt/jsonl ができたら送ってください。" \
     --repo "$GITHUB_REPOSITORY" || true
   for Z in dist-ci/*.zip; do
     gh release upload setup-v1 "$Z" --clobber --repo "$GITHUB_REPOSITORY" || true
