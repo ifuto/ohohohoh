@@ -1,0 +1,14 @@
+{
+  "schema": "rsift.launch/1",
+  "target": "windows",
+  "arch": "x86_64",
+  "macos_version": null,
+  "renderer": "vulkan",
+  "engine_lib": "rsift.dll",
+  "graphics_lib": "rsgraphics.dll",
+  "load_libs": ["rsift.dll", "rsgraphics.dll"],
+  "prepared": true,
+  "notes": ["RsGraphics は実行時に wgpu が最適 backend を自動選択 (Vulkan 優先/DX12)", "RsReplay 同梱検出: rsreplay.dll (録画/export mod として準備)", "RsReplay 同梱検出: rsreplay.dll (録画/export mod として準備)"],
+  "launcher": {"registered": true, "profile_id": "rsift", "version_id": "rsift-1.21.11", "minecraft_dir": "C:\\Users\\Junji\\AppData\\Roaming\\.minecraft"},
+  "prism": {"created": true, "instance_id": "rsift", "instance_dir": "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift"}
+}
