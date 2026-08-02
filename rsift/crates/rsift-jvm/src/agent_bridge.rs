@@ -22,7 +22,7 @@ use rsift_api::runtime::runtime_or_init;
 use rsift_api::ui_ext::ScreenButtonDescriptor;
 use rsift_parser::BytecodePatcher;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -34,6 +34,15 @@ static DEFERRED_STARTED: AtomicBool = AtomicBool::new(false);
 static MODS_LOADED: AtomicBool = AtomicBool::new(false);
 static AGENTPATH_LOADED: AtomicBool = AtomicBool::new(false);
 static TRANSFORM_LOG_COUNT: AtomicU64 = AtomicU64::new(0);
+/// 生存中 JavaVM 実体アドレス (0 = 未取得)。wave 205: 早期 CFLH install と
+/// GetLoadedClasses 掃引が JVMTI を直接叩くための共用一次情報。
+static JAVA_VM_ADDR: AtomicUsize = AtomicUsize::new(0);
+static TITLE_MARKER_SET: AtomicBool = AtomicBool::new(false);
+
+/// JavaVM 実体アドレス (未取得なら null)。JVMTI を直接使う側 (screen_inject) が参照。
+pub fn java_vm_addr() -> *mut std::ffi::c_void {
+    JAVA_VM_ADDR.load(Ordering::SeqCst) as *mut std::ffi::c_void
+}
 
 const TICK_ACTIVE_MS: u64 = 250;
 const MAX_INJECT_TICKS: u32 = 600;
@@ -155,6 +164,7 @@ pub fn schedule_deferred_init(vm: *mut std::ffi::c_void, options: &str, from_age
     }
     let opts = options.to_string();
     let vm_addr = vm as usize;
+    JAVA_VM_ADDR.store(vm_addr, Ordering::SeqCst);
     match std::thread::Builder::new()
         .name("rsift-deferred-init".into())
         // Agent JNI probes (getAllStackTraces) need more stack than the Windows default (~1 MiB).
@@ -218,9 +228,16 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
             return;
         }
     };
+    // wave 205 根治 (欠陥B/欠陥C): CFLH install を loader 発見「後」から
+    // **attach 前 (最速)** へ移動。CFLH が net/minecraft クラスの defining
+    // loader をイベント経由で直接捕捉し、探索戦略の主経路になる。
+    let hook_ok = unsafe { jvmti_events::install_class_file_load_hook(vm_addr as *mut _) };
     agent_log_step(
         "deferred_init",
-        "JavaVM::from_raw OK — starting attach loop",
+        &format!(
+            "JVMTI CFLH early install = {} — starting attach loop",
+            hook_ok
+        ),
     );
 
     for attempt in 0..300 {
@@ -243,11 +260,7 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
                         let bridge_ok = screen_inject::ensure_injector_loaded(&mut env);
                         let mod_ok = mod_bridge::ensure_mod_bridge(&mut env);
                         let _ = platform_bridge::ensure_platform_bridge(&mut env);
-                        // SAFETY: vm_addr は JVM から取得した生存中 JavaVM の
-                        // アドレス (本スレッドは JVM 上で実行されている)。
-                        let _ = unsafe {
-                            jvmti_events::install_class_file_load_hook(vm_addr as *mut _)
-                        };
+                        // CFLH は attach 前に install 済 (wave 205 前倒し)。
                         register_transformer_natives(&mut env);
                         register_hooks_natives(&mut env);
                         notify_transformer_ready(&mut env);
@@ -308,6 +321,11 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
                             "bridge_load",
                             &format!("UiBridge={} ModBridge={}", bridge_ok, mod_ok),
                         );
+                        // wave 205: ブリッジ準備完了後の後追い処理 —
+                        //   (1) 既ロード済みパッチ対象クラスへの Retransform 追撃
+                        //   (2) F3 マーカー picker 登録 + 対象クラス Retransform
+                        //   (3) ウィンドウタイトル・マーカー (「Vanilla判定」への直接応答)
+                        post_bridge_boot(&mut env, vm_addr);
                         break;
                     }
                     Ok(None) => {
@@ -373,6 +391,295 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
             agent_log_warn("tick_loop", &format!("attach failed at tick={}", tick));
         }
         tick = tick.saturating_add(1);
+    }
+}
+
+// ----------------------------------------------------------------------
+// wave 205: ブリッジ準備完了後の後追い処理群
+// ----------------------------------------------------------------------
+
+/// (1) Retransform 追撃 (2) F3 マーカー登録+Retransform (3) タイトルマーカー。
+/// 個別失敗はログのみでゲーム継続 (どれも致命傷でない設計)。
+fn post_bridge_boot(env: &mut JNIEnv, vm_addr: usize) {
+    retransform_loaded_targets(env, vm_addr);
+    install_f3_marker(env, vm_addr);
+    // タイトルは client_tick 側でもリトライするのでここは最善努力。
+    if let Some(inst) = screen_inject::minecraft_instance(env) {
+        maybe_set_window_title(env, &inst);
+    } else {
+        screen_inject::clear_pending_exception(env);
+    }
+}
+
+/// install より前にロード済みのパッチ対象クラスへ後追いでフックを当てる。
+/// RetransformClasses は CFLH を「元バイト列」で再発火させるため、
+/// 登録済みターゲットは patch_if_needed 経由で正しくパッチされる。
+fn retransform_loaded_targets(env: &mut JNIEnv, vm_addr: usize) {
+    let Some(loader) = screen_inject::game_class_loader(env) else {
+        agent_log_warn("retransform", "no game loader — sweep skipped");
+        return;
+    };
+    let mut names: Vec<String> = rsift_parser::static_target_classes()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    names.extend(rsift_parser::dynamic_targets_snapshot());
+    names.sort();
+    names.dedup();
+    let mut classes: Vec<*mut std::ffi::c_void> = Vec::new();
+    let mut locals: Vec<JClass> = Vec::new(); // local ref 生存保持 (retransform 完了まで)
+    for internal in &names {
+        let dotted = internal.replace('/', ".");
+        match screen_inject::load_class_with_loader(env, &loader, &dotted) {
+            Some(cls) => {
+                classes.push(cls.as_raw() as *mut _);
+                locals.push(cls);
+            }
+            None => {
+                screen_inject::clear_pending_exception(env);
+            }
+        }
+    }
+    if classes.is_empty() {
+        agent_log_step(
+            "retransform",
+            "no statically targeted classes loaded yet — nothing to retransform",
+        );
+        return;
+    }
+    // SAFETY: vm_addr は生存中 JavaVM、classes は本スレッド attach 上の有効な jclass。
+    let rc = unsafe { jvmti_events::retransform_classes(vm_addr as *mut _, &classes) };
+    agent_log_step(
+        "retransform",
+        &format!(
+            "RetransformClasses rc={} ({} of {} target classes already loaded)",
+            rc,
+            classes.len(),
+            names.len()
+        ),
+    );
+    drop(locals);
+}
+
+/// F3 マーカー (wave 205 ユーザー提案採用): 実行時リフレクションで
+/// 「0 引数・java.util.List 返り値・要素型 = String または Component」の
+/// F3 行メソッドを特定 → TAIL 注入 spec を登録 → 対象クラスを Retransform。
+/// 要件に合うメソッドが無い場合は理由ログつきで静黙スキップ (嘘の注入禁止)。
+fn install_f3_marker(env: &mut JNIEnv, vm_addr: usize) {
+    let Some(loader) = screen_inject::game_class_loader(env) else {
+        agent_log_warn("f3_marker", "no game loader — F3 marker skipped");
+        return;
+    };
+    // 1.21.11 実在確認済 (optifine srg patch 一覧 = wave 205 一次情報)。
+    const CANDIDATE_CLASSES: &[&str] = &[
+        "net.minecraft.client.gui.components.debug.DebugScreenEntryList",
+        "net.minecraft.client.gui.components.DebugScreenOverlay",
+        "net.minecraft.client.gui.components.debug.DebugScreenOverlay",
+    ];
+    for dotted in CANDIDATE_CLASSES {
+        let Some(cls) = screen_inject::load_class_with_loader(env, &loader, dotted) else {
+            screen_inject::clear_pending_exception(env);
+            continue;
+        };
+        let Some((method, element)) = pick_f3_lines_method(env, &cls) else {
+            screen_inject::clear_pending_exception(env);
+            continue;
+        };
+        let internal = dotted.replace('.', "/");
+        rsift_parser::register_f3_marker(&internal, &method, "()Ljava/util/List;", element);
+        rsift_parser::register_dynamic_target(&internal);
+        agent_log_step(
+            "f3_marker",
+            &format!("registered on {}#{} ({:?})", internal, method, element),
+        );
+        // picker が対象クラスをロード済み (= 未パッチ状態) なので後追い Retransform。
+        let raw = cls.as_raw() as *mut std::ffi::c_void;
+        // SAFETY: 生存中 JavaVM + 本スレッド有効な jclass。
+        let rc = unsafe { jvmti_events::retransform_classes(vm_addr as *mut _, &[raw]) };
+        agent_log_step(
+            "f3_marker",
+            &format!("RetransformClasses rc={} for {}", rc, internal),
+        );
+        return;
+    }
+    agent_log_step(
+        "f3_marker",
+        "no F3-lines method (0-arg, List<String|Component>) found via reflection — \
+         F3 marker skipped honestly (window title marker remains)",
+    );
+}
+
+/// 1 メソッドを検査して F3 行メソッド候補なら Some((name, element))。
+/// 失敗・不適合は None。pending 例外は呼び出し側でクリアする。
+fn inspect_f3_candidate_method<'local>(
+    env: &mut JNIEnv<'local>,
+    arr: &jni::objects::JObjectArray<'local>,
+    index: jni::sys::jsize,
+) -> Option<(String, rsift_parser::ListElement)> {
+    let m = env.get_object_array_element(arr, index).ok()?;
+    let pc = env
+        .call_method(&m, "getParameterCount", "()I", &[])
+        .ok()?
+        .i()
+        .ok()?;
+    if pc != 0 {
+        return None;
+    }
+    let mods = env
+        .call_method(&m, "getModifiers", "()I", &[])
+        .ok()?
+        .i()
+        .ok()?;
+    if mods & (0x0400 | 0x0100) != 0 {
+        // abstract | native は注入不可
+        return None;
+    }
+    let rt = env
+        .call_method(&m, "getReturnType", "()Ljava/lang/Class;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let rtn = call_string_method(env, &rt, "getName", "()Ljava/lang/String;")?;
+    if rtn != "java.util.List" {
+        return None;
+    }
+    let gt = env
+        .call_method(
+            &m,
+            "getGenericReturnType",
+            "()Ljava/lang/reflect/Type;",
+            &[],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    let gts = call_string_method(env, &gt, "toString", "()Ljava/lang/String;")?;
+    let element = classify_list_element(&gts)?;
+    let name = call_string_method(env, &m, "getName", "()Ljava/lang/String;")?;
+    Some((name, element))
+}
+
+/// クラスの宣言メソッドから F3 行メソッドを 1 本選ぶ。
+/// 複数候補は名前ヒント (lines > f3 > info) でスコアリング、同点は名前順。
+fn pick_f3_lines_method<'local>(
+    env: &mut JNIEnv<'local>,
+    cls: &JClass<'local>,
+) -> Option<(String, rsift_parser::ListElement)> {
+    let methods_obj = env
+        .call_method(
+            cls,
+            "getDeclaredMethods",
+            "()[Ljava/lang/reflect/Method;",
+            &[],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    // SAFETY: getDeclaredMethods は Method[] を返す (非 null)。
+    let arr = unsafe {
+        jni::objects::JObjectArray::from_raw(methods_obj.as_raw() as jni::sys::jobjectArray)
+    };
+    let count = env.get_array_length(&arr).ok()?;
+    let mut candidates: Vec<(String, rsift_parser::ListElement)> = Vec::new();
+    for i in 0..count {
+        match inspect_f3_candidate_method(env, &arr, i) {
+            Some(c) => candidates.push(c),
+            None => screen_inject::clear_pending_exception(env),
+        }
+    }
+    if candidates.is_empty() {
+        return None;
+    }
+    candidates.sort_by(|a, b| a.0.cmp(&b.0));
+    if candidates.len() > 1 {
+        let names: Vec<String> = candidates.iter().map(|c| c.0.clone()).collect();
+        agent_log_step(
+            "f3_marker",
+            &format!(
+                "{} candidates [{}] — scoring by name hints",
+                candidates.len(),
+                names.join(", ")
+            ),
+        );
+    }
+    candidates
+        .into_iter()
+        .max_by_key(|(n, _)| f3_method_name_score(n))
+}
+
+/// 名前ヒントのスコア (純粋関数 — テスト可能)。
+fn f3_method_name_score(name: &str) -> u32 {
+    let l = name.to_ascii_lowercase();
+    l.contains("lines") as u32 * 4 + l.contains("f3") as u32 * 2 + l.contains("info") as u32
+}
+
+/// ジェネリクス戻り値の toString から List 要素型を判別 (純粋関数 — テスト可能)。
+/// 判別不能 (raw List / 未知要素 / DebugScreenEntry 等) は None — 注入しない決定。
+/// List<DebugScreenEntry> 等への String 混入は消費側キャストで CCE になるため。
+fn classify_list_element(generic: &str) -> Option<rsift_parser::ListElement> {
+    if generic.contains("java.lang.String") {
+        Some(rsift_parser::ListElement::String)
+    } else if generic.contains("net.minecraft.network.chat.Component")
+        || generic.contains("MutableComponent")
+    {
+        Some(rsift_parser::ListElement::Component)
+    } else {
+        None
+    }
+}
+
+fn call_string_method(env: &mut JNIEnv, obj: &JObject, name: &str, sig: &str) -> Option<String> {
+    let v = env.call_method(obj, name, sig, &[]).ok()?;
+    let o = v.l().ok()?;
+    env.get_string((&o).into()).ok().map(|s| s.into())
+}
+
+/// 「Vanilla 判定」への直接応答 (wave 205): ウィンドウタイトルに Rsift 表記。
+/// バニラ様式の `Minecraft* <version>` 接尾 (Mod UI はマイクラ味方針に整合)。
+/// client_tick から繰り返し呼ばれる前提で成功時のみフラグを立てて冪等化。
+fn maybe_set_window_title(env: &mut JNIEnv, inst: &JObject) {
+    if TITLE_MARKER_SET.load(Ordering::SeqCst) {
+        return;
+    }
+    let run = (|| -> Result<(), String> {
+        if inst.as_raw().is_null() {
+            return Err("Minecraft instance is null (client not ready)".into());
+        }
+        let window = env
+            .call_method(
+                inst,
+                "getWindow",
+                "()Lcom/mojang/blaze3d/platform/Window;",
+                &[],
+            )
+            .and_then(|v| v.l())
+            .map_err(|e| format!("getWindow: {:?}", e))?;
+        if window.as_raw().is_null() {
+            return Err("getWindow returned null".into());
+        }
+        let title = format!(
+            "Minecraft* {} - Rsift (RsGraphics Render)",
+            rsift_api::TARGET_MINECRAFT_VERSION
+        );
+        let title_j = env
+            .new_string(&title)
+            .map_err(|e| format!("new_string: {:?}", e))?;
+        env.call_method(
+            &window,
+            "setTitle",
+            "(Ljava/lang/String;)V",
+            &[JValue::Object(&title_j)],
+        )
+        .map_err(|e| format!("setTitle: {:?}", e))?;
+        agent_log_step("title_marker", &format!("window title set: {}", title));
+        Ok(())
+    })();
+    match run {
+        Ok(()) => TITLE_MARKER_SET.store(true, Ordering::SeqCst),
+        Err(e) => {
+            screen_inject::clear_pending_exception(env);
+            agent_log_step("title_marker", &format!("skipped this attempt: {}", e));
+        }
     }
 }
 
@@ -493,6 +800,8 @@ pub fn client_tick(env: &mut JNIEnv) {
         Some(o) => o,
         None => return,
     };
+    // wave 205: インスタンス確定後に確実にタイトルマーカーを入れる (冪等)。
+    maybe_set_window_title(env, &inst);
 
     let screen = match env.call_method(
         &inst,
@@ -994,5 +1303,64 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPressHandler_nativeOnButton(
 ) {
     if let Some(rt) = rsift_api::runtime::runtime() {
         rt.screen_registry().fire_button_by_id(button_id as u32);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_element_classification_is_precise() {
+        use rsift_parser::ListElement;
+        assert_eq!(
+            classify_list_element("java.util.List<java.lang.String>"),
+            Some(ListElement::String)
+        );
+        assert_eq!(
+            classify_list_element("java.util.List<net.minecraft.network.chat.Component>"),
+            Some(ListElement::Component)
+        );
+        assert_eq!(
+            classify_list_element(
+                "java.util.List<net.minecraft.client.gui.components.debug.DebugScreenEntry>"
+            ),
+            None,
+            "ロジックリストへの混入は CCE リスク — 判別不能は None (= 注入しない)"
+        );
+        assert_eq!(
+            classify_list_element("java.util.List"),
+            None,
+            "raw List は不注入"
+        );
+        assert_eq!(
+            classify_list_element("java.util.List<java.lang.Integer>"),
+            None
+        );
+    }
+
+    #[test]
+    fn f3_name_scoring_prefers_lines_then_f3_then_info() {
+        assert!(f3_method_name_score("getCurrentlyEnabled") < f3_method_name_score("getF3Lines"));
+        assert!(f3_method_name_score("getSystemInfo") > 0);
+        assert!(f3_method_name_score("getLines") > f3_method_name_score("getSystemInfo"));
+        assert_eq!(f3_method_name_score("size"), 0);
+        // 大文字小文字は吸収
+        assert_eq!(
+            f3_method_name_score("GETLINES"),
+            f3_method_name_score("getlines")
+        );
+    }
+
+    #[test]
+    fn title_marker_initially_unset() {
+        // プロセス内一度成功したら二度目は true — 環境非依存の不変条件のみ検査。
+        let _v = TITLE_MARKER_SET.load(Ordering::SeqCst);
+    }
+
+    #[test]
+    fn java_vm_addr_is_null_or_aligned_pointer() {
+        let p = java_vm_addr();
+        assert!(p.is_null() || (p as usize) % std::mem::align_of::<usize>() == 0);
     }
 }

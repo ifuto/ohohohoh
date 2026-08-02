@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 13  (run 12: jar パスを `rsift/bootstrap/...` と誤記し `cd rsift` 後のパス解決で ubuntu/macos/windows 全滅 → `bootstrap/...` に修正。既存 cp 行と同じ相対基準)
+- run: 14  (run 13: jar パス修復で 3 OS 全緑回復確認済。wave 205 版 rsift_jvm + 根治済み mod_dir 解決を同梱)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /
@@ -13,6 +13,11 @@ run 番号を1つ増やして push するのが「実行の合図」(起動条�
   **rsift-bootstrap.jar (Java ブリッジ: RsiftHooks / ScreenInitPatcher 等 =
   Mods ボタンとフック注入の要。run 11 まで未同梱で実機「Mods ボタン無し」
   不具合の直接原因だった構造的欠陥 = wave 204 根治)** をビルドし、
+  rsift_jvm は wave 205 版 (早期 CFLH install + 捕捉 loader 直接利用 +
+  GetLoadedClasses 掃引 + RetransformClasses 追撃 + F3 マーカー
+  「RsGraphics Render (Rsift)」+ ウィンドウタイトルマーカー内蔵、
+  JVMTI index 公式 jvmti.xml 準拠へ全書換) + mod_dir 誤解決根治
+  (rsift-natives ではなくゲーム cwd の mods を解決)、
   zip 展開したら全部同じフォルダに dll が並ぶ一体梱包形式で出力。
   (macOS では dylib は .app/Contents/MacOS/ 内部に同梱 — バイナリと同階層
   必須のため。外に置くと検出 0 で exit 2 になる構造欠陥が run 4 に顕在化した)

@@ -53,6 +53,31 @@ pub fn register_mixin_rule(rule: crate::mixin_eq::MixinRule) {
     global_mixins().lock().unwrap().register_rule(rule);
 }
 
+/// 静的ターゲット一覧 (wave 205: RetransformClasses 対象収集の消費者 = rsift-jvm)。
+pub fn static_target_classes() -> [&'static str; 11] {
+    [
+        TARGET_CONNECTION_CLASS,
+        TARGET_RENDER_CLASS,
+        TARGET_MINECRAFT_CLIENT,
+        TARGET_SERVER_LEVEL,
+        TARGET_MOB,
+        TARGET_ENTITY,
+        TARGET_REDSTONE_WIRE,
+        TARGET_LEVEL_CHUNK,
+        TARGET_HOPPER,
+        TARGET_FLOWING_FLUID,
+        TARGET_SCREEN,
+    ]
+}
+
+/// dynamic targets のスナップショット (wave 205: Retransform 対象収集の消費者)。
+pub fn dynamic_targets_snapshot() -> Vec<String> {
+    dynamic_targets()
+        .lock()
+        .map(|g| g.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
 pub struct BytecodePatcher;
 
 impl BytecodePatcher {
@@ -84,8 +109,13 @@ impl BytecodePatcher {
                 .unwrap_or(false)
             || global_mixins()
                 .lock()
-                .map(|m| m.rules.iter().any(|r| r.target_class.replace('.', "/") == name))
+                .map(|m| {
+                    m.rules
+                        .iter()
+                        .any(|r| r.target_class.replace('.', "/") == name)
+                })
                 .unwrap_or(false)
+            || crate::f3_marker::is_f3_target(&name)
     }
 
     pub fn patch_if_needed(class_name: &str, raw_data: &[u8]) -> Result<PatchResult, String> {
@@ -199,6 +229,16 @@ impl BytecodePatcher {
             if let Some(out) = mixins.apply_mixins(&dotted, &bytes) {
                 bytes = out;
                 modified = true;
+            }
+        }
+
+        // F3 マーカー (wave 205): 実行時 picker が登録したクラスのみ。
+        // HEAD 注入系とは独立した TAIL 注入 (保守条件不合なら内部で拒否)。
+        if crate::f3_marker::is_f3_target(&class_name) {
+            if let Some(out) = crate::f3_marker::apply_registered_markers(&class_name, &bytes) {
+                bytes = out;
+                modified = true;
+                info!("Injected F3 marker into {}", class_name);
             }
         }
 

@@ -19,7 +19,8 @@ pub fn dll_directory() -> Option<PathBuf> {
                 lp_module_name: *const u16,
                 ph_module: *mut *mut c_void,
             ) -> i32;
-            fn GetModuleFileNameW(h_module: *mut c_void, lp_filename: *mut u16, n_size: u32) -> u32;
+            fn GetModuleFileNameW(h_module: *mut c_void, lp_filename: *mut u16, n_size: u32)
+                -> u32;
         }
         const FROM_ADDRESS: u32 = 0x00000004;
         const UNCHANGED_REFCOUNT: u32 = 0x00000002;
@@ -34,9 +35,8 @@ pub fn dll_directory() -> Option<PathBuf> {
 
         let mut module: *mut c_void = std::ptr::null_mut();
         let anchor = Agent_OnLoad as *const () as *const u16;
-        let ok = unsafe {
-            GetModuleHandleExW(FROM_ADDRESS | UNCHANGED_REFCOUNT, anchor, &mut module)
-        };
+        let ok =
+            unsafe { GetModuleHandleExW(FROM_ADDRESS | UNCHANGED_REFCOUNT, anchor, &mut module) };
         if ok == 0 || module.is_null() {
             return None;
         }
@@ -75,24 +75,144 @@ pub fn read_opts_file(dir: &Path) -> HashMap<String, String> {
 }
 
 pub fn resolve_mod_dir(agent_args: &str) -> PathBuf {
+    let dir = dll_directory();
+    resolve_mod_dir_with(agent_args, dir.as_deref(), |msg| agent_log(msg))
+}
+
+/// 解決順: 明示 arg → opts file → **ゲームプロセス cwd の mods (存在時)** →
+/// dll_dir/mods → ./mods。
+/// wave 205 欠陥A 根治: agentpath ロードでは dll_dir = rsift-natives であり、
+/// ゲーム実体の mods/ (例 Prism `<instance>/.minecraft/mods`) と別物。
+/// natives 側に mods/ が無い限り「mod_dir does not exist」で Mod 0 件に
+/// なっていた。ゲームの cwd は実際のゲームディレクトリなので、そこに mods/
+/// が存在するならそれが正本。
+fn resolve_mod_dir_with(agent_args: &str, dll_dir: Option<&Path>, log: impl Fn(&str)) -> PathBuf {
     for part in agent_args.split(',') {
         let part = part.trim();
         if let Some(dir) = part.strip_prefix("modDir=") {
-            return PathBuf::from(dir.trim_matches('"'));
+            let p = PathBuf::from(dir.trim_matches('"'));
+            log(&format!("[Rsift] mod_dir from agent arg modDir=: {:?}", p));
+            return p;
         }
         if let Some(dir) = part.strip_prefix("gameDir=") {
-            return PathBuf::from(dir.trim_matches('"')).join("mods");
+            let p = PathBuf::from(dir.trim_matches('"')).join("mods");
+            log(&format!("[Rsift] mod_dir from agent arg gameDir=: {:?}", p));
+            return p;
         }
     }
-    if let Some(dir) = dll_directory() {
-        let opts = read_opts_file(&dir);
+    if let Some(dir) = dll_dir {
+        let opts = read_opts_file(dir);
         if let Some(m) = opts.get("modDir") {
-            return PathBuf::from(m);
+            let p = PathBuf::from(m);
+            if p.is_dir() {
+                log(&format!("[Rsift] mod_dir from opts file modDir: {:?}", p));
+                return p;
+            }
+            // opts の modDir が消えている環境 (リネーム/移動) — 盲目的に返すと
+            // 0 件沈黙になるので存在しない場合は下の候補へ進む (ログは残す)。
+            log(&format!(
+                "[Rsift] opts modDir {:?} missing — falling through",
+                p
+            ));
         }
         if let Some(g) = opts.get("gameDir") {
-            return PathBuf::from(g).join("mods");
+            let p = PathBuf::from(g).join("mods");
+            log(&format!("[Rsift] mod_dir from opts file gameDir: {:?}", p));
+            return p;
         }
-        return dir.join("mods");
+        // ゲームプロセスの cwd = 実ゲームディレクトリ (Mods の正本)。
+        if let Ok(cwd) = std::env::current_dir() {
+            let p = cwd.join("mods");
+            if p.is_dir() {
+                log(&format!("[Rsift] mod_dir from game cwd: {:?}", p));
+                return p;
+            }
+        }
+        let p = dir.join("mods");
+        log(&format!("[Rsift] mod_dir fallback dll_dir/mods: {:?}", p));
+        return p;
     }
     PathBuf::from("./mods")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // current_dir() はプロセスグローバル — 直列化して他テストと隔離する。
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    fn tempdir(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("rsift_moddir_test_{}_{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn arg_moddir_wins_over_everything() {
+        let _g = CWD_LOCK.lock().unwrap();
+        let dll = tempdir("argwins_dll");
+        let got = resolve_mod_dir_with("modDir=/explicit/mods", Some(&dll), |_| {});
+        assert_eq!(got, PathBuf::from("/explicit/mods"));
+        let got = resolve_mod_dir_with("gameDir=/game", Some(&dll), |_| {});
+        assert_eq!(got, PathBuf::from("/game/mods"));
+        let _ = std::fs::remove_dir_all(&dll);
+    }
+
+    #[test]
+    fn cwd_mods_is_preferred_over_dll_dir_mods() {
+        let _g = CWD_LOCK.lock().unwrap();
+        let saved = std::env::current_dir().unwrap();
+        let cwd = tempdir("cwdpref_game");
+        let dll = tempdir("cwdpref_dll");
+        std::fs::create_dir_all(cwd.join("mods")).unwrap();
+        std::env::set_current_dir(&cwd).unwrap();
+        let got = resolve_mod_dir_with("", Some(&dll), |_| {});
+        std::env::set_current_dir(&saved).unwrap();
+        assert_eq!(got, cwd.join("mods"));
+        let _ = std::fs::remove_dir_all(&cwd);
+        let _ = std::fs::remove_dir_all(&dll);
+    }
+
+    #[test]
+    fn absent_cwd_mods_falls_back_to_dll_dir_mods() {
+        let _g = CWD_LOCK.lock().unwrap();
+        let saved = std::env::current_dir().unwrap();
+        let cwd = tempdir("nocwdmods_game");
+        let dll = tempdir("nocwdmods_dll");
+        // cwd に mods/ を作らない → dll_dir/mods へ落ちる。
+        std::env::set_current_dir(&cwd).unwrap();
+        let got = resolve_mod_dir_with("", Some(&dll), |_| {});
+        std::env::set_current_dir(&saved).unwrap();
+        assert_eq!(got, dll.join("mods"));
+        let _ = std::fs::remove_dir_all(&cwd);
+        let _ = std::fs::remove_dir_all(&dll);
+    }
+
+    #[test]
+    fn opts_moddir_missing_falls_through_to_cwd() {
+        let _g = CWD_LOCK.lock().unwrap();
+        let saved = std::env::current_dir().unwrap();
+        let cwd = tempdir("optsdead_game");
+        let dll = tempdir("optsdead_dll");
+        std::fs::create_dir_all(cwd.join("mods")).unwrap();
+        // opts file に存在しない modDir を書く → 継続して cwd/mods が選ばれる。
+        std::fs::write(dll.join(OPTS_FILENAME), "modDir=/gone/forever\n").unwrap();
+        std::env::set_current_dir(&cwd).unwrap();
+        let got = resolve_mod_dir_with("", Some(&dll), |_| {});
+        std::env::set_current_dir(&saved).unwrap();
+        assert_eq!(got, cwd.join("mods"));
+        let _ = std::fs::remove_dir_all(&cwd);
+        let _ = std::fs::remove_dir_all(&dll);
+    }
+
+    #[test]
+    fn no_dll_dir_yields_relative_mods() {
+        let _g = CWD_LOCK.lock().unwrap();
+        let got = resolve_mod_dir_with("", None, |_| {});
+        assert_eq!(got, PathBuf::from("./mods"));
+    }
 }

@@ -7,16 +7,11 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use super::{
-    Java_com_rsift_RsiftPressHandler_nativeOnButton,
-    Java_com_rsift_RsiftScreenHooks_nativeLog,
-    Java_com_rsift_RsiftUiBridge_nativeButtonCount,
-    Java_com_rsift_RsiftUiBridge_nativeButtonH,
-    Java_com_rsift_RsiftUiBridge_nativeButtonId,
-    Java_com_rsift_RsiftUiBridge_nativeButtonLabel,
-    Java_com_rsift_RsiftUiBridge_nativeButtonW,
-    Java_com_rsift_RsiftUiBridge_nativeButtonX,
-    Java_com_rsift_RsiftUiBridge_nativeButtonY,
-    Java_com_rsift_RsiftUiBridge_nativePrepareScreen,
+    Java_com_rsift_RsiftPressHandler_nativeOnButton, Java_com_rsift_RsiftScreenHooks_nativeLog,
+    Java_com_rsift_RsiftUiBridge_nativeButtonCount, Java_com_rsift_RsiftUiBridge_nativeButtonH,
+    Java_com_rsift_RsiftUiBridge_nativeButtonId, Java_com_rsift_RsiftUiBridge_nativeButtonLabel,
+    Java_com_rsift_RsiftUiBridge_nativeButtonW, Java_com_rsift_RsiftUiBridge_nativeButtonX,
+    Java_com_rsift_RsiftUiBridge_nativeButtonY, Java_com_rsift_RsiftUiBridge_nativePrepareScreen,
 };
 use crate::agent_log::{agent_log, agent_log_step, agent_log_warn};
 use crate::agent_opts;
@@ -131,8 +126,8 @@ fn load_screen_hooks_minimal(env: &mut JNIEnv) -> Result<(), String> {
     if !jar.is_file() {
         return Err(format!("bootstrap jar missing: {:?}", jar));
     }
-    let parent_loader = find_game_class_loader(env)
-        .ok_or("game ClassLoader not found (is Minecraft running?)")?;
+    let parent_loader =
+        find_game_class_loader(env).ok_or("game ClassLoader not found (is Minecraft running?)")?;
     let ucl = url_classloader_for_jar(env, &parent_loader, &jar)?;
 
     let hooks_name = env
@@ -224,15 +219,16 @@ pub fn url_classloader_for_jar<'local>(
     let url_cls = env
         .find_class("java/net/URL")
         .map_err(|e| format!("URL class: {:?}", e))?;
-    let file_url = format!(
-        "file:///{}",
-        jar.display().to_string().replace('\\', "/")
-    );
+    let file_url = format!("file:///{}", jar.display().to_string().replace('\\', "/"));
     let url_str = env
         .new_string(&file_url)
         .map_err(|e| format!("url string: {:?}", e))?;
     let url = env
-        .new_object(url_cls, "(Ljava/lang/String;)V", &[JValue::Object(&url_str)])
+        .new_object(
+            url_cls,
+            "(Ljava/lang/String;)V",
+            &[JValue::Object(&url_str)],
+        )
         .map_err(|e| format!("URL ctor: {:?}", e))?;
     let url_array = env
         .new_object_array(1, "java/net/URL", &url)
@@ -258,8 +254,8 @@ fn load_bridge(env: &mut JNIEnv) -> Result<(), String> {
         return Err(format!("bootstrap jar missing: {:?}", jar));
     }
 
-    let parent_loader = find_game_class_loader(env)
-        .ok_or("game ClassLoader not found (is Minecraft running?)")?;
+    let parent_loader =
+        find_game_class_loader(env).ok_or("game ClassLoader not found (is Minecraft running?)")?;
 
     let global_loader = env
         .new_global_ref(&parent_loader)
@@ -271,15 +267,16 @@ fn load_bridge(env: &mut JNIEnv) -> Result<(), String> {
     let url_cls = env
         .find_class("java/net/URL")
         .map_err(|e| format!("URL class: {:?}", e))?;
-    let file_url = format!(
-        "file:///{}",
-        jar.display().to_string().replace('\\', "/")
-    );
+    let file_url = format!("file:///{}", jar.display().to_string().replace('\\', "/"));
     let url_str = env
         .new_string(&file_url)
         .map_err(|e| format!("url string: {:?}", e))?;
     let url = env
-        .new_object(url_cls, "(Ljava/lang/String;)V", &[JValue::Object(&url_str)])
+        .new_object(
+            url_cls,
+            "(Ljava/lang/String;)V",
+            &[JValue::Object(&url_str)],
+        )
         .map_err(|e| format!("URL ctor: {:?}", e))?;
 
     let url_array = env
@@ -438,7 +435,11 @@ pub fn jni_exception_message(env: &mut JNIEnv) -> Option<String> {
     }
     let exc = env.exception_occurred().ok()?;
     let _ = env.exception_clear();
-    let class_obj = env.call_method(&exc, "getClass", "()Ljava/lang/Class;", &[]).ok()?.l().ok()?;
+    let class_obj = env
+        .call_method(&exc, "getClass", "()Ljava/lang/Class;", &[])
+        .ok()?
+        .l()
+        .ok()?;
     let class_name = env
         .call_method(&class_obj, "getName", "()Ljava/lang/String;", &[])
         .ok()?
@@ -472,13 +473,24 @@ pub fn find_game_class_loader_verbose<'local>(
         return Some(cached);
     }
 
+    // 戦略 0 (wave 205 根治): JVMTI CFLH が捕捉した game loader を直接利用。
+    // スレッド歩きに依存しない本命経路 (install は attach 前に移動済)。
+    if let Some(loader) = loader_from_jvmti_capture(env) {
+        cache_game_loader(env, &loader);
+        agent_log_step("classloader", "FOUND via JVMTI CFLH captured loader");
+        return Some(loader);
+    }
+
     // Minecraft client classes are not loadable for several seconds after JVM start.
     // Calling getAllStackTraces repeatedly this early can overflow the agent thread stack.
     if attempt < 5 {
         if verbose {
             agent_log_step(
                 "classloader",
-                &format!("attempt {} — game still booting, deferring JNI probes", attempt),
+                &format!(
+                    "attempt {} — game still booting, deferring JNI probes",
+                    attempt
+                ),
             );
         }
         return None;
@@ -502,9 +514,12 @@ pub fn find_game_class_loader_verbose<'local>(
     }
 
     if verbose {
-        agent_log_step("classloader", "probe: Render/Game thread context ClassLoader");
+        agent_log_step(
+            "classloader",
+            "probe: Render/Game thread context ClassLoader",
+        );
     }
-    if let Some(loader) = loader_from_priority_threads(env) {
+    if let Some(loader) = loader_from_priority_threads(env, verbose) {
         cache_game_loader(env, &loader);
         agent_log_step("classloader", "FOUND via named thread context ClassLoader");
         return Some(loader);
@@ -513,9 +528,25 @@ pub fn find_game_class_loader_verbose<'local>(
         log_jni_exception(env, "priority_threads");
     }
 
+    // 決定的代替 (wave 205): JVMTI GetLoadedClasses 全走査。
+    // 10 秒周期に抑制 (全ロードクラスへの JNI 往復は重いため)。
+    if attempt >= 10 && attempt % 10 == 0 {
+        if verbose {
+            agent_log_step("classloader", "probe: JVMTI GetLoadedClasses sweep");
+        }
+        if let Some(loader) = loader_from_loaded_classes(env) {
+            cache_game_loader(env, &loader);
+            agent_log_step("classloader", "FOUND via JVMTI GetLoadedClasses");
+            return Some(loader);
+        }
+    }
+
     if attempt >= 15 {
         if verbose {
-            agent_log_step("classloader", "probe: Minecraft.getInstance() via cached loader");
+            agent_log_step(
+                "classloader",
+                "probe: Minecraft.getInstance() via cached loader",
+            );
         }
         if let Some(loader) = loader_from_minecraft_get_instance(env) {
             cache_game_loader(env, &loader);
@@ -541,13 +572,18 @@ pub fn find_game_class_loader<'local>(env: &mut JNIEnv<'local>) -> Option<JObjec
     if let Some(cached) = game_class_loader(env) {
         return Some(cached);
     }
+    // 戦略 0 (wave 205): JVMTI CFLH 捕捉 — 最廉価なので常時チェック。
+    if let Some(loader) = loader_from_jvmti_capture(env) {
+        cache_game_loader(env, &loader);
+        return Some(loader);
+    }
     if javaagent_bootstrap_active() {
         if let Some(loader) = loader_from_java_agent_state(env) {
             cache_game_loader(env, &loader);
             return Some(loader);
         }
     }
-    if let Some(loader) = loader_from_priority_threads(env) {
+    if let Some(loader) = loader_from_priority_threads(env, false) {
         cache_game_loader(env, &loader);
         return Some(loader);
     }
@@ -555,6 +591,95 @@ pub fn find_game_class_loader<'local>(env: &mut JNIEnv<'local>) -> Option<JObjec
         cache_game_loader(env, &loader);
         return Some(loader);
     }
+    None
+}
+
+/// 戦略 0 (wave 205): CFLH コールバックが NewGlobalRef 化した game loader。
+/// loader 自体の裏付けは CFLH 側 (net/minecraft クラスの defining loader) で済。
+fn loader_from_jvmti_capture<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+    let raw = crate::jvmti_events::captured_game_loader_raw()?;
+    // SAFETY: raw は CFLH 内で NewGlobalRef 済みの生存中 global ref。
+    let obj = unsafe { JObject::from_raw(raw as jni::sys::jobject) };
+    let local = env.new_local_ref(&obj).ok()?;
+    if local.as_raw().is_null() {
+        return None;
+    }
+    Some(local)
+}
+
+/// 決定的代替 (wave 205): JVMTI GetLoadedClasses 全走査。
+/// 最初に見つかった net.minecraft.* クラスの getClassLoader() を返す。
+/// (getAllStackTraces 不要・スレッド名不一致に左右されない経路)
+fn loader_from_loaded_classes<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+    let vm = crate::agent_bridge::java_vm_addr();
+    if vm.is_null() {
+        return None;
+    }
+    let classes = unsafe { crate::jvmti_events::get_loaded_classes(vm) }?;
+    let total = classes.len();
+    let mut netmc_seen = 0usize;
+    for jclass in classes {
+        if jclass.is_null() {
+            continue;
+        }
+        // SAFETY: jclass は attach 済み本スレッドの local ref (GetLoadedClasses 規格)。
+        let jobj = unsafe { JObject::from_raw(jclass as jni::sys::jobject) };
+        let name_j = match env
+            .call_method(&jobj, "getName", "()Ljava/lang/String;", &[])
+            .and_then(|v| v.l())
+        {
+            Ok(o) => o,
+            Err(_) => {
+                clear_pending_exception(env);
+                continue;
+            }
+        };
+        let name: String = match env.get_string((&name_j).into()) {
+            Ok(s) => s.into(),
+            Err(_) => {
+                clear_pending_exception(env);
+                continue;
+            }
+        };
+        if !name.starts_with("net.minecraft.") {
+            continue;
+        }
+        netmc_seen += 1;
+        let loader = match env
+            .call_method(&jobj, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])
+            .and_then(|v| v.l())
+        {
+            Ok(o) => o,
+            Err(_) => {
+                clear_pending_exception(env);
+                continue;
+            }
+        };
+        if loader.as_raw().is_null() {
+            // bootstrap ロードの minecraft クラスは unpacker 状況としては異常だが
+            // ログの一次情報として残して次候補へ。
+            agent_log_step(
+                "classloader",
+                &format!("GetLoadedClasses: {} has null loader — skipping", name),
+            );
+            continue;
+        }
+        agent_log_step(
+            "classloader",
+            &format!(
+                "GetLoadedClasses: {} loaded classes, first game class {} -> loader OK",
+                total, name
+            ),
+        );
+        return Some(loader);
+    }
+    agent_log_step(
+        "classloader",
+        &format!(
+            "GetLoadedClasses: {} loaded, net.minecraft seen={}, no loader resolved",
+            total, netmc_seen
+        ),
+    );
     None
 }
 
@@ -582,8 +707,34 @@ fn loader_from_java_agent_state<'local>(env: &mut JNIEnv<'local>) -> Option<JObj
     None
 }
 
+/// 各スレッド probe の結果区分 (verbose 時に自己記述ログ化、wave 205)。
+enum ThreadLoaderOutcome<'local> {
+    Found(JObject<'local>),
+    NullLoader(String),
+    ProbeFailed(String, String),
+}
+
+impl ThreadLoaderOutcome<'_> {
+    fn describe(&self) -> String {
+        match self {
+            ThreadLoaderOutcome::Found(_) => "loader OK".into(),
+            ThreadLoaderOutcome::NullLoader(t) => {
+                format!("thread '{}': context ClassLoader is null", t)
+            }
+            ThreadLoaderOutcome::ProbeFailed(t, m) => {
+                format!("thread '{}': loadClass probe failed: {}", t, m)
+            }
+        }
+    }
+}
+
 /// One `getAllStackTraces` call — try Render/Game/main threads in priority order.
-fn loader_from_priority_threads<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
+/// `verbose` 時は見えたスレッド名一覧と各優先スレッドの probe 内訳を残す
+/// (旧来「all strategies failed」だけで理由が読めなかった欠陥の根治、wave 205)。
+fn loader_from_priority_threads<'local>(
+    env: &mut JNIEnv<'local>,
+    verbose: bool,
+) -> Option<JObject<'local>> {
     const PRIORITY: &[&str] = &["Render thread", "Game thread", "Server thread", "main"];
     let thread_cls = env.find_class("java/lang/Thread").ok()?;
     clear_pending_exception(env);
@@ -593,14 +744,24 @@ fn loader_from_priority_threads<'local>(env: &mut JNIEnv<'local>) -> Option<JObj
         .l()
         .ok()?;
     clear_pending_exception(env);
-    let key_set = env.call_method(&map, "keySet", "()Ljava/util/Set;", &[]).ok()?.l().ok()?;
+    let key_set = env
+        .call_method(&map, "keySet", "()Ljava/util/Set;", &[])
+        .ok()?
+        .l()
+        .ok()?;
     let iter = env
         .call_method(&key_set, "iterator", "()Ljava/util/Iterator;", &[])
         .ok()?
         .l()
         .ok()?;
     let mut named: Vec<(usize, JObject<'local>)> = Vec::new();
-    while env.call_method(&iter, "hasNext", "()Z", &[]).ok()?.z().ok()? {
+    let mut all_names: Vec<String> = Vec::new();
+    while env
+        .call_method(&iter, "hasNext", "()Z", &[])
+        .ok()?
+        .z()
+        .ok()?
+    {
         let thread = env
             .call_method(&iter, "next", "()Ljava/lang/Object;", &[])
             .ok()?
@@ -615,11 +776,29 @@ fn loader_from_priority_threads<'local>(env: &mut JNIEnv<'local>) -> Option<JObj
         if let Some(priority) = PRIORITY.iter().position(|want| *want == name) {
             named.push((priority, thread));
         }
+        all_names.push(name);
+    }
+    if verbose {
+        let mut sorted = all_names.clone();
+        sorted.sort();
+        agent_log_step(
+            "classloader",
+            &format!(
+                "getAllStackTraces: {} threads [{}]",
+                sorted.len(),
+                sorted.join(", ")
+            ),
+        );
     }
     named.sort_by_key(|(priority, _)| *priority);
     for (_, thread) in named {
-        if let Some(loader) = loader_from_thread(env, &thread) {
-            return Some(loader);
+        match loader_from_thread_report(env, &thread) {
+            ThreadLoaderOutcome::Found(loader) => return Some(loader),
+            outcome => {
+                if verbose {
+                    agent_log_step("classloader", &format!("probe: {}", outcome.describe()));
+                }
+            }
         }
     }
     None
@@ -627,16 +806,11 @@ fn loader_from_priority_threads<'local>(env: &mut JNIEnv<'local>) -> Option<JObj
 
 /// Resolve loader from a live Minecraft client — uses cached/priority-thread loader only (no recursion).
 fn loader_from_minecraft_get_instance<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
-    let loader = game_class_loader(env).or_else(|| loader_from_priority_threads(env))?;
+    let loader = game_class_loader(env).or_else(|| loader_from_priority_threads(env, false))?;
     let mc = load_class_with_loader(env, &loader, "net.minecraft.client.Minecraft")?;
     clear_pending_exception(env);
     let inst = env
-        .call_static_method(
-            mc,
-            "getInstance",
-            "()Lnet/minecraft/client/Minecraft;",
-            &[],
-        )
+        .call_static_method(mc, "getInstance", "()Lnet/minecraft/client/Minecraft;", &[])
         .ok()
         .and_then(|v| v.l().ok())?;
     clear_pending_exception(env);
@@ -646,31 +820,50 @@ fn loader_from_minecraft_get_instance<'local>(env: &mut JNIEnv<'local>) -> Optio
     loader_from_instance(env, &inst)
 }
 
-fn loader_from_thread<'local>(
+/// thread 単体の loader probe。結果区分 (見つかった/null/検証失敗+理由) を返す。
+fn loader_from_thread_report<'local>(
     env: &mut JNIEnv<'local>,
     thread: &JObject<'local>,
-) -> Option<JObject<'local>> {
-    let loader = env
-        .call_method(
-            thread,
-            "getContextClassLoader",
-            "()Ljava/lang/ClassLoader;",
-            &[],
-        )
+) -> ThreadLoaderOutcome<'local> {
+    let tname: String = env
+        .call_method(thread, "getName", "()Ljava/lang/String;", &[])
+        .and_then(|v| v.l())
         .ok()
-        .and_then(|v| v.l().ok())?;
-    clear_pending_exception(env);
+        .and_then(|o| env.get_string((&o).into()).ok().map(|s| s.into()))
+        .unwrap_or_else(|| "?".into());
+    let loader = match env.call_method(
+        thread,
+        "getContextClassLoader",
+        "()Ljava/lang/ClassLoader;",
+        &[],
+    ) {
+        Ok(v) => match v.l() {
+            Ok(o) => o,
+            Err(_) => {
+                let _ = env.exception_clear();
+                return ThreadLoaderOutcome::NullLoader(tname);
+            }
+        },
+        Err(_) => {
+            let _ = env.exception_clear();
+            return ThreadLoaderOutcome::NullLoader(tname);
+        }
+    };
     if loader.as_raw().is_null() {
-        return None;
+        return ThreadLoaderOutcome::NullLoader(tname);
     }
     if load_class_with_loader(env, &loader, "net.minecraft.client.Minecraft").is_some() {
-        return Some(loader);
+        return ThreadLoaderOutcome::Found(loader);
     }
-    clear_pending_exception(env);
-    None
+    let msg =
+        jni_exception_message(env).unwrap_or_else(|| "loadClass returned no class".to_string());
+    ThreadLoaderOutcome::ProbeFailed(tname, msg)
 }
 
-fn loader_from_instance<'local>(env: &mut JNIEnv<'local>, instance: &JObject<'local>) -> Option<JObject<'local>> {
+fn loader_from_instance<'local>(
+    env: &mut JNIEnv<'local>,
+    instance: &JObject<'local>,
+) -> Option<JObject<'local>> {
     let class_obj = env
         .call_method(instance, "getClass", "()Ljava/lang/Class;", &[])
         .ok()
