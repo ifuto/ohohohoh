@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 20  (wave 210 HF: 実機 #4/#5「mods loaded OK: []」(mods フォルダ空) の根治版を同梱 — 公式 Mod 自動復旧 (rsift home の固定 3 名のみ非破壊コピー・marker 冪等・modsec 非迂回) + mods 候補列挙ログ + 空時日本語ガイド行 + rsift-setup prism 配備ログ対称化。実 JVM ハーネス A/B/C 機械確認 + F3 GREEN 維持。前回分 = wave 209 HE (ClassLoad jcache + f3 spec 先行登録 + CNFE throttle) 完全同梱の上に本 wave を積層)
+- run: 21  (wave 210 HF 同梱 + ユーザー向け README_JA 刷新: 「Mods 一覧が空の場合の自動復旧」の説明節を追加 (公式 Mod 自動補充の挙動・ログの見方 `mod candidates`/`official mods auto-restored`/`mods loaded OK`・記録印 `.rsift-official-mods-restored` の意味) + rsift-bootstrap.log の格納場所を実測値に修正 (Prism は `<instance>/rsift-natives/` が本命)。コードは run 20 (wave 210 HF) と同一、同梱ドキュメントのみ更新)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /

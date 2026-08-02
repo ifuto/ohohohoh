@@ -69,11 +69,35 @@ Release `setup-v1` の zip はこれらが全部入った一体梱包です。�
 
 ゲームを起動した後に作られる **エージェントの起動ログ** があります:
 
-- `rsift-bootstrap.log` … `<.minecraft>/versions/rsift-1.21.11/` 内、
-  または `<.minecraft>/` 直下 (Prism の場合は `<instance>/.minecraft/`)
+- `rsift-bootstrap.log` … **Prism の場合は `<instance>/rsift-natives/` に確定で作られます**
+  (ゲーム起動に使う agent dll と同じフォルダなので、必ずここにあります)。
+  バニラランチャー経由の場合は `<.minecraft>/versions/rsift-1.21.11/` 内です。
 
 これを併せて送ってもらえれば、agent がどこまで動いたか (jar 認識・フック注入・
 Mod ロードの成否) が全部分かります。
+
+### Mods を開いても一覧が空の場合 (wave 210 で自動復旧を内蔵)
+
+同梱の公式 Mod (RsGraphics / RsReplay / RsZoom) は、通常は setup が
+`<mods フォルダ>` に配置します。万が一そこが空でも、**最新版ではゲーム起動時に
+ゲーム側の agent が自分の置き場所 (rsift-natives) から公式 3 本を自動で補充します**
+(ログに `official mods auto-restored` の行が出ます)。つまり:
+
+- setup のあと mods フォルダが空になってしまっても、**起動すれば自動で直ります**
+- 直ったかどうかは `rsift-bootstrap.log` の次の行で分かります:
+  - `mod candidates (N): [...]` … 起動時に mods フォルダで見つかった mod の一覧
+  - `official mods auto-restored from rsift home: [...]` … 自動補充した実績
+  - `mods loaded OK: ["rsgraphics", "rsreplay", "rszoom"]` … 読み込み完了
+- 補充もロードもできなかった場合は、ログに日本語で次にやるべきこと
+  (setup 再実行 / mod ファイルを mods フォルダへ入れる) の案内が出ます
+- なお、あなた自身が公式 Mod を消した場合は、mods フォルダ内の記録印
+  `.rsift-official-mods-restored` が残っている限り自動では戻しません
+  (消した意思を尊重します。この印を一緒に消せば次回起動でまた補充されます)
+
+セットアップログにも「配置したかどうか」が必ず残るようにしました
+(Prism 版の行: `instance_dir=... natives=[...] mods=["rsgraphics.dll", ...]`) 。
+`mods=[]` と空括弧なら配置されていません — その場合は実行フォルダ構成
+(dll が全部揃っているか) を確認して setup をもう一度実行してください。
 
 ### 「Vanilla 判定」かどうかの見分け方 (wave 205 で追加)
 
