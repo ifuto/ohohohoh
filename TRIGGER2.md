@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 14  (run 13: jar パス修復で 3 OS 全緑回復確認済。wave 205 版 rsift_jvm + 根治済み mod_dir 解決を同梱)
+- run: 15  (wave 206 HB: 実 JVM (jdk4py/Temurin 25) 検証で判明した 3 欠陥根治版 rsift_jvm を同梱 — 未アタッチ GetEnv 由来 SIGSEGV・AddCapabilities 全滅 (rc=98)・jvmtiEnv 非共有 (rc=99) を修復済み。run 14 同梱の agent は実機起動 ~1 秒後に JVM ごとクラッシュするため差替必須)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /
