@@ -5,9 +5,16 @@
 //!   旧コードは Allocate=46 (正 45)・AddCapabilities を 23/142/22 総当たり・
 //!   SetEventNotificationMode を 58/75 (正 1)・コールバックを slot 54 (正 4)
 //!   と全体的にずれており、起動経路に達していたら確実に壊れていた。
-//! - install を classloader 発見「後」から「**attach 前 (最速)**」へ移動し、
+//! - install を classloader 発見「後」から attach ループ「先頭」へ移動し、
 //!   CFLH コールバックが渡してくれる defining loader を**直接捕捉**する
 //!   (スレッド歩き探索の完全代替経路。null loader (bootstrap) は拾わない)。
+//!   wave 206 教訓: 未アタッチのネイティブスレッドからの GetEnv(JVMTI) は
+//!   JVM ごと SIGSEGV する (Temurin 25 実機で確認) ため、install は必ず
+//!   **attach 成功済みスレッドから**呼ぶ (HOOK_INSTALLED で冪等)。
+//! - wave 206 教訓その2: GetEnv(JVMTI) は毎回**新 JvmtiEnv** を生成するので
+//!   先着1個を JVMTI_ENV にキャッシュ・全呼出で共有する。でないと
+//!   AddCapabilities が env#A、RetransformClasses が env#B (=cap 未保有)
+//!   となり MUST_POSSESS_CAPABILITY (rc=99) で永遠に失敗する (実機確認)。
 //! - RetransformClasses でフック install 前にロード済みの対象クラスへ
 //!   後追いでパッチを適用する (can_retransform_classes 取得時のみ)。
 //!
@@ -52,6 +59,16 @@ const IDX_JNI_GET_ENV: usize = 6;
 const IDX_JNI_NEW_GLOBAL_REF: usize = 21;
 
 static HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
+/// jvmtiEnv 共有キャッシュ (wave 206 実機で判明・HA-4):
+/// GetEnv(JVMTI) は**呼出ごとに新しい JvmtiEnv を生成する** (HotSpot 一次情報:
+/// JvmtiExport::get_jvmti_interface が LIVE 相で
+/// `JvmtiEnv::create_a_jvmti(version)` を毎回 new して返す)。
+/// capability は env 単位で管理されるため、install 時の env (env#A) に
+/// AddCapabilities しても、後続呼出で取り直した別 env (env#B) の
+/// RetransformClasses は MUST_POSSESS_CAPABILITY (rc=99) を返す —
+/// つまり env をキャッシュして全 JVMTI 呼出で共有しないと retransform /
+/// GetLoadedClasses 系は永遠に動かない。Temurin 25 で機械確認済。
+static JVMTI_ENV: AtomicUsize = AtomicUsize::new(0);
 /// CFLH で捕捉した game loader の global ref (jobject アドレス、0=未捕捉)。
 static CAPTURED_LOADER: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_LOGGED: AtomicBool = AtomicBool::new(false);
@@ -234,8 +251,15 @@ unsafe fn jvmti_fn(env: *mut c_void, index: usize) -> Option<*mut c_void> {
     }
 }
 
-/// JVM から jvmtiEnv を取る。
+/// JVM から jvmtiEnv を取る。**先着1個の env を全呼出で共有**する
+/// (GetEnv が毎回新 env を生成する事実 (JVMTI_ENV コメント参照) への根治)。
+/// 未アタッチのネイティブスレッドから呼ぶと JVM ごと SIGSEGV するので、
+/// 呼出元は必ず attach 済みスレッドであること (install 条件と同じ)。
 unsafe fn get_jvmti_env(java_vm: *mut c_void) -> Option<*mut c_void> {
+    let cached = JVMTI_ENV.load(Ordering::SeqCst);
+    if cached != 0 {
+        return Some(cached as *mut c_void);
+    }
     let invoke = *(java_vm as *mut *mut *mut c_void);
     if invoke.is_null() {
         return None;
@@ -245,13 +269,27 @@ unsafe fn get_jvmti_env(java_vm: *mut c_void) -> Option<*mut c_void> {
     let mut jvmti: *mut c_void = ptr::null_mut();
     let rc = get_env(java_vm, &mut jvmti, JVMTI_VERSION_1_2);
     if rc == 0 && !jvmti.is_null() {
-        return Some(jvmti);
+        // 先着の env を共有キャッシュへ。CAS 敗者は自分の生成物を捨てて勝者の
+        // env を返す (env は独立オブジェクトで捨てても害なし — capability は
+        // 勝者 env 側で install 済みなので全呼出が能力を共有できる)。
+        let _ = JVMTI_ENV.compare_exchange(0, jvmti as usize, Ordering::SeqCst, Ordering::SeqCst);
+        let shared = JVMTI_ENV.load(Ordering::SeqCst);
+        if shared != jvmti as usize {
+            agent_log_warn(
+                "jvmti",
+                "GetEnv race detected — dropping duplicate env (harmless, shared env wins)",
+            );
+        }
+        return Some(shared as *mut c_void);
     }
     None
 }
 
 /// ClassFileLoadHook を install。`java_vm` は生存中の JavaVM 実体 (deferred
-/// init または Agent_OnLoad のもの)。attach 前に呼ぶこと (最速で loader 捕捉)。
+/// init または Agent_OnLoad のもの)。**attach 済みスレッドから呼ぶこと** —
+/// 未アタッチのネイティブスレッドからの GetEnv(JVMTI) は HotSpot が現在
+/// スレッドを null デリファレンスして JVM ごと SIGSEGV する (wave 206
+/// 実機確認: si_addr=0x52c)。HOOK_INSTALLED で冪等 (先着1回)。
 pub unsafe fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
     if HOOK_INSTALLED.load(Ordering::SeqCst) {
         return true;
@@ -266,13 +304,60 @@ pub unsafe fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
             return false;
         };
 
-        // 必要能力を 1 回の AddCapabilities で請求 (rc を必ず記録)。
+        // wave 206 実機検証で判明 (HA-3): 1 つでも付与不能な capability を
+        // 含めると AddCapabilities は JVMTI_ERROR_NOT_AVAILABLE (98) で全滅
+        // し何も付与されない (Temurin 25 で live 相から early 系 bit を請求
+        // して全滅を観測 → RetransformClasses も rc=99 FAIL に連鎖)。
+        // 正攻法: GetPotentialCapabilities (idx 139) で取得可能集合を引き、
+        // 「必要 ∩ 取得可能」だけを請求する (early 系は OnLoad 相でしか
+        // 取得できない JVM では自動的に外れる)。
+        type GetPotentialCapabilitiesFn =
+            unsafe extern "system" fn(*mut c_void, *mut JvmtiCapabilities) -> c_int;
+        let mut potential = JvmtiCapabilities::new();
+        if let Some(f) = jvmti_fn(jvmti, IDX_GET_POTENTIAL_CAPABILITIES) {
+            let get_pot: GetPotentialCapabilitiesFn = std::mem::transmute(f);
+            let rc = get_pot(jvmti, &mut potential);
+            if rc != 0 {
+                agent_log_warn(
+                    "jvmti",
+                    &format!(
+                        "GetPotentialCapabilities rc={} — request を素通しします",
+                        rc
+                    ),
+                );
+                // 取得不能のまま進める場合、念のため全 bit potential とみなす
+                // (従来動作と同じ請求を試み、rc をログに残す)。
+                potential.words = [u32::MAX; 4];
+            }
+        } else {
+            agent_log_warn(
+                "jvmti",
+                "GetPotentialCapabilities fn not resolved — request を素通しします",
+            );
+            potential.words = [u32::MAX; 4];
+        }
+
+        let mut desired = JvmtiCapabilities::new();
+        desired.set_bit(JvmtiCapabilities::BIT_CAN_GENERATE_ALL_CLASS_HOOK_EVENTS);
+        desired.set_bit(JvmtiCapabilities::BIT_CAN_GENERATE_EARLY_CLASS_HOOK_EVENTS);
+        desired.set_bit(JvmtiCapabilities::BIT_CAN_REDEFINE_CLASSES);
+        desired.set_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_CLASSES);
+        desired.set_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_ANY_CLASS);
         let mut caps = JvmtiCapabilities::new();
-        caps.set_bit(JvmtiCapabilities::BIT_CAN_GENERATE_ALL_CLASS_HOOK_EVENTS);
-        caps.set_bit(JvmtiCapabilities::BIT_CAN_GENERATE_EARLY_CLASS_HOOK_EVENTS);
-        caps.set_bit(JvmtiCapabilities::BIT_CAN_REDEFINE_CLASSES);
-        caps.set_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_CLASSES);
-        caps.set_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_ANY_CLASS);
+        for i in 0..4 {
+            caps.words[i] = desired.words[i] & potential.words[i];
+        }
+        agent_log_step(
+            "jvmti",
+            &format!(
+                "AddCapabilities request all_hook={} early_hook={} redefine={} retransform={} retransform_any={} (potential ∩ desired)",
+                caps.get_bit(JvmtiCapabilities::BIT_CAN_GENERATE_ALL_CLASS_HOOK_EVENTS),
+                caps.get_bit(JvmtiCapabilities::BIT_CAN_GENERATE_EARLY_CLASS_HOOK_EVENTS),
+                caps.get_bit(JvmtiCapabilities::BIT_CAN_REDEFINE_CLASSES),
+                caps.get_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_CLASSES),
+                caps.get_bit(JvmtiCapabilities::BIT_CAN_RETRANSFORM_ANY_CLASS),
+            ),
+        );
         let add: AddCapabilitiesFn = match jvmti_fn(jvmti, IDX_ADD_CAPABILITIES) {
             Some(f) => std::mem::transmute(f),
             None => {
@@ -281,7 +366,20 @@ pub unsafe fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
             }
         };
         let rc = add(jvmti, &caps);
-        agent_log_step("jvmti", &format!("AddCapabilities rc={}", rc));
+        if rc != 0 {
+            // 部分付与でも CFLH の install 自体には進む (retransform 後追いは
+            // 付与時のみ機能する。rc=99 連鎖は post_bridge_boot が rc を必ず
+            // ログに残すため診断可能)。
+            agent_log_warn(
+                "jvmti",
+                &format!(
+                    "AddCapabilities rc={} — 未取得の能力あり。CFLH install は続行します",
+                    rc
+                ),
+            );
+        } else {
+            agent_log_step("jvmti", "AddCapabilities rc=0 (全請求受理)");
+        }
 
         // 実際に認められた能力を確認ログ (実機診断の一次情報)。
         if let Some(f) = jvmti_fn(jvmti, IDX_GET_CAPABILITIES) {

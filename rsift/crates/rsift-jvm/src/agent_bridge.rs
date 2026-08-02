@@ -228,18 +228,6 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
             return;
         }
     };
-    // wave 205 根治 (欠陥B/欠陥C): CFLH install を loader 発見「後」から
-    // **attach 前 (最速)** へ移動。CFLH が net/minecraft クラスの defining
-    // loader をイベント経由で直接捕捉し、探索戦略の主経路になる。
-    let hook_ok = unsafe { jvmti_events::install_class_file_load_hook(vm_addr as *mut _) };
-    agent_log_step(
-        "deferred_init",
-        &format!(
-            "JVMTI CFLH early install = {} — starting attach loop",
-            hook_ok
-        ),
-    );
-
     for attempt in 0..300 {
         match vm.attach_current_thread() {
             Ok(mut env) => {
@@ -247,6 +235,26 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
                     agent_log_step(
                         "classloader_probe",
                         &format!("attempt {} attach OK", attempt),
+                    );
+                }
+                // wave 206 実機検証で判明 (HA-2): CFLH install (= GetEnv JVMTI)
+                // を**未アタッチのネイティブスレッド**から呼ぶと JVM ごと
+                // SIGSEGV する (Temurin 25 実機で確認: jni_GetEnv →
+                // JvmtiExport::get_jvmti_interface が現在スレッド Thread*
+                // (unattached = nullptr) を null+0x52c でデリファレンス)。
+                // そのため install は「attach 成功直後・loader 探索より前」に
+                // 置く。HOOK_INSTALLED 冪等で先着1回。attach 済みスレッドから
+                // であれば GetEnv(JVMTI) は安全。loader 探索に先立って install
+                // されるので捕捉の鮮度 (wave 205 欠陥B の意図) は保たれる。
+                let hook_ok =
+                    unsafe { jvmti_events::install_class_file_load_hook(vm_addr as *mut _) };
+                if attempt == 0 || (!hook_ok && attempt % 25 == 0) {
+                    agent_log_step(
+                        "deferred_init",
+                        &format!(
+                            "JVMTI CFLH install (attached thread, attempt {}) = {}",
+                            attempt, hook_ok
+                        ),
                     );
                 }
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -260,7 +268,9 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
                         let bridge_ok = screen_inject::ensure_injector_loaded(&mut env);
                         let mod_ok = mod_bridge::ensure_mod_bridge(&mut env);
                         let _ = platform_bridge::ensure_platform_bridge(&mut env);
-                        // CFLH は attach 前に install 済 (wave 205 前倒し)。
+                        // CFLH は attach ループ先頭で install 済 (wave 205 前倒し
+                        // → wave 206 修正: 未アタッチからの GetEnv は SIGSEGV
+                        // するため attach 成功直後に移動、冪等)。
                         register_transformer_natives(&mut env);
                         register_hooks_natives(&mut env);
                         notify_transformer_ready(&mut env);
