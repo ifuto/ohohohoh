@@ -4,7 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 16  (run 15: 内容同一・Windows runner の index.crates.io 一過性接続 timeout (21s×3, exit=101) のみで失敗 — Linux/macOS は同内容で exit=0 済のため再駆動。同梱は wave 206 HB 修復済み rsift_jvm: 未アタッチ GetEnv 由来 SIGSEGV・AddCapabilities 全滅 rc=98・jvmtiEnv 非共有 rc=99 の 3 件根治版。run 14 同梱 agent は実機起動 ~1 秒後に JVM ごとクラッシュするため差替必須)
+- run: 17  (wave 207 HC: 実機 #4「まだvanilla判定」根治版を同梱 — bootstrap jar の major を 68/69→65 (MC Java 21 で UCVE 根治) + Agent_OnLoad AddToBootstrapClassLoaderSearch (RsiftHooks 可視化) + pending exception dump 全配線 + Linux dll_directory dladdr 実装。実 JVM RED→GREEN 全 PASS 済)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +
   **3 Mod cdylib (RsGraphics=rsgraphics / RsReplay=rsreplay /

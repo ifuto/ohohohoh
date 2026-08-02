@@ -6,8 +6,8 @@ use jni::JNIEnv;
 use jni::NativeMethod;
 use std::sync::Mutex;
 
-use crate::agent_log::agent_log;
 use super::screen_inject;
+use crate::agent_log::agent_log;
 
 static PLATFORM_CLASS: Mutex<Option<jni::objects::GlobalRef>> = Mutex::new(None);
 
@@ -42,7 +42,16 @@ fn load_platform(env: &mut JNIEnv) -> Result<(), String> {
         return Err(format!("bootstrap jar missing: {:?}", jar));
     }
     let parent = screen_inject::find_game_class_loader(env).ok_or("game ClassLoader not found")?;
-    let ucl = screen_inject::url_classloader_for_jar(env, &parent, &jar)?;
+    let ucl = match screen_inject::url_classloader_for_jar(env, &parent, &jar) {
+        Ok(u) => u,
+        Err(e) => {
+            crate::screen_inject::dump_pending_exception(
+                env,
+                "url_classloader_for_jar (PlatformBridge)",
+            );
+            return Err(e);
+        }
+    };
     let name = env
         .new_string("com.rsift.RsiftPlatformBridge")
         .map_err(|e| format!("{:?}", e))?;
@@ -136,7 +145,9 @@ fn load_platform(env: &mut JNIEnv) -> Result<(), String> {
     ];
     env.register_native_methods(&jclass, &methods)
         .map_err(|e| format!("register PlatformBridge: {:?}", e))?;
-    let global = env.new_global_ref(&jclass).map_err(|e| format!("{:?}", e))?;
+    let global = env
+        .new_global_ref(&jclass)
+        .map_err(|e| format!("{:?}", e))?;
     if let Ok(mut slot) = PLATFORM_CLASS.lock() {
         *slot = Some(global);
     }
@@ -234,10 +245,7 @@ fn extract_u32(json: &str, key: &str) -> u32 {
     let needle = format!("\"{}\":", key);
     if let Some(pos) = json.find(&needle) {
         let rest = &json[pos + needle.len()..];
-        let num: String = rest
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
+        let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
         return num.parse().unwrap_or(0);
     }
     0
@@ -439,7 +447,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativeHandleRed
 ) {
     let from_s = jstr(&mut env, from);
     let to_s = jstr(&mut env, to);
-    agent_log(&format!("[Platform] screen redirect {} -> {}", from_s, to_s));
+    agent_log(&format!(
+        "[Platform] screen redirect {} -> {}",
+        from_s, to_s
+    ));
     // Open cloth/mod menu or request render ticks for DLL symbol handlers.
     if to_s.contains("mod_menu") || to_s.contains("ModMenu") {
         if let Some(rt) = rsift_api::runtime::runtime() {
@@ -459,11 +470,7 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativeTakeOutbo
 ) -> jni::sys::jobjectArray {
     let payloads = rsift_api::platform::take_outbound_payloads();
     let arr = env
-        .new_object_array(
-            payloads.len() as i32,
-            "java/lang/String",
-            JObject::null(),
-        )
+        .new_object_array(payloads.len() as i32, "java/lang/String", JObject::null())
         .unwrap();
     for (i, (channel, bytes)) in payloads.into_iter().enumerate() {
         let b64 = encode_b64(&bytes);
@@ -516,7 +523,10 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativeRegisterC
         gp.command_tree.register(&name_s, &desc_s, perm as u8, &sym);
     }
     // Command tree upsert — skip mark_dirty to avoid apply echo loops.
-    agent_log(&format!("[Platform] command /{} wired (perm={})", name_s, perm));
+    agent_log(&format!(
+        "[Platform] command /{} wired (perm={})",
+        name_s, perm
+    ));
 }
 
 #[no_mangle]
@@ -588,21 +598,40 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativeRegisterB
         };
         let already = content.biome_modifications.iter().any(|rule| {
             let sel_match = match (&rule.selector, &biome_selector) {
-                (rsift_api::content::BiomeSelector::All, rsift_api::content::BiomeSelector::All) => true,
-                (rsift_api::content::BiomeSelector::Overworld, rsift_api::content::BiomeSelector::Overworld) => true,
-                (rsift_api::content::BiomeSelector::Nether, rsift_api::content::BiomeSelector::Nether) => true,
-                (rsift_api::content::BiomeSelector::TheEnd, rsift_api::content::BiomeSelector::TheEnd) => true,
-                (rsift_api::content::BiomeSelector::Tag(a), rsift_api::content::BiomeSelector::Tag(b)) => a == b,
-                (rsift_api::content::BiomeSelector::Specific(a), rsift_api::content::BiomeSelector::Specific(b)) => a == b,
+                (
+                    rsift_api::content::BiomeSelector::All,
+                    rsift_api::content::BiomeSelector::All,
+                ) => true,
+                (
+                    rsift_api::content::BiomeSelector::Overworld,
+                    rsift_api::content::BiomeSelector::Overworld,
+                ) => true,
+                (
+                    rsift_api::content::BiomeSelector::Nether,
+                    rsift_api::content::BiomeSelector::Nether,
+                ) => true,
+                (
+                    rsift_api::content::BiomeSelector::TheEnd,
+                    rsift_api::content::BiomeSelector::TheEnd,
+                ) => true,
+                (
+                    rsift_api::content::BiomeSelector::Tag(a),
+                    rsift_api::content::BiomeSelector::Tag(b),
+                ) => a == b,
+                (
+                    rsift_api::content::BiomeSelector::Specific(a),
+                    rsift_api::content::BiomeSelector::Specific(b),
+                ) => a == b,
                 _ => false,
             };
             if !sel_match {
                 return false;
             }
             match &rule.modification {
-                rsift_api::content::BiomeModificationType::AddFeature { step: s, feature_key } => {
-                    kind_s != "spawn" && *s == step as u32 && feature_key == &feat_key
-                }
+                rsift_api::content::BiomeModificationType::AddFeature {
+                    step: s,
+                    feature_key,
+                } => kind_s != "spawn" && *s == step as u32 && feature_key == &feat_key,
                 rsift_api::content::BiomeModificationType::AddSpawn {
                     entity_key,
                     weight,
@@ -632,10 +661,12 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativeRegisterB
                 }
             };
             // Direct push — avoid add_biome_modification's mark_dirty (apply echo).
-            content.biome_modifications.push(rsift_api::content::BiomeModificationRule {
-                selector: biome_selector,
-                modification,
-            });
+            content
+                .biome_modifications
+                .push(rsift_api::content::BiomeModificationRule {
+                    selector: biome_selector,
+                    modification,
+                });
         }
     }
     agent_log(&format!(
@@ -721,17 +752,19 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativeRegisterL
             e.item_key == item_key && e.weight == w && e.min_count == min_c && e.max_count == max_c
         });
         if !already {
-            resources.loot_table_modifiers.push(rsift_api::resources::BoundLootTableModifier {
-                table: table_key,
-                modifier: std::sync::Arc::new(move |_key, entries| {
-                    entries.push(rsift_api::resources::LootPoolEntry {
-                        item_key: item_key.clone(),
-                        weight: w,
-                        min_count: min_c,
-                        max_count: max_c,
-                    });
-                }),
-            });
+            resources
+                .loot_table_modifiers
+                .push(rsift_api::resources::BoundLootTableModifier {
+                    table: table_key,
+                    modifier: std::sync::Arc::new(move |_key, entries| {
+                        entries.push(rsift_api::resources::LootPoolEntry {
+                            item_key: item_key.clone(),
+                            weight: w,
+                            min_count: min_c,
+                            max_count: max_c,
+                        });
+                    }),
+                });
         }
     }
     agent_log(&format!(
@@ -769,11 +802,7 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPlatformBridge_nativeCustomPay
 ) {
     let ch = jstr(&mut env, channel);
     let sender = rsift_api::networking::PlatformPacketSender;
-    let _ = rsift_api::mod_suite::mod_suite().networking.dispatch_raw(
-        &ch,
-        ptr,
-        len,
-        true,
-        &sender,
-    );
+    let _ = rsift_api::mod_suite::mod_suite()
+        .networking
+        .dispatch_raw(&ch, ptr, len, true, &sender);
 }

@@ -19,6 +19,8 @@
 
 - count: 158
 - 2026-08-02: wave 206 HB 実 JVM 検証 wave (jdk4py/Temurin 25) — SIGSEGV (未アタッチ GetEnv)・AddCapabilities 全滅 (rc=98)・jvmtiEnv 非共有 (rc=99) の 3 欠陥根治 + F3/タイトル実動 10 assertion 全 PASS 検証
+- count: 159
+- 2026-08-02: wave 207 HC 実機 #4 根治 — bootstrap jar major 68/69 → 65 (MC Java 21 対応の UCVE 根治) + Agent_OnLoad AddToBootstrapClassLoaderSearch + pending exception dump 全配線 + dll_directory Linux dladdr 化。実 JVM RED→GREEN 全 COMPLETE PASS 検証
 - 2026-07-21: 初回設置 (bench-ci セットアップ)
 - 2026-07-21: 初回実起動 (404テスト + pseudo digest + wide 357行 digest ゲート検証)
 - 2026-07-21: 完璧追求バッチ検証 (435テスト + pseudo/wide digest + render 14テスト)

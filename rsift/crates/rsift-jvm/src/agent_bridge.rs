@@ -31,6 +31,8 @@ use crate::agent_opts;
 
 static INJECTED_SCREENS: Mutex<Option<HashSet<usize>>> = Mutex::new(None);
 static DEFERRED_STARTED: AtomicBool = AtomicBool::new(false);
+/// wave 207 HC-1: AddToBootstrapClassLoaderSearch は 1 回だけ (冪等化 static)。
+static BOOTSTRAP_CLASSPATH_ADDED: AtomicBool = AtomicBool::new(false);
 static MODS_LOADED: AtomicBool = AtomicBool::new(false);
 static AGENTPATH_LOADED: AtomicBool = AtomicBool::new(false);
 static TRANSFORM_LOG_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -257,6 +259,25 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
                         ),
                     );
                 }
+                // wave 207 HC-1: HEAD 注入先 com/rsift/RsiftHooks をゲームの
+                // 全 ClassLoader から解決可能にするため、bootstrap CL 検索パスへ
+                // rsift-bootstrap.jar を追加する (jvmti.xml num=149,
+                // capability 不要)。呼出は初回 install 成功時の 1 回だけ。
+                // 「以前に解決失敗した symbolic reference は同じエラーで失敗
+                // し続ける」(vmspec 5.3.1) ため、hook クラス解決が起こりうる
+                // メソッド実行より前 (install 直後) に入れる必要がある。
+                // wave 207 HC-1: Agent_OnLoad での bootstrap classpath 追加
+                // が失敗/未到達 (dll dir 未取得等) の場合のフォールバック。
+                // 本体の規格位置は onload 相 (jvmti_hook.rs) — ここは live 相
+                // なので WRONG_PHASE 環境では失敗するが、コスト 0 の再試行。
+                if hook_ok && !jvmti_events::BOOTSTRAP_CLASSPATH_ADDED.load(Ordering::SeqCst) {
+                    let _ = unsafe {
+                        jvmti_events::ensure_bootstrap_classpath_once(
+                            vm_addr as *mut _,
+                            "CFLH install fallback",
+                        )
+                    };
+                }
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     screen_inject::find_game_class_loader_verbose(&mut env, attempt)
                 })) {
@@ -446,6 +467,14 @@ fn retransform_loaded_targets(env: &mut JNIEnv, vm_addr: usize) {
                 locals.push(cls);
             }
             None => {
+                // wave 207 診断強化: static target が loader 経路で拾えない
+                // 理由 (pending exception の class+message) を 1 行で残す。
+                // 「no statically targeted classes loaded yet」しか見えない
+                // #4 の状況を二度と作らない。
+                screen_inject::dump_pending_exception(
+                    env,
+                    &format!("retransform sweep: could not obtain jclass for {}", dotted),
+                );
                 screen_inject::clear_pending_exception(env);
             }
         }

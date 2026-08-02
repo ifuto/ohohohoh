@@ -67,6 +67,7 @@ pub fn ensure_screen_hooks(env: &mut JNIEnv) -> bool {
             true
         }
         Err(e) => {
+            dump_pending_exception(env, "screen_hooks load (pending)");
             agent_log_warn("screen_hooks", &format!("load failed: {}", e));
             false
         }
@@ -128,18 +129,33 @@ fn load_screen_hooks_minimal(env: &mut JNIEnv) -> Result<(), String> {
     }
     let parent_loader =
         find_game_class_loader(env).ok_or("game ClassLoader not found (is Minecraft running?)")?;
-    let ucl = url_classloader_for_jar(env, &parent_loader, &jar)?;
+    let ucl_res = url_classloader_for_jar(env, &parent_loader, &jar);
+    if ucl_res.is_err() {
+        // wave 207 診断強化: pending exception の中身 (class+message) を必ず
+        // 1 行で残す (#4 では「URL class: JavaException」だけ 188 秒連発で
+        // root cause 不在だった反省)。
+        dump_pending_exception(env, "url_classloader_for_jar (ScreenHooks)");
+        let e = ucl_res.unwrap_err();
+        return Err(e);
+    }
+    let ucl = ucl_res.unwrap();
 
     let hooks_name = env
         .new_string("com.rsift.RsiftScreenHooks")
         .map_err(|e| format!("{:?}", e))?;
-    let hooks_obj = env
-        .call_method(
-            &ucl,
-            "loadClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            &[JValue::Object(&hooks_name)],
-        )
+    let hooks_res = env.call_method(
+        &ucl,
+        "loadClass",
+        "(Ljava/lang/String;)Ljava/lang/Class;",
+        &[JValue::Object(&hooks_name)],
+    );
+    if hooks_res.is_err() {
+        dump_pending_exception(
+            env,
+            "loadClass com.rsift.RsiftScreenHooks via URLClassLoader",
+        );
+    }
+    let hooks_obj = hooks_res
         .map_err(|e| format!("load ScreenHooks: {:?}", e))?
         .l()
         .map_err(|e| format!("{:?}", e))?;
@@ -179,6 +195,45 @@ fn load_screen_hooks_minimal(env: &mut JNIEnv) -> Result<(), String> {
     }
     agent_log("[Rsift] RsiftScreenHooks ready (minimal bootstrap)");
     Ok(())
+}
+
+/// pending exception を「いま pending のまま」取り込み、class+message を 1 行
+/// ログ化してから pending 状態を**呼出前どおりに戻す** (wave 207 診断強化)。
+/// 仕組み: exception_occurred → exception_clear → 問合せ (getClass.getName /
+/// getMessage / toString) → 最後に env.throw(exc) で pending を戻す。
+/// これで「pending 中は JNI 禁止」の制約で getMessage も失敗して
+/// `<dump failed>` に沈黙する状態を根治する。呼出後の exception_clear は
+/// 呼出側の契約どおり (dump が勝手に clear しない)。
+/// #4 実機では「URL class: JavaException」だけが 188 秒連発して root cause が
+/// 読めなかった反省から、JavaException 経路には必ずこれを添える。
+pub fn dump_pending_exception(env: &mut JNIEnv, tag: &str) {
+    if !env.exception_check().unwrap_or(false) {
+        return;
+    }
+    let exc = match env.exception_occurred() {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let _ = env.exception_clear();
+    let summary: Option<String> = (|| {
+        let s = env
+            .call_method(&exc, "toString", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        let js: jni::objects::JString = s.into();
+        let out: String = env.get_string(&js).ok()?.into();
+        Some(out)
+    })();
+    // pending を元に戻す (throw は失敗しても pending のまま = 呼出側が clear する)
+    let _ = env.throw(exc);
+    match summary {
+        Some(s) => agent_log_warn("jni_exc", &format!("{}: {}", tag, s)),
+        None => agent_log_warn(
+            "jni_exc",
+            &format!("{}: <pending exception, dump failed>", tag),
+        ),
+    }
 }
 
 pub fn ensure_injector_loaded(env: &mut JNIEnv) -> bool {
@@ -900,15 +955,24 @@ pub fn load_class_with_loader<'local>(
     dotted: &str,
 ) -> Option<JClass<'local>> {
     let name = env.new_string(dotted).ok()?;
-    let cls = env
-        .call_method(
-            loader,
-            "loadClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            &[JValue::Object(&name)],
-        )
-        .ok()
-        .and_then(|v| v.l().ok())?;
+    let res = env.call_method(
+        loader,
+        "loadClass",
+        "(Ljava/lang/String;)Ljava/lang/Class;",
+        &[JValue::Object(&name)],
+    );
+    if res.is_err() {
+        // wave 207 診断強化: loadClass 失敗の理由 (CNF/NCDFE 等) を 1 行で残す。
+        // caller 側では静黙 skip する設計のため、ここが唯一の診断点になる。
+        dump_pending_exception(
+            env,
+            &format!(
+                "loadClass({}) via game loader — returning None to caller",
+                dotted
+            ),
+        );
+    }
+    let cls = res.ok().and_then(|v| v.l().ok())?;
     Some(JClass::from(cls))
 }
 

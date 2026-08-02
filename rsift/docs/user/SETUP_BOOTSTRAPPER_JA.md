@@ -107,6 +107,13 @@ Mod ロードの成否) が全部分かります。
 なりました (旧版は時計の下ケタ表示で見にくかったものを改善)。行番号と合わせて
 「起動後どれくらいのタイミングで何が起きたか」が読めます。
 
+補足 (wave 207 = #4「まだvanilla判定」の根治版): 起動直後 (~0ms) に
+`Agent_OnLoad: AddToBootstrapClassLoaderSearch rc=0 — RsiftHooks 可視化 (bootstrap CL)`
+の行があり、その後 `RsiftUiBridge loaded` / `RsiftModBridge loaded` /
+`bridge_load — UiBridge=true ModBridge=true` が続けば「Mods ボタン・F3・タイトル」の
+準備完了です。逆に `URL class: JavaException` や `load ScreenHooks: JavaException`
+が繰り返し出る版は旧版 (= jar が JDK 24/25 世代で作られていた欠陥) です。
+
 起動後にこのログをもう一度送ってもらえれば、根治が実機で効いたかを
 1 行ずつ機械的に照合できます。
 

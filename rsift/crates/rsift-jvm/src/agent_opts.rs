@@ -51,9 +51,53 @@ pub fn dll_directory() -> Option<PathBuf> {
     }
     #[cfg(not(windows))]
     {
-        let _ = agent_log;
-        None
+        // wave 207: Linux でも「自モジュール (=この .so) の絶対パス」を
+        // dladdr で取得する。MS の GetModuleFileNameW (上) と同じ意味論 —
+        // これにより bootstrap_jar_path() / ログ保存先 / bridge ロードが
+        // Linux JVM 上でも動作し、実 Windows 配布環境と同型の検証が
+        // sandbox で可能になる (dl_iterate_phdr より dladdr のほうが
+        // anchor 指定が確実で、musl/glibc 双方に存在)。
+        dll_directory_linux_dladdr()
     }
+}
+
+#[cfg(not(windows))]
+fn dll_directory_linux_dladdr() -> Option<PathBuf> {
+    use std::ffi::c_void;
+    use std::os::unix::ffi::OsStrExt;
+    #[repr(C)]
+    struct DlInfo {
+        dli_fname: *const std::os::raw::c_char,
+        dli_fbase: *mut c_void,
+        dli_sname: *const std::os::raw::c_char,
+        dli_saddr: *mut c_void,
+    }
+    extern "C" {
+        fn dladdr(addr: *const c_void, info: *mut DlInfo) -> std::os::raw::c_int;
+    }
+    extern "C" {
+        fn Agent_OnLoad(
+            vm: *mut c_void,
+            options: *mut std::os::raw::c_char,
+            reserved: *mut c_void,
+        ) -> std::os::raw::c_int;
+    }
+    let mut info = DlInfo {
+        dli_fname: std::ptr::null(),
+        dli_fbase: std::ptr::null_mut(),
+        dli_sname: std::ptr::null(),
+        dli_saddr: std::ptr::null_mut(),
+    };
+    let anchor = Agent_OnLoad as *const () as *const c_void;
+    let rc = unsafe { dladdr(anchor, &mut info) };
+    if rc == 0 || info.dli_fname.is_null() {
+        return None;
+    }
+    let c_str = unsafe { std::ffi::CStr::from_ptr(info.dli_fname) };
+    let path = std::ffi::OsStr::from_bytes(c_str.to_bytes());
+    let p = PathBuf::from(path);
+    // 「.so を含む絶対パス」の親ディレクトリ (= natives dir 相当) を返す
+    p.parent().map(|d| d.to_path_buf())
 }
 
 pub fn read_opts_file(dir: &Path) -> HashMap<String, String> {

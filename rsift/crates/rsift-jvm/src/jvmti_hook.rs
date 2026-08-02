@@ -37,6 +37,22 @@ pub unsafe extern "C" fn Agent_OnLoad(
     agent_log_step("Agent_OnLoad", "entered");
     agent_log_step("Agent_OnLoad", &format!("options={:?}", opt_str));
 
+    // wave 207 HC-1: HEAD 注入先 com/rsift/RsiftHooks をゲームの全
+    // ClassLoader から解決可能にするため、bootstrap CL 検索パスへ
+    // rsift-bootstrap.jar を**この OnLoad 相で**追加する (jvmti.xml
+    // num=149 は onload 相であれば任意 segment を受理 — live 相では
+    // JVM ビルドによって JVMTI_ERROR_WRONG_PHASE(112) を返しうる実測
+    // (Temurin 21) を受けて、規格上最も確実な onload 相で行う)。
+    // #4 実機で「Mods ボタン・F3 マーカー両方出ない Vanilla 判定」の
+    // root cause = 注入クラスからの NR 解決不能 (=load 自体は成功、
+    // head invoke で NoClassDefFoundError) の根治。
+    let rc_bootstrap =
+        unsafe { crate::jvmti_events::ensure_bootstrap_classpath_once(vm, "Agent_OnLoad") };
+    agent_log_step(
+        "Agent_OnLoad",
+        &format!("bootstrap classpath ensure rc={}", rc_bootstrap),
+    );
+
     agent_log_step(
         "Agent_OnLoad",
         "scheduling deferred init thread (mods load in background thread)",

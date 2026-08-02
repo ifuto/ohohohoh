@@ -5,8 +5,8 @@ use jni::JNIEnv;
 use jni::NativeMethod;
 use std::sync::Mutex;
 
-use crate::agent_log::agent_log;
 use super::screen_inject;
+use crate::agent_log::agent_log;
 
 static MOD_BRIDGE: Mutex<Option<GlobalRef>> = Mutex::new(None);
 static HOOKS_CLASS: Mutex<Option<GlobalRef>> = Mutex::new(None);
@@ -41,9 +41,18 @@ fn load_mod_bridge(env: &mut JNIEnv) -> Result<(), String> {
     if !jar.is_file() {
         return Err(format!("bootstrap jar missing: {:?}", jar));
     }
-    let parent = screen_inject::find_game_class_loader(env)
-        .ok_or("game ClassLoader not found")?;
-    let ucl = screen_inject::url_classloader_for_jar(env, &parent, &jar)?;
+    let parent = screen_inject::find_game_class_loader(env).ok_or("game ClassLoader not found")?;
+    let ucl = match screen_inject::url_classloader_for_jar(env, &parent, &jar) {
+        Ok(u) => u,
+        Err(e) => {
+            // wave 207 診断強化: pending exception の中身を残してから返す
+            crate::screen_inject::dump_pending_exception(
+                env,
+                "url_classloader_for_jar (ModBridge)",
+            );
+            return Err(e);
+        }
+    };
     load_and_register_bridge(env, &ucl)?;
     load_hooks_classes(env, &ucl)?;
     Ok(())
@@ -102,7 +111,9 @@ fn load_hooks_classes(env: &mut JNIEnv, ucl: &JObject) -> Result<(), String> {
         }],
     )
     .map_err(|e| format!("register Hooks: {:?}", e))?;
-    let global = env.new_global_ref(hooks_jclass).map_err(|e| format!("{:?}", e))?;
+    let global = env
+        .new_global_ref(hooks_jclass)
+        .map_err(|e| format!("{:?}", e))?;
     if let Ok(mut slot) = HOOKS_CLASS.lock() {
         *slot = Some(global);
     }
@@ -110,7 +121,9 @@ fn load_hooks_classes(env: &mut JNIEnv, ucl: &JObject) -> Result<(), String> {
     // パケットタップは任意機能 (同梱 jar に未収録の場合あり) のためベスト
     // エフォート。失敗時は pending 例外を必ずクリアする — 残すと同スレッドの
     // 後続 JNI 呼出しが全て暗黙失敗する (wave 204: 構造的欠陥の根治)。
-    let tap_name = env.new_string("com.rsift.RsiftPacketTap").map_err(|e| format!("{:?}", e))?;
+    let tap_name = env
+        .new_string("com.rsift.RsiftPacketTap")
+        .map_err(|e| format!("{:?}", e))?;
     if env
         .call_method(
             ucl,
@@ -157,11 +170,7 @@ fn try_install_runtime_hooks(env: &mut JNIEnv) {
     let Some(hooks_ref) = hooks else {
         return;
     };
-    let Some(hooks_cls) = env
-        .new_local_ref(hooks_ref.as_obj())
-        .ok()
-        .map(JClass::from)
-    else {
+    let Some(hooks_cls) = env.new_local_ref(hooks_ref.as_obj()).ok().map(JClass::from) else {
         return;
     };
     let _ = env.call_static_method(
@@ -202,7 +211,12 @@ fn dispatch_render_frame(env: &mut JNIEnv) {
 
 fn read_window_size(env: &mut JNIEnv, minecraft: &JObject) -> Option<(u32, u32)> {
     let window = env
-        .call_method(minecraft, "getWindow", "()Lcom/mojang/blaze3d/platform/Window;", &[])
+        .call_method(
+            minecraft,
+            "getWindow",
+            "()Lcom/mojang/blaze3d/platform/Window;",
+            &[],
+        )
         .ok()
         .and_then(|v| v.l().ok())?;
     let w = env

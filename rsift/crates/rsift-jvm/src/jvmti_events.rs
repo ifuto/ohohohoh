@@ -46,6 +46,10 @@ pub const IDX_ADD_CAPABILITIES: usize = 141;
 pub const IDX_GET_CAPABILITIES: usize = 88;
 pub const IDX_GET_POTENTIAL_CAPABILITIES: usize = 139;
 pub const IDX_IS_MODIFIABLE_CLASS: usize = 44;
+/// AddToBootstrapClassLoaderSearch (num 149 → C index 148、wave 207 HC-1)。
+/// HEAD 注入先 com/rsift/RsiftHooks を bootstrap CL 経由で全 loader 可視化する
+/// ための王道 API (live 相では JAR ファイルのみ受理、capability 不要)。
+pub const IDX_ADD_TO_BOOTSTRAP_CLASS_LOADER_SEARCH: usize = 148;
 
 pub const EVENT_CLASS_FILE_LOAD_HOOK: c_int = 54;
 pub const JVMTI_ENABLE: c_int = 1;
@@ -69,6 +73,9 @@ static HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
 /// つまり env をキャッシュして全 JVMTI 呼出で共有しないと retransform /
 /// GetLoadedClasses 系は永遠に動かない。Temurin 25 で機械確認済。
 static JVMTI_ENV: AtomicUsize = AtomicUsize::new(0);
+/// wave 207 HC-1: AddToBootstrapClassLoaderSearch は全プロセスで 1 回だけ
+/// (OnLoad + CFLH install 後フォールバックの重複抑止)。
+pub static BOOTSTRAP_CLASSPATH_ADDED: AtomicBool = AtomicBool::new(false);
 /// CFLH で捕捉した game loader の global ref (jobject アドレス、0=未捕捉)。
 static CAPTURED_LOADER: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_LOGGED: AtomicBool = AtomicBool::new(false);
@@ -113,6 +120,8 @@ impl JvmtiCapabilities {
 }
 
 type AllocateFn = unsafe extern "system" fn(*mut c_void, i64, *mut *mut c_uchar) -> c_int;
+type AddToBootstrapClassLoaderSearchFn =
+    unsafe extern "system" fn(*mut c_void, *const c_char) -> c_int;
 type AddCapabilitiesFn = unsafe extern "system" fn(*mut c_void, *const JvmtiCapabilities) -> c_int;
 type GetCapabilitiesFn = unsafe extern "system" fn(*mut c_void, *mut JvmtiCapabilities) -> c_int;
 type SetEventCallbacksFn =
@@ -491,6 +500,77 @@ pub unsafe fn get_loaded_classes(java_vm: *mut c_void) -> Option<Vec<*mut c_void
     }
 }
 
+/// AddToBootstrapClassLoaderSearch (num 149 → idx 148) — bootstrap CL の検索
+/// パスに instrumentation jar を追加する (wave 207 HC-1 の根治本体)。
+/// これにより HEAD 注入先 com/rsift/RsiftHooks がゲーム側どの ClassLoader
+/// からも (親委譲で) 解決可能になる。live 相では既存 JAR パスのみ受理、
+/// capability 不要、複数回呼出で複数 segment (先に呼んだ順に検索)。
+/// 返り値 = JVMTI rc (0 でない場合は呼出側が warn ログで可視化する)。
+/// env は共有 JVMTI_ENV (HA-4)。attach 済みスレッドから呼ぶこと。
+pub unsafe fn add_to_bootstrap_class_loader_search(java_vm: *mut c_void, jar_path: &str) -> i32 {
+    let Some(jvmti) = get_jvmti_env(java_vm) else {
+        agent_log_warn("jvmti", "AddToBootstrapClassLoaderSearch: no jvmti env");
+        return -1;
+    };
+    let Some(f) = jvmti_fn(jvmti, IDX_ADD_TO_BOOTSTRAP_CLASS_LOADER_SEARCH) else {
+        agent_log_warn("jvmti", "AddToBootstrapClassLoaderSearch: fn not resolved");
+        return -2;
+    };
+    let c_path = match std::ffi::CString::new(jar_path) {
+        Ok(c) => c,
+        Err(_) => {
+            agent_log_warn(
+                "jvmti",
+                "AddToBootstrapClassLoaderSearch: bad path (NUL byte)",
+            );
+            return -3;
+        }
+    };
+    let add: AddToBootstrapClassLoaderSearchFn = std::mem::transmute(f);
+    add(jvmti, c_path.as_ptr())
+}
+
+/// AddToBootstrapClassLoaderSearch のログつき統一ラッパ (wave 207)。
+/// phase_label は呼出相 ("Agent_OnLoad" / "CFLH install fallback") で
+/// ログ行を区別する。冪等 (BOOTSTRAP_CLASSPATH_ADDED) — 呼出側で
+/// 可視化したいので rc を返す。成功時のみ static を立てる。
+pub unsafe fn ensure_bootstrap_classpath_once(java_vm: *mut c_void, phase_label: &str) -> i32 {
+    if BOOTSTRAP_CLASSPATH_ADDED.load(Ordering::SeqCst) {
+        return 0;
+    }
+    let Some(jar) = crate::screen_inject::bootstrap_jar() else {
+        agent_log_warn(
+            "jvmti",
+            &format!(
+                "{}: bootstrap jar path unknown — RsiftHooks はゲーム loader から解決不能のまま",
+                phase_label
+            ),
+        );
+        return -4;
+    };
+    let jar_s = jar.display().to_string();
+    let rc = add_to_bootstrap_class_loader_search(java_vm, &jar_s);
+    if rc == 0 {
+        BOOTSTRAP_CLASSPATH_ADDED.store(true, Ordering::SeqCst);
+        agent_log_step(
+            "jvmti",
+            &format!(
+                "{}: AddToBootstrapClassLoaderSearch rc=0 — RsiftHooks 可視化 (bootstrap CL): {}",
+                phase_label, jar_s
+            ),
+        );
+    } else {
+        agent_log_warn(
+            "jvmti",
+            &format!(
+                "{}: AddToBootstrapClassLoaderSearch rc={} for {} — hook 注入クラスの解決が失敗しうる (vanilla 判定のまま)",
+                phase_label, rc, jar_s
+            ),
+        );
+    }
+    rc
+}
+
 /// IsModifiableClass (診断ログ用)。
 pub unsafe fn is_modifiable_class(java_vm: *mut c_void, jclass: *mut c_void) -> Option<bool> {
     unsafe {
@@ -523,6 +603,8 @@ mod tests {
         assert_eq!(IDX_GET_CAPABILITIES, 89 - 1);
         assert_eq!(IDX_GET_POTENTIAL_CAPABILITIES, 140 - 1);
         assert_eq!(IDX_IS_MODIFIABLE_CLASS, 45 - 1);
+        // wave 207: AddToBootstrapClassLoaderSearch num=149 (C index = 148)。
+        assert_eq!(IDX_ADD_TO_BOOTSTRAP_CLASS_LOADER_SEARCH, 149 - 1);
         assert_eq!(EVENT_CLASS_FILE_LOAD_HOOK, 54);
         assert_eq!(CALLBACK_SLOT_CLASS_FILE_LOAD_HOOK, 4);
         assert_eq!(IDX_JNI_GET_ENV, 6);
