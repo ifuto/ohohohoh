@@ -1,0 +1,153 @@
+[0001|t+756170ms|ThreadId(1)] ==========================================================================
+[0002|t+756171ms|ThreadId(1)] [Rsift] session start: agentpath opts=
+[0003|t+756171ms|ThreadId(1)] [Rsift] log file: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\rsift-bootstrap.log"
+[0004|t+756171ms|ThreadId(1)] [Rsift] dll directory: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives"
+[0005|t+756172ms|ThreadId(1)] [Rsift] bootstrap jar: exists=true size=Some(44301)
+[0006|t+756172ms|ThreadId(1)] [Rsift] rsift_jvm.dll: exists=true size=Some(6659584)
+[0007|t+756173ms|ThreadId(1)] ==========================================================================
+[0008|t+756173ms|ThreadId(1)] [step] Agent_OnLoad — entered
+[0009|t+756173ms|ThreadId(1)] [step] Agent_OnLoad — options=""
+[0010|t+756174ms|ThreadId(1)] [step] Agent_OnLoad — scheduling deferred init thread (mods load in background thread)
+[0011|t+756174ms|ThreadId(1)] [step] schedule_deferred_init — from_agentpath=true opts_len=0 agentpath_active=false
+[0012|t+756175ms|ThreadId(1)] [step] agentpath — marker written "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\.rsift-agentpath-active"
+[0013|t+756176ms|ThreadId(1)] [step] schedule_deferred_init — thread spawn OK
+[0014|t+756176ms|ThreadId(2)] [step] deferred_init — thread entered
+[0015|t+756176ms|ThreadId(1)] [step] Agent_OnLoad — complete — returning 0 to JVM
+[0016|t+756177ms|ThreadId(2)] [step] deferred_init — brief wait before JNI (agentpath-only, no javaagent)
+[0017|t+757177ms|ThreadId(2)] [step] deferred_init — pre-JNI wait complete
+[0018|t+757181ms|ThreadId(2)] [step] boot_markers — agentpath=true javaagent=false
+[0019|t+757181ms|ThreadId(2)] [step] deferred_init — loading mods
+[0020|t+757182ms|ThreadId(2)] [step] agent_premain — loading mods args=
+[0021|t+757183ms|ThreadId(2)] [step] agent_premain — mod_dir="C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\mods"
+[0022|t+757184ms|ThreadId(2)] [RsiftAgent] WARN mod_dir does not exist
+[0023|t+757184ms|ThreadId(2)] [step] deferred_init — JavaVM::from_raw addr=0x7fffb23337b0
+[0024|t+757184ms|ThreadId(2)] [step] deferred_init — JavaVM::from_raw OK — starting attach loop
+[0025|t+757186ms|ThreadId(2)] [step] classloader_probe — attempt 0 attach OK
+[0026|t+757186ms|ThreadId(2)] [step] classloader — attempt 0 — game still booting, deferring JNI probes
+[0027|t+757187ms|ThreadId(2)] [step] classloader_probe — attempt 0 — not ready yet
+[0028|t+762292ms|ThreadId(2)] [step] classloader_probe — attempt 5 attach OK
+[0029|t+762296ms|ThreadId(2)] [step] classloader_probe — attempt 5 — not ready yet
+[0030|t+767343ms|ThreadId(2)] [step] classloader_probe — attempt 10 attach OK
+[0031|t+767344ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0032|t+767346ms|ThreadId(2)] [step] classloader_probe — attempt 10 — not ready yet
+[0033|t+772403ms|ThreadId(2)] [step] classloader_probe — attempt 15 attach OK
+[0034|t+772406ms|ThreadId(2)] [step] classloader_probe — attempt 15 — not ready yet
+[0035|t+777420ms|ThreadId(2)] [step] classloader_probe — attempt 20 attach OK
+[0036|t+777421ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0037|t+777422ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0038|t+777424ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0039|t+777424ms|ThreadId(2)] [step] classloader_probe — attempt 20 — not ready yet
+[0040|t+782436ms|ThreadId(2)] [step] classloader_probe — attempt 25 attach OK
+[0041|t+782438ms|ThreadId(2)] [step] classloader_probe — attempt 25 — not ready yet
+[0042|t+787449ms|ThreadId(2)] [step] classloader_probe — attempt 30 attach OK
+[0043|t+787450ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0044|t+787454ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0045|t+787457ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0046|t+787457ms|ThreadId(2)] [step] classloader_probe — attempt 30 — not ready yet
+[0047|t+792487ms|ThreadId(2)] [step] classloader_probe — attempt 35 attach OK
+[0048|t+792502ms|ThreadId(2)] [step] classloader_probe — attempt 35 — not ready yet
+[0049|t+797566ms|ThreadId(2)] [step] classloader_probe — attempt 40 attach OK
+[0050|t+797567ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0051|t+797569ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0052|t+797571ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0053|t+797571ms|ThreadId(2)] [step] classloader_probe — attempt 40 — not ready yet
+[0054|t+802621ms|ThreadId(2)] [step] classloader_probe — attempt 45 attach OK
+[0055|t+802626ms|ThreadId(2)] [step] classloader_probe — attempt 45 — not ready yet
+[0056|t+807738ms|ThreadId(2)] [step] classloader_probe — attempt 50 attach OK
+[0057|t+807738ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0058|t+807758ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0059|t+807760ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0060|t+807761ms|ThreadId(2)] [step] classloader_probe — attempt 50 — not ready yet
+[0061|t+812846ms|ThreadId(2)] [step] classloader_probe — attempt 55 attach OK
+[0062|t+812852ms|ThreadId(2)] [step] classloader_probe — attempt 55 — not ready yet
+[0063|t+817876ms|ThreadId(2)] [step] classloader_probe — attempt 60 attach OK
+[0064|t+817877ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0065|t+817880ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0066|t+817882ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0067|t+817883ms|ThreadId(2)] [step] classloader_probe — attempt 60 — not ready yet
+[0068|t+822903ms|ThreadId(2)] [step] classloader_probe — attempt 65 attach OK
+[0069|t+822907ms|ThreadId(2)] [step] classloader_probe — attempt 65 — not ready yet
+[0070|t+827953ms|ThreadId(2)] [step] classloader_probe — attempt 70 attach OK
+[0071|t+827954ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0072|t+827957ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0073|t+827959ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0074|t+827960ms|ThreadId(2)] [step] classloader_probe — attempt 70 — not ready yet
+[0075|t+833068ms|ThreadId(2)] [step] classloader_probe — attempt 75 attach OK
+[0076|t+833072ms|ThreadId(2)] [step] classloader_probe — attempt 75 — not ready yet
+[0077|t+838093ms|ThreadId(2)] [step] classloader_probe — attempt 80 attach OK
+[0078|t+838094ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0079|t+838096ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0080|t+838099ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0081|t+838099ms|ThreadId(2)] [step] classloader_probe — attempt 80 — not ready yet
+[0082|t+843122ms|ThreadId(2)] [step] classloader_probe — attempt 85 attach OK
+[0083|t+843127ms|ThreadId(2)] [step] classloader_probe — attempt 85 — not ready yet
+[0084|t+848148ms|ThreadId(2)] [step] classloader_probe — attempt 90 attach OK
+[0085|t+848149ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0086|t+848152ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0087|t+848154ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0088|t+848155ms|ThreadId(2)] [step] classloader_probe — attempt 90 — not ready yet
+[0089|t+853181ms|ThreadId(2)] [step] classloader_probe — attempt 95 attach OK
+[0090|t+853185ms|ThreadId(2)] [step] classloader_probe — attempt 95 — not ready yet
+[0091|t+858205ms|ThreadId(2)] [step] classloader_probe — attempt 100 attach OK
+[0092|t+858206ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0093|t+858208ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0094|t+858210ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0095|t+858211ms|ThreadId(2)] [step] classloader_probe — attempt 100 — not ready yet
+[0096|t+863231ms|ThreadId(2)] [step] classloader_probe — attempt 105 attach OK
+[0097|t+863235ms|ThreadId(2)] [step] classloader_probe — attempt 105 — not ready yet
+[0098|t+868303ms|ThreadId(2)] [step] classloader_probe — attempt 110 attach OK
+[0099|t+868304ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0100|t+868306ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0101|t+868308ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0102|t+868309ms|ThreadId(2)] [step] classloader_probe — attempt 110 — not ready yet
+[0103|t+873329ms|ThreadId(2)] [step] classloader_probe — attempt 115 attach OK
+[0104|t+873334ms|ThreadId(2)] [step] classloader_probe — attempt 115 — not ready yet
+[0105|t+878372ms|ThreadId(2)] [step] classloader_probe — attempt 120 attach OK
+[0106|t+878373ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0107|t+878382ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0108|t+878384ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0109|t+878384ms|ThreadId(2)] [step] classloader_probe — attempt 120 — not ready yet
+[0110|t+883429ms|ThreadId(2)] [step] classloader_probe — attempt 125 attach OK
+[0111|t+883432ms|ThreadId(2)] [step] classloader_probe — attempt 125 — not ready yet
+[0112|t+888469ms|ThreadId(2)] [step] classloader_probe — attempt 130 attach OK
+[0113|t+888470ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0114|t+888472ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0115|t+888502ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0116|t+888503ms|ThreadId(2)] [step] classloader_probe — attempt 130 — not ready yet
+[0117|t+893525ms|ThreadId(2)] [step] classloader_probe — attempt 135 attach OK
+[0118|t+893531ms|ThreadId(2)] [step] classloader_probe — attempt 135 — not ready yet
+[0119|t+898574ms|ThreadId(2)] [step] classloader_probe — attempt 140 attach OK
+[0120|t+898575ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0121|t+898576ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0122|t+898578ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0123|t+898579ms|ThreadId(2)] [step] classloader_probe — attempt 140 — not ready yet
+[0124|t+903598ms|ThreadId(2)] [step] classloader_probe — attempt 145 attach OK
+[0125|t+903601ms|ThreadId(2)] [step] classloader_probe — attempt 145 — not ready yet
+[0126|t+908620ms|ThreadId(2)] [step] classloader_probe — attempt 150 attach OK
+[0127|t+908621ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0128|t+908624ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0129|t+908626ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0130|t+908626ms|ThreadId(2)] [step] classloader_probe — attempt 150 — not ready yet
+[0131|t+913670ms|ThreadId(2)] [step] classloader_probe — attempt 155 attach OK
+[0132|t+913673ms|ThreadId(2)] [step] classloader_probe — attempt 155 — not ready yet
+[0133|t+918691ms|ThreadId(2)] [step] classloader_probe — attempt 160 attach OK
+[0134|t+918692ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0135|t+918694ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0136|t+918696ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0137|t+918697ms|ThreadId(2)] [step] classloader_probe — attempt 160 — not ready yet
+[0138|t+923715ms|ThreadId(2)] [step] classloader_probe — attempt 165 attach OK
+[0139|t+923718ms|ThreadId(2)] [step] classloader_probe — attempt 165 — not ready yet
+[0140|t+928734ms|ThreadId(2)] [step] classloader_probe — attempt 170 attach OK
+[0141|t+928735ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0142|t+928740ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0143|t+928745ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0144|t+928745ms|ThreadId(2)] [step] classloader_probe — attempt 170 — not ready yet
+[0145|t+933763ms|ThreadId(2)] [step] classloader_probe — attempt 175 attach OK
+[0146|t+933766ms|ThreadId(2)] [step] classloader_probe — attempt 175 — not ready yet
+[0147|t+938782ms|ThreadId(2)] [step] classloader_probe — attempt 180 attach OK
+[0148|t+938783ms|ThreadId(2)] [step] classloader — probe: Render/Game thread context ClassLoader
+[0149|t+938784ms|ThreadId(2)] [step] classloader — probe: Minecraft.getInstance() via cached loader
+[0150|t+938786ms|ThreadId(2)] [warn] classloader — all strategies failed this probe
+[0151|t+938786ms|ThreadId(2)] [step] classloader_probe — attempt 180 — not ready yet
+[0152|t+943808ms|ThreadId(2)] [step] classloader_probe — attempt 185 attach OK
+[0153|t+943814ms|ThreadId(2)] [step] classloader_probe — attempt 185 — not ready yet
