@@ -964,19 +964,57 @@ pub fn load_class_with_loader<'local>(
     if res.is_err() {
         // wave 207 診断強化: loadClass 失敗の理由 (CNF/NCDFE 等) を 1 行で残す。
         // caller 側では静黙 skip する設計のため、ここが唯一の診断点になる。
-        dump_pending_exception(
-            env,
-            &format!(
-                "loadClass({}) via game loader — returning None to caller",
-                dotted
-            ),
-        );
+        // wave 209 HE: 実機 #5 で同一クラスの CNFE が 250ms 周期で 135 秒
+        // (800 行超) 連発しログを埋没させたため、同名は 2 秒に 1 行へ絞る
+        // (診断情報は残しつつ可読性を確保。間引きは失敗側のみ)。
+        if should_log_class_failure(dotted) {
+            dump_pending_exception(
+                env,
+                &format!(
+                    "loadClass({}) via game loader — returning None to caller",
+                    dotted
+                ),
+            );
+        } else {
+            clear_pending_exception(env);
+        }
     }
     let cls = res.ok().and_then(|v| v.l().ok())?;
     Some(JClass::from(cls))
 }
 
+static CLASS_FAIL_LOG_TS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// wave 209 HE: クラスロード失敗ログのスロットル判定 (同名 2 秒に 1 行)。
+fn should_log_class_failure(dotted: &str) -> bool {
+    let now = std::time::Instant::now();
+    let mut map = match CLASS_FAIL_LOG_TS.lock() {
+        Ok(m) => m,
+        Err(_) => return true,
+    };
+    match map.get(dotted) {
+        Some(t) if now.duration_since(*t).as_secs() < 2 => false,
+        _ => {
+            map.insert(dotted.to_string(), now);
+            true
+        }
+    }
+}
+
 pub fn find_minecraft_class<'local>(env: &mut JNIEnv<'local>) -> Option<JClass<'local>> {
+    // wave 209 HE: ClassLoad jcache を最優先 (ローダー非依存 — Prism ラッパーの
+    // 子ローダー分離でも確実に届く。実機 #5 の CNFE 永続の根治)。
+    if let Some(raw) = crate::jvmti_events::wanted_class_raw("net/minecraft/client/Minecraft") {
+        // SAFETY: raw は ClassLoad コールバック内で NewGlobalRef 済みの生存中 jclass。
+        let obj = unsafe { JObject::from_raw(raw as jni::sys::jobject) };
+        if let Ok(local) = env.new_local_ref(&obj) {
+            if !local.as_raw().is_null() {
+                return Some(JClass::from(local));
+            }
+        }
+    }
     if let Ok(c) = env.find_class("net/minecraft/client/Minecraft") {
         return Some(c);
     }

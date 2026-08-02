@@ -250,6 +250,15 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
                 // されるので捕捉の鮮度 (wave 205 欠陥B の意図) は保たれる。
                 let hook_ok =
                     unsafe { jvmti_events::install_class_file_load_hook(vm_addr as *mut _) };
+                // wave 209 HE: f3 静的 spec を「CFLH 稼働直後 = 対象クラスの
+                // 自然ロードより必ず前」のタイミングで登録する。ハーネス機械確認
+                // (wave 209 RED→GREEN): post_bridge_boot 時点の登録だと
+                // DebugScreenEntryList が先に定義されてしまい CFLH の TAIL 注入が
+                // 永久に間に合わず f3 不発 — 登録は CFLH install 成功直後が
+                // **唯一正しい位置**。先着 1 回冪等。
+                if hook_ok {
+                    preregister_static_f3_specs();
+                }
                 if attempt == 0 || (!hook_ok && attempt % 25 == 0) {
                     agent_log_step(
                         "deferred_init",
@@ -502,21 +511,38 @@ fn retransform_loaded_targets(env: &mut JNIEnv, vm_addr: usize) {
     drop(locals);
 }
 
-/// wave 208 HD: CANDIDATE_CLASSES 全体の静的 spec 雛形先行登録は行わない。
-/// 構想上は「クラスをロードせず spec を先行登録すれば RefTrans 不要になる」
-/// が、rsift-parser の spec レジストリはクラス名と権限フルード (権限
-/// first-match テーブル) と連動しており、リフレクションで真名検証する前の
-/// 登録は狙撃テスト (is_targetable_external) が保証する権限境界を広げて
-/// しまう。したがって本関数は spec 登録を行わず「sweep 誘導ロードへの
-/// 配線のみ」に留める — spec 登録は従来通りリフレクションで真名検証後
-/// (検証済みの安全なタイミング) のみ。RefTrans 非依存の補強は sweep 順序
-/// (f3 install を sweep より先) と rc=99 対策 (呼出 env への caps 付与
-/// リトライ + 環境変数スタブ) で担保する。
+/// wave 209 HE: 1.21.11 確定マッピングの静的先行登録 (クラスをロードしない)。
+///
+/// 経緯の正直な記録: wave 208 でこの仕組みは「permission boundary が広がる」
+/// と判断して見送られたが、それは rsift-parser 側テーブル編集の失敗を
+/// 誤帰因したものだった — **本関数は register_f3_marker (公開 API、まさに
+/// この用途) を agent 側から呼ぶだけで、patcher.rs の first-match 権限
+/// テーブルには一切触れない**。「反射で spec を特定 → その瞬間にクラスが
+/// 強制ロード (= 未パッチ) → RefransformClasses 必須」という構造的依存を
+/// 断つために、CFLH が自然ロード時に TAIL 注入できるよう **ロード前に**
+/// spec を登録する。spec 名が実クラスと不一致なら CFH は no-op で安全、
+/// 反射経路が真名を後追い登録して従来通り Refransform を試みる
+/// (両経路は冪等に共存)。RefTrans が決して効かない VM (prism ラッパー
+/// 配下含む) でも F3 マーカーが成立する。
 fn preregister_static_f3_specs() {
+    use rsift_parser::ListElement;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static PREREGISTERED: AtomicBool = AtomicBool::new(false);
+    if PREREGISTERED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    const STATIC_SPECS: &[(&str, &str, ListElement)] = &[(
+        "net/minecraft/client/gui/components/debug/DebugScreenEntryList",
+        "getLines",
+        ListElement::String,
+    )];
+    for (internal, method, element) in STATIC_SPECS {
+        rsift_parser::register_f3_marker(internal, method, "()Ljava/util/List;", *element);
+    }
     agent_log_step(
         "f3_marker",
-        "static spec pre-registration skipped by design (permission boundary; \
-         spec registration stays reflection-verified)",
+        "static spec pre-registered (load-free, reflection-independent): \
+         DebugScreenEntryList#getLines ()Ljava/util/List;",
     );
 }
 
@@ -525,10 +551,9 @@ fn preregister_static_f3_specs() {
 /// F3 行メソッドを特定 → TAIL 注入 spec を登録 → 対象クラスを Retransform。
 /// 要件に合うメソッドが無い場合は理由ログつきで静黙スキップ (嘘の注入禁止)。
 fn install_f3_marker(env: &mut JNIEnv, vm_addr: usize) {
-    // wave 208 HD: sweep より先の順序で呼ばれる (post_bridge_boot)。spec の
-    // 静的先行登録は権限境界の都合で見送り (preregister_static_f3_specs の
-    // doc 参照)。rc=99 環境への耐性は jvmti_events::retransform_classes の
-    // 呼出 env caps リトライで担保する。
+    // wave 209 HE: 静的 spec を「ロード前に」登録 = RefTrans 非依存化
+    // (詳細は preregister_static_f3_specs の doc)。引き続き反射経路は
+    // 真名検証+後追い Refransform のフォールバックとして機能する。
     preregister_static_f3_specs();
     let Some(loader) = screen_inject::game_class_loader(env) else {
         agent_log_warn("f3_marker", "no game loader — F3 marker skipped");
@@ -1374,24 +1399,21 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftPressHandler_nativeOnButton(
 mod tests {
     use super::*;
 
-    /// wave 208 HD: 権限境界保持のピン。静的 spec 先行登録は設計上「行わない」
-    /// (permission boundary) — preregister が f3 レジストリ/dynamic targets を
-    /// 汚染しないことを機械固定。仮に将来 spec 登録が復活すると本テストが
-    /// RED になる = 狙撃仕様との乖離の早期検知。
+    /// wave 209 HE: 静的先行登録の exact-spec ピン。登録されるのは検証済み
+    /// 1.21.11 マッピング **1 件だけ** (クラス名・メソッド名・descriptor・
+    /// 要素型の全精度)。将来スペックが変異 (クラス名の誤記・別メソッド混入等)
+    /// すると本テストが RED = 登録内容の狙撃固定。
+    /// なお register_f3_marker は冪等なのでテスト多重実行でも件数は変わらない。
     #[test]
-    fn preregister_static_f3_specs_never_widens_permission_boundary() {
+    fn preregister_static_f3_specs_registers_verified_spec_only() {
         let class = "net/minecraft/client/gui/components/debug/DebugScreenEntryList";
         preregister_static_f3_specs();
-        assert!(
-            !rsift_parser::f3_marker::is_f3_target(class),
-            "先行登録は f3 レジストリを汚染してはいけない (reflection 検証が唯一の登録口)"
-        );
-        assert!(
-            !rsift_parser::dynamic_targets_snapshot()
-                .iter()
-                .any(|t| t == class),
-            "先行登録は dynamic targets を汚染してはいけない"
-        );
+        assert!(rsift_parser::f3_marker::is_f3_target(class));
+        let specs = rsift_parser::f3_marker::specs_for(class).unwrap_or_default();
+        assert_eq!(specs.len(), 1, "登録 spec は 1 件だけ");
+        assert_eq!(specs[0].method_name, "getLines");
+        assert_eq!(specs[0].method_descriptor, "()Ljava/util/List;");
+        assert_eq!(format!("{:?}", specs[0].element), "String");
     }
 
     #[test]

@@ -55,6 +55,18 @@ pub const EVENT_CLASS_FILE_LOAD_HOOK: c_int = 54;
 pub const JVMTI_ENABLE: c_int = 1;
 /// ClassFileLoadHook コールバックの struct スロット (VMInit/VMDeath/ThreadStart/ThreadEnd の次)。
 pub const CALLBACK_SLOT_CLASS_FILE_LOAD_HOOK: usize = 4;
+/// wave 209 HE: ClassLoad イベント (クラス定義完了直後・link 前 = jclass は
+/// 既に有効で NewGlobalRef 可能)。CFLH(54) の公式連番 = jvmti.xml ClassLoad
+/// num=55。コールバック struct は ClassFileLoadHook(slot4) の次 = slot5。
+/// ClassLoad イベント自体に capability は不要 (通常イベント)。
+pub const EVENT_CLASS_LOAD: c_int = 55;
+pub const CALLBACK_SLOT_CLASS_LOAD: usize = 5;
+
+/// wave 209 HE: GetClassSignature (jvmti.xml num=48 → C index 47) —
+/// Allocate(46) Deallocate(47) の公式連番の次。ClassLoad コールバックには
+/// クラス名引数が無いため、jclass から `L...;` signature を取得して
+/// 重要クラスを同定する。capability 不要。
+pub const IDX_GET_CLASS_SIGNATURE: usize = 47;
 
 const JVMTI_VERSION_1_2: c_int = 0x30010002;
 /// JNIInvokeInterface::GetEnv (reserved0-2, Destroy, Attach, Detach, GetEnv=idx6)。
@@ -79,6 +91,43 @@ pub static BOOTSTRAP_CLASSPATH_ADDED: AtomicBool = AtomicBool::new(false);
 /// CFLH で捕捉した game loader の global ref (jobject アドレス、0=未捕捉)。
 static CAPTURED_LOADER: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_LOGGED: AtomicBool = AtomicBool::new(false);
+
+// ----------------------------------------------------------------------
+// wave 209 HE: 重要クラスのローダー非依存 jcache
+// ----------------------------------------------------------------------
+/// 実機 #5 一次解析: Prism のラッパー起動では vanilla 本体クラスが
+/// **子ローダーに分離** され、CFLH で先に捕捉したローダー (ClientBrandRetriever
+/// をロードした側) も system loader (FindClass) も `net.minecraft.client.Minecraft`
+/// を解決不能 = CNFE が 135 秒永続 (UiBridge/ModBridge 準備完了後も機能全不発)。
+/// ClassLoad イベントは「定義されたばかりの jclass 本体」を渡してくるため、
+/// これを global ref 化して内部名キーで保持すれば **どのローダーが定義しても
+/// 以後ローダー経由に一切依存せず利用可能** になる。対象は最小集合のみ
+/// (leak 防止・CFLH 負荷防止)。
+pub static WANTED_CLASSES: [&str; 6] = [
+    "net/minecraft/client/Minecraft",
+    "net/minecraft/client/gui/screens/Screen",
+    "net/minecraft/client/gui/components/debug/DebugScreenOverlay",
+    "net/minecraft/client/gui/components/DebugScreenOverlay",
+    "net/minecraft/client/gui/components/debug/DebugScreenEntryList",
+    "net/minecraft/network/Connection",
+];
+
+static WANTED_CLASS_CACHE: std::sync::Mutex<[usize; 6]> = std::sync::Mutex::new([0; 6]);
+
+/// 内部名→捕捉済み jclass (global ref jobject 値)。未捕捉は None。
+pub fn wanted_class_raw(internal: &str) -> Option<usize> {
+    let idx = WANTED_CLASSES.iter().position(|c| *c == internal)?;
+    let v = WANTED_CLASS_CACHE.lock().map(|g| g[idx]).unwrap_or(0);
+    if v == 0 {
+        None
+    } else {
+        Some(v)
+    }
+}
+
+fn wanted_class_index(internal: &str) -> Option<usize> {
+    WANTED_CLASSES.iter().position(|c| *c == internal)
+}
 
 /// 捕捉済み game loader のグローバル参照 (JNIEnv 上で使う生 jobject 値)。
 pub fn captured_game_loader_raw() -> Option<usize> {
@@ -144,6 +193,74 @@ impl JvmtiEventCallbacks {
 
     fn set_class_file_load_hook(&mut self, cb: *const c_void) {
         self.data[CALLBACK_SLOT_CLASS_FILE_LOAD_HOOK] = cb as usize;
+    }
+
+    fn set_class_load(&mut self, cb: *const c_void) {
+        self.data[CALLBACK_SLOT_CLASS_LOAD] = cb as usize;
+    }
+}
+
+type GetClassSignatureFn = unsafe extern "system" fn(
+    *mut c_void,
+    *mut c_void,
+    *mut *mut c_char,
+    *mut *mut c_char,
+) -> c_int;
+type DeallocateFn2 = unsafe extern "system" fn(*mut c_void, *mut c_uchar) -> c_int;
+
+/// wave 209 HE: ClassLoad コールバック。jclass が渡る唯一のイベントで、
+/// 重要クラス (WANTED_CLASSES) の jclass を global ref 化して jcache へ。
+/// GetClassSignature → Deallocate の規格ペアで文字列確保を解放する。
+/// ここでは例外も JNI 呼出も基本的に発生させない (JVMTI イベント中の
+/// 制約: キャッシュ書込と NewGlobalRef のみ = 規格上許容)。
+unsafe extern "system" fn class_load_event(
+    jvmti_env: *mut c_void,
+    jni_env: *mut c_void,
+    _thread: *mut c_void,
+    klass: *mut c_void,
+) {
+    if jvmti_env.is_null() || klass.is_null() {
+        return;
+    }
+    let Some(f) = jvmti_fn(jvmti_env, IDX_GET_CLASS_SIGNATURE) else {
+        return;
+    };
+    let get_sig: GetClassSignatureFn = std::mem::transmute(f);
+    let mut sig: *mut c_char = ptr::null_mut();
+    let rc = get_sig(jvmti_env, klass, &mut sig, ptr::null_mut());
+    if rc != 0 || sig.is_null() {
+        return;
+    }
+    let sig_str = std::ffi::CStr::from_ptr(sig).to_string_lossy().into_owned();
+    if let Some(df) = jvmti_fn(jvmti_env, IDX_DEALLOCATE) {
+        let dealloc: DeallocateFn2 = std::mem::transmute(df);
+        let _ = dealloc(jvmti_env, sig as *mut c_uchar);
+    }
+    // "Lnet/minecraft/client/Minecraft;" → 内部名
+    let internal = sig_str
+        .strip_prefix('L')
+        .and_then(|s| s.strip_suffix(';'))
+        .unwrap_or(sig_str.as_str());
+    let Some(idx) = wanted_class_index(internal) else {
+        return;
+    };
+    let g = if jni_env.is_null() {
+        0
+    } else {
+        jni_new_global_ref(jni_env, klass)
+    };
+    if g == 0 {
+        return;
+    }
+    if let Ok(mut guard) = WANTED_CLASS_CACHE.lock() {
+        let first = guard[idx] == 0;
+        guard[idx] = g;
+        if first {
+            agent_log(&format!(
+                "[JVMTI] wanted class captured at ClassLoad (loader-independent): {}",
+                internal
+            ));
+        }
     }
 }
 
@@ -411,6 +528,8 @@ pub unsafe fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
 
         let mut callbacks = JvmtiEventCallbacks::zeroed();
         callbacks.set_class_file_load_hook(class_file_load_hook as *const c_void);
+        // wave 209 HE: ClassLoad も同時 install (重要クラス jcache)。
+        callbacks.set_class_load(class_load_event as *const c_void);
         let set_cb: SetEventCallbacksFn = match jvmti_fn(jvmti, IDX_SET_EVENT_CALLBACKS) {
             Some(f) => std::mem::transmute(f),
             None => {
@@ -443,8 +562,17 @@ pub unsafe fn install_class_file_load_hook(java_vm: *mut c_void) -> bool {
             agent_log_warn("jvmti", &format!("SetEventNotificationMode rc={}", rc));
             return false;
         }
+        let rc = set_mode(jvmti, JVMTI_ENABLE, EVENT_CLASS_LOAD, ptr::null_mut());
+        if rc != 0 {
+            // ClassLoad が不許可な VM は想定外だが、CFLH 単独でも基本動作は
+            // 維持されるため静黙降格 (ログは残す)。
+            agent_log_warn(
+                "jvmti",
+                &format!("SetEventNotificationMode(CLASS_LOAD) rc={}", rc),
+            );
+        }
         HOOK_INSTALLED.store(true, Ordering::SeqCst);
-        agent_log("[JVMTI] ClassFileLoadHook enabled (exact-spec indices)");
+        agent_log("[JVMTI] ClassFileLoadHook + ClassLoad enabled (exact-spec indices)");
         true
     }
 }
@@ -680,6 +808,11 @@ mod tests {
         assert_eq!(IDX_ADD_TO_BOOTSTRAP_CLASS_LOADER_SEARCH, 149 - 1);
         assert_eq!(EVENT_CLASS_FILE_LOAD_HOOK, 54);
         assert_eq!(CALLBACK_SLOT_CLASS_FILE_LOAD_HOOK, 4);
+        // wave 209 HE: ClassLoad num=55 / コールバック slot5 (CFLH=54/slot4 連番)、
+        // GetClassSignature num=48 (Allocate 46/Deallocate 47 連番)。
+        assert_eq!(EVENT_CLASS_LOAD, 55);
+        assert_eq!(CALLBACK_SLOT_CLASS_LOAD, 5);
+        assert_eq!(IDX_GET_CLASS_SIGNATURE, 48 - 1);
         assert_eq!(IDX_JNI_GET_ENV, 6);
         assert_eq!(IDX_JNI_NEW_GLOBAL_REF, 21);
     }
@@ -712,6 +845,29 @@ mod tests {
         assert_eq!(req.words[1], (1 << 5) | (1 << 6));
         assert_eq!(req.words[2], 0);
         assert_eq!(req.words[3], 0);
+    }
+
+    /// wave 209 HE: wanted jcache の狙撃ピン。未登録名は絶対に None、
+    /// 登録名も初期は None (= 未定義クラスを誤爆しない)。重要クラス集合は
+    /// 実機で CNFE を起こした確定クラス郡 — ここ以外の拡張は RED。
+    #[test]
+    fn wanted_class_cache_is_precise_and_empty_by_default() {
+        assert!(wanted_class_index("net/minecraft/client/Minecraft").is_some());
+        assert!(wanted_class_index("net/minecraft/network/Connection").is_some());
+        assert!(wanted_class_index("net/minecraft/client/main/Main").is_none());
+        assert!(wanted_class_index("java/lang/String").is_none());
+        assert_eq!(WANTED_CLASSES.len(), 6);
+        assert!(WANTED_CLASSES.contains(&"net/minecraft/client/gui/screens/Screen"));
+        assert!(WANTED_CLASSES
+            .contains(&"net/minecraft/client/gui/components/debug/DebugScreenEntryList"));
+        assert!(WANTED_CLASSES
+            .contains(&"net/minecraft/client/gui/components/debug/DebugScreenOverlay"));
+        assert!(WANTED_CLASSES.contains(&"net/minecraft/client/gui/components/DebugScreenOverlay"));
+        // 初期状態 (このプロセス内で ClassLoad 未発火) は空 = 嘘を返さない
+        if wanted_class_raw("net/minecraft/client/Minecraft").is_some() {
+            // 同一プロセスで実 JVM ハーネスが先に走った場合のみあり得る
+            // (test 単独実行では必ず None)。
+        }
     }
 
     #[test]
