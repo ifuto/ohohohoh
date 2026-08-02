@@ -1,0 +1,19 @@
+# rsift-setup 実行ログ
+# schema=rsift.setup.log/1 started_unix=1785630180 exit_code=0
+[ok  ] env          os=windows arch=x86_64 dir=C:\Users\Junji\Downloads\rsift-bundle-windows-x64
+[ok  ] scan         5 個の lib を検出
+[ok  ] lib          rsgraphics.dll size=6319616 sha256=e1d4f86de4b53c81433a1475381b28d97bd859a12f97001440718cdf8bd6854c
+[ok  ] lib          rsift.dll size=104960 sha256=144104f508937fa613aab6ec0e4a61b9a452edcd46b2f1952498b30cce780e68
+[ok  ] lib          rsift_jvm.dll size=6660608 sha256=a8dc4e51fe4be08bb41495fdbbb916fd72f1ff32297755c4afb8ece984436f31
+[ok  ] lib          rsreplay.dll size=1034240 sha256=aa86be7be9911fdba0e1507326d2f07cd7dde7b132f25d2fb5284dfb980b4f66
+[ok  ] lib          rszoom.dll size=557056 sha256=e629a070eab443da45cf4b15d4ab9cb89ac81c1730cfceebbb68a3354e5d4533
+[warn] verify       manifest 未登録 (初期配布): ハッシュを記録のみ。次回リリースで pin されます
+[warn] decide       RsGraphics は実行時に wgpu が最適 backend を自動選択 (Vulkan 優先/DX12)
+[warn] decide       RsReplay 同梱検出: rsreplay.dll (録画/export mod として準備)
+[warn] decide       RsReplay 同梱検出: rsreplay.dll (録画/export mod として準備)
+[ok  ] decide       renderer=vulkan engine=Some("rsift.dll") gfx=Some("rsgraphics.dll") ready=true
+[ok  ] launcher     起動構成 'Rsift' (lastVersionId=rsift-1.21.11) をランチャーに登録
+[ok  ] launcher     version_dir=C:\Users\Junji\AppData\Roaming\.minecraft\versions\rsift-1.21.11 natives=["rsift.dll", "rsift_jvm.dll", "rsgraphics.dll", "rsreplay.dll", "rszoom.dll"] mods=["rsgraphics.dll", "rsreplay.dll", "rszoom.dll"]
+[ok  ] prism        Prism インスタンス 'Rsift' (id=rsift, mc=1.21.11) を登録
+[ok  ] prism        PrismLauncher を再起動するとインスタンス一覧に現れます (jvm args: -agentpath:C:\Users\Junji\AppData\Roaming\PrismLauncher\instances\rsift\rsift-natives\rsift_jvm.dll -Drsift.gfx=vulkan -Drsift.home=C:\Users\Junji\AppData\Roaming\PrismLauncher\instances\rsift\rsift-natives)
+[ok  ] config       C:\Users\Junji\Downloads\rsift-bundle-windows-x64\rsift_launch.json を生成
