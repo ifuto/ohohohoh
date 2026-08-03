@@ -1,135 +1,139 @@
-FATAL: cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay -p rszoom --release --locked (exit=101)
-  Downloaded cc v1.2.65
-  Downloaded flate2 v1.1.9
-  Downloaded bytes v1.12.0
-  Downloaded crossbeam-channel v0.5.16
-  Downloaded memchr v2.8.2
-  Downloaded aho-corasick v1.1.4
-  Downloaded indexmap v2.14.0
-  Downloaded jni v0.21.1
-  Downloaded combine v4.6.7
-  Downloaded glow v0.13.1
-  Downloaded hashbrown v0.14.5
-  Downloaded clap_builder v4.6.0
-  Downloaded hashbrown v0.15.5
-  Downloaded hashbrown v0.17.1
-  Downloaded windows_x86_64_msvc v0.52.6
-  Downloaded zstd-sys v2.0.16+zstd.1.5.7
-  Downloaded rayon v1.12.0
-  Downloaded ash v0.37.3+1.3.251
-  Downloaded glam v0.29.3
-  Downloaded naga v0.20.0
-  Downloaded winapi v0.3.9
-  Downloaded khronos_api v3.1.0
-  Downloaded libc v0.2.186
-  Downloaded windows-sys v0.45.0
-  Downloaded windows-sys v0.61.2
-  Downloaded windows v0.58.0
-  Downloaded windows v0.52.0
-   Compiling proc-macro2 v1.0.106
-   Compiling quote v1.0.46
-   Compiling unicode-ident v1.0.24
-   Compiling windows-link v0.2.1
-   Compiling windows-sys v0.61.2
-   Compiling syn v2.0.118
-   Compiling thiserror v1.0.69
-   Compiling windows_x86_64_msvc v0.52.6
-   Compiling once_cell v1.21.4
-   Compiling cfg-if v1.0.4
-   Compiling bitflags v2.13.0
-   Compiling windows-targets v0.52.6
-   Compiling libloading v0.8.9
-   Compiling serde_core v1.0.228
-   Compiling winapi v0.3.9
-   Compiling getrandom v0.3.4
-   Compiling crossbeam-utils v0.8.21
-   Compiling thiserror-impl v1.0.69
-   Compiling bytemuck_derive v1.10.2
-   Compiling bytemuck v1.25.0
-   Compiling tracing-core v0.1.36
-   Compiling serde v1.0.228
-   Compiling khronos_api v3.1.0
-   Compiling smallvec v1.15.2
-   Compiling log v0.4.33
-   Compiling zmij v1.0.21
-   Compiling memchr v2.8.2
-   Compiling syn v1.0.109
-   Compiling cfg_aliases v0.1.1
-   Compiling serde_derive v1.0.228
-   Compiling tracing-attributes v0.1.31
-   Compiling jobserver v0.1.34
-   Compiling shlex v2.0.1
-   Compiling find-msvc-tools v0.1.9
-   Compiling parking_lot_core v0.9.12
-   Compiling serde_json v1.0.150
-   Compiling pin-project-lite v0.2.17
-   Compiling equivalent v1.0.2
-   Compiling tracing v0.1.44
-   Compiling cc v1.2.65
-   Compiling scopeguard v1.2.0
-   Compiling autocfg v1.5.1
-   Compiling pkg-config v0.3.33
-   Compiling xml-rs v0.8.28
-   Compiling itoa v1.0.18
-   Compiling gl_generator v0.14.0
-   Compiling com_macros_support v0.6.0
-   Compiling zstd-sys v2.0.16+zstd.1.5.7
-   Compiling num-traits v0.2.19
-   Compiling lock_api v0.4.14
-   Compiling crossbeam-epoch v0.9.18
-   Compiling winapi-util v0.1.11
-   Compiling libc v0.2.186
-   Compiling rayon-core v1.13.0
-   Compiling allocator-api2 v0.2.21
-   Compiling foldhash v0.1.5
-   Compiling termcolor v1.4.1
-   Compiling hashbrown v0.15.5
-   Compiling crossbeam-deque v0.8.6
-   Compiling com_macros v0.6.0
-   Compiling glutin_wgl_sys v0.5.0
-   Compiling libloading v0.7.4
-   Compiling windows-core v0.52.0
-   Compiling hashbrown v0.17.1
-   Compiling khronos-egl v6.0.0
-   Compiling ash v0.37.3+1.3.251
-   Compiling bit-vec v0.6.3
-   Compiling unicode-width v0.1.14
-   Compiling codespan-reporting v0.11.1
-   Compiling bit-set v0.5.3
-   Compiling indexmap v2.14.0
-   Compiling windows v0.52.0
-   Compiling com v0.6.0
-   Compiling parking_lot v0.12.5
-   Compiling rsift-api v0.1.0-alpha.1.21.11 (D:\a\rsift\rsift\rsift\crates\rsift-api)
-error[E0433]: cannot find module or crate `log` in this scope
-  --> crates\rsift-api\src\log_bridge.rs:27:9
-   |
-27 |         log::error!("{line}");
-   |         ^^^ use of unresolved module or unlinked crate `log`
+FATAL: cargo test -p rsift-api -p rsift-jvm --release --locked (exit=101)
+warning: `rsift-api` (lib test) generated 1 warning (1 duplicate)
+warning: `rsift-jvm` (lib) generated 12 warnings (run `cargo fix --lib -p rsift-jvm` to apply 7 suggestions)
+warning: `rsift-jvm` (lib test) generated 12 warnings (12 duplicates)
+    Finished `release` profile [optimized] target(s) in 8m 27s
+     Running unittests src\lib.rs (target\release\deps\rsift_api-a882e22a966b27eb.exe)
 
-warning: unused import: `std::os::windows::ffi::OsStringExt`
-   --> crates\rsift-api\src\adaptive_perf.rs:647:9
-    |
-647 |     use std::os::windows::ffi::OsStringExt;
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+running 97 tests
+test adaptive_perf::tests::eco_tier_is_lightest ... ok
+test adaptive_perf::tests::pick_best_gpu_prefers_discrete ... ok
+test adaptive_perf::tests::rx7800xt_gets_performance_tier ... ok
+test adaptive_perf::tests::ryzen_7800x3d_profile ... ok
+test advancements::tests::already_granted_no_double_progress ... ok
+test advancements::tests::and_requirements_need_all ... ok
+test advancements::tests::fire_trigger_applies_to_matching_criteria ... ok
+test advancements::tests::fire_trigger_respects_condition ... ok
+test advancements::tests::or_requirements_need_any ... ok
+test advancements::tests::parent_and_rewards_stored ... ok
+test advancements::tests::register_and_lookup ... ok
+test advancements::tests::rejects_empty_criteria ... ok
+test advancements::tests::rejects_unknown_criterion_in_requirement ... ok
+test advancements::tests::required_progress_needs_multiple ... ok
+test advancements::tests::single_criterion_grants ... ok
+test cloth_config::writeback_tests::change_fires_on_change_and_requests_reopen_with_new_value ... ok
+test cloth_config::writeback_tests::display_labels_follow_vanilla_option_style ... ok
+test cloth_config::writeback_tests::press_row_cycles_int_and_wraps_to_min ... ok
+test cloth_config::writeback_tests::press_row_flips_bool_and_string_is_noop ... ok
+test cloth_config::writeback_tests::press_row_noop_lines_do_not_touch_values ... ok
+test cloth_config::writeback_tests::slider_step_is_about_twenty_clicks_per_span ... ok
+test engine_caps::tests::feature_count_sm69_gt_sm66 ... ok
+test engine_caps::tests::sm69_request_blocked_on_weak_gpu ... ok
+test engine_caps::tests::sm69_requires_score_and_vram ... ok
+test keybinds::tests::register_is_idempotent_and_shares_one_cell ... ok
+test keybinds::tests::snapshot_carries_declaration_not_state_mutations ... ok
+test keybinds::tests::state_roundtrip_and_unknown_names ... ok
+test log_bridge::tests::sink_receives_lines_once_registered_and_rejects_reregister ... ok
+test mc_style::tests::column_emits_stacked_vanilla_rows ... ok
+test mc_style::tests::text_decorations_match_vanilla ... ok
+test mc_style::tests::vanilla_geometry_pins ... ok
+test mod_menu::catalog_protocol_tests::catalog_lines_sanitizes_pipes_in_display_fields ... ok
+test mod_menu::catalog_protocol_tests::catalog_lines_sorted_stable_with_display_format ... ok
+test mod_menu::catalog_protocol_tests::detail_lines_full_entry_has_all_sections_and_actions ... ok
+test mod_menu::catalog_protocol_tests::detail_lines_omit_optional_actions_and_blank_desc ... ok
+test mod_menu::catalog_protocol_tests::parse_row_decodes_protocol ... ok
+test mod_menu::catalog_protocol_tests::row_label_extracts_display_text ... ok
+test mod_menu::tests::open_close_selection_state_machine_is_noop_safe ... ok
+test mod_menu::tests::register_mod_counts_distinct_ids ... ok
+test mod_menu::tests::register_mod_same_id_overwrites_not_duplicates ... ok
+test mod_security::tests::gq_breadth_lock_game_surface_requires_no_capability ... ok
+test mod_security::tests::gq_dispatch_op_host_prefix_blocked_and_counted ... ok
+test mod_security::tests::gq_format_detection ... ok
+test mod_security::tests::gq_gate_require_audit_and_ring_bound ... ok
+test mod_security::tests::gq_hard_deny_credential_theft_lexicon ... ok
+test mod_security::tests::gq_hard_deny_injection_chain ... ok
+test mod_security::tests::gq_jni_op_prefix_guard_breadth_lock ... ok
+test mod_security::tests::gq_consent_store_roundtrip_and_tamper ... ok
+test mod_security::tests::gq_manifest_parse_roundtrip_unknown_rejected ... ok
+test mod_security::tests::gq_pe_benign_imports_clean ... ok
+test mod_security::tests::gq_pe_imports_parse_and_classify ... ok
+test mod_security::tests::gq_pe_malformed_no_panic_all_truncations ... ok
+test mod_security::tests::gq_loader_integration_deny_precedes_linker ... FAILED
+test mod_security::tests::gq_sha256_nist_vectors ... ok
+test mod_security::tests::gq_sidecar_path_and_declared_scaffold ... ok
+test mod_security::tests::gq_string_scan_capabilities ... ok
+test native_loader::tests::hf_official_mod_file_names_pin ... ok
+test mod_security::tests::gq_verdict_lattice_with_consent_store ... ok
+test native_loader::tests::hf_restore_copies_official_mods_when_mods_dir_empty ... ok
+test native_loader::tests::hf_restore_fills_missing_only_and_never_overwrites ... ok
+test native_loader::tests::hf_restore_is_idempotent_second_call_is_noop ... ok
+test native_loader::tests::hf_restore_only_copies_fixed_official_names ... ok
+test native_loader::tests::hf_restore_refuses_when_home_equals_mods_dir ... ok
+test native_loader::tests::hf_restore_skips_when_home_lacks_official_mods ... ok
+test native_loader::tests::hg_default_restore_source_dirs_order_pin ... ok
+test native_loader::tests::hf_restore_respects_user_deletion_marker ... ok
+test native_loader::tests::hg_search_empty_when_no_source_has_official ... ok
+test native_loader::tests::hg_search_marker_stops_scan_regardless_of_sources ... ok
+test native_loader::tests::hg_search_falls_back_to_second_source ... ok
+test native_loader::tests::hg_search_prefers_first_available_source ... ok
+test native_loader::tests::hg_vanilla_minecraft_dir_platform_shape_pin ... ok
+test native_loader::tests::hg_search_source_equal_to_mod_dir_does_not_block_fallback ... ok
+test platform::tests::dirty_and_apply_flags ... ok
+test runtime::fov_scale_tests::broken_mod_neutralized_not_contagious ... ok
+test runtime::fov_scale_tests::empty_and_identity_are_1 ... ok
+test runtime::fov_scale_tests::per_mod_and_total_clamps_hold ... ok
+test runtime::fov_scale_tests::product_of_valid_scales ... ok
+test ui_ext::tests::add_button_to_title_only_targets_title ... ok
+test ui_ext::tests::class_keys_match_java_suffixes ... ok
+test ui_ext::tests::clear_buttons_for_removes_exact_screen_only ... ok
+test ui_ext::tests::lifecycle_close_fires_close ... ok
+test ui_ext::tests::lifecycle_only_targeted_screen ... ok
+test ui_ext::tests::lifecycle_open_fires_only_open ... ok
+test ui_ext::tests::lifecycle_wildcard_receives_all ... ok
+test ui_ext::tests::multiple_screens_are_independent ... ok
+test worldgen::tests::builder_sets_fields ... ok
+test worldgen::tests::biome_is_assigned ... ok
+test worldgen::tests::column_layering_is_correct ... ok
+test worldgen::tests::custom_surface_block_reflected ... ok
+test worldgen::tests::fbm_in_unit_range ... ok
+test worldgen::tests::generate_dimensions_correct ... ok
+test worldgen::tests::noise_sample_in_unit_range ... ok
+test worldgen::tests::generation_is_deterministic ... ok
+test worldgen::tests::ore_vein_injects_blocks ... ok
+test worldgen::tests::ore_vein_zero_chance_injects_nothing ... ok
+test worldgen::tests::registry_register_set_active_generate ... ok
+test worldgen::tests::water_fills_below_sea_level ... ok
 
-For more information about this error, try `rustc --explain E0433`.
-warning: `rsift-api` (lib) generated 1 warning
-error: could not compile `rsift-api` (lib) due to 1 previous error; 1 warning emitted
-warning: build failed, waiting for other jobs to finish...
-== DIAG Windows exit=101 time=2026-08-03T06:42:58Z ==
+failures:
+
+---- mod_security::tests::gq_loader_integration_deny_precedes_linker stdout ----
+
+thread 'mod_security::tests::gq_loader_integration_deny_precedes_linker' (1056) panicked at crates\rsift-api\src\mod_security.rs:1555:9:
+assertion failed: SecurityGate::granted_set("gqok").is_some()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    mod_security::tests::gq_loader_integration_deny_precedes_linker
+
+test result: FAILED. 96 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `-p rsift-api --lib`
+== DIAG Windows exit=101 time=2026-08-03T07:10:44Z ==
 -- target/release cdylib 候補 --
-ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
+-rwxr-xr-x 2 runneradmin 197121 6315520 Aug  3 07:01 target/release/rsgraphics.dll
+-rwxr-xr-x 2 runneradmin 197121  107008 Aug  3 07:03 target/release/rsift_api.dll
+-rwxr-xr-x 2 runneradmin 197121 9701376 Aug  3 07:08 target/release/rsift_jvm.dll
+-rwxr-xr-x 2 runneradmin 197121 1033728 Aug  3 07:01 target/release/rsreplay.dll
+-rwxr-xr-x 2 runneradmin 197121  557056 Aug  3 07:02 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 12
-drwxr-xr-x 1 runneradmin 197121    0 Aug  3 06:42 .
-drwxr-xr-x 1 runneradmin 197121    0 Aug  3 06:41 ..
--rw-r--r-- 1 runneradmin 197121 4635 Aug  3 06:42 DIAG-Windows.txt
+total 16
+drwxr-xr-x 1 runneradmin 197121    0 Aug  3 07:10 .
+drwxr-xr-x 1 runneradmin 197121    0 Aug  3 06:54 ..
+-rw-r--r-- 1 runneradmin 197121 8623 Aug  3 07:10 DIAG-Windows.txt
 -- selftest result --
 cat: 'dist-ci/selftest-*/result.txt': No such file or directory
