@@ -1,27 +1,27 @@
-== DIAG macOS exit=0 time=2026-08-03T01:41:13Z ==
+== DIAG macOS exit=0 time=2026-08-03T04:26:37Z ==
 -- target/release cdylib 候補 --
 ls: target/release/*.dll: No such file or directory
 ls: target/release/*.dylib: No such file or directory
 ls: target/release/*.so: No such file or directory
--rwxr-xr-x  1 runner  staff  3918832 Aug  3 01:39 target/aarch64-apple-darwin/release/librsgraphics.dylib
--rwxr-xr-x  1 runner  staff    16720 Aug  3 01:38 target/aarch64-apple-darwin/release/librsift_api.dylib
--rwxr-xr-x  1 runner  staff  4026208 Aug  3 01:39 target/aarch64-apple-darwin/release/librsift_jvm.dylib
--rwxr-xr-x  1 runner  staff  1183088 Aug  3 01:39 target/aarch64-apple-darwin/release/librsreplay.dylib
--rwxr-xr-x  1 runner  staff   369936 Aug  3 01:39 target/aarch64-apple-darwin/release/librszoom.dylib
--rwxr-xr-x  1 runner  staff  4446292 Aug  3 01:41 target/x86_64-apple-darwin/release/librsgraphics.dylib
--rwxr-xr-x  1 runner  staff     4120 Aug  3 01:39 target/x86_64-apple-darwin/release/librsift_api.dylib
--rwxr-xr-x  1 runner  staff  4519996 Aug  3 01:41 target/x86_64-apple-darwin/release/librsift_jvm.dylib
--rwxr-xr-x  1 runner  staff  1359412 Aug  3 01:41 target/x86_64-apple-darwin/release/librsreplay.dylib
--rwxr-xr-x  1 runner  staff   367232 Aug  3 01:41 target/x86_64-apple-darwin/release/librszoom.dylib
+-rwxr-xr-x  1 runner  staff  3918832 Aug  3 04:24 target/aarch64-apple-darwin/release/librsgraphics.dylib
+-rwxr-xr-x  1 runner  staff    16720 Aug  3 04:23 target/aarch64-apple-darwin/release/librsift_api.dylib
+-rwxr-xr-x  1 runner  staff  4026208 Aug  3 04:24 target/aarch64-apple-darwin/release/librsift_jvm.dylib
+-rwxr-xr-x  1 runner  staff  1183088 Aug  3 04:24 target/aarch64-apple-darwin/release/librsreplay.dylib
+-rwxr-xr-x  1 runner  staff   369936 Aug  3 04:24 target/aarch64-apple-darwin/release/librszoom.dylib
+-rwxr-xr-x  1 runner  staff  4446292 Aug  3 04:26 target/x86_64-apple-darwin/release/librsgraphics.dylib
+-rwxr-xr-x  1 runner  staff     4120 Aug  3 04:25 target/x86_64-apple-darwin/release/librsift_api.dylib
+-rwxr-xr-x  1 runner  staff  4519996 Aug  3 04:26 target/x86_64-apple-darwin/release/librsift_jvm.dylib
+-rwxr-xr-x  1 runner  staff  1359412 Aug  3 04:26 target/x86_64-apple-darwin/release/librsreplay.dylib
+-rwxr-xr-x  1 runner  staff   367232 Aug  3 04:26 target/x86_64-apple-darwin/release/librszoom.dylib
 -- dist-ci --
 total 18168
-drwxr-xr-x   8 runner  staff      256 Aug  3 01:41 .
-drwxr-xr-x  26 runner  staff      832 Aug  3 01:37 ..
--rw-r--r--   1 runner  staff     1295 Aug  3 01:41 DIAG-macOS.txt
-drwxr-xr-x   2 runner  staff       64 Aug  3 01:37 macos
--rw-r--r--   1 runner  staff  4390787 Aug  3 01:39 rsift-bundle-macos-arm64.zip
--rw-r--r--   1 runner  staff  4903458 Aug  3 01:41 rsift-bundle-macos-x86_64.zip
-drwxr-xr-x   4 runner  staff      128 Aug  3 01:39 stage-aarch64-apple-darwin
-drwxr-xr-x   4 runner  staff      128 Aug  3 01:41 stage-x86_64-apple-darwin
+drwxr-xr-x   8 runner  staff      256 Aug  3 04:26 .
+drwxr-xr-x  26 runner  staff      832 Aug  3 04:22 ..
+-rw-r--r--   1 runner  staff     1295 Aug  3 04:26 DIAG-macOS.txt
+drwxr-xr-x   2 runner  staff       64 Aug  3 04:22 macos
+-rw-r--r--   1 runner  staff  4390787 Aug  3 04:24 rsift-bundle-macos-arm64.zip
+-rw-r--r--   1 runner  staff  4903458 Aug  3 04:26 rsift-bundle-macos-x86_64.zip
+drwxr-xr-x   4 runner  staff      128 Aug  3 04:24 stage-aarch64-apple-darwin
+drwxr-xr-x   4 runner  staff      128 Aug  3 04:26 stage-x86_64-apple-darwin
 -- selftest result --
 cat: dist-ci/selftest-*/result.txt: No such file or directory
