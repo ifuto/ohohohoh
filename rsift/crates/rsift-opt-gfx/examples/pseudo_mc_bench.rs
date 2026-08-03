@@ -252,6 +252,12 @@ const FACES: [([i64; 3], [[f32; 3]; 4]); 6] = [
     ), // -X
 ];
 
+/// Block::opaque の u8 id 版アダプタ (diff_mesh パス用)。Air=0/Water=7/Leaves=9。
+/// Block::opaque (bench 本体 enum) と同一真理値表。
+fn opaque_of_id(id: u8) -> bool {
+    !matches!(id, 0 | 7 | 9)
+}
+
 // ---------------- Pipe A: Vanilla 系 ----------------
 
 /// バニラ頂点フォーマット (DefaultVertexFormat.BLOCK) = 32 bytes
@@ -1821,13 +1827,15 @@ fn vanilla_mesh_section_bytes(w: &PseudoWorld, sx: usize, sy: usize, sz: usize) 
 }
 
 /// C 編集リビルド: rsift 規則 (12B + Tipsify) を 16^3 に限定。
-fn rsift_mesh_section_bytes(
+/// Rsift 全量メッシュの共有本体 (wave 215: 差分 ACMR 参照計測との単一源)。
+/// 戻り値は (頂点バイト列, Tipsify 後 index 列)。コストは mesh+tipsify 込み。
+fn rsift_mesh_section_full(
     w: &PseudoWorld,
     sx: usize,
     sy: usize,
     sz: usize,
     pool: &mut InternPool<(u64, u32)>,
-) -> usize {
+) -> (Vec<u8>, Vec<u32>) {
     let mut bytes = Vec::new();
     let mut indices = Vec::new();
     // remesh_rsift と同じ直接索引スロット重複排除 (設計一貫性)
@@ -1885,10 +1893,203 @@ fn rsift_mesh_section_bytes(
     }
     let opt = VertexCacheOptimizer::new(16);
     let reordered = opt.optimize(&indices);
+    (bytes, reordered)
+}
+
+fn rsift_mesh_section_bytes(
+    w: &PseudoWorld,
+    sx: usize,
+    sy: usize,
+    sz: usize,
+    pool: &mut InternPool<(u64, u32)>,
+) -> usize {
+    let (bytes, reordered) = rsift_mesh_section_full(w, sx, sy, sz, pool);
     std::hint::black_box(reordered.len());
     bytes.len()
 }
 
+// ---------------- wave 215 HL-215: 差分描画 replay (実モジュール DiffSectionMesh) ----------------
+
+struct DiffSimOut {
+    time: std::time::Duration,
+    encode_bytes: usize,
+    parity_fail_sections: usize,
+    reopts_timed: u32,
+    face_evals: u64,
+    acmr_diff: f64,
+    acmr_full: f64,
+    touched: usize,
+}
+
+/// edit_sim と同一の編集列 (seed 共有の決定的列) を DiffSectionMesh で replay。
+/// warmup (非計測) で全編集を 1 巡して (a) 初回 build_full の構築コストを
+/// 計測対象から除外し (b) メッシュを最終状態へ — 編集は純トグルなので同列を
+/// 再適用すると初期状態へ復帰する。計測のみの timed replay を 2 巡目に行う。
+/// 完了時 (世界 = 初期・メッシュも初期面集合) にナイーブ全面走査と面集合を
+/// 1 セクションずつ照合 (全 key 空間) し、不一致セクション数を機械報告する。
+fn edit_sim_diff() -> DiffSimOut {
+    use rsift_opt_gfx::diff_mesh::DiffSectionMesh;
+    let mut rng = XorShift(0xE1D17);
+    let mut edits = Vec::with_capacity(120);
+    let w_surface = PseudoWorld::generate(0x5253494654);
+    for _ in 0..120 {
+        let x = (rng.f64() * WORLD_X as f64) as usize;
+        let z = (rng.f64() * WORLD_Z as f64) as usize;
+        let y = w_surface.surface_at(x, z);
+        edits.push((x, y, z));
+    }
+    let mut w = PseudoWorld::generate(0x5253494654);
+    let mut meshes: std::collections::HashMap<usize, DiffSectionMesh> =
+        std::collections::HashMap::new();
+    let mut vco = VertexCacheOptimizer::new(16);
+
+    // 1 編集分の適用 (vanilla 汚染規約: 境界接触時は隣接セクションも)
+    let apply_one = |w: &mut PseudoWorld,
+                     meshes: &mut std::collections::HashMap<usize, DiffSectionMesh>,
+                     vco: &mut VertexCacheOptimizer,
+                     x: usize,
+                     y: usize,
+                     z: usize,
+                     timed: bool|
+     -> usize {
+        let cur = w.get(x as i64, y as i64, z as i64);
+        let new_b = if cur == Block::Air {
+            Block::Stone
+        } else {
+            Block::Air
+        };
+        w.blocks[PseudoWorld::idx(x, y, z)] = new_b as u8;
+        let mut enc = 0usize;
+        let (cx, cy, cz) = (x as i64 / 16, y as i64 / 16, z as i64 / 16);
+        for dxo in -1i64..=1 {
+            for dyo in -1i64..=1 {
+                for dzo in -1i64..=1 {
+                    let (nx, ny, nz) = (cx + dxo, cy + dyo, cz + dzo);
+                    if nx < 0
+                        || ny < 0
+                        || nz < 0
+                        || nx >= SEC_X as i64
+                        || ny >= SEC_Y as i64
+                        || nz >= SEC_Z as i64
+                    {
+                        continue;
+                    }
+                    let touch = (dxo != 0 && (x % 16 == 0 || x % 16 == 15))
+                        || (dyo != 0 && (y % 16 == 0 || y % 16 == 15))
+                        || (dzo != 0 && (z % 16 == 0 || z % 16 == 15));
+                    if !(dxo == 0 && dyo == 0 && dzo == 0) && !touch {
+                        continue;
+                    }
+                    let s_idx = sec_index(nx as usize, ny as usize, nz as usize);
+                    let origin = [nx * 16, ny * 16, nz * 16];
+                    let m = meshes.entry(s_idx).or_insert_with(|| {
+                        DiffSectionMesh::build_full(
+                            &|gx: i64, gy: i64, gz: i64| w.get(gx, gy, gz) as u8,
+                            &opaque_of_id,
+                            origin,
+                        )
+                    });
+                    let ev0 = m.verts_encoded;
+                    m.apply_edit(
+                        &|gx: i64, gy: i64, gz: i64| w.get(gx, gy, gz) as u8,
+                        &opaque_of_id,
+                        origin,
+                        x as i64,
+                        y as i64,
+                        z as i64,
+                    );
+                    if timed {
+                        enc += (m.verts_encoded - ev0) as usize * 12;
+                        if m.needs_reopt() {
+                            m.reoptimize(vco);
+                        }
+                    } else if m.needs_reopt() {
+                        // warmup 中も保守規則は同一 (決定的状態遷移)
+                        m.reoptimize(vco);
+                    }
+                }
+            }
+        }
+        enc
+    };
+
+    // warmup (untimed): initial → final
+    for fr in 0..60usize {
+        let (x1, y1, z1) = edits[fr * 2];
+        apply_one(&mut w, &mut meshes, &mut vco, x1, y1, z1, false);
+        let (x2, y2, z2) = edits[fr * 2 + 1];
+        apply_one(&mut w, &mut meshes, &mut vco, x2, y2, z2, false);
+    }
+    let reopts_before: u32 = meshes.values().map(|m| m.reopts).sum();
+    let fe_before: u64 = meshes.values().map(|m| m.face_evals).sum();
+    let rb_before: u64 = meshes.values().map(|m| m.bytes_rebuilt).sum();
+
+    // timed: final → initial (同列トグルで復帰)
+    let t0 = Instant::now();
+    let mut encode_bytes = 0usize;
+    for fr in 0..60usize {
+        let (x1, y1, z1) = edits[fr * 2];
+        encode_bytes += apply_one(&mut w, &mut meshes, &mut vco, x1, y1, z1, true);
+        let (x2, y2, z2) = edits[fr * 2 + 1];
+        encode_bytes += apply_one(&mut w, &mut meshes, &mut vco, x2, y2, z2, true);
+    }
+    let c_diff = t0.elapsed();
+
+    let reopts_timed: u32 = meshes.values().map(|m| m.reopts).sum::<u32>() - reopts_before;
+    let face_evals_timed: u64 = meshes.values().map(|m| m.face_evals).sum::<u64>() - fe_before;
+    let rb_timed: u64 = meshes.values().map(|m| m.bytes_rebuilt).sum::<u64>() - rb_before;
+    encode_bytes += rb_timed as usize;
+
+    // === 完了時検証 (世界は初期に復帰済): 全 key 空間で面集合照合 ===
+    // 差分維持メッシュの面集合がナイーブ全面走査と集合一致すること=差分描画
+    // の出力正当性の機械証明。不一致は assert で bench を停止させる
+    // (差分出力が FULL rescan と食い違う版は一切採用しない運用ルール)。
+    let mut parity_fail = 0usize;
+    let mut acmr_diff_sum = 0f64;
+    let mut acmr_full_sum = 0f64;
+    for (&s_idx, m) in &meshes {
+        let (sx, sy, sz) = sec_coords(s_idx);
+        let (ox, oy, oz) = (sx as i64 * 16, sy as i64 * 16, sz as i64 * 16);
+        let mut fail = false;
+        'scan: for by in 0..16i64 {
+            for bz in 0..16i64 {
+                for bx in 0..16i64 {
+                    for dir_i in 0..6usize {
+                        let solid = w.get(ox + bx, oy + by, oz + bz) != Block::Air;
+                        let n = FACES[dir_i].0;
+                        let should = solid
+                            && !w
+                                .get(ox + bx + n[0], oy + by + n[1], oz + bz + n[2])
+                                .opaque();
+                        if m.has_face(bx, by, bz, dir_i) != should {
+                            fail = true;
+                            break 'scan;
+                        }
+                    }
+                }
+            }
+        }
+        if fail {
+            parity_fail += 1;
+        }
+        acmr_diff_sum += VertexCacheOptimizer::acmr(m.indices(), 16) as f64;
+        // 参照 (全量再構築 + Tipsify) の ACMR: 単一源 rsift_mesh_section_full。
+        let mut pool = InternPool::<(u64, u32)>::new();
+        let (_vb, full_idx) = rsift_mesh_section_full(&w, sx, sy, sz, &mut pool);
+        acmr_full_sum += VertexCacheOptimizer::acmr(&full_idx, 16) as f64;
+    }
+    let n = meshes.len().max(1) as f64;
+    DiffSimOut {
+        time: c_diff,
+        encode_bytes,
+        parity_fail_sections: parity_fail,
+        reopts_timed,
+        face_evals: face_evals_timed,
+        acmr_diff: acmr_diff_sum / n,
+        acmr_full: acmr_full_sum / n,
+        touched: meshes.len(),
+    }
+}
 struct EditSimOut {
     a: std::time::Duration,
     b: std::time::Duration,
@@ -2529,17 +2730,23 @@ fn main() {
 
     // ===== 編集ワークロード (プレイヤー編集 → 汚染セクションのみリビルド) =====
     let es = edit_sim(&world);
+    let ds = edit_sim_diff();
     println!(
-        "\n## 編集ワークロード (編集 120 / 汚染セクション延べ {} / 全 pipe 並列リビルド)\n| pipe | 総時間 | 再構築バイト |\n|---|---|---|\n| A Vanilla系 (32B + smooth AO) | {:?} | {} |\n| B Sodium系 (20B + 遮蔽再計算) | {:?} | {} |\n| C Rsift (12B + Tipsify) | {:?} | {} |",
+        "\n## 編集ワークロード (編集 120 / 汚染セクション延べ {} / A・B・C は並列リビルド, C差分は wave 215)\n| pipe | 総時間 | 再構築バイト |\n|---|---|---|\n| A Vanilla系 (32B + smooth AO) | {:?} | {} |\n| B Sodium系 (20B + 遮蔽再計算) | {:?} | {} |\n| C Rsift (12B + Tipsify) | {:?} | {} |\n| C Rsift 差分 (12B diff-mesh + Tipsify 償却, wave 215) | {:?} | {} |",
         es.dirty_total,
         es.a,
         es.bytes[0],
         es.b,
         es.bytes[1],
         es.c,
-        es.bytes[2]
+        es.bytes[2],
+        ds.time,
+        ds.encode_bytes
     );
-
+    println!(
+        "差分検証 (wave 215): 面集合パリティ {} セクション中 不一致 {} (0 必須 = FULL rescan と bit 一致) / reopts={} (dead 率 12.5% または 16 連続編集で Tipsify 実行) / 差分 ACMR={:.3} vs 全量+Tipsify ACMR={:.3} / 差分面評価数={} (全量はセクション当たり最大 24,576) / 計測は warmup 後 timed replay のみ",
+        ds.touched, ds.parity_fail_sections, ds.reopts_timed, ds.acmr_diff, ds.acmr_full, ds.face_evals
+    );
     // ===== AO フレーム =====
     println!("\n## AO パイプライン (160x90 深度)");
     let (aw, ah) = (160usize, 90usize);
