@@ -263,7 +263,12 @@ pub const DIFF_FACES: [([i64; 3], [[f32; 3]; 4]); 6] = [
     ),
 ];
 
-const SLOT_N: usize = 17 * 17 * 17 * 27;
+// slot key は (pos, 軸法線 dir 0..6) の直接索引。旧版は法線 27 組合せ空間
+// ((n+1) の 3^3) で割付けていたが、DIFF_FACES は軸 6 法線のみを使うため
+// 21/27 は永久未使用 → dir (0..6) をキーに縮約 (wave 217 HN: RD24 規模の
+// 差分レーンで touched セクション x 0.53MB が 3GB sandbox の OOM になった
+// ため 0.118MB へ縮小。意味論は同一 = pos+dir 単射性は保たれる)。
+const SLOT_N: usize = 17 * 17 * 17 * 6;
 /// 差分再最適化トリガ: 全三角形中の死三角形割合 (per-mille)
 pub const REOPT_DEAD_PERMILLE: u32 = 125;
 /// 差分再最適化トリガ: 連続編集回数
@@ -346,19 +351,18 @@ impl DiffSectionMesh {
 
     #[inline]
     fn face_key(bx: i64, by: i64, bz: i64, dir: usize) -> u32 {
-        ((bx as u32) | ((by as u32) << 4) | ((bz as u32) << 8) | ((dir as u32) << 12))
+        (bx as u32) | ((by as u32) << 4) | ((bz as u32) << 8) | ((dir as u32) << 12)
     }
 
     /// 新規面の 4 頂点を slot dedup 付きで append し 6 index を末尾に積む。
     fn insert_face(&mut self, bx: i64, by: i64, bz: i64, dir: usize) {
         let (n, quad) = DIFF_FACES[dir];
-        let nz = ((n[0] + 1) + (n[1] + 1) * 3 + (n[2] + 1) * 9) as usize;
         let mut lv = [0u32; 4];
         for (vi, v) in quad.iter().enumerate() {
             let slot = (((bx as usize + v[0] as usize) * 17 + (by as usize + v[1] as usize)) * 17
                 + (bz as usize + v[2] as usize))
-                * 27
-                + nz;
+                * 6
+                + dir;
             let ent = self.slot_tab[slot];
             if (ent >> 16) as u16 == self.gen && (ent & 0xFFFF) != 0 {
                 lv[vi] = (ent & 0xFFFF) as u32 - 1;
@@ -521,15 +525,13 @@ impl DiffSectionMesh {
                 ((key >> 8) & 15) as i64,
                 (key >> 12) as usize,
             );
-            let (n, quad) = DIFF_FACES[dir];
-            let nz = ((n[0] + 1) + (n[1] + 1) * 3 + (n[2] + 1) * 9) as usize;
-            let _ = quad;
+            let (_, quad) = DIFF_FACES[dir];
             for (vi, v) in quad.iter().enumerate() {
                 let slot = (((bx as usize + v[0] as usize) * 17 + (by as usize + v[1] as usize))
                     * 17
                     + (bz as usize + v[2] as usize))
-                    * 27
-                    + nz;
+                    * 6
+                    + dir;
                 self.slot_tab[slot] = slot_pack(self.gen, lv[vi] as u16 + 1);
             }
             self.faces.insert(*key, lv);

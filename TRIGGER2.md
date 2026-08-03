@@ -4,6 +4,8 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 27  (wave 217 HN: RD24 機械スケーリング版を同梱 — 実体 40,016/編集 7,980 + diff-slot 27→6 縮約 (OOM 根治) + edit_sim_diff 機械配分。lib 本体 diff_mesh.rs は slot 内部表現のみ (公開 API・意味論不変)。36c 出力 bit 一致・lib 1492/1492 完走確認。前回分 = wave 216 HM (2,401 チャンク判定版) 完全同梱の上に積層)
+- run: 26  (wave 216 HM: RD24 判定版を同梱 — 2,401 チャンク同一内容ワークロードで計測可能全項目 C ≥ B (メッシュ 12.80 s vs B 13.93 s 逆転・頂点 bytes −76.3%・ACMR 1.030・I-O 5.6x・ソート時間+精度全勝・可視性 graph bit 同一・編集差分 3.94 ms/3.8 KB = B 比 68x・合成 1.48x vs A)。HM-1 メッシュ (encode-on-miss+slot 世代スタンプ)・HM-2 ソート (u64 単一キー直列化)・HM-3 可視性 (graph 採用) の 3 根治を pseudo_mc ハーネスに適用。bench ハーネス側の変更のみ = rsgraphics/opt-gfx 本体動作は不変。前回分 = wave 215 HL (編集差分メッシュ 9.9x) 完全同梱の上に積層)
 - run: 25  (wave 215 HL: 編集ワークロード差分メッシュ版を同梱 — per-block DiffSectionMesh で編集時再メッシュ 840 → 84.7 ms (9.9x、A 系と同速度・面集合 FULL rescan と bit 一致を parity 停止ガードで機械保証)。前回分 = wave 214 HK (実体カリング V2 統一 2.57→0.53 ms) 完全同梱の上に積層)
 - run: 24  (wave 214 HK: 実体カリング V2 統一版を同梱 — FastEntityCuller V2 を bench C 行・本番 wiring の双方に本採用 (2.572→0.529 ms、4.9x、rays −80%) + ChunkBucketGate 全撤去 (0 レイ永久可視の虚偽可視バグ + 純損デッドコード) + boot banner "FastEntityCuller V2" が初めて実装と一致 + CL-4 実カメラ FOV 真値配線解消。dense125 真値計測器での密度膝点スイープで 5 レイ採定 (pops 4/3/2 vs 27 レイの 3.9x コスト)。opt-gfx 1486/1486・変異 RED×4+MD5-VERIFIED・合成 A 同値圏 1.00-1.05x。前回分 = wave 212 HI + 213 HJ 完全同梱の上に積層)
 - run: 23  (wave 212 HI + 213 HJ: ベンチ実走で機械確定した 2 大律速の根治版を同梱 — Tipsify 同一意味論線形化 507→189 ms (2.7x, rsgraphics のメッシュ再構築に直結) + 半透明ソート評価実装の全損 topo 試行門番化 (3.6 s→25 ms, 143x・誤順も改善)。合成フレームはバニラ系と互角 (0.97x) に到達。前回分 = wave 211 HG (自動復旧複数源フォールバック) 完全同梱の上に積層)

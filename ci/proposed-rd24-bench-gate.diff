@@ -1,0 +1,52 @@
+# bench.yml への RD24 決定性ゲート追加案 (wave 216 HM)
+# =====================================================================
+# 目的: 2,401 チャンク (CaffeineMC 公式測定条件 d=24) シナリオの構造値
+#       決定性を CI でゲートする (pseudo_mc_rd24)。
+#
+# 背景: AI トークンは workflows 権限を持たないため .github/workflows/
+#       配下を push できない (bench.yml 冒頭の注記どおり)。本ファイルは
+#       ユーザーが GitHub Web UI 等で適用するための提案パッチ。
+#
+# 適用方法 (いずれか):
+#   1) Actions 権限を持つ checkout で:
+#        git apply ci/proposed-rd24-bench-gate.diff && git commit && git push
+#   2) GitHub Web UI で bench.yml を編集し、下記 hunk 相当を追記
+#
+# コスト: ubuntu-latest で約 +3〜5 分 (build ~40 s + run x2 で各 ~2 分)。
+# 無料枠 2,000 分/月に対し TRIGGER 起動 1 回あたりの増分は小さい。
+# =====================================================================
+--- a/.github/workflows/bench.yml
++++ b/.github/workflows/bench.yml
+@@ -99,6 +99,38 @@ jobs:
+           echo "WIDE DETERMINISM OK: structural_digest 一致"
+           grep -c ' INVESTIGATE' "$OUT/wide1.txt" | tee "$OUT/wide_flagged_count.txt"
+ 
++      - name: pseudo_mc_rd24 twice + determinism diff (RD24 = CaffeineMC official condition, 2401 chunks)
++        working-directory: rsift
++        run: |
++          set -euo pipefail
++          OUT=../bench-out
++          cargo build --release -p rsift-opt-gfx --example pseudo_mc_rd24 --locked
++          BIN=target/release/examples/pseudo_mc_rd24
++          "$BIN" > "$OUT/rd24_run1.txt" 2>&1
++          "$BIN" > "$OUT/rd24_run2.txt" 2>&1
++          # 36c と同じ決定的ダイジェスト規則:
++          # 時間リテラルを <T> にマスクし、合成 FPS/speedup 行は除外。
++          # 頂点数・bytes・可視数・誤順カウント・編集パリティ等の
++          # 構造値が run 間で bit 一致することを検証する。
++          filter() {
++            grep -vE ' ms |speedup vs A' "$1" | sed -E 's/[0-9]+(\.[0-9]+)?(ns|µs|ms|s)\b/<T>/g'
++          }
++          filter "$OUT/rd24_run1.txt" > "$OUT/rd24_run1.filtered.txt"
++          filter "$OUT/rd24_run2.txt" > "$OUT/rd24_run2.filtered.txt"
++          if diff -u "$OUT/rd24_run1.filtered.txt" "$OUT/rd24_run2.filtered.txt" > "$OUT/rd24_diff12.txt"; then
++            echo "RD24 DETERMINISM OK: run1 == run2 (時間フィールドを除く全出力が一致)"
++          else
++            echo "RD24 DETERMINISM MISMATCH — rd24_diff12.txt:"
++            cat "$OUT/rd24_diff12.txt"
++            exit 1
++          fi
++
+       - name: show bench log (run1)
+         if: always()
+         working-directory: rsift
