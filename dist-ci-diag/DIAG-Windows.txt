@@ -1,31 +1,135 @@
-== DIAG Windows exit=0 time=2026-08-03T05:56:11Z ==
+FATAL: cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay -p rszoom --release --locked (exit=101)
+  Downloaded cc v1.2.65
+  Downloaded flate2 v1.1.9
+  Downloaded bytes v1.12.0
+  Downloaded crossbeam-channel v0.5.16
+  Downloaded memchr v2.8.2
+  Downloaded aho-corasick v1.1.4
+  Downloaded indexmap v2.14.0
+  Downloaded jni v0.21.1
+  Downloaded combine v4.6.7
+  Downloaded glow v0.13.1
+  Downloaded hashbrown v0.14.5
+  Downloaded clap_builder v4.6.0
+  Downloaded hashbrown v0.15.5
+  Downloaded hashbrown v0.17.1
+  Downloaded windows_x86_64_msvc v0.52.6
+  Downloaded zstd-sys v2.0.16+zstd.1.5.7
+  Downloaded rayon v1.12.0
+  Downloaded ash v0.37.3+1.3.251
+  Downloaded glam v0.29.3
+  Downloaded naga v0.20.0
+  Downloaded winapi v0.3.9
+  Downloaded khronos_api v3.1.0
+  Downloaded libc v0.2.186
+  Downloaded windows-sys v0.45.0
+  Downloaded windows-sys v0.61.2
+  Downloaded windows v0.58.0
+  Downloaded windows v0.52.0
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling windows-link v0.2.1
+   Compiling windows-sys v0.61.2
+   Compiling syn v2.0.118
+   Compiling thiserror v1.0.69
+   Compiling windows_x86_64_msvc v0.52.6
+   Compiling once_cell v1.21.4
+   Compiling cfg-if v1.0.4
+   Compiling bitflags v2.13.0
+   Compiling windows-targets v0.52.6
+   Compiling libloading v0.8.9
+   Compiling serde_core v1.0.228
+   Compiling winapi v0.3.9
+   Compiling getrandom v0.3.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling thiserror-impl v1.0.69
+   Compiling bytemuck_derive v1.10.2
+   Compiling bytemuck v1.25.0
+   Compiling tracing-core v0.1.36
+   Compiling serde v1.0.228
+   Compiling khronos_api v3.1.0
+   Compiling smallvec v1.15.2
+   Compiling log v0.4.33
+   Compiling zmij v1.0.21
+   Compiling memchr v2.8.2
+   Compiling syn v1.0.109
+   Compiling cfg_aliases v0.1.1
+   Compiling serde_derive v1.0.228
+   Compiling tracing-attributes v0.1.31
+   Compiling jobserver v0.1.34
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling parking_lot_core v0.9.12
+   Compiling serde_json v1.0.150
+   Compiling pin-project-lite v0.2.17
+   Compiling equivalent v1.0.2
+   Compiling tracing v0.1.44
+   Compiling cc v1.2.65
+   Compiling scopeguard v1.2.0
+   Compiling autocfg v1.5.1
+   Compiling pkg-config v0.3.33
+   Compiling xml-rs v0.8.28
+   Compiling itoa v1.0.18
+   Compiling gl_generator v0.14.0
+   Compiling com_macros_support v0.6.0
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling num-traits v0.2.19
+   Compiling lock_api v0.4.14
+   Compiling crossbeam-epoch v0.9.18
+   Compiling winapi-util v0.1.11
+   Compiling libc v0.2.186
+   Compiling rayon-core v1.13.0
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.1.5
+   Compiling termcolor v1.4.1
+   Compiling hashbrown v0.15.5
+   Compiling crossbeam-deque v0.8.6
+   Compiling com_macros v0.6.0
+   Compiling glutin_wgl_sys v0.5.0
+   Compiling libloading v0.7.4
+   Compiling windows-core v0.52.0
+   Compiling hashbrown v0.17.1
+   Compiling khronos-egl v6.0.0
+   Compiling ash v0.37.3+1.3.251
+   Compiling bit-vec v0.6.3
+   Compiling unicode-width v0.1.14
+   Compiling codespan-reporting v0.11.1
+   Compiling bit-set v0.5.3
+   Compiling indexmap v2.14.0
+   Compiling windows v0.52.0
+   Compiling com v0.6.0
+   Compiling parking_lot v0.12.5
+   Compiling rsift-api v0.1.0-alpha.1.21.11 (D:\a\rsift\rsift\rsift\crates\rsift-api)
+error[E0433]: cannot find module or crate `log` in this scope
+  --> crates\rsift-api\src\log_bridge.rs:27:9
+   |
+27 |         log::error!("{line}");
+   |         ^^^ use of unresolved module or unlinked crate `log`
+
+warning: unused import: `std::os::windows::ffi::OsStringExt`
+   --> crates\rsift-api\src\adaptive_perf.rs:647:9
+    |
+647 |     use std::os::windows::ffi::OsStringExt;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+For more information about this error, try `rustc --explain E0433`.
+warning: `rsift-api` (lib) generated 1 warning
+error: could not compile `rsift-api` (lib) due to 1 previous error; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+== DIAG Windows exit=101 time=2026-08-03T06:42:58Z ==
 -- target/release cdylib 候補 --
+ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
--rwxr-xr-x 2 runneradmin 197121 6315520 Aug  3 05:55 target/release/rsgraphics.dll
--rwxr-xr-x 2 runneradmin 197121  104960 Aug  3 05:50 target/release/rsift_api.dll
--rwxr-xr-x 2 runneradmin 197121 6733312 Aug  3 05:55 target/release/rsift_jvm.dll
--rwxr-xr-x 2 runneradmin 197121 1033728 Aug  3 05:55 target/release/rsreplay.dll
--rwxr-xr-x 2 runneradmin 197121  557056 Aug  3 05:55 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 14728
-drwxr-xr-x 1 runneradmin 197121        0 Aug  3 05:56 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  3 05:48 ..
--rw-r--r-- 1 runneradmin 197121      826 Aug  3 05:56 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 15063040 Aug  3 05:55 rsift-bundle-windows-x64.zip
-drwxr-xr-x 1 runneradmin 197121        0 Aug  3 05:55 selftest-win
-drwxr-xr-x 1 runneradmin 197121        0 Aug  3 05:55 windows
+total 12
+drwxr-xr-x 1 runneradmin 197121    0 Aug  3 06:42 .
+drwxr-xr-x 1 runneradmin 197121    0 Aug  3 06:41 ..
+-rw-r--r-- 1 runneradmin 197121 4635 Aug  3 06:42 DIAG-Windows.txt
 -- selftest result --
-selftest_exit=0
-dist-ci/selftest-win/README_JA.md
-dist-ci/selftest-win/result.txt
-dist-ci/selftest-win/rsgraphics.dll
-dist-ci/selftest-win/rsift-bootstrap.jar
-dist-ci/selftest-win/rsift-setup.exe
-dist-ci/selftest-win/rsift.dll
-dist-ci/selftest-win/rsift_jvm.dll
-dist-ci/selftest-win/rsift_launch.json
-dist-ci/selftest-win/rsift_setup_log.jsonl
-dist-ci/selftest-win/rsift_setup_log.txt
+cat: 'dist-ci/selftest-*/result.txt': No such file or directory
