@@ -3,6 +3,10 @@
 //! Based on Amanatides & Woo with branchless axis selection (see balintcsala voxel tracing).
 
 use crate::binary_greedy_meshing::{idx, SectionPalette, SECTION_SIZE};
+// wave HQ (2026-08-03): cpu_saver の歩進/選択/プリフェッチプリミティブを本来の
+// 消費者 (本 DDA) へ真配線 (§7「消費者ゼロ保持」違反の根治)。詳細は
+// docs/internal/AUDIT_* wave HQ 節。
+use crate::cpu_saver::{branchless_select_f32, BranchlessVoxelStepper, CacheLinePrefetcher};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ray3 {
@@ -20,15 +24,14 @@ impl Ray3 {
     /// 旧実装は +INF 固定で、負の tiny dir では step=-1 × inv=+INF → t_delta=-INF を
     /// 生み t_max が負方向へ暴走する誤動作経路があった (DE-1)。
     /// なお -0.0 は「符号を持たないゼロ」として +INF (immobilize 一貫性優先)。
+    /// wave HQ: tiny 帯の ±INF 選択を cpu_saver::branchless_select_f32 (bit 選択、
+    /// NaN/-0.0/±inf の bit 保持・DN-2 契約) へ真配線。`if d<0{NEG_INF}else{POS_INF}`
+    /// と bit 厳密同値 (-0.0/0.0 は d<0.0=false → +INF、tiny 負は -INF)。
     pub fn inv_dir(&self) -> [f32; 3] {
         #[inline]
         fn axis_inv(d: f32) -> f32 {
             if d.abs() < 1e-8 {
-                if d < 0.0 {
-                    f32::NEG_INFINITY
-                } else {
-                    f32::INFINITY
-                }
+                branchless_select_f32(d < 0.0, f32::NEG_INFINITY, f32::INFINITY)
             } else {
                 1.0 / d
             }
@@ -58,14 +61,20 @@ pub struct VoxelHit {
 /// 面ちょうどの入射では幾何学的にどの軸を選んでも正しい)。NaN lane 混入時は IEEE の
 /// 比較全 false で構造的に軸が歪むが、有限入力では t_max が NaN になる経路は無い
 /// (DE-1 の immobilize で 0·INF=NaN も遮断) — DE-4 注記。
+///
+/// wave HQ (2026-08-03): 本体は [`cpu_saver::BranchlessVoxelStepper::advance_axis`]
+/// へ委譲。旧局所実装 (a0/a1/a2 boolean 算術) と**全入力で厳密同値** (同値タイ優先
+/// x>y>z の完全一致): advance_axis の `step_x=tmx<=tmy&&tmx<=tmz` が旧 `a0&&a1` に、
+/// `step_y=!step_x&&tmy<=tmz` が旧 `!a0&&a2` に (t1<=t2 下での (t0>t1)||(t0>t2) ⟹ t0>t1
+/// で一致)、`step_z` が残りの z 最小に対応。cpu_saver 343 網羅 strict pin + 本モジュール
+/// 既存 fuzz (single_block_enclosure / slab_entry 等) で二重保証。局所再実装廃止 =
+/// cpu_saver::advance_axis の真消費者化 (§7 根治)。
 #[inline]
 fn branchless_axis(t_max: [f32; 3]) -> usize {
-    let a0 = t_max[0] <= t_max[1];
-    let a1 = t_max[0] <= t_max[2];
-    let a2 = t_max[1] <= t_max[2];
-    if a0 && a1 {
+    let (sx, sy, _sz) = BranchlessVoxelStepper::advance_axis(t_max[0], t_max[1], t_max[2]);
+    if sx {
         0
-    } else if !a0 && a2 {
+    } else if sy {
         1
     } else {
         2
@@ -85,10 +94,16 @@ pub fn trace_section(palette: &SectionPalette, ray: &Ray3, max_steps: u32) -> Op
         "trace_section: 非有限の origin/dir は受理しない (NaN floor→0 静寂化の防止)"
     );
     let inv = ray.inv_dir();
+    // wave HQ: 各軸の歩進符号を cpu_saver::BranchlessVoxelStepper::step_direction
+    // (branchless・DN-3 契約) で統一。旧 `if d>=0{1}else{-1}` と**観測等価**:
+    // 差分は d==0/-0.0 のみ (旧=+1, 新=0) だが、これらは |d|<1e-8 の tiny 帯 →
+    // t_max/t_delta が INF で軸不動化 (DE-1) され step 値は一切使われないため結果不変。
+    // 非 tiny 軸 (|d|>=1e-8) は d≠0 で step∈{±1} = 旧式と一致。branchless_select_i32
+    // も step_direction 経由で伝播消費化 (§7)。
     let step = [
-        if ray.dir[0] >= 0.0 { 1i32 } else { -1 },
-        if ray.dir[1] >= 0.0 { 1i32 } else { -1 },
-        if ray.dir[2] >= 0.0 { 1i32 } else { -1 },
+        BranchlessVoxelStepper::step_direction(ray.dir[0]),
+        BranchlessVoxelStepper::step_direction(ray.dir[1]),
+        BranchlessVoxelStepper::step_direction(ray.dir[2]),
     ];
 
     let mut vx = ray.origin[0].floor() as i32;
@@ -178,6 +193,18 @@ pub fn trace_section(palette: &SectionPalette, ray: &Ray3, max_steps: u32) -> Op
                 t_max[2] += t_delta[2];
             }
         }
+        // wave HQ: 次反復の読出し対象を先行プリフェッチ (cpu_saver::CacheLinePrefetcher
+        // の真消費者化・§7)。DDA は反復毎に palette[1 entry] を読むため 1 歩先のエントリを
+        // 暖めるのは正統なレイテンシ隠蔽 (モジュール目的「CPU Overhead & Cache Optimization」)。
+        // 座標は境界脱出後も clamp で常時 [0,16)^3 の有効 index → in-bounds ポインタ生成
+        // (UB 無し)。効果はハードウェア状態依存で非観測 (DN-4 契約: 検出不能=中性) だが、
+        // 偽配線ではなく実呼出としての真消費者化。x86/x86_64 では更にフォールトフリー。
+        let pi = idx(
+            vx.clamp(0, SECTION_SIZE as i32 - 1) as usize,
+            vy.clamp(0, SECTION_SIZE as i32 - 1) as usize,
+            vz.clamp(0, SECTION_SIZE as i32 - 1) as usize,
+        );
+        CacheLinePrefetcher::prefetch_read(palette.as_ptr().wrapping_add(pi));
     }
     None
 }
@@ -350,6 +377,38 @@ mod spec_tests {
         let hit = trace_section(&p, &ray, 64).expect("y 不動で x 行軍命中");
         assert_eq!((hit.x, hit.y, hit.z, hit.block), (8, 10, 5, 12));
         assert_eq!(hit.steps, 3, "vx: 5→8");
+    }
+
+    /// wave HQ (2026-08-03): `branchless_axis` は `cpu_saver::BranchlessVoxelStepper::
+    /// advance_axis` へ委譲し**全入力で厳密同値** (局所再実装を廃し cpu_saver を真消費者化)。
+    /// 同値タイ優先 x>y>z を含む広域 bit-pattern fuzz + 明示タイケースで固定。
+    /// (adversarial A: advance_axis の `<=`→`<` 変異で本 pin が RED → 配線の真性を逆証明。)
+    #[test]
+    fn branchless_axis_delegates_to_cpu_saver_advance_axis_equivalence() {
+        use crate::cpu_saver::BranchlessVoxelStepper;
+        let mut s = 0xC0FFEEu64;
+        let mut rng = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
+        for _ in 0..500 {
+            let t = [
+                f32::from_bits(rng() as u32),
+                f32::from_bits(rng() as u32),
+                f32::from_bits(rng() as u32),
+            ];
+            let axis = branchless_axis(t);
+            let (sx, sy, _sz) = BranchlessVoxelStepper::advance_axis(t[0], t[1], t[2]);
+            let from_advance = if sx { 0 } else if sy { 1 } else { 2 };
+            assert_eq!(axis, from_advance, "branchless_axis ≠ advance_axis: t={t:?}");
+        }
+        // 明示タイケース (同値タイ優先 x>y>z)。
+        assert_eq!(branchless_axis([1.0, 1.0, 2.0]), 0, "x=y<z → x 優先");
+        assert_eq!(branchless_axis([3.0, 1.0, 1.0]), 1, "y=z<x → y 優先");
+        assert_eq!(branchless_axis([2.0, 3.0, 1.0]), 2, "z 最小");
+        assert_eq!(branchless_axis([5.0, 5.0, 5.0]), 0, "3 軸同一 → x 優先");
     }
 
     /// DE-1: inv_dir の符号・eps 境界セマンティクス厳密ピン。

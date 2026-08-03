@@ -2,8 +2,8 @@
 //!
 //! 分岐除去設計の選択プリミティブ群 (`branchless_select_*`) と、
 //! ボクセル歩進の符号/軸選択プリミティブ (`BranchlessVoxelStepper`)、
-//! ソフトウェア・プリフェッチ (`CacheLinePrefetcher`)、固定走査順イテレータ
-//! (`LoopTiledVoxelScanner`) からなる低レベル API 面。
+//! ソフトウェア・プリフェッチ (`CacheLinePrefetcher`) からなる低レベル API 面
+//! (wave HQ で `LoopTiledVoxelScanner` は不可能証明削除 — 詳細は下記「消費者」節)。
 //!
 //! ## 誠実性メモ (監査 2026-07-26 DN-1)
 //! 旧ヘッダの「分岐予測ミスを完全撲滅する」「4x4x4 L1 キャッシュライン最適化」
@@ -14,14 +14,26 @@
 //! * 歩進プリミティブは符号抽出 (`step_direction`) と同値時の軸優先選択
 //!   (`advance_axis`) のみを提供し、tmax 更新を含む DDA 本体は
 //!   `branchless_dda` 側 (監査済 DE) が担う。
-//! * タイル走査は 4³ = 64 voxel / tile の固定順イテレーションで、
-//!   64 バイトライン境界との一致は voxel サイズ=1B のレイアウト選択に依存する。
+//! * (旧第三弾 `LoopTiledVoxelScanner` のタイル走査は wave HQ で削除 —
+//!   voxel=1B 前提が u16 palette で破綻、恩恵消費者なし。下記参照。)
 //!
-//! ## 消費者 (監査 2026-07-26 DN-5)
-//! ワークスペース全体での直接呼出は**ゼロ** (lib.rs の `pub use cpu_saver::*`
-//! による公開 API 面のみ)。「消費者ゼロで削除しない」方針により、将来の
-//! ホットループ整備向けプリミティブとして**保持**し、契約をピン化した。
-//! bytemuck 参照は構造体を持たず実使用が無かったため除去した (警告 1 件根治)。
+//! ## 消費者 (wave HQ 2026-08-03 §7 根治)
+//! **旧 DN-5 (2026-07-26)** は「ワークスペース全体で直接呼出ゼロ・将来ホット
+//! ループ向けプリミティブとして保持」としていたが、§7 (2026-07-26) は「消費者
+//! ゼロのまま保持」を違反化したため本 wave で根治:
+//! * `BranchlessVoxelStepper::{step_direction, advance_axis}`・`branchless_select_*`
+//!   ・`CacheLinePrefetcher::prefetch_read` は**本来の意図された消費者**
+//!   `branchless_dda` (本モジュール doc が「DDA 本体は branchless_dda 側が担う」と
+//!   明記) へ真配線した (step 計算 / branchless_axis 委譲 / inv_dir の INF 選択 /
+//!   DDA ループの先行プリフェッチ)。挙動は全て bit 同一・観測等価。
+//! * `LoopTiledVoxelScanner::scan_tiled` は**不可能証明削除** (§7 option b): タイル
+//!   前提は voxel=1B レイアウト依存だが実際の `SectionPalette` は `u16` (2B/voxel)
+//!   で 64 voxel=128B=2 キャッシュライン ≒ 前提破綻。ホット 16³ 走査は順序依存
+//!   (メッシュ → digest 拘束) か既にシーケンシャル自動ベクトル化 (`section_all_air`)
+//!   で、タイリングが恩恵を与える反復ランダムアクセス走査は現エンジンに存在しない。
+//!   恩恵を与える消費者が存在しないことの機械証明上で削除 (git 履歴に残置)。
+//!
+//! bytemuck 参照は構造体を持たず実使用が無かったため DN-1 で除去済み (警告 1 件根治)。
 
 /// Branchless conditional select (`cond ? true_val : false_val`).
 ///
@@ -131,44 +143,10 @@ impl CacheLinePrefetcher {
     }
 }
 
-/// 固定順タイル走査イテレータ (16³ セクションを 4³=64 voxel のタイルに分割)。
-pub struct LoopTiledVoxelScanner;
-
-impl LoopTiledVoxelScanner {
-    /// 全 4,096 voxel を**ちょうど 1 回ずつ**、決定的な順序で callback する。
-    ///
-    /// ## 契約 (監査 2026-07-26 DN-4)
-    /// 到達 index は strict 閉形式
-    /// `idx(x,y,z) = (y>>2)·1024 + (z>>2)·256 + (x>>2)·64 + (y&3)·16 + (z&3)·4 + (x&3)`
-    /// で、これは [0,4096) の**全順列 (bijection)** (各 2 bit フィールドが
-    /// index 内の一意の位置に写るビット置換)。タイル外側ループは (ty,tz,tx)
-    /// 順 (x タイルが最速)、タイル内ループは (dy,dz,dx) 順 (x が最速)。
-    /// 「L1 ライン 64B 一致」は voxel=1B レイアウト依存と誠実に注記。
-    #[inline(always)]
-    pub fn scan_tiled<F>(mut callback: F)
-    where
-        F: FnMut(usize, usize, usize),
-    {
-        // Outer tile loop: 4x4x4 tiles (each tile is 4x4x4 voxels)
-        for ty in (0..16).step_by(4) {
-            for tz in (0..16).step_by(4) {
-                for tx in (0..16).step_by(4) {
-                    // Inner L1-resident tile loop: exactly 64 contiguous/near voxels
-                    for dy in 0..4 {
-                        let y = ty + dy;
-                        for dz in 0..4 {
-                            let z = tz + dz;
-                            for dx in 0..4 {
-                                let x = tx + dx;
-                                callback(x, y, z);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+/// ソフトウェア・プリフェッチ・インターフェースは [`CacheLinePrefetcher`] 参照。
+/// (wave HQ: `LoopTiledVoxelScanner::scan_tiled` は不可能証明削除 — モジュール doc
+/// 「消費者 (wave HQ)」節のとおり u16 palette でタイリング前提が破綻し恩恵消費者
+/// なし。git 履歴に残置。)
 
 #[cfg(test)]
 mod tests {
@@ -181,13 +159,6 @@ mod tests {
         assert_eq!(BranchlessVoxelStepper::step_direction(15.0), 1);
         assert_eq!(BranchlessVoxelStepper::step_direction(-3.0), -1);
         assert_eq!(BranchlessVoxelStepper::step_direction(0.0), 0);
-    }
-
-    #[test]
-    fn test_loop_tiling_completeness() {
-        let mut count = 0;
-        LoopTiledVoxelScanner::scan_tiled(|_, _, _| count += 1);
-        assert_eq!(count, 4096, "Tiled scan must visit all 4096 section voxels");
     }
 
     // ------------------------------------------------------ 監査 2026-07-26 DN追加分
@@ -308,44 +279,6 @@ mod tests {
             S::advance_axis(f32::INFINITY, f32::INFINITY, 1.0),
             (false, false, true)
         );
-    }
-
-    /// DN-4: タイル走査は bijection で閉形式通りの決定的順。
-    #[test]
-    fn scan_tiled_bijection_and_closed_form_order() {
-        let mut seen = [false; 4096];
-        let mut order = Vec::with_capacity(4096);
-        LoopTiledVoxelScanner::scan_tiled(|x, y, z| {
-            assert!(x < 16 && y < 16 && z < 16, "範囲外 ({x}, {y}, {z})");
-            let idx = (y >> 2) * 1024
-                + (z >> 2) * 256
-                + (x >> 2) * 64
-                + (y & 3) * 16
-                + (z & 3) * 4
-                + (x & 3);
-            assert!(!seen[idx], "index {idx} が重複: 閉形式が bijection でない");
-            seen[idx] = true;
-            order.push((x, y, z));
-        });
-        assert!(seen.iter().all(|&b| b), "閉形式 index が全 0..4096 を覆う");
-        assert_eq!(order.len(), 4096);
-        // 到達順厳密 pin: 先頭 8 件 (タイル 0 の内回り、dx 最速)。
-        let expect_head = [
-            (0, 0, 0),
-            (1, 0, 0),
-            (2, 0, 0),
-            (3, 0, 0),
-            (0, 0, 1),
-            (1, 0, 1),
-            (2, 0, 1),
-            (3, 0, 1),
-        ];
-        assert_eq!(&order[..8], &expect_head, "先頭 8 件の走査順");
-        // 末尾 8 件 (最終タイル (12,12,12) の内回り y=15,z=15 の x 走査)。
-        let expect_tail = [(12, 15, 15), (13, 15, 15), (14, 15, 15), (15, 15, 15)];
-        assert_eq!(&order[4092..], &expect_tail, "末尾 4 件の走査順");
-        // 閉形式 spot ピン (内回り/tile 境界の確認)。
-        assert_eq!(order[64], (4, 0, 0), "index 64 = 次タイル (tx=4) 起点");
     }
 
     /// DN-4: prefetch は null/有効ポインタともに決してフォールトしない。
