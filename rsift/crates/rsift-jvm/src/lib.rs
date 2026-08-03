@@ -17,6 +17,7 @@ pub mod screen_inject;
 pub mod screen_buttons;
 pub mod glfw_hook;
 pub mod jvmti_events;
+pub mod obf_map;
 
 // Category 4: JVM Interop 高速化 - First Proposal Full Implementation
 pub mod jni_critical;

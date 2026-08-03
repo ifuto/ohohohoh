@@ -375,7 +375,14 @@ fn load_paths(
                 loaded.push(lib.id.clone());
                 libraries.push(lib);
             }
-            Err(e) => error!("[NativeLoader] {:?}: {}", path, e),
+            Err(e) => {
+                // wave 219 HP: エージェント環境 (log logger 未初期化) でも
+                // bootstrap ログへ届くよう log_bridge へも送る (P1 根治)。
+                crate::log_bridge::log_important(&format!(
+                    "[NativeLoader] {path:?}: {e}"
+                ));
+                error!("[NativeLoader] {:?}: {}", path, e);
+            }
         }
     }
 
@@ -399,7 +406,12 @@ fn schedule_deferred_mod_load(mod_dir: PathBuf) {
                         SPEED_FIRST_DEFERRED
                     );
                 }
-                Err(e) => error!("[NativeLoader] Deferred load failed: {}", e),
+                Err(e) => {
+                    crate::log_bridge::log_important(&format!(
+                        "[NativeLoader] Deferred load failed: {e}"
+                    ));
+                    error!("[NativeLoader] Deferred load failed: {}", e);
+                }
             }
         })
         .ok();

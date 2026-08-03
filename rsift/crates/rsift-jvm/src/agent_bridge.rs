@@ -74,6 +74,11 @@ pub fn agent_premain(agent_args: &str) {
     if MODS_LOADED.swap(true, Ordering::SeqCst) {
         return;
     }
+    // wave 219 HP (P1 根治): NativeLoader の個別失敗 (Dynamic linker error 等)
+    // を本 bootstrap ログへ橋渡し — 実機 #5 は logger 未初期化で全行蒸発し
+    // 「mods loaded OK: []」の原因が 0 行だった (登録は何度呼ばれても初回のみ
+    // 有効 = 冪等)。
+    rsift_api::log_bridge::set_agent_log_sink(agent_log);
     agent_log_step(
         "agent_premain",
         &format!("loading mods args={}", agent_args),

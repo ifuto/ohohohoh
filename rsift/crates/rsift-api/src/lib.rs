@@ -21,6 +21,7 @@ pub mod hyper_opt;
 pub mod image_api;
 pub mod keybinds;
 pub mod lifecycle;
+pub mod log_bridge;
 pub mod mc_style;
 pub mod migration_hub;
 pub mod mod_api;

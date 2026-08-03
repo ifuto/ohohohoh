@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 29  (wave 219 HP-1: 難読化実行時の名変換層コア対応 — (a) obf_map 新設 (Mojang 公式 client_mappings ProGuard 形式パーサ + mojmap→難読 resolver + RuntimeNaming 両対応。未配線のデッドコード = 本 run では挙動ゼロ変化) (b) P1 根治 = NativeLoader 個別失敗を rsift-api log_bridge 経由で bootstrap ログへ橋渡し (実機 #5 は logger 未初期化で 「mods loaded OK []」の真因 0 行蒸発が発生) (c) payload に cargo test -p rsift-api -p rsift-jvm を 3 OS へ追加 (api/jvm の unit ゲート常設化)。前回分 = run 28 完全同梱の上に積層)
 - run: 28  (リリース候補スナップショット — commit f98d400 現状態同梱: wave 216 HM (RD24 2,401 チャンク判定版) + wave 217 HN (実体 40,016/編集 7,980 面積比例スケーリング + diff-slot 27→6 縮約 (OOM 根治) + edit_sim_diff 機械配分配線) + BENCH/AUDIT doc 整合修正。bench-ci 緑 (lib 1,492/1,492・36c 決定性 diff 一致) 確認済の上でのリリース化。前回分 = run 27 完全同梱の上に積層)
 - run: 27  (wave 217 HN: RD24 機械スケーリング版を同梱 — 実体 40,016/編集 7,980 + diff-slot 27→6 縮約 (OOM 根治) + edit_sim_diff 機械配分。lib 本体 diff_mesh.rs は slot 内部表現のみ (公開 API・意味論不変)。36c 出力 bit 一致・lib 1492/1492 完走確認。前回分 = wave 216 HM (2,401 チャンク判定版) 完全同梱の上に積層)
 - run: 26  (wave 216 HM: RD24 判定版を同梱 — 2,401 チャンク同一内容ワークロードで計測可能全項目 C ≥ B (メッシュ 12.80 s vs B 13.93 s 逆転・頂点 bytes −76.3%・ACMR 1.030・I-O 5.6x・ソート時間+精度全勝・可視性 graph bit 同一・編集差分 3.94 ms/3.8 KB = B 比 68x・合成 1.48x vs A)。HM-1 メッシュ (encode-on-miss+slot 世代スタンプ)・HM-2 ソート (u64 単一キー直列化)・HM-3 可視性 (graph 採用) の 3 根治を pseudo_mc ハーネスに適用。bench ハーネス側の変更のみ = rsgraphics/opt-gfx 本体動作は不変。前回分 = wave 215 HL (編集差分メッシュ 9.9x) 完全同梱の上に積層)
@@ -91,6 +92,7 @@ case "$RUNNER_OS" in
   Windows)
     RB cargo build -p rsift-setup --release --locked
     RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay -p rszoom --release --locked
+    RB cargo test -p rsift-api -p rsift-jvm --release --locked
     for F in rsift_api.dll rsift_jvm.dll rsgraphics.dll rsreplay.dll rszoom.dll; do
       [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
     done
@@ -108,6 +110,8 @@ case "$RUNNER_OS" in
   macOS)
     rustup target add aarch64-apple-darwin x86_64-apple-darwin || true
     mkdir -p dist-ci/macos
+    # wave 219 HP: jvm/api unit はホスト arch で 1 回 (cross-target 実行は runner 依存のため避ける)
+    RB cargo test -p rsift-api -p rsift-jvm --release --locked
     for T in aarch64-apple-darwin x86_64-apple-darwin; do
       RB cargo build -p rsift-setup --release --locked --target "$T"
       RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay -p rszoom --release --locked --target "$T"
@@ -146,6 +150,7 @@ PLIST
   Linux)
     RB cargo build -p rsift-setup --release --locked
     RB cargo build -p rsift-api -p rsift-jvm -p rsgraphics -p rsreplay -p rszoom --release --locked
+    RB cargo test -p rsift-api -p rsift-jvm --release --locked
     for F in librsift_api.so librsift_jvm.so librsgraphics.so librsreplay.so librszoom.so; do
       [ -f "target/release/$F" ] || { echo "FATAL: target/release/$F が無い"; exit 1; }
     done
