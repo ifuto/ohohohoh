@@ -2,12 +2,13 @@
 //! (rsift-jvm) が差し込むログシンクへ橋渡しする。
 //!
 //! 背景 (実機 #5 = `logs/#5/rsift-bootstrap.log` 一次解析): rsift-api は
-//! `log` クレートの error!/info! で NativeLoader の個別失敗
+//! `tracing` の error!/info! で NativeLoader の個別失敗
 //! (Dynamic linker error 等) を報告する設計だが、JVMTI エージェントとして
-//! ゲームへ注入される実行環境では `log` の logger が一切初期化されないため
-//! 全行が静かに蒸発し、bootstrap ログには「mods loaded OK: []」だけが残った
-//! (3 候補があるのに空 = 真の失敗理由 0 行)。sink 未登録環境では従来どおり
-//! `log` クレートへ送る (動作は変えず可視性のみ引上げる)。
+//! ゲームへ注入される実行環境では `tracing` の subscriber が一切初期化
+//! されないため全行が静かに蒸発し、bootstrap ログには
+//! 「mods loaded OK: []」だけが残った (3 候補があるのに空 = 真の失敗理由
+//! 0 行)。sink 未登録環境では従来どおり `tracing` へ送る
+//! (動作は変えず可視性のみ引上げる)。
 
 use std::sync::OnceLock;
 
@@ -19,12 +20,12 @@ pub fn set_agent_log_sink(f: fn(&str)) -> bool {
     SINK.set(f).is_ok()
 }
 
-/// 重要行を sink へ。未登録なら従来挙動 (log::error!) にフォールバック。
+/// 重要行を sink へ。未登録なら従来挙動 (tracing::error!) にフォールバック。
 pub fn log_important(line: &str) {
     if let Some(f) = SINK.get() {
         f(line);
     } else {
-        log::error!("{line}");
+        tracing::error!("{line}");
     }
 }
 

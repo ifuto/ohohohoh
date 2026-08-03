@@ -376,7 +376,7 @@ fn load_paths(
                 libraries.push(lib);
             }
             Err(e) => {
-                // wave 219 HP: エージェント環境 (log logger 未初期化) でも
+                // wave 219 HP: エージェント環境 (tracing subscriber 未初期化) でも
                 // bootstrap ログへ届くよう log_bridge へも送る (P1 根治)。
                 crate::log_bridge::log_important(&format!(
                     "[NativeLoader] {path:?}: {e}"

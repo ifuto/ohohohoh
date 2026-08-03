@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 30  (wave 219 HP-1 修正出荷 — run 29 は rsift-api コンパイル失敗 (log_bridge.rs が crate に無い `log` facade を参照 → 実際の facade は `tracing`・機械確定は DIAG-Linux exit=101 E0433)。fallback を tracing::error! に修正 + コメント整合。他は run 29 と完全同一 = api/jvm unit ゲート含め HP-1 としての初の 3 OS フル検証)
 - run: 29  (wave 219 HP-1: 難読化実行時の名変換層コア対応 — (a) obf_map 新設 (Mojang 公式 client_mappings ProGuard 形式パーサ + mojmap→難読 resolver + RuntimeNaming 両対応。未配線のデッドコード = 本 run では挙動ゼロ変化) (b) P1 根治 = NativeLoader 個別失敗を rsift-api log_bridge 経由で bootstrap ログへ橋渡し (実機 #5 は logger 未初期化で 「mods loaded OK []」の真因 0 行蒸発が発生) (c) payload に cargo test -p rsift-api -p rsift-jvm を 3 OS へ追加 (api/jvm の unit ゲート常設化)。前回分 = run 28 完全同梱の上に積層)
 - run: 28  (リリース候補スナップショット — commit f98d400 現状態同梱: wave 216 HM (RD24 2,401 チャンク判定版) + wave 217 HN (実体 40,016/編集 7,980 面積比例スケーリング + diff-slot 27→6 縮約 (OOM 根治) + edit_sim_diff 機械配分配線) + BENCH/AUDIT doc 整合修正。bench-ci 緑 (lib 1,492/1,492・36c 決定性 diff 一致) 確認済の上でのリリース化。前回分 = run 27 完全同梱の上に積層)
 - run: 27  (wave 217 HN: RD24 機械スケーリング版を同梱 — 実体 40,016/編集 7,980 + diff-slot 27→6 縮約 (OOM 根治) + edit_sim_diff 機械配分。lib 本体 diff_mesh.rs は slot 内部表現のみ (公開 API・意味論不変)。36c 出力 bit 一致・lib 1492/1492 完走確認。前回分 = wave 216 HM (2,401 チャンク判定版) 完全同梱の上に積層)
