@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 24  (wave 214 HK: 実体カリング V2 統一版を同梱 — FastEntityCuller V2 を bench C 行・本番 wiring の双方に本採用 (2.572→0.529 ms、4.9x、rays −80%) + ChunkBucketGate 全撤去 (0 レイ永久可視の虚偽可視バグ + 純損デッドコード) + boot banner "FastEntityCuller V2" が初めて実装と一致 + CL-4 実カメラ FOV 真値配線解消。dense125 真値計測器での密度膝点スイープで 5 レイ採定 (pops 4/3/2 vs 27 レイの 3.9x コスト)。opt-gfx 1486/1486・変異 RED×4+MD5-VERIFIED・合成 A 同値圏 1.00-1.05x。前回分 = wave 212 HI + 213 HJ 完全同梱の上に積層)
 - run: 23  (wave 212 HI + 213 HJ: ベンチ実走で機械確定した 2 大律速の根治版を同梱 — Tipsify 同一意味論線形化 507→189 ms (2.7x, rsgraphics のメッシュ再構築に直結) + 半透明ソート評価実装の全損 topo 試行門番化 (3.6 s→25 ms, 143x・誤順も改善)。合成フレームはバニラ系と互角 (0.97x) に到達。前回分 = wave 211 HG (自動復旧複数源フォールバック) 完全同梱の上に積層)
 - 目的: rsift-setup バイナリ + **エンジン dll + JVMTI agent (rsift_jvm =
   keybind_bridge 内蔵 = バニラ KeyMapping 登録/同期機) +

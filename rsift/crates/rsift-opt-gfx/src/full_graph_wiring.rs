@@ -433,7 +433,7 @@ pub struct FullGraphWiring {
     bobby: Option<crate::bobby_cache::BobbyCache>,
     material_batcher: crate::material_batch::MaterialBatcher,
     atlas_packer: crate::texture_atlas::TextureAtlasPacker,
-    entity_culler: crate::entity_culling::EntityCuller,
+    entity_culler: crate::entity_culling::FastEntityCuller,
 
     // ---- quality / post reference chain ----
     governor: crate::quality_governor::QualityGovernor,
@@ -591,7 +591,7 @@ impl FullGraphWiring {
             bobby,
             material_batcher: crate::material_batch::MaterialBatcher::new(),
             atlas_packer: crate::texture_atlas::TextureAtlasPacker::new(4096, 4096),
-            entity_culler: crate::entity_culling::EntityCuller::new(16, 64.0),
+            entity_culler: crate::entity_culling::FastEntityCuller::new(16, 64.0),
             governor: crate::quality_governor::QualityGovernor::new(
                 crate::quality_governor::GovernorConfig::default(),
             ),
@@ -1898,10 +1898,25 @@ impl FullGraphWiring {
                 is_block_entity: true,
             })
             .collect();
-        self.entity_culler.replace_targets(entity_targets);
-        let _visible_entities = self
-            .entity_culler
-            .visible_ids(inputs.camera_pos, &solid_query);
+        // 【wave 214 HK-1】エンジンを FastEntityCuller (V2) に統一 — boot
+        // banner (`dx12_engine`) の "FastEntityCuller V2" 表記が従来からの
+        // 宣言だったのに対し、この wiring は旧 EntityCuller を駆動していた
+        // (宣言≠実装の矛盾を機械発見)。V2 化で (a) 27→5 レイ膝点カーネル、
+        // (b) FOV ゲート。本段の targets は emissive 光源 AABB の代替物
+        // (wave 88 CL 節以来の既存 §7「評価実効・消費なし」パターン — 結果は
+        // 消費者なしで破棄。本 wiring の真の拠実体接続は将来課題として公表)。
+        self.entity_culler.replace_targets_fast(&entity_targets);
+        // 【wave 214 HK-1 / CL-4 解消】FOV ゲート閾値を実カメラ値で真値化
+        // (旧は既定 0.35 固定 = 誠実注記の将来課題だった)。対角半角 =
+        // atan(tan(fov_y/2)·√(1+aspect²))、縁 AABB はり出し +0.15 rad 余裕。
+        let aspect = (inputs.screen_w.max(1) as f32 / inputs.screen_h.max(1) as f32).max(0.1);
+        let diag_half =
+            ((0.5 * inputs.camera_fov_y.max(0.1)).tan() * (1.0 + aspect * aspect).sqrt()).atan()
+                + 0.15;
+        self.entity_culler.fov_cos_min = diag_half.cos();
+        let (_entity_mask, _entity_stats) =
+            self.entity_culler
+                .cull_fast_mask(inputs.camera_pos, inputs.camera_dir, &solid_query);
 
         // more_culling: 実投影面積・実法線背面・実雨段差の追加分岐群を実評価。
         // fov_tan_half も実カメラ FOV 由来 (wave 84 CH-3: nanite と同根)。

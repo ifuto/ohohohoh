@@ -5,8 +5,16 @@
 //!   (【誠実注記 wave 88 CL-1】`RayPacket8` の「8-Wide SIMD/SWAR」は命名のみで、
 //!    `ray_packet_unblocked_8wide` は各自をスカラー DDA で逐次判定する。
 //!    実 SIMD 化は本クレートに存在しない — CF-7 と同型の誠実化)
-//! - チャンク単位の二段階階層カリング (`ChunkBucketGate`): チャンク不可視時は内部全実体を O(1) で即時スキップ
+//! - ~~チャンク単位の二段階階層カリング (`ChunkBucketGate`)~~ → wave 214 で撤去
+//!   (出力非変更かつコスト純増のデッドコード + 虚偽可視バグの温床。後述 HK-1)
 //! - ゼロアロケーション・ビットマスク高速判定 (`FastEntityCuller` / `BitMask` / Flat SoA)
+//!   【wave 214 HK-1】 ChunkBucketGate は撤去。旧ゲートは (a) skip 対象の
+//!   last_eval_tick を更新しないため既定 visible=true を 0 レイのまま永久保持
+//!   (岩盤内の実体すら永久可視 = 虚偽可視)、(b) skip 判定自体が 3 probe +
+//!   1 レイを毎 tick 要し skip 節約分を上回る — 出力を変えないままコストだけ
+//!   残るデッドコードだった (bench 600 実体 workload で skip 287 件 × probe 3
+//!   + long ray ≈ 全コストの 3 割)。境界点滅対策の語彙は due 到達まで前回値を
+//!   保持する 1 フレーム遅延設計が既に担っておりゲートは不要。
 //! - 結果の適用戦略: `EntityCuller` は 1 フレーム遅延/予算分割、`FastEntityCuller` は
 //!   距離/FOV 即時不可視+ゲート遅延のハイブリッド (後述 CL-3/CL-6 の誠実注記どおり)
 
@@ -258,17 +266,16 @@ pub struct FastEntityCuller {
     pub budget_per_tick: usize,
     pub period_ticks: u64,
     pub max_distance: f32,
-    pub chunk_cull_gate: bool,
     /// FOV 判定の cos 下限 (既定 0.35 ~ half-angle 69.5°)。
     /// 呼出側が実カメラ FOV の余弦を供給して真値化できるフィールド (CH-3 同型)。
-    /// 【wave 88 CL-4】真値配線は consumer 側の FOV 公開待ちの将来課題で
-    /// 現行既定は従来値 0.35 のまま不変。静的構成前提 (動的変更しても
-    /// 再評価は period 到達で追従 — FOV skip は評価を経ず前回値を持つ)。
+    /// 【wave 88 CL-4 → wave 214 HK-1 解消】真値配線済: full_graph_wiring が
+    /// 実カメラの対角半角余弦を毎フレーム供給する (後述 wave 214 節)。
+    /// 既定は従来値 0.35 のまま。静的構成前提 (動的変更しても再評価は
+    /// period 到達で追従 — FOV skip は評価を経ず前回値を持つ)。
     pub fov_cos_min: f32,
     last_rays: u32,
     last_far: u32,
     last_reeval: u32,
-    last_chunk_skipped: u32,
 }
 
 impl FastEntityCuller {
@@ -280,12 +287,10 @@ impl FastEntityCuller {
             budget_per_tick: budget_per_tick.max(16),
             period_ticks: 10,
             max_distance,
-            chunk_cull_gate: true,
             fov_cos_min: 0.35,
             last_rays: 0,
             last_far: 0,
             last_reeval: 0,
-            last_chunk_skipped: 0,
         }
     }
 
@@ -337,7 +342,6 @@ impl FastEntityCuller {
         let mut evaluated = 0usize;
         let mut rays = 0u32;
         let mut far = 0u32;
-        let mut chunk_skipped = 0u32;
         let max_d_sq = self.max_distance * self.max_distance;
         let n = self.slots.len();
         let words = (n + 63) / 64;
@@ -372,39 +376,14 @@ impl FastEntityCuller {
                 continue;
             }
 
-            // 階層チャンクゲート (`ChunkBucketGate`):
-            // もしチャンク中心周りの固体ブロックテストで確実に遮蔽されているか判定できれば O(1) スキップ
-            if self.chunk_cull_gate && dist > 16.0 {
-                let cx = (c[0] as i32) >> 4;
-                let cy = (c[1] as i32) >> 4;
-                let cz = (c[2] as i32) >> 4;
-                // チャンク中心とカメラ間に固体があり、かつ隣接方向も塞がれていれば即不可視
-                let mid_x = (cx << 4) + 8;
-                let mid_y = (cy << 4) + 8;
-                let mid_z = (cz << 4) + 8;
-                if solids.opaque(mid_x, mid_y, mid_z)
-                    && solids.opaque(mid_x + 2, mid_y, mid_z)
-                    && solids.opaque(mid_x - 2, mid_y, mid_z)
-                    && !ray_unblocked(cam, [mid_x as f32, mid_y as f32, mid_z as f32], solids)
-                {
-                    chunk_skipped += 1;
-                    // CL-3 (wave 88): ゲート skip は保守テストであり誤爆
-                    // (境界チャンクの false positive) を含むため、モジュール
-                    // 宣言どおりの遅延適用で visibility を保持する
-                    // (旧実装は即 false で、境界実体がフレーム毎に点滅し得た)。
-                    // 保持した visibility を bitmask にも反映 (初版修正は
-                    // continue でビット設定を飛ばし実効不可視のままだった —
-                    // テスト赤が捕捉)。
-                    if slot.visible {
-                        let w = i >> 6;
-                        let bit = 1u64 << (i & 63);
-                        if w < self.bitmask.len() {
-                            self.bitmask[w] |= bit;
-                        }
-                    }
-                    continue;
-                }
-            }
+            // 【wave 214 HK-1】ChunkBucketGate は撤去 (詳細はモジュール doc 参照)。
+            // skip 対象の last_eval_tick を更新しない設計だったため、既定
+            // visible=true の新規/永続スロットが 0 レイで永久可視を保持
+            // (岩盤内実体の虚偽可視 = 正確性バグ)。加えて skip 判定自身が
+            // opaque 3 probe + 1 レイを毎 tick 要求し、skip 節約分 (5 レイ/
+            // period_ticks=10 amortize = 0.5 レイ/tick 相当) を常に上回る
+            // 純損デッドコードだった。点滅抑止の語彙は due 幅ヒステリシス
+            // (下記 due 判定) が正統に担う。
 
             let due = self.tick.saturating_sub(slot.last_eval_tick) >= self.period_ticks;
             if evaluated < self.budget_per_tick && due {
@@ -412,10 +391,38 @@ impl FastEntityCuller {
                 let mut packet = RayPacket8::new();
                 let t = &slot.target;
                 packet.push(cam[0], cam[1], cam[2], c[0], c[1], c[2]);
-                packet.push(cam[0], cam[1], cam[2], t.min[0] + 0.05, t.max[1] - 0.05, t.min[2] + 0.05);
-                packet.push(cam[0], cam[1], cam[2], t.max[0] - 0.05, t.max[1] - 0.05, t.max[2] - 0.05);
-                packet.push(cam[0], cam[1], cam[2], t.min[0] + 0.05, t.min[1] + 0.05, t.min[2] + 0.05);
-                packet.push(cam[0], cam[1], cam[2], t.max[0] - 0.05, t.min[1] + 0.05, t.max[2] - 0.05);
+                packet.push(
+                    cam[0],
+                    cam[1],
+                    cam[2],
+                    t.min[0] + 0.05,
+                    t.max[1] - 0.05,
+                    t.min[2] + 0.05,
+                );
+                packet.push(
+                    cam[0],
+                    cam[1],
+                    cam[2],
+                    t.max[0] - 0.05,
+                    t.max[1] - 0.05,
+                    t.max[2] - 0.05,
+                );
+                packet.push(
+                    cam[0],
+                    cam[1],
+                    cam[2],
+                    t.min[0] + 0.05,
+                    t.min[1] + 0.05,
+                    t.min[2] + 0.05,
+                );
+                packet.push(
+                    cam[0],
+                    cam[1],
+                    cam[2],
+                    t.max[0] - 0.05,
+                    t.min[1] + 0.05,
+                    t.max[2] - 0.05,
+                );
 
                 rays += packet.active_mask.count_ones();
                 let unblocked = ray_packet_unblocked_8wide(&packet, solids);
@@ -436,7 +443,6 @@ impl FastEntityCuller {
         self.last_rays = rays;
         self.last_far = far;
         self.last_reeval = evaluated as u32;
-        self.last_chunk_skipped = chunk_skipped;
 
         // CL-5 (wave 88): total は valid スロット数 (旧実装はバッファ長で、
         // invalid 尾スロットを occluded 側に混入し統計を歪めていた)。
@@ -445,7 +451,9 @@ impl FastEntityCuller {
             total: total_valid,
             visible: self.bitmask.iter().map(|w| w.count_ones()).sum::<u32>(),
             rays_cast: self.last_rays,
-            skipped_far: self.last_far + self.last_chunk_skipped,
+            // 【wave 214 HK-1】 skipped_far は真の距離/FOV skip のみ
+            // (旧ゲート skip 合流はカウンタを膨張誤表示させていた)。
+            skipped_far: self.last_far,
             reevaluated_this_tick: self.last_reeval,
             ..Default::default()
         };
@@ -476,7 +484,12 @@ fn dist_sq(a: [f32; 3], b: [f32; 3]) -> f32 {
 }
 
 /// AABB の 27 サンプル点のうち 1 つでもカメラから非遮蔽なら可視 → true = 完全遮蔽。
-fn occludes_strict<S: SolidQuery>(cam: [f32; 3], t: &EntityTarget, solids: &S, rays: &mut u32) -> bool {
+fn occludes_strict<S: SolidQuery>(
+    cam: [f32; 3],
+    t: &EntityTarget,
+    solids: &S,
+    rays: &mut u32,
+) -> bool {
     for ix in 0..3 {
         for iy in 0..3 {
             for iz in 0..3 {
@@ -526,9 +539,27 @@ pub fn ray_unblocked<S: SolidQuery>(from: [f32; 3], to: [f32; 3], solids: &S) ->
     let ty = to[1].floor() as i32;
     let tz = to[2].floor() as i32;
 
-    let step_x = if d[0] > 0.0 { 1 } else if d[0] < 0.0 { -1 } else { 0 };
-    let step_y = if d[1] > 0.0 { 1 } else if d[1] < 0.0 { -1 } else { 0 };
-    let step_z = if d[2] > 0.0 { 1 } else if d[2] < 0.0 { -1 } else { 0 };
+    let step_x = if d[0] > 0.0 {
+        1
+    } else if d[0] < 0.0 {
+        -1
+    } else {
+        0
+    };
+    let step_y = if d[1] > 0.0 {
+        1
+    } else if d[1] < 0.0 {
+        -1
+    } else {
+        0
+    };
+    let step_z = if d[2] > 0.0 {
+        1
+    } else if d[2] < 0.0 {
+        -1
+    } else {
+        0
+    };
 
     let inf = f32::INFINITY;
     let tdx = if step_x != 0 { (1.0 / d[0]).abs() } else { inf };
@@ -542,9 +573,21 @@ pub fn ray_unblocked<S: SolidQuery>(from: [f32; 3], to: [f32; 3], solids: &S) ->
             pos - cell as f32
         }
     };
-    let mut tmx = if step_x != 0 { tdx * boundary_next(from[0], x, step_x) } else { inf };
-    let mut tmy = if step_y != 0 { tdy * boundary_next(from[1], y, step_y) } else { inf };
-    let mut tmz = if step_z != 0 { tdz * boundary_next(from[2], z, step_z) } else { inf };
+    let mut tmx = if step_x != 0 {
+        tdx * boundary_next(from[0], x, step_x)
+    } else {
+        inf
+    };
+    let mut tmy = if step_y != 0 {
+        tdy * boundary_next(from[1], y, step_y)
+    } else {
+        inf
+    };
+    let mut tmz = if step_z != 0 {
+        tdz * boundary_next(from[2], z, step_z)
+    } else {
+        inf
+    };
 
     let mut guard = 0u32;
     loop {
@@ -698,14 +741,20 @@ mod tests {
         assert_eq!(st11.rays_cast, 5, "パケット 5 レイ再発射");
     }
 
-    /// CL-3: ChunkBucketGate の保守 skip は visibility を保持 (遅延適用)。
-    /// 旧実装は即 false で境界実体がフレーム毎に点滅し得た。
+    // =================================================================
+    // wave 214 HK 節 — ChunkBucketGate 撤去
+    // =================================================================
+
+    /// HK-1: 「保守遮蔽」ゲート skip は last_eval_tick を更新しないため、
+    /// 新規スロット (既定 visible=true) が 0 レイのまま永久可視を保持した。
+    /// 全セル不透明世界 (実体は岩盤内) でも永久に描画対象と答えるのは
+    /// 虚偽可視 = バグであり、旧 CL-3 pin はそれを仕様として固定して
+    /// いた。ゲート撤去後は due 到達の 5 レイ実評価で不可視へ収束する。
     #[test]
-    fn gate_skip_keeps_previous_visibility() {
-        // 全セル不透明 → ゲートの opaque 3 点と mid レイ遮蔽がともに成立。
-        let solid = |_: i32, _: i32, _: i32| true;
+    fn buried_entity_converges_to_invisible_by_due_evaluation() {
+        let solid = |_: i32, _: i32, _: i32| true; // 全セル不透明 = 完全埋込
         let mut c = FastEntityCuller::new(128, 128.0);
-        // ターゲット中心 (12.5,10.5,12.5): カメラから距離 ~19.4 (>16 ゲート発動域)。
+        // ターゲット中心 (12.5,10.5,12.5): カメラから ~19.4 (旧ゲート発動域 >16)。
         let t = EntityTarget {
             id: 1,
             min: [12.0, 10.0, 12.0],
@@ -713,21 +762,71 @@ mod tests {
             is_block_entity: false,
         };
         c.replace_targets_fast(&[t]);
-        // FOV 通過のための前進ベクトル (cos ~1.0)。
         let fwd = [0.62, -0.49, 0.62];
-        let (mask1, st1) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
-        assert_eq!(
-            st1.rays_cast, 0,
-            "ゲート skip は再評価前に発動 (レイ不発のまま)"
-        );
-        assert_eq!(st1.skipped_far, 1, "gate 1 件が skipped_far に合流");
+        let mut rays_total = 0u32;
+        let mut final_visible = true;
+        for tick in 1..=10u64 {
+            let (m, st) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+            rays_total += st.rays_cast;
+            if tick < 10 {
+                assert_eq!(
+                    st.reevaluated_this_tick, 0,
+                    "due 未到達は評価不発 (1 フレーム遅延設計) tick={tick}"
+                );
+                assert!(
+                    FastEntityCuller::is_visible_bit(m, 0),
+                    "due 前は既定の前回値 true を保持 (点滅抑止語彙) tick={tick}"
+                );
+            }
+            final_visible = FastEntityCuller::is_visible_bit(m, 0);
+        }
+        assert_eq!(rays_total, 5, "初回 due の 5 レイのみ発火");
         assert!(
-            FastEntityCuller::is_visible_bit(mask1, 0),
-            "CL-3: ゲート skip でも前回 visibility を保持 (旧実装は即 false)"
+            !final_visible,
+            "HK-1: 完全埋込実体は due 評価で不可視化 (旧ゲートは 0 レイ永遠可視)"
         );
-        // 連続呼出しでも同じ (点滅しない)。
-        let (mask2, _st2) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
-        assert!(FastEntityCuller::is_visible_bit(mask2, 0));
+    }
+
+    /// HK-1 (CL-3 改訂): 境界点滅対策は「due 幅 (= period_ticks) のヒステ
+    /// リシス」が担う。可視評価済みスロットは due 未到達の間、ワールドが
+    /// 変わっても前回値を保持し、次回 due で追従する (旧ゲート実装の
+    /// 「永久保持」は撤去済)。
+    #[test]
+    fn stale_value_hysteresis_replaces_gate_for_flicker_control() {
+        struct Flip(std::sync::atomic::AtomicBool);
+        impl SolidQuery for Flip {
+            fn opaque(&self, _x: i32, _y: i32, _z: i32) -> bool {
+                self.0.load(std::sync::atomic::Ordering::Relaxed)
+            }
+        }
+        let solid = Flip(std::sync::atomic::AtomicBool::new(false));
+        let mut c = FastEntityCuller::new(128, 128.0);
+        let t = EntityTarget {
+            id: 1,
+            min: [12.0, 10.0, 12.0],
+            max: [13.0, 11.0, 13.0],
+            is_block_entity: false,
+        };
+        c.replace_targets_fast(&[t]);
+        let fwd = [0.62, -0.49, 0.62];
+        // 空気期間: tick 10 の due で可視確定。
+        for _ in 0..10 {
+            let _ = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+        }
+        let (m, _) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+        assert!(FastEntityCuller::is_visible_bit(m, 0), "空気世界では可視");
+        // ワールド全面不透明化: due (tick 20) 未到達の 9 tick は前回値
+        // (可視) を保持 = 点滅抑止ヒステリシス (旧ゲートの担った語彙の正統)。
+        solid.0.store(true, std::sync::atomic::Ordering::Relaxed);
+        for tick in 12..=20u64 {
+            let (m, _st) = c.cull_fast_mask([0.5, 20.0, 0.5], fwd, &solid);
+            let vis = FastEntityCuller::is_visible_bit(m, 0);
+            if tick < 20 {
+                assert!(vis, "due 幅内は前回値 (可視) 保持 tick={tick}");
+            } else {
+                assert!(!vis, "due 到達で実遮蔽へ追従 (不可視)");
+            }
+        }
     }
 
     /// CL-5: CullStats.total は valid スロット数 (invalid 尾を含めない)。

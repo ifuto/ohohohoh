@@ -29,7 +29,7 @@ use std::time::Instant;
 
 use rsift_opt_gfx::chunk_mesh::{Quantized12ByteVertex, VERTEX_STRIDE_BYTES};
 use rsift_opt_gfx::deinterleave_ao::{deinterleaved_ao, reinterleave_denoise, AoParams};
-use rsift_opt_gfx::entity_culling::{EntityCuller, EntityTarget};
+use rsift_opt_gfx::entity_culling::{EntityCuller, EntityTarget, FastEntityCuller};
 use rsift_opt_gfx::frame_pipeline::{build_view_proj, FrameCamera};
 use rsift_opt_gfx::frame_worldgen::frustum_planes;
 use rsift_opt_gfx::intern_pool::InternPool;
@@ -2331,24 +2331,34 @@ fn main() {
         b_visible += 1;
     }
     let b_ent = t0.elapsed();
-    // C: DDAオクルージョン (本物の EntityCuller)。1 tick warmup 後の定常 tick を計測。
+    // C: DDAオクルージョン (本物の FastEntityCuller V2 — wave 214 HK-1)。
+    // 1 tick warmup 後の定常 tick を計測。V2 は距離+FOV(簡易錐台) ゲートを
+    // B と同語彙で内蔵するため、B 行との差分は純粋な 5 レイ DDA 遮蔽の
+    // 実効 (旧 legacy EntityCuller 27 レイ行は wave 213 値として BENCH doc
+    // 凍結: 27 レイ 2.04ms で打切る肉眼無差の pop 2 件のみ救済 = 膝点外)。
+    // 【誠実注記 wave 214】サンプル点 27→5 の粗化で pop (dense125 真値
+    // 基準の見落とし) は 2→4 件に微増 (eval_set=422 / 全 600)。有限サンプ
+    // ルの近似誤差帯内 (legacy も真値対し 2 件欠落) で、コスト 3.9x を
+    // 正当化する精度差ではないと機械判定。
     let opaque = |x: i32, y: i32, z: i32| world.get(x as i64, y as i64, z as i64).opaque();
-    let mut culler = EntityCuller::new(600, 96.0);
+    let mut culler = FastEntityCuller::new(600, 96.0);
     culler.period_ticks = 1;
-    culler.replace_targets(entities.targets.clone());
-    let _ = culler.stats(cam, &opaque); // warmup (初回の全件レイは定常コストではない)
+    culler.replace_targets_fast(&entities.targets);
+    let _ = culler.cull_fast_mask(cam, fwd, &opaque); // warmup (初回全件レイは定常コストではない)
     let t0 = Instant::now();
-    let (visible_c, stats_c) = culler.stats(cam, &opaque);
+    let (cmask, stats_c) = culler.cull_fast_mask(cam, fwd, &opaque);
     let mut draw_c = Vec::with_capacity(600);
+    let mut c_visible = 0usize;
     for (i, t) in entities.targets.iter().enumerate() {
-        if visible_c.contains(&t.id) {
+        if FastEntityCuller::is_visible_bit(cmask, i) {
             compose_model_matrix(&mut draw_c, entities.positions[i], (t.id % 8) as f32);
+            c_visible += 1;
         }
     }
     let c_ent = t0.elapsed();
     println!(
-        "| pipe | 時間 | 描画対象 |\n|---|---|---|\n| A Vanilla系 (無カリング) | {:?} | {} |\n| B Sodium系 (距離+錐台) | {:?} | {} |\n| C Rsift (DDA遮蔽) | {:?} | {} (occluded: {}, far: {}, rays: {}) |",
-        a_ent, a_visible, b_ent, b_visible, c_ent, visible_c.len(), stats_c.occluded, stats_c.skipped_far, stats_c.rays_cast
+        "| pipe | 時間 | 描画対象 |\n|---|---|---|\n| A Vanilla系 (無カリング) | {:?} | {} |\n| B Sodium系 (距離+錐台) | {:?} | {} |\n| C Rsift (FOV+5レイ DDA遮蔽 V2, wave 214 HK-1) | {:?} | {} (occluded: {}, far+fov: {}, rays: {}) |",
+        a_ent, a_visible, b_ent, b_visible, c_ent, c_visible, stats_c.occluded, stats_c.skipped_far, stats_c.rays_cast
     );
 
     // ===== セクション可視性 (遮蔽カリング, 16^3 x 432) =====
