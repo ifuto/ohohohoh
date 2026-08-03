@@ -269,9 +269,11 @@ pub const DIFF_FACES: [([i64; 3], [[f32; 3]; 4]); 6] = [
 // 差分レーンで touched セクション x 0.53MB が 3GB sandbox の OOM になった
 // ため 0.118MB へ縮小。意味論は同一 = pos+dir 単射性は保たれる)。
 const SLOT_N: usize = 17 * 17 * 17 * 6;
-/// 差分再最適化トリガ: 全三角形中の死三角形割合 (per-mille)
+/// 差分再最適化トリガ (既定値): 全三角形中の死三角形割合 (per-mille)。
+/// インスタンス毎に `set_reopt_dead_permille` で上書き可 (wave 218 HO)。
 pub const REOPT_DEAD_PERMILLE: u32 = 125;
-/// 差分再最適化トリガ: 連続編集回数
+/// 差分再最適化トリガ (既定値): 連続編集回数。
+/// インスタンス毎に `set_reopt_min_edits` で上書き可 (wave 218 HO)。
 pub const REOPT_EDITS: u32 = 16;
 
 /// slot エントリ: high u16 = 世代 (0 は初期未使用), low u16 = local id + 1
@@ -299,6 +301,13 @@ pub struct DiffSectionMesh {
     indices: Vec<u32>,
     dead_tris: u32,
     edits_since_reopt: u32,
+    /// 差分再最適化トリガの連続編集回数 (既定 REOPT_EDITS = 16)。高密度
+    /// ワークロード (例: RD24 の 7,980 編集) では呼出側が
+    /// `set_reopt_min_edits` で引上げて再最適化を amortize する
+    /// (wave 218 HO。既定値のままなら従来軌道とビット同一)。
+    reopt_min_edits: u32,
+    /// 差分再最適化トリガの死三角形割合 per-mille (既定 REOPT_DEAD_PERMILLE)。
+    reopt_dead_permille: u32,
     // ---- 誠実計上 (bench 表示に使う公開カウンタ) ----
     pub face_evals: u64,
     pub verts_encoded: u64,
@@ -324,6 +333,8 @@ impl DiffSectionMesh {
             indices: Vec::new(),
             dead_tris: 0,
             edits_since_reopt: 0,
+            reopt_min_edits: REOPT_EDITS,
+            reopt_dead_permille: REOPT_DEAD_PERMILLE,
             face_evals: 0,
             verts_encoded: 0,
             reopts: 0,
@@ -477,14 +488,33 @@ impl DiffSectionMesh {
     }
 
     /// dead-tri 率または連続編集数で真の再最適化が必要か。
+    /// 閾値はインスタンス設定値 (既定 REOPT_DEAD_PERMILLE/REOPT_EDITS)。
     pub fn needs_reopt(&self) -> bool {
         let total_tris = self.indices.len() / 3;
         if total_tris > 0
-            && self.dead_tris as u64 * 1000 > total_tris as u64 * REOPT_DEAD_PERMILLE as u64
+            && self.dead_tris as u64 * 1000 > total_tris as u64 * self.reopt_dead_permille as u64
         {
             return true;
         }
-        self.edits_since_reopt >= REOPT_EDITS
+        self.edits_since_reopt >= self.reopt_min_edits
+    }
+
+    /// 連続編集トリガの上書き (>= 1 のみ受理、fail-loud)。
+    /// 大規模編集ワークロードでは再最適化間隔を広げることで Tipsify コストを
+    /// amortize する大域スケジューリングのためのノブ (エンジン正当機能。
+    /// 既定値から変えなければ挙動は従来と同一)。
+    pub fn set_reopt_min_edits(&mut self, n: u32) {
+        assert!(n >= 1, "diff_mesh: reopt_min_edits must be >= 1 (got {n})");
+        self.reopt_min_edits = n;
+    }
+
+    /// 死三角形割合トリガの上書き (<= 1000 のみ受理、fail-loud)。
+    pub fn set_reopt_dead_permille(&mut self, ppm: u32) {
+        assert!(
+            ppm <= 1000,
+            "diff_mesh: reopt_dead_permille must be <= 1000 (got {ppm})"
+        );
+        self.reopt_dead_permille = ppm;
     }
 
     /// 一次再最適化: 面をキー順 (BTreeMap 決定順) に再構成し、頂点を実使用
@@ -646,6 +676,57 @@ mod wave215_tests {
     }
 
     const O: [i64; 3] = [0, 0, 0];
+
+    /// wave 218 HO: reopt 閾値のインスタンス上書き。既定は REOPT_EDITS=16 で
+    /// 従来軌道と同一、set_reopt_min_edits による引上げが needs_reopt の
+    /// 判定に正確に効くこと (dead 率トリガ非依存の経路で機械検証)。
+    #[test]
+    fn reopt_threshold_override_and_default() {
+        let m = Mini(std::cell::RefCell::new(HashSet::new()));
+        for y in 0..8i64 {
+            for z in 0..16i64 {
+                for x in 0..16i64 {
+                    m.set(x, y, z, true);
+                }
+            }
+        }
+        let get = |x: i64, y: i64, z: i64| m.get(x, y, z);
+        let mut d = DiffSectionMesh::build_full(&get, &opaque, O);
+        // 世界状態を変えない同一座標への反復 apply_edit → 面変化なし = dead
+        // 0 を維持、edits_since_reopt のみが増える。よって needs_reopt は
+        // 純粋に編集回数トリガだけで決まる (dead permille 非依存)。
+        for _ in 0..(REOPT_EDITS - 1) {
+            d.apply_edit(&get, &opaque, O, 8, 8, 8);
+        }
+        assert!(
+            !d.needs_reopt(),
+            "既定: 15 編集では未発火でなければならない"
+        );
+        d.apply_edit(&get, &opaque, O, 8, 8, 8);
+        assert!(
+            d.needs_reopt(),
+            "既定: 16 編集 (REOPT_EDITS) で発火しなければならない"
+        );
+        // 上書き: 32 に引上げ → 現 16 編集では未発火に戻る
+        d.set_reopt_min_edits(32);
+        assert!(
+            !d.needs_reopt(),
+            "上書き後: 16 < 32 では未発火でなければならない"
+        );
+        for _ in 0..16 {
+            d.apply_edit(&get, &opaque, O, 8, 8, 8);
+        }
+        assert!(
+            d.needs_reopt(),
+            "上書き後: 32 編集で発火しなければならない"
+        );
+        // permille setter の境界受理 (>1000 は拒否)
+        d.set_reopt_dead_permille(1000);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            d.set_reopt_dead_permille(1001)
+        }))
+        .is_err());
+    }
 
     /// HL-215-1 (核心): 連続ランダム編集の各ステッチ後で、差分適用後の面集合が
     /// ナイーブ全面走査と集合一致 (bit 一致) すること。途中で reoptimize を
