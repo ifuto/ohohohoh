@@ -1,0 +1,146 @@
+[0001|t+0ms|ThreadId(1)] ==========================================================================
+[0002|t+3ms|ThreadId(1)] [Rsift] session start: agentpath opts=
+[0003|t+3ms|ThreadId(1)] [Rsift] log file: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\rsift-bootstrap.log"
+[0004|t+4ms|ThreadId(1)] [Rsift] dll directory: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives"
+[0005|t+5ms|ThreadId(1)] [Rsift] bootstrap jar: exists=true size=Some(43992)
+[0006|t+6ms|ThreadId(1)] [Rsift] rsift_jvm.dll: exists=true size=Some(6733312)
+[0007|t+9ms|ThreadId(1)] ==========================================================================
+[0008|t+9ms|ThreadId(1)] [step] Agent_OnLoad — entered
+[0009|t+9ms|ThreadId(1)] [step] Agent_OnLoad — options=""
+[0010|t+14ms|ThreadId(1)] [step] jvmti — Agent_OnLoad: AddToBootstrapClassLoaderSearch rc=0 — RsiftHooks 可視化 (bootstrap CL): C:\Users\Junji\AppData\Roaming\PrismLauncher\instances\rsift\rsift-natives\rsift-bootstrap.jar
+[0011|t+14ms|ThreadId(1)] [step] Agent_OnLoad — bootstrap classpath ensure rc=0
+[0012|t+17ms|ThreadId(1)] [step] Agent_OnLoad — scheduling deferred init thread (mods load in background thread)
+[0013|t+17ms|ThreadId(1)] [step] schedule_deferred_init — from_agentpath=true opts_len=0 agentpath_active=false
+[0014|t+18ms|ThreadId(1)] [step] agentpath — marker written "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\.rsift-agentpath-active"
+[0015|t+19ms|ThreadId(1)] [step] schedule_deferred_init — thread spawn OK
+[0016|t+20ms|ThreadId(1)] [step] Agent_OnLoad — complete — returning 0 to JVM
+[0017|t+20ms|ThreadId(2)] [step] deferred_init — thread entered
+[0018|t+23ms|ThreadId(2)] [step] deferred_init — brief wait before JNI (agentpath-only, no javaagent)
+[0019|t+1025ms|ThreadId(2)] [step] deferred_init — pre-JNI wait complete
+[0020|t+1025ms|ThreadId(2)] [step] boot_markers — agentpath=true javaagent=false
+[0021|t+1026ms|ThreadId(2)] [step] deferred_init — loading mods
+[0022|t+1026ms|ThreadId(2)] [step] agent_premain — loading mods args=
+[0023|t+1027ms|ThreadId(2)] [Rsift] mod_dir from game cwd: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\.minecraft\\mods"
+[0024|t+1027ms|ThreadId(2)] [step] agent_premain — mod_dir="C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\.minecraft\\mods"
+[0025|t+1029ms|ThreadId(2)] [step] agent_premain — mod candidates (3): ["rsgraphics.dll", "rsreplay.dll", "rszoom.dll"]
+[0026|t+1031ms|ThreadId(2)] [step] agent_premain — official mod restore: all official mods already present
+[0027|t+1032ms|ThreadId(2)] [step] agent_premain — abi table installed v1.21.11
+[0028|t+1034ms|ThreadId(2)] [step] agent_premain — sim runtime ready backend=std_seek cores=8
+[0029|t+2239ms|ThreadId(2)] [step] agent_premain — mods loaded OK: []
+[0030|t+2239ms|ThreadId(2)] [step] deferred_init — JavaVM::from_raw addr=0x7fffb4cf37b0
+[0031|t+2240ms|ThreadId(2)] [step] classloader_probe — attempt 0 attach OK
+[0032|t+2241ms|ThreadId(2)] [step] jvmti — AddCapabilities request all_hook=true early_hook=false redefine=true retransform=true retransform_any=true (potential ∩ desired)
+[0033|t+2242ms|ThreadId(2)] [step] jvmti — AddCapabilities rc=0 (全請求受理)
+[0034|t+2242ms|ThreadId(2)] [step] jvmti — GetCapabilities rc=0 all_hook=true early_hook=false redefine=true retransform=true retransform_any=true
+[0035|t+2243ms|ThreadId(2)] [JVMTI] ClassFileLoadHook + ClassLoad enabled (exact-spec indices)
+[0036|t+2244ms|ThreadId(2)] [step] f3_marker — static spec pre-registered (load-free, reflection-independent): DebugScreenEntryList#getLines ()Ljava/util/List;
+[0037|t+2244ms|ThreadId(2)] [step] deferred_init — JVMTI CFLH install (attached thread, attempt 0) = true
+[0038|t+2245ms|ThreadId(2)] [step] classloader — attempt 0 — game still booting, deferring JNI probes
+[0039|t+2245ms|ThreadId(2)] [step] classloader_probe — attempt 0 — not ready yet
+[0040|t+3418ms|ThreadId(1)] [JVMTI] game ClassLoader captured via CFLH (first class: net/minecraft/client/main/Main)
+[0041|t+4247ms|ThreadId(2)] [Rsift] game ClassLoader cached
+[0042|t+4247ms|ThreadId(2)] [step] classloader — FOUND via JVMTI CFLH captured loader
+[0043|t+4247ms|ThreadId(2)] [step] classloader_probe — FOUND on attempt 2
+[0044|t+4251ms|ThreadId(2)] [Rsift] RsiftScreenHooks ready (minimal bootstrap)
+[0045|t+4252ms|ThreadId(2)] [Rsift] RsiftPacketTap は同梱 bootstrap jar に未収録のためパケットタップは無効 (継続)
+[0046|t+4253ms|ThreadId(2)] [Rsift] RsiftModBridge loaded
+[0047|t+4255ms|ThreadId(2)] [Rsift] RsiftPlatformBridge loaded
+[0048|t+4257ms|ThreadId(2)] [step] bridge_load — UiBridge=true ModBridge=true
+[0049|t+4258ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.gui.components.debug.DebugScreenEntryList) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.gui.components.debug.DebugScreenEntryList
+[0050|t+4258ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.gui.components.DebugScreenOverlay) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.gui.components.DebugScreenOverlay
+[0051|t+4259ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.gui.components.debug.DebugScreenOverlay) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.gui.components.debug.DebugScreenOverlay
+[0052|t+4259ms|ThreadId(2)] [step] f3_marker — no F3-lines method (0-arg, List<String|Component>) found via reflection — F3 marker skipped honestly (window title marker remains)
+[0053|t+4265ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0054|t+4266ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.client.Minecraft: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0055|t+4266ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.gui.screens.Screen) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.gui.screens.Screen
+[0056|t+4267ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.client.gui.screens.Screen: java.lang.ClassNotFoundException: net.minecraft.client.gui.screens.Screen
+[0057|t+4267ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.network.Connection) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.network.Connection
+[0058|t+4268ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.network.Connection: java.lang.ClassNotFoundException: net.minecraft.network.Connection
+[0059|t+4268ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.server.level.ServerLevel) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.server.level.ServerLevel
+[0060|t+4268ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.server.level.ServerLevel: java.lang.ClassNotFoundException: net.minecraft.server.level.ServerLevel
+[0061|t+4269ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.world.entity.Entity) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.world.entity.Entity
+[0062|t+4269ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.world.entity.Entity: java.lang.ClassNotFoundException: net.minecraft.world.entity.Entity
+[0063|t+4270ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.world.entity.Mob) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.world.entity.Mob
+[0064|t+4270ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.world.entity.Mob: java.lang.ClassNotFoundException: net.minecraft.world.entity.Mob
+[0065|t+4270ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.world.level.block.entity.HopperBlockEntity) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.world.level.block.entity.HopperBlockEntity
+[0066|t+4271ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.world.level.block.entity.HopperBlockEntity: java.lang.ClassNotFoundException: net.minecraft.world.level.block.entity.HopperBlockEntity
+[0067|t+4271ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.world.level.chunk.LevelChunk) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.world.level.chunk.LevelChunk
+[0068|t+4272ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.world.level.chunk.LevelChunk: java.lang.ClassNotFoundException: net.minecraft.world.level.chunk.LevelChunk
+[0069|t+4272ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.world.level.material.FlowingFluid) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.world.level.material.FlowingFluid
+[0070|t+4272ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.world.level.material.FlowingFluid: java.lang.ClassNotFoundException: net.minecraft.world.level.material.FlowingFluid
+[0071|t+4273ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.world.level.redstone.RedstoneWireBlock) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.world.level.redstone.RedstoneWireBlock
+[0072|t+4274ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.world.level.redstone.RedstoneWireBlock: java.lang.ClassNotFoundException: net.minecraft.world.level.redstone.RedstoneWireBlock
+[0073|t+4311ms|ThreadId(2)] [step] retransform — RetransformClasses rc=0 (1 of 11 target classes already loaded)
+[0074|t+4316ms|ThreadId(2)] [step] deferred_init — entering render/tick loop
+[0075|t+17461ms|ThreadId(2)] [VTable] vtable installed
+[0076|t+17461ms|ThreadId(2)] [Rsift] RsiftChunkBridge natives ready
+[0077|t+17462ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0078|t+17462ms|ThreadId(2)] [step] tick_loop — alive tick=0
+[0079|t+19671ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0080|t+21678ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0081|t+23687ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0082|t+25724ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0083|t+27882ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0084|t+30086ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0085|t+32207ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0086|t+34217ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0087|t+36325ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0088|t+38374ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0089|t+40490ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0090|t+42568ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0091|t+44631ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0092|t+46643ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0093|t+48654ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0094|t+50666ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0095|t+51922ms|ThreadId(2)] [step] tick_loop — alive tick=120
+[0096|t+52676ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0097|t+54699ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0098|t+56905ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0099|t+58949ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0100|t+60963ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0101|t+62972ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0102|t+65013ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0103|t+67055ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0104|t+69072ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0105|t+71085ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0106|t+73097ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0107|t+75110ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0108|t+77142ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0109|t+79188ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0110|t+81338ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0111|t+82633ms|ThreadId(2)] [step] tick_loop — alive tick=240
+[0112|t+83409ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0113|t+85511ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0114|t+87570ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0115|t+89780ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0116|t+91828ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0117|t+93967ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0118|t+96159ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0119|t+98268ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0120|t+100463ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0121|t+102677ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0122|t+105102ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0123|t+107236ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0124|t+109477ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0125|t+111707ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0126|t+113811ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0127|t+115942ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0128|t+116450ms|ThreadId(2)] [step] tick_loop — alive tick=360
+[0129|t+118013ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0130|t+120152ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0131|t+122264ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0132|t+124533ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0133|t+126696ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0134|t+128709ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0135|t+130720ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0136|t+132814ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0137|t+134937ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0138|t+136954ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0139|t+139039ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0140|t+141052ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0141|t+143064ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0142|t+145163ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0143|t+147272ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0144|t+148032ms|ThreadId(2)] [step] tick_loop — alive tick=480
+[0145|t+149288ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
+[0146|t+151298ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.Minecraft) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.Minecraft
