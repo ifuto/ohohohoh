@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 39  (renderer Wave 1+2: CFLHパッチャ難読化対応 + flipFrame→DX12 present接続(opt-in rsift.render.present=1)。前回分 = run 38 完全同梱)
 - run: 38  (renderer Wave 1: CFLHパッチャ難読化対応 — flipFrame/tick/screen/network パッチが難読化runtimeで適用される基盤。前回分 = run 37 完全同梱)
 - run: 37  (同意ダイアログを最前面確実表示に修正 — run-36 の MessageBoxW がMC裏に隠れるのを MB_TOPMOST|SETFOREGROUND|TASKMODAL で根治。前回分 = run 36 完全同梱)
 - run: 36  (初回起動同意GUI実装 — 危険権限を使うMod(公式/第三者問わず)は起動直後にネイティブ Yes/No ダイアログ「○○は...を触ろうとしています。許可しますか？」→OKで承認を永続化し次回以降は素通り。Windows MessageBoxW。前回分 = run 35 完全同梱)
