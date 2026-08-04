@@ -1,137 +1,28 @@
-FATAL: cargo test -p rsift-api -p rsift-jvm --release --locked (exit=101)
-test mod_security::tests::gq_dispatch_op_host_prefix_blocked_and_counted ... ok
-test mod_security::tests::gq_breadth_lock_game_surface_requires_no_capability ... ok
-test mod_security::tests::gq_format_detection ... ok
-test mod_security::tests::gq_hard_deny_credential_theft_lexicon ... ok
-test mod_security::tests::gq_gate_require_audit_and_ring_bound ... ok
-test mod_security::tests::gq_hard_deny_injection_chain ... ok
-test mod_security::tests::gq_jni_op_prefix_guard_breadth_lock ... ok
-test mod_security::tests::gq_manifest_parse_roundtrip_unknown_rejected ... ok
-test mod_security::tests::gq_pe_benign_imports_clean ... ok
-test mod_security::tests::gq_pe_imports_parse_and_classify ... ok
-test mod_security::tests::gq_pe_malformed_no_panic_all_truncations ... ok
-test mod_security::tests::gq_consent_store_roundtrip_and_tamper ... ok
-test mod_security::tests::gq_loader_integration_deny_precedes_linker ... ok
-test mod_security::tests::gq_string_scan_capabilities ... ok
-test mod_security::tests::gq_sidecar_path_and_declared_scaffold ... ok
-test native_loader::tests::hf_official_mod_file_names_pin ... ok
-test mod_security::tests::gq_verdict_lattice_with_consent_store ... ok
-test mod_security::tests::gq_sha256_nist_vectors ... ok
-test native_loader::tests::hf_restore_copies_official_mods_when_mods_dir_empty ... ok
-test native_loader::tests::hf_restore_fills_missing_only_and_never_overwrites ... ok
-test native_loader::tests::hf_restore_refuses_when_home_equals_mods_dir ... ok
-test native_loader::tests::hf_restore_respects_user_deletion_marker ... ok
-test native_loader::tests::hf_restore_only_copies_fixed_official_names ... ok
-test native_loader::tests::hf_restore_skips_when_home_lacks_official_mods ... ok
-test native_loader::tests::hg_default_restore_source_dirs_order_pin ... ok
-test native_loader::tests::hf_restore_is_idempotent_second_call_is_noop ... ok
-test native_loader::tests::hg_search_empty_when_no_source_has_official ... ok
-test native_loader::tests::hg_search_marker_stops_scan_regardless_of_sources ... ok
-test native_loader::tests::hg_search_falls_back_to_second_source ... ok
-test native_loader::tests::hg_vanilla_minecraft_dir_platform_shape_pin ... ok
-test platform::tests::dirty_and_apply_flags ... ok
-test runtime::fov_scale_tests::broken_mod_neutralized_not_contagious ... ok
-test native_loader::tests::hg_search_prefers_first_available_source ... ok
-test runtime::fov_scale_tests::empty_and_identity_are_1 ... ok
-test runtime::fov_scale_tests::per_mod_and_total_clamps_hold ... ok
-test runtime::fov_scale_tests::product_of_valid_scales ... ok
-test ui_ext::tests::add_button_to_title_only_targets_title ... ok
-test ui_ext::tests::class_keys_match_java_suffixes ... ok
-test ui_ext::tests::clear_buttons_for_removes_exact_screen_only ... ok
-test ui_ext::tests::lifecycle_close_fires_close ... ok
-test ui_ext::tests::lifecycle_only_targeted_screen ... ok
-test ui_ext::tests::lifecycle_open_fires_only_open ... ok
-test ui_ext::tests::lifecycle_wildcard_receives_all ... ok
-test ui_ext::tests::multiple_screens_are_independent ... ok
-test worldgen::tests::builder_sets_fields ... ok
-test worldgen::tests::biome_is_assigned ... ok
-test worldgen::tests::column_layering_is_correct ... ok
-test worldgen::tests::custom_surface_block_reflected ... ok
-test worldgen::tests::fbm_in_unit_range ... ok
-test worldgen::tests::generate_dimensions_correct ... ok
-test worldgen::tests::noise_sample_in_unit_range ... ok
-test worldgen::tests::ore_vein_injects_blocks ... ok
-test native_loader::tests::hg_search_source_equal_to_mod_dir_does_not_block_fallback ... ok
-test worldgen::tests::ore_vein_zero_chance_injects_nothing ... ok
-test worldgen::tests::generation_is_deterministic ... ok
-test worldgen::tests::registry_register_set_active_generate ... ok
-test worldgen::tests::water_fills_below_sea_level ... ok
-
-test result: ok. 98 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
-
-     Running unittests src/lib.rs (target/release/deps/rsift_jvm-933f703bb1e8dd35)
-
-running 27 tests
-test agent_bridge::tests::java_vm_addr_is_null_or_aligned_pointer ... ok
-test agent_bridge::tests::f3_name_scoring_prefers_lines_then_f3_then_info ... ok
-test agent_bridge::tests::list_element_classification_is_precise ... ok
-test agent_bridge::tests::title_marker_initially_unset ... ok
-test agent_bridge::tests::preregister_static_f3_specs_registers_verified_spec_only ... ok
-test agent_opts::tests::absent_cwd_mods_falls_back_to_dll_dir_mods ... ok
-test agent_opts::tests::arg_moddir_wins_over_everything ... ok
-test agent_opts::tests::cwd_mods_is_preferred_over_dll_dir_mods ... FAILED
-test bytecode_transpiler::tests::rules_target_existing_java_hooks ... ok
-test agent_opts::tests::no_dll_dir_yields_relative_mods ... FAILED
-test jvmti_events::tests::capability_bits_match_openjdk_capabilityfield_order ... ok
-test agent_opts::tests::opts_moddir_missing_falls_through_to_cwd ... FAILED
-test jvmti_events::tests::captured_loader_zero_means_none ... ok
-test jvmti_events::tests::match_wanted_at_runtime_falls_back_to_direct_when_uninstalled ... ok
-test jvmti_events::tests::retransform_caps_request_is_additive_only ... ok
-test jvmti_events::tests::retransform_stub_is_off_by_default ... ok
-test jvmti_events::tests::vtable_indices_match_openjdk_jvmti_xml_nums ... ok
-test keybind_bridge::tests::class_names_are_mojmap_real_paths ... ok
-test keybind_bridge::tests::ctor_strategies_are_newest_first_and_cover_legacy ... ok
-test jvmti_events::tests::wanted_class_cache_is_precise_and_empty_by_default ... ok
-test obf_map::tests::anchor_validation_rejects_wrong_direction ... ok
-test obf_map::tests::member_before_class_is_rejected ... ok
-test obf_map::tests::parse_and_resolve_class_method_field ... ok
-test obf_map::tests::resolve_descriptor_replaces_minecraft_class_refs ... ok
-test obf_map::tests::strip_line_numbers_works ... ok
-test obf_map::tests::unobfuscated_is_identity ... ok
-test obf_map::tests::try_load_from_dir_present_absent_bad ... ok
-
-failures:
-
----- agent_opts::tests::cwd_mods_is_preferred_over_dll_dir_mods stdout ----
-
-thread 'agent_opts::tests::cwd_mods_is_preferred_over_dll_dir_mods' (17485) panicked at crates/rsift-jvm/src/agent_opts.rs:219:9:
-assertion `left == right` failed
-  left: "/private/var/folders/df/djsxfhc17x95674wsm_g8s980000gn/T/rsift_moddir_test_cwdpref_game_4657/mods"
- right: "/var/folders/df/djsxfhc17x95674wsm_g8s980000gn/T/rsift_moddir_test_cwdpref_game_4657/mods"
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
----- agent_opts::tests::no_dll_dir_yields_relative_mods stdout ----
-
-thread 'agent_opts::tests::no_dll_dir_yields_relative_mods' (17486) panicked at crates/rsift-jvm/src/agent_opts.rs:258:34:
-called `Result::unwrap()` on an `Err` value: PoisonError { .. }
-
----- agent_opts::tests::opts_moddir_missing_falls_through_to_cwd stdout ----
-
-thread 'agent_opts::tests::opts_moddir_missing_falls_through_to_cwd' (17487) panicked at crates/rsift-jvm/src/agent_opts.rs:241:34:
-called `Result::unwrap()` on an `Err` value: PoisonError { .. }
-
-
-failures:
-    agent_opts::tests::cwd_mods_is_preferred_over_dll_dir_mods
-    agent_opts::tests::no_dll_dir_yields_relative_mods
-    agent_opts::tests::opts_moddir_missing_falls_through_to_cwd
-
-test result: FAILED. 24 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-error: test failed, to rerun pass `-p rsift-jvm --lib`
-== DIAG macOS exit=101 time=2026-08-04T06:56:09Z ==
+== DIAG macOS exit=0 time=2026-08-04T07:48:12Z ==
 -- target/release cdylib 候補 --
 ls: target/release/*.dll: No such file or directory
 ls: target/release/*.dylib: No such file or directory
 ls: target/release/*.so: No such file or directory
-ls: target/aarch64-apple-darwin/release/*.dylib: No such file or directory
-ls: target/x86_64-apple-darwin/release/*.dylib: No such file or directory
+-rwxr-xr-x  1 runner  staff  4137728 Aug  4 07:46 target/aarch64-apple-darwin/release/librsgraphics.dylib
+-rwxr-xr-x  1 runner  staff    16720 Aug  4 07:46 target/aarch64-apple-darwin/release/librsift_api.dylib
+-rwxr-xr-x  1 runner  staff  4361232 Aug  4 07:47 target/aarch64-apple-darwin/release/librsift_jvm.dylib
+-rwxr-xr-x  1 runner  staff  1084336 Aug  4 07:47 target/aarch64-apple-darwin/release/librsreplay.dylib
+-rwxr-xr-x  1 runner  staff   369920 Aug  4 07:46 target/aarch64-apple-darwin/release/librszoom.dylib
+-rwxr-xr-x  1 runner  staff  4828076 Aug  4 07:48 target/x86_64-apple-darwin/release/librsgraphics.dylib
+-rwxr-xr-x  1 runner  staff     4120 Aug  4 07:47 target/x86_64-apple-darwin/release/librsift_api.dylib
+-rwxr-xr-x  1 runner  staff  5025568 Aug  4 07:48 target/x86_64-apple-darwin/release/librsift_jvm.dylib
+-rwxr-xr-x  1 runner  staff  1249196 Aug  4 07:48 target/x86_64-apple-darwin/release/librsreplay.dylib
+-rwxr-xr-x  1 runner  staff   367272 Aug  4 07:48 target/x86_64-apple-darwin/release/librszoom.dylib
 -- dist-ci --
-total 23024
-drwxr-xr-x   5 runner  staff       160 Aug  4 06:56 .
-drwxr-xr-x  26 runner  staff       832 Aug  4 06:54 ..
--rw-r--r--   1 runner  staff  11779287 Aug  4 06:54 client.txt
--rw-r--r--   1 runner  staff      7884 Aug  4 06:56 DIAG-macOS.txt
-drwxr-xr-x   2 runner  staff        64 Aug  4 06:54 macos
+total 47376
+drwxr-xr-x   9 runner  staff       288 Aug  4 07:48 .
+drwxr-xr-x  26 runner  staff       832 Aug  4 07:44 ..
+-rw-r--r--   1 runner  staff  11779287 Aug  4 07:44 client.txt
+-rw-r--r--   1 runner  staff      1295 Aug  4 07:48 DIAG-macOS.txt
+drwxr-xr-x   2 runner  staff        64 Aug  4 07:44 macos
+-rw-r--r--   1 runner  staff   5959553 Aug  4 07:47 rsift-bundle-macos-arm64.zip
+-rw-r--r--   1 runner  staff   6510761 Aug  4 07:48 rsift-bundle-macos-x86_64.zip
+drwxr-xr-x   4 runner  staff       128 Aug  4 07:47 stage-aarch64-apple-darwin
+drwxr-xr-x   4 runner  staff       128 Aug  4 07:48 stage-x86_64-apple-darwin
 -- selftest result --
 cat: dist-ci/selftest-*/result.txt: No such file or directory
