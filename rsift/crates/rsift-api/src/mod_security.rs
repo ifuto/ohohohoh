@@ -1544,10 +1544,14 @@ mod tests {
         let dir = tmpdir("loader");
         let _g = DirGuard(dir.clone());
         let rt = crate::runtime::RsiftRuntime::new(dir.clone());
-        // Deny: mimikatz 語彙 — .so を名乗るがリンク以前に止まる
-        std::fs::write(dir.join("libgqevil.so"), b"mimikatz payload").unwrap();
-        // 良性 (検出ゼロ): 動的リンクには進む (so として不正なのでそこで失敗 = vet 非阻止の証明)
-        std::fs::write(dir.join("libgqok.so"), b"\x7fELF gentle decor").unwrap();
+        // wave HR: プラットフォーム拡張子 (.dll/.dylib/.so) を使う — .so 固定だと
+        // Windows(.dll)/macOS(.dylib) のローダがファイルを拾わず gqok 未登録で
+        // assert が失敗していた (run-33 で cargo test の 3OS 化により顕在化)。
+        let ext = crate::native_loader::platform_extension();
+        // Deny: mimikatz 語彙 — 実行形式を名乗るがリンク以前に止まる
+        std::fs::write(dir.join(format!("libgqevil.{ext}")), b"mimikatz payload").unwrap();
+        // 良性 (検出ゼロ): 動的リンクには進む (不正バイナリなのでそこで失敗 = vet 非阻止の証明)
+        std::fs::write(dir.join(format!("libgqok.{ext}")), b"\x7fELF gentle decor").unwrap();
         let result =
             crate::native_loader::load_mods_filtered(&dir, &rt, true, &["gqevil", "gqok"]).unwrap();
         assert!(result.loaded.is_empty());
