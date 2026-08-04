@@ -871,7 +871,8 @@ fn maybe_set_window_title(env: &mut JNIEnv, inst: &JObject) {
 }
 
 pub fn transform_class(class_name: &str, data: &[u8]) -> Option<Vec<u8>> {
-    let internal = class_name.replace('.', "/");
+    // wave HR (renderer): 読込クラス名(難読)を mojmap へ正規化してからパッチャへ渡す。
+    let internal = crate::obf_map::normalize_to_mojmap_internal(&class_name.replace('.', "/"));
     // Sync CoreMod rules into the bytecode patcher target set.
     for rule in rsift_api::neoforge_coremod::all_coremod_rules() {
         rsift_parser::register_dynamic_target(&rule.target_class);
@@ -1245,7 +1246,9 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftClassTransformer_nativeIsTarge
         .get_string(&class_name)
         .map(|s| s.into())
         .unwrap_or_default();
-    if rsift_parser::BytecodePatcher::is_target_class(&name) {
+    // wave HR (renderer): retransform sweep — 難読名を mojmap へ解決してターゲット判定。
+    let mojmap_name = crate::obf_map::resolve_class_reverse(&name).unwrap_or_else(|| name.clone());
+    if rsift_parser::BytecodePatcher::is_target_class(&mojmap_name) {
         jni::sys::JNI_TRUE
     } else {
         jni::sys::JNI_FALSE

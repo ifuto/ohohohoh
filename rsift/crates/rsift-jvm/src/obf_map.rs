@@ -41,6 +41,10 @@ pub enum RuntimeNaming {
 pub struct ObfMap {
     /// "net.minecraft.client.Minecraft" -> "gfj"
     class_m2o: HashMap<String, String>,
+    /// wave HR (renderer): 逆引き "gfj" -> "net.minecraft.client.Minecraft"
+    /// CFLH が難読名で読込クラスを渡すため、パッチャ(mojmap前提)へ渡す前に
+    /// obf→mojmap へ正規化するのに必要。parse 時に構築。
+    class_o2m: HashMap<String, String>,
     /// (class, mojmap method name) -> [(正規化 decl, obf name)] (overload 保持)
     method_m2o: HashMap<(String, String), Vec<(String, String)>>,
     /// (class, mojmap field name) -> obf name (衝突時は後勝ちせず Err 方向へ)
@@ -71,6 +75,12 @@ impl ObfMap {
     pub fn resolve_class_internal(&self, mode: RuntimeNaming, mojmap_dotted: &str) -> Option<String> {
         self.resolve_class(mode, mojmap_dotted)
             .map(|d| d.replace('.', "/"))
+    }
+
+    /// wave HR (renderer): 逆引き 難読 dotted → mojmap dotted。
+    /// CFLH が読込クラスを**難読名**で渡すため、パッチャ(mojmap前提)へ渡す前にこれで正規化。
+    pub fn resolve_class_reverse(&self, obf_dotted: &str) -> Option<String> {
+        self.class_o2m.get(obf_dotted).cloned()
     }
 
     /// wave HR (#5 Phase 2): JNI descriptor 内の全 `L<class>;` を mojmap→難読 internal
@@ -201,6 +211,9 @@ impl ObfMap {
                 }
                 map.class_m2o
                     .insert(mojmap.to_string(), obf.to_string());
+                // wave HR (renderer): 逆引きも構築 (CFLH が obf 名で照合するため)
+                map.class_o2m
+                    .insert(obf.to_string(), mojmap.to_string());
                 cur_class = Some(mojmap.to_string());
                 continue;
             }
@@ -339,6 +352,37 @@ pub fn resolve_class(mojmap_dotted: &str) -> Option<String> {
 /// クラス名 → internal (slash) 名解決。
 pub fn resolve_class_internal(mojmap_dotted: &str) -> Option<String> {
     resolve_class(mojmap_dotted).map(|d| d.replace('.', "/"))
+}
+
+/// wave HR (renderer): CFLH/パッチャ経路向け — 読込クラスの **難読 internal(slash) 名** を
+/// **mojmap internal(slash) 名** へ正規化する。未install/Unobfuscated/未収録は原名(slash)をそのまま返す。
+/// これを is_target_class / patch_if_needed の呼出前に噛ませることで、難読化runtimeでも
+/// mojmap前提のパッチャが flipFrame/tick/screen等のターゲットを正しく認識できる。
+pub fn normalize_to_mojmap_internal(obf_internal: &str) -> String {
+    let dotted = obf_internal.replace('/', ".");
+    crate::obf_map::resolve_class_reverse(&dotted)
+        .map(|m| m.replace('.', "/"))
+        .unwrap_or_else(|| obf_internal.to_string())
+}
+
+/// wave HR (renderer): 逆引き (global) — 難読 dotted → mojmap dotted。
+/// CFLH/パッチャ経路で読込クラス名(obf)を mojmap へ正規化し、mojmap前提の
+/// is_target_class / patch dispatch が難読化runtimeでも一致するようにする。
+/// mode 未 install / Unobfuscated は恒等(原名)。未収録は None。
+pub fn resolve_class_reverse(obf_dotted: &str) -> Option<String> {
+    let mode = match current_mode() {
+        Some(m) => m,
+        None => return Some(obf_dotted.to_string()),
+    };
+    match mode {
+        RuntimeNaming::Unobfuscated => Some(obf_dotted.to_string()),
+        RuntimeNaming::Obfuscated => match map_slot().read().ok() {
+            Some(g) => g.as_ref()
+                .map(|m| m.resolve_class_reverse(obf_dotted))
+                .unwrap_or_else(|| Some(obf_dotted.to_string())),
+            None => Some(obf_dotted.to_string()),
+        },
+    }
 }
 
 /// wave HR (#5 Phase 2): JNI メソッド記述子 (descriptor) 内の全 `L<class>;` クラス参照を

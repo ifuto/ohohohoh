@@ -340,12 +340,16 @@ unsafe extern "system" fn class_file_load_hook(
         }
     }
 
-    if !rsift_parser::BytecodePatcher::is_target_class(class_name) {
+    // wave HR (renderer): 読込クラス名は難読名 → mojmap へ正規化してからパッチャ(mojmap前提)へ。
+    // これが無いと flipFrame/render/tick/screen の全CFLHパッチが難読化runtimeで適用されない
+    // (= レンダフックもModsボタンも発火しない統一原因)。
+    let mojmap_name = crate::obf_map::normalize_to_mojmap_internal(class_name);
+    if !rsift_parser::BytecodePatcher::is_target_class(&mojmap_name) {
         return;
     }
 
     let slice = std::slice::from_raw_parts(class_data, class_data_len as usize);
-    let Some(patched) = ClassTransformer::on_class_load(class_name, slice) else {
+    let Some(patched) = ClassTransformer::on_class_load(&mojmap_name, slice) else {
         return;
     };
     if patched.is_empty() || patched.len() == slice.len() && patched.as_slice() == slice {
