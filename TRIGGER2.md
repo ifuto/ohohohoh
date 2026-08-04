@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 35  (#6 で #5完治確認→残件の公式Mod未ロードを根治: rsgraphics/rsreplay/rszoom を mod_security 自動承認化 + macOS /private シンボリックリンクの agent_opts テスト修正。本 run で RsGraphics 本体までロードされる Windows bundle を出す。前回分 = run 34 完全同梱)
 - run: 34  (Windows/macOS の cargo test 失敗を根治 — mod_security::gq_loader_integration が .so 固定で Windows/macOS ローダに拾われず落ちていたのを platform_extension 使用化。cdylib build は元から成功・テスト修正のみ。追加で opt-level=3→1 でビルド時間も更に短縮。前回分 = run 33 完全同梱)
 - run: 33  (CI バンドル高速化 — profile.release の lto=fat/CU=1 を CI のみ env var (CARGO_PROFILE_RELEASE_LTO=false / CODEGEN_UNITS=16) で上書き。run-32 は Windows 17m30s で fat LTO の link.exe 失敗だったのを LTO リンク工程ごと回避し全 OS ビルド時間を半減〜1/3 + Windows link 失敗も根治。Cargo.toml 本番 profile 不変。前回分 = run 32 完全同梱の上に積層)
 - run: 32  (wave HR #5 根治 Phase 1+2 完結版ビルド — run 31 は client.txt ハッシュ照合バグ (Mojang 公開値 031a68be… は SHA-1 なのに SHA-256 で照合し必ず不一致→exit=1) を SHA-1 (sha1sum) 照合へ根治。client.txt DL 自体は run 31 で成功済 (11.8MB)。本 run = Phase 1 (クラス名解決基盤) + Phase 2 (メソッド名/descriptor 難読解決・全JNI call site) + client.txt 同梱の完全版を 3 OS ビルド。前回分 = run 31 完全同梱の上に積層)
