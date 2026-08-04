@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 36  (初回起動同意GUI実装 — 危険権限を使うMod(公式/第三者問わず)は起動直後にネイティブ Yes/No ダイアログ「○○は...を触ろうとしています。許可しますか？」→OKで承認を永続化し次回以降は素通り。Windows MessageBoxW。前回分 = run 35 完全同梱)
 - run: 35  (#6 で #5完治確認→残件の公式Mod未ロードを根治: rsgraphics/rsreplay/rszoom を mod_security 自動承認化 + macOS /private シンボリックリンクの agent_opts テスト修正。本 run で RsGraphics 本体までロードされる Windows bundle を出す。前回分 = run 34 完全同梱)
 - run: 34  (Windows/macOS の cargo test 失敗を根治 — mod_security::gq_loader_integration が .so 固定で Windows/macOS ローダに拾われず落ちていたのを platform_extension 使用化。cdylib build は元から成功・テスト修正のみ。追加で opt-level=3→1 でビルド時間も更に短縮。前回分 = run 33 完全同梱)
 - run: 33  (CI バンドル高速化 — profile.release の lto=fat/CU=1 を CI のみ env var (CARGO_PROFILE_RELEASE_LTO=false / CODEGEN_UNITS=16) で上書き。run-32 は Windows 17m30s で fat LTO の link.exe 失敗だったのを LTO リンク工程ごと回避し全 OS ビルド時間を半減〜1/3 + Windows link 失敗も根治。Cargo.toml 本番 profile 不変。前回分 = run 32 完全同梱の上に積層)
