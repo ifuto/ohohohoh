@@ -1,0 +1,1241 @@
+[0001|t+0ms|ThreadId(1)] ==========================================================================
+[0002|t+0ms|ThreadId(1)] [Rsift] session start: agentpath opts=
+[0003|t+1ms|ThreadId(1)] [Rsift] log file: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\rsift-bootstrap.log"
+[0004|t+1ms|ThreadId(1)] [Rsift] dll directory: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives"
+[0005|t+2ms|ThreadId(1)] [Rsift] bootstrap jar: exists=true size=Some(43992)
+[0006|t+2ms|ThreadId(1)] [Rsift] rsift_jvm.dll: exists=true size=Some(11668992)
+[0007|t+3ms|ThreadId(1)] ==========================================================================
+[0008|t+3ms|ThreadId(1)] [step] Agent_OnLoad — entered
+[0009|t+4ms|ThreadId(1)] [step] Agent_OnLoad — options=""
+[0010|t+4ms|ThreadId(1)] [step] jvmti — Agent_OnLoad: AddToBootstrapClassLoaderSearch rc=0 — RsiftHooks 可視化 (bootstrap CL): C:\Users\Junji\AppData\Roaming\PrismLauncher\instances\rsift\rsift-natives\rsift-bootstrap.jar
+[0011|t+4ms|ThreadId(1)] [step] Agent_OnLoad — bootstrap classpath ensure rc=0
+[0012|t+5ms|ThreadId(1)] [step] Agent_OnLoad — scheduling deferred init thread (mods load in background thread)
+[0013|t+5ms|ThreadId(1)] [step] schedule_deferred_init — from_agentpath=true opts_len=0 agentpath_active=false
+[0014|t+6ms|ThreadId(1)] [step] agentpath — marker written "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\.rsift-agentpath-active"
+[0015|t+6ms|ThreadId(1)] [step] schedule_deferred_init — thread spawn OK
+[0016|t+7ms|ThreadId(2)] [step] deferred_init — thread entered
+[0017|t+7ms|ThreadId(1)] [step] Agent_OnLoad — complete — returning 0 to JVM
+[0018|t+7ms|ThreadId(2)] [step] deferred_init — brief wait before JNI (agentpath-only, no javaagent)
+[0019|t+1008ms|ThreadId(2)] [step] deferred_init — pre-JNI wait complete
+[0020|t+1008ms|ThreadId(2)] [step] boot_markers — agentpath=true javaagent=false
+[0021|t+1009ms|ThreadId(2)] [step] deferred_init — loading mods
+[0022|t+1009ms|ThreadId(2)] [step] agent_premain — loading mods args=
+[0023|t+1010ms|ThreadId(2)] [Rsift] mod_dir from game cwd: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\.minecraft\\mods"
+[0024|t+1010ms|ThreadId(2)] [step] agent_premain — mod_dir="C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\.minecraft\\mods"
+[0025|t+1011ms|ThreadId(2)] [step] agent_premain — mod candidates (3): ["rsgraphics.dll", "rsreplay.dll", "rszoom.dll"]
+[0026|t+1012ms|ThreadId(2)] [step] agent_premain — official mod restore: all official mods already present
+[0027|t+1012ms|ThreadId(2)] [step] agent_premain — abi table installed v1.21.11
+[0028|t+1013ms|ThreadId(2)] [step] agent_premain — sim runtime ready backend=std_seek cores=8
+[0029|t+14970ms|ThreadId(2)] [step] agent_premain — mods loaded OK: ["rsgraphics", "rsreplay", "rszoom"]
+[0030|t+14971ms|ThreadId(2)] [step] deferred_init — JavaVM::from_raw addr=0x7ff8a2f137b0
+[0031|t+15294ms|ThreadId(2)] [Rsift] [obf_map] client.txt loaded → Obfuscated mode (classes=10291 methods=89557 fields=45679)
+[0032|t+15294ms|ThreadId(2)] [step] deferred_init — obf_map mode = Obfuscated
+[0033|t+15296ms|ThreadId(2)] [step] classloader_probe — attempt 0 attach OK
+[0034|t+15297ms|ThreadId(2)] [step] jvmti — AddCapabilities request all_hook=true early_hook=false redefine=true retransform=true retransform_any=true (potential ∩ desired)
+[0035|t+15298ms|ThreadId(2)] [step] jvmti — AddCapabilities rc=0 (全請求受理)
+[0036|t+15298ms|ThreadId(2)] [step] jvmti — GetCapabilities rc=0 all_hook=true early_hook=false redefine=true retransform=true retransform_any=true
+[0037|t+15299ms|ThreadId(2)] [JVMTI] ClassFileLoadHook + ClassLoad enabled (exact-spec indices)
+[0038|t+15300ms|ThreadId(2)] [step] f3_marker — static spec pre-registered (load-free, reflection-independent): glz#getLines ()Ljava/util/List; (mojmap DebugScreenEntryList#getLines)
+[0039|t+15301ms|ThreadId(2)] [step] deferred_init — JVMTI CFLH install (attached thread, attempt 0) = true
+[0040|t+15302ms|ThreadId(2)] [step] classloader — attempt 0 — game still booting, deferring JNI probes
+[0041|t+15303ms|ThreadId(2)] [step] classloader_probe — attempt 0 — not ready yet
+[0042|t+15683ms|ThreadId(1)] [JVMTI] wanted class captured at ClassLoad (loader-independent): glz
+[0043|t+15888ms|ThreadId(1)] [JVMTI] game ClassLoader captured via CFLH (first class: net/minecraft/client/ClientBrandRetriever)
+[0044|t+16305ms|ThreadId(2)] [Rsift] game ClassLoader cached
+[0045|t+16306ms|ThreadId(2)] [step] classloader — FOUND via JVMTI CFLH captured loader
+[0046|t+16306ms|ThreadId(2)] [step] classloader_probe — FOUND on attempt 1
+[0047|t+16310ms|ThreadId(2)] [Rsift] RsiftScreenHooks ready (minimal bootstrap)
+[0048|t+16312ms|ThreadId(2)] [Rsift] RsiftPacketTap は同梱 bootstrap jar に未収録のためパケットタップは無効 (継続)
+[0049|t+16312ms|ThreadId(2)] [Rsift] RsiftModBridge loaded
+[0050|t+16315ms|ThreadId(2)] [Rsift] RsiftPlatformBridge loaded
+[0051|t+16316ms|ThreadId(2)] [step] bridge_load — UiBridge=true ModBridge=true
+[0052|t+16318ms|ThreadId(2)] [JVMTI] wanted class captured at ClassLoad (loader-independent): gjm
+[0053|t+16340ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.gui.components.debug.DebugScreenOverlay [from mojmap net.minecraft.client.gui.components.debug.DebugScreenOverlay]) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.gui.components.debug.DebugScreenOverlay
+[0054|t+16340ms|ThreadId(2)] [step] f3_marker — no F3-lines method (0-arg, List<String|Component>) found via reflection — F3 marker skipped honestly (window title marker remains)
+[0055|t+16347ms|ThreadId(2)] [JVMTI] wanted class captured at ClassLoad (loader-independent): wu
+[0056|t+16348ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.world.level.redstone.RedstoneWireBlock [from mojmap net.minecraft.world.level.redstone.RedstoneWireBlock]) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.world.level.redstone.RedstoneWireBlock
+[0057|t+16348ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.world.level.redstone.RedstoneWireBlock: java.lang.ClassNotFoundException: net.minecraft.world.level.redstone.RedstoneWireBlock
+[0058|t+16444ms|ThreadId(2)] [step] retransform — RetransformClasses rc=0 (10 of 11 target classes already loaded)
+[0059|t+18216ms|ThreadId(2)] [step] title_marker — window title set: Minecraft* 1.21.11 - Rsift (RsGraphics Render)
+[0060|t+18217ms|ThreadId(2)] [step] deferred_init — entering render/tick loop
+[0061|t+18482ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0062|t+18484ms|ThreadId(2)] [RsiftPlatformBridge] installed
+[0063|t+18484ms|ThreadId(2)] [Platform] ready
+[0064|t+18486ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0065|t+18488ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0066|t+18738ms|ThreadId(2)] [VTable] vtable installed
+[0067|t+18738ms|ThreadId(2)] [Rsift] RsiftChunkBridge natives ready
+[0068|t+18773ms|ThreadId(2)] [step] tick_loop — alive tick=0
+[0069|t+19080ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0070|t+19081ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0071|t+19082ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0072|t+19388ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0073|t+19390ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0074|t+19394ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0075|t+19698ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0076|t+19699ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0077|t+19699ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0078|t+20012ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0079|t+20013ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0080|t+20014ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0081|t+20321ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0082|t+20322ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0083|t+20322ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0084|t+20627ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0085|t+20628ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0086|t+20629ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0087|t+20933ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0088|t+20934ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0089|t+20934ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0090|t+21239ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0091|t+21240ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0092|t+21240ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0093|t+21546ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0094|t+21547ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0095|t+21547ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0096|t+21851ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0097|t+21852ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0098|t+21853ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0099|t+22156ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0100|t+22157ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0101|t+22158ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0102|t+22463ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0103|t+22464ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0104|t+22464ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0105|t+22846ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0106|t+22868ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0107|t+22874ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0108|t+23222ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0109|t+23231ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0110|t+23233ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0111|t+23573ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0112|t+23615ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0113|t+23651ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0114|t+24138ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0115|t+24145ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0116|t+24150ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0117|t+24564ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0118|t+24566ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0119|t+24567ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0120|t+24931ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0121|t+24932ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0122|t+24933ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0123|t+25239ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0124|t+25239ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0125|t+25240ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0126|t+25544ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0127|t+25545ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0128|t+25545ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0129|t+25850ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0130|t+25851ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0131|t+25853ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0132|t+26157ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0133|t+26158ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0134|t+26158ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0135|t+26463ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0136|t+26464ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0137|t+26465ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0138|t+26771ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0139|t+26772ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0140|t+26772ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0141|t+27077ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0142|t+27078ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0143|t+27078ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0144|t+27385ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0145|t+27386ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0146|t+27387ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0147|t+27692ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0148|t+27693ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0149|t+27693ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0150|t+27998ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0151|t+27999ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0152|t+28000ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0153|t+28303ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0154|t+28304ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0155|t+28305ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0156|t+28611ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0157|t+28612ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0158|t+28613ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0159|t+28614ms|ThreadId(2)] [step] tick_loop — alive tick=120
+[0160|t+28918ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0161|t+28919ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0162|t+28919ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0163|t+29225ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0164|t+29226ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0165|t+29226ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0166|t+29531ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0167|t+29532ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0168|t+29533ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0169|t+29837ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0170|t+29837ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0171|t+29838ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0172|t+30143ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0173|t+30144ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0174|t+30145ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0175|t+30449ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0176|t+30450ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0177|t+30450ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0178|t+30756ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0179|t+30756ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0180|t+30757ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0181|t+31062ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0182|t+31063ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0183|t+31063ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0184|t+31369ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0185|t+31370ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0186|t+31370ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0187|t+31675ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0188|t+31676ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0189|t+31676ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0190|t+31981ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0191|t+31982ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0192|t+31983ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0193|t+32288ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0194|t+32289ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0195|t+32289ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0196|t+32595ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0197|t+32596ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0198|t+32597ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0199|t+32901ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0200|t+32902ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0201|t+32903ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0202|t+33207ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0203|t+33208ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0204|t+33208ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0205|t+33512ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0206|t+33513ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0207|t+33514ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0208|t+33820ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0209|t+33821ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0210|t+33821ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0211|t+34126ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0212|t+34126ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0213|t+34127ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0214|t+34431ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0215|t+34432ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0216|t+34433ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0217|t+34737ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0218|t+34738ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0219|t+34738ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0220|t+35042ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0221|t+35043ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0222|t+35044ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0223|t+35348ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0224|t+35349ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0225|t+35350ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0226|t+35654ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0227|t+35655ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0228|t+35655ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0229|t+35959ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0230|t+35959ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0231|t+35960ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0232|t+36263ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0233|t+36264ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0234|t+36265ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0235|t+36569ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0236|t+36570ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0237|t+36571ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0238|t+36876ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0239|t+36876ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0240|t+36877ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0241|t+37181ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0242|t+37182ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0243|t+37183ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0244|t+37488ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0245|t+37489ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0246|t+37489ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0247|t+37794ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0248|t+37794ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0249|t+37795ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0250|t+37795ms|ThreadId(2)] [step] tick_loop — alive tick=240
+[0251|t+38099ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0252|t+38100ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0253|t+38101ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0254|t+38406ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0255|t+38406ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0256|t+38407ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0257|t+38711ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0258|t+38712ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0259|t+38712ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0260|t+39018ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0261|t+39018ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0262|t+39019ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0263|t+39324ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0264|t+39325ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0265|t+39325ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0266|t+39629ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0267|t+39630ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0268|t+39630ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0269|t+39959ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0270|t+39960ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0271|t+39960ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0272|t+40264ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0273|t+40265ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0274|t+40266ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0275|t+40569ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0276|t+40570ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0277|t+40571ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0278|t+40875ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0279|t+40876ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0280|t+40877ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0281|t+41181ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0282|t+41183ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0283|t+41183ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0284|t+41488ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0285|t+41489ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0286|t+41490ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0287|t+41794ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0288|t+41795ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0289|t+41796ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0290|t+42099ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0291|t+42100ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0292|t+42101ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0293|t+42404ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0294|t+42405ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0295|t+42406ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0296|t+42711ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0297|t+42711ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0298|t+42712ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0299|t+43017ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0300|t+43018ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0301|t+43018ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0302|t+43322ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0303|t+43323ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0304|t+43324ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0305|t+43629ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0306|t+43630ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0307|t+43630ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0308|t+43935ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0309|t+43935ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0310|t+43936ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0311|t+44240ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0312|t+44240ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0313|t+44241ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0314|t+44546ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0315|t+44547ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0316|t+44548ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0317|t+45027ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0318|t+45029ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0319|t+45030ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0320|t+45461ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0321|t+45462ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0322|t+45463ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0323|t+45822ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0324|t+45823ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0325|t+45824ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0326|t+46144ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0327|t+46144ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0328|t+46145ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0329|t+46500ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0330|t+46500ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0331|t+46501ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0332|t+46825ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0333|t+46825ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0334|t+46826ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0335|t+47131ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0336|t+47133ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0337|t+47134ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0338|t+47438ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0339|t+47439ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0340|t+47439ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0341|t+47440ms|ThreadId(2)] [step] tick_loop — alive tick=360
+[0342|t+47743ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0343|t+47744ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0344|t+47744ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0345|t+48048ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0346|t+48049ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0347|t+48049ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0348|t+48354ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0349|t+48355ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0350|t+48355ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0351|t+48659ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0352|t+48660ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0353|t+48661ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0354|t+48964ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0355|t+48965ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0356|t+48966ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0357|t+49272ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0358|t+49286ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0359|t+49287ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0360|t+49630ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0361|t+49631ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0362|t+49631ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0363|t+49944ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0364|t+49945ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0365|t+49946ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0366|t+50400ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0367|t+50401ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0368|t+50402ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0369|t+50752ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0370|t+50754ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0371|t+50756ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0372|t+51060ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0373|t+51060ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0374|t+51061ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0375|t+51364ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0376|t+51365ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0377|t+51366ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0378|t+51671ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0379|t+51672ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0380|t+51672ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0381|t+51975ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0382|t+51975ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0383|t+51976ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0384|t+52292ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0385|t+52293ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0386|t+52293ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0387|t+52715ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0388|t+52715ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0389|t+52716ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0390|t+53020ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0391|t+53021ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0392|t+53021ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0393|t+53326ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0394|t+53327ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0395|t+53327ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0396|t+53633ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0397|t+53634ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0398|t+53637ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0399|t+53963ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0400|t+53964ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0401|t+53964ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0402|t+54311ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0403|t+54312ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0404|t+54313ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0405|t+54617ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0406|t+54618ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0407|t+54618ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0408|t+54934ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0409|t+54935ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0410|t+54936ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0411|t+55279ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0412|t+55280ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0413|t+55281ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0414|t+55625ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0415|t+55626ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0416|t+55627ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0417|t+55941ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0418|t+55942ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0419|t+55943ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0420|t+56250ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0421|t+56250ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0422|t+56251ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0423|t+56554ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0424|t+56556ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0425|t+56558ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0426|t+56862ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0427|t+56863ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0428|t+56864ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0429|t+57188ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0430|t+57214ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0431|t+57215ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0432|t+57216ms|ThreadId(2)] [step] tick_loop — alive tick=480
+[0433|t+57597ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0434|t+57598ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0435|t+57599ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0436|t+57913ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0437|t+57917ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0438|t+57921ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0439|t+58228ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0440|t+58228ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0441|t+58229ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0442|t+58593ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0443|t+58594ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0444|t+58595ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0445|t+58946ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0446|t+58947ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0447|t+58950ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0448|t+59292ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0449|t+59294ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0450|t+59294ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0451|t+59609ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0452|t+59610ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0453|t+59611ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0454|t+59959ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0455|t+59960ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0456|t+59961ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0457|t+60291ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0458|t+60292ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0459|t+60293ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0460|t+60651ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0461|t+60659ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0462|t+60660ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0463|t+60965ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0464|t+60992ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0465|t+60993ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0466|t+61298ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0467|t+61299ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0468|t+61300ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0469|t+61604ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0470|t+61605ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0471|t+61606ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0472|t+61910ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0473|t+61911ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0474|t+61912ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0475|t+62224ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0476|t+62226ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0477|t+62227ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0478|t+62532ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0479|t+62532ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0480|t+62533ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0481|t+62839ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0482|t+62840ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0483|t+62841ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0484|t+63194ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0485|t+63195ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0486|t+63195ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0487|t+63502ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0488|t+63504ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0489|t+63504ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0490|t+63832ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0491|t+63833ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0492|t+63834ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0493|t+64142ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0494|t+64144ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0495|t+64145ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0496|t+64479ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0497|t+64480ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0498|t+64481ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0499|t+64974ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0500|t+64987ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0501|t+64990ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0502|t+65333ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0503|t+65336ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0504|t+65337ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0505|t+65688ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0506|t+65690ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0507|t+65694ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0508|t+66104ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0509|t+66105ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0510|t+66112ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0511|t+66441ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0512|t+66442ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0513|t+66444ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0514|t+66750ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0515|t+66751ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0516|t+66752ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0517|t+67065ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0518|t+67081ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0519|t+67083ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0520|t+67402ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0521|t+67403ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0522|t+67404ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0523|t+67425ms|ThreadId(2)] [step] tick_loop — alive tick=600
+[0524|t+67732ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0525|t+67733ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0526|t+67734ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0527|t+68038ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0528|t+68039ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0529|t+68040ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0530|t+68399ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0531|t+68401ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0532|t+68401ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0533|t+68707ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0534|t+68709ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0535|t+68710ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0536|t+69154ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0537|t+69195ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0538|t+69195ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0539|t+69623ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0540|t+69631ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0541|t+69634ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0542|t+70116ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0543|t+70119ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0544|t+70121ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0545|t+70468ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0546|t+70469ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0547|t+70470ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0548|t+70787ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0549|t+70788ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0550|t+70789ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0551|t+71118ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0552|t+71119ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0553|t+71119ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0554|t+71426ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0555|t+71427ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0556|t+71428ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0557|t+71746ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0558|t+71747ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0559|t+71748ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0560|t+72072ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0561|t+72073ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0562|t+72074ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0563|t+72496ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0564|t+72497ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0565|t+72497ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0566|t+72845ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0567|t+72846ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0568|t+72847ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0569|t+73165ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0570|t+73166ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0571|t+73171ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0572|t+73489ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0573|t+73490ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0574|t+73491ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0575|t+73798ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0576|t+73799ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0577|t+73799ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0578|t+74141ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0579|t+74142ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0580|t+74143ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0581|t+74446ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0582|t+74447ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0583|t+74448ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0584|t+74762ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0585|t+74763ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0586|t+74764ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0587|t+75074ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0588|t+75075ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0589|t+75075ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0590|t+75380ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0591|t+75381ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0592|t+75383ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0593|t+75723ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0594|t+75725ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0595|t+75727ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0596|t+76037ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0597|t+76038ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0598|t+76039ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0599|t+76345ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0600|t+76348ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0601|t+76349ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0602|t+76691ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0603|t+76692ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0604|t+76693ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0605|t+76996ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0606|t+76997ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0607|t+76998ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0608|t+77302ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0609|t+77303ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0610|t+77304ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0611|t+77608ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0612|t+77608ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0613|t+77610ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0614|t+77613ms|ThreadId(2)] [step] tick_loop — alive tick=720
+[0615|t+77917ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0616|t+77918ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0617|t+77918ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0618|t+78247ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0619|t+78248ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0620|t+78249ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0621|t+78559ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0622|t+78560ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0623|t+78562ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0624|t+78877ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0625|t+78879ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0626|t+78880ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0627|t+79185ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0628|t+79185ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0629|t+79186ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0630|t+79493ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0631|t+79494ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0632|t+79494ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0633|t+79799ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0634|t+79800ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0635|t+79800ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0636|t+80139ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0637|t+80140ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0638|t+80140ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0639|t+80449ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0640|t+80450ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0641|t+80451ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0642|t+80756ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0643|t+80757ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0644|t+80757ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0645|t+81081ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0646|t+81082ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0647|t+81083ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0648|t+81387ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0649|t+81388ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0650|t+81388ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0651|t+81694ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0652|t+81695ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0653|t+81696ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0654|t+82029ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0655|t+82030ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0656|t+82031ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0657|t+82340ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0658|t+82341ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0659|t+82342ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0660|t+82661ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0661|t+82662ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0662|t+82682ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0663|t+82995ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0664|t+82997ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0665|t+82998ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0666|t+83303ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0667|t+83304ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0668|t+83304ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0669|t+83609ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0670|t+83609ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0671|t+83610ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0672|t+83923ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0673|t+83924ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0674|t+83925ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0675|t+84230ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0676|t+84231ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0677|t+84231ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0678|t+84536ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0679|t+84537ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0680|t+84538ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0681|t+84860ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0682|t+84862ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0683|t+84863ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0684|t+85183ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0685|t+85184ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0686|t+85185ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0687|t+85502ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0688|t+85503ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0689|t+85504ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0690|t+85809ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0691|t+85810ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0692|t+85811ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0693|t+86132ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0694|t+86133ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0695|t+86134ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0696|t+86439ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0697|t+86440ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0698|t+86441ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0699|t+86745ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0700|t+86746ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0701|t+86747ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0702|t+87055ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0703|t+87058ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0704|t+87059ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0705|t+87060ms|ThreadId(2)] [step] tick_loop — alive tick=840
+[0706|t+87380ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0707|t+87382ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0708|t+87383ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0709|t+87689ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0710|t+87690ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0711|t+87690ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0712|t+88026ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0713|t+88028ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0714|t+88028ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0715|t+88372ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0716|t+88373ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0717|t+88375ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0718|t+88777ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0719|t+88824ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0720|t+88828ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0721|t+89456ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0722|t+89468ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0723|t+89473ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0724|t+89903ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0725|t+89927ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0726|t+89934ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0727|t+90340ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0728|t+90370ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0729|t+90381ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0730|t+90773ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0731|t+90817ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0732|t+90821ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0733|t+91207ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0734|t+91217ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0735|t+91220ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0736|t+91964ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0737|t+91999ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0738|t+92035ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0739|t+92494ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0740|t+92515ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0741|t+92519ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0742|t+92851ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0743|t+92854ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0744|t+92861ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0745|t+93303ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0746|t+93305ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0747|t+93306ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0748|t+93644ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0749|t+93646ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0750|t+93647ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0751|t+93969ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0752|t+93970ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0753|t+93975ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0754|t+94309ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0755|t+94310ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0756|t+94311ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0757|t+95191ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0758|t+95197ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0759|t+95198ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0760|t+95520ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0761|t+95521ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0762|t+95524ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0763|t+95861ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0764|t+95862ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0765|t+95863ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0766|t+96231ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0767|t+96248ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0768|t+96254ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0769|t+96594ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0770|t+96596ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0771|t+96597ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0772|t+96948ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0773|t+96949ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0774|t+96949ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0775|t+97253ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0776|t+97257ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0777|t+97260ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0778|t+97575ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0779|t+97576ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0780|t+97584ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0781|t+97901ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0782|t+97903ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0783|t+97904ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0784|t+98212ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0785|t+98213ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0786|t+98214ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0787|t+98558ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0788|t+98559ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0789|t+98560ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0790|t+98868ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0791|t+98872ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0792|t+98875ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0793|t+99208ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0794|t+99209ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0795|t+99210ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0796|t+99211ms|ThreadId(2)] [step] tick_loop — alive tick=960
+[0797|t+102752ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0798|t+103241ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0799|t+103246ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0800|t+103596ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0801|t+103599ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0802|t+103600ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0803|t+103905ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0804|t+103907ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0805|t+103908ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0806|t+104244ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0807|t+104245ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0808|t+104246ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0809|t+104553ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0810|t+104554ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0811|t+104555ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0812|t+104860ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0813|t+104862ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0814|t+104862ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0815|t+105179ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0816|t+105180ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0817|t+105181ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0818|t+105485ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0819|t+105486ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0820|t+105487ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0821|t+105790ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0822|t+105791ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0823|t+105792ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0824|t+106096ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0825|t+106097ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0826|t+106098ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0827|t+106402ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0828|t+106403ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0829|t+106404ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0830|t+106708ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0831|t+106709ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0832|t+106710ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0833|t+107017ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0834|t+107018ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0835|t+107019ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0836|t+107324ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0837|t+107326ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0838|t+107327ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0839|t+107644ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0840|t+107645ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0841|t+107647ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0842|t+107995ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0843|t+107996ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0844|t+107996ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0845|t+108302ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0846|t+108302ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0847|t+108304ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0848|t+108632ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0849|t+108633ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0850|t+108634ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0851|t+108940ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0852|t+108941ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0853|t+108941ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0854|t+109244ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0855|t+109246ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0856|t+109247ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0857|t+109560ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0858|t+109562ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0859|t+109563ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0860|t+109895ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0861|t+109896ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0862|t+109897ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0863|t+110200ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0864|t+110201ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0865|t+110202ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0866|t+112084ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0867|t+113560ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0868|t+113790ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0869|t+117078ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0870|t+123704ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0871|t+123709ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0872|t+124101ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0873|t+124113ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0874|t+124115ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0875|t+124423ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0876|t+124425ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0877|t+124426ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0878|t+124741ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0879|t+124747ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0880|t+124751ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0881|t+125077ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0882|t+125083ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0883|t+125086ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0884|t+125417ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0885|t+125418ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0886|t+125419ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0887|t+125420ms|ThreadId(2)] [step] tick_loop — alive tick=1080
+[0888|t+125727ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0889|t+125728ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0890|t+125729ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0891|t+126041ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0892|t+126044ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0893|t+126045ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0894|t+126557ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0895|t+126560ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0896|t+126562ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0897|t+126938ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0898|t+126939ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0899|t+126940ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0900|t+127273ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0901|t+127276ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0902|t+127278ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0903|t+127611ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0904|t+127613ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0905|t+127614ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0906|t+128038ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0907|t+128038ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0908|t+128039ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0909|t+131582ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0910|t+131583ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0911|t+131583ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0912|t+135709ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0913|t+135718ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0914|t+135719ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0915|t+136025ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0916|t+136030ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0917|t+136031ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0918|t+136469ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0919|t+136470ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0920|t+136471ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0921|t+136888ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0922|t+136890ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0923|t+136893ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0924|t+137242ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0925|t+137244ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0926|t+137244ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0927|t+137561ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0928|t+137563ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0929|t+137565ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0930|t+137877ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0931|t+137878ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0932|t+137879ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0933|t+138183ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0934|t+138184ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0935|t+138185ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0936|t+138489ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0937|t+138490ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0938|t+138491ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0939|t+138796ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0940|t+138815ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0941|t+138817ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0942|t+139121ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0943|t+139122ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0944|t+139123ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0945|t+139543ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0946|t+139571ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0947|t+139595ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0948|t+144963ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0949|t+144978ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0950|t+144981ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0951|t+145377ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0952|t+145378ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0953|t+145379ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0954|t+145683ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0955|t+145684ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0956|t+145685ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0957|t+145989ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0958|t+145990ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0959|t+145991ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0960|t+146331ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0961|t+146332ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0962|t+146337ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0963|t+146668ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0964|t+146669ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0965|t+146670ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0966|t+146975ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0967|t+146976ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0968|t+146979ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0969|t+147311ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0970|t+147311ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0971|t+147312ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0972|t+147617ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0973|t+147619ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0974|t+147619ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0975|t+147923ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0976|t+147924ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0977|t+147924ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0978|t+147926ms|ThreadId(2)] [step] tick_loop — alive tick=1200
+[0979|t+148236ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0980|t+148237ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0981|t+148238ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0982|t+148542ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0983|t+148543ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0984|t+148544ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0985|t+148848ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0986|t+148849ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0987|t+148850ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0988|t+149178ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0989|t+149179ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0990|t+149180ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0991|t+149484ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0992|t+149489ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0993|t+149492ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0994|t+149819ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0995|t+149819ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0996|t+149820ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0997|t+150138ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[0998|t+150138ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[0999|t+150139ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1000|t+150445ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1001|t+150446ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1002|t+150447ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1003|t+150793ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1004|t+150795ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1005|t+150796ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1006|t+151113ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1007|t+151114ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1008|t+151115ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1009|t+151444ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1010|t+151445ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1011|t+151446ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1012|t+151751ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1013|t+151752ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1014|t+151753ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1015|t+152058ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1016|t+152059ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1017|t+152060ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1018|t+152366ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1019|t+152368ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1020|t+152369ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1021|t+152672ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1022|t+152674ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1023|t+152674ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1024|t+152979ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1025|t+152981ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1026|t+152982ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1027|t+153288ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1028|t+153289ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1029|t+153290ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1030|t+153597ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1031|t+153598ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1032|t+153599ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1033|t+153904ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1034|t+153906ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1035|t+153907ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1036|t+154213ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1037|t+154214ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1038|t+154215ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1039|t+154518ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1040|t+154518ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1041|t+154519ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1042|t+154825ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1043|t+154826ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1044|t+154827ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1045|t+155131ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1046|t+155132ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1047|t+155134ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1048|t+155437ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1049|t+155438ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1050|t+155439ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1051|t+155820ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1052|t+155821ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1053|t+155822ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1054|t+156192ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1055|t+156193ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1056|t+156195ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1057|t+156499ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1058|t+156500ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1059|t+156501ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1060|t+156805ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1061|t+156806ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1062|t+156807ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1063|t+157137ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1064|t+157138ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1065|t+157139ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1066|t+157454ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1067|t+157455ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1068|t+157456ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1069|t+157457ms|ThreadId(2)] [step] tick_loop — alive tick=1320
+[1070|t+157762ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1071|t+157763ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1072|t+157764ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1073|t+158067ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1074|t+158068ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1075|t+158069ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1076|t+158373ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1077|t+158374ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1078|t+158375ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1079|t+158681ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1080|t+158682ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1081|t+158683ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1082|t+159097ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1083|t+159099ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1084|t+159100ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1085|t+159429ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1086|t+159431ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1087|t+159432ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1088|t+159737ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1089|t+159738ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1090|t+159738ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1091|t+160047ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1092|t+160049ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1093|t+160053ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1094|t+160370ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1095|t+160372ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1096|t+160374ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1097|t+160817ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1098|t+160818ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1099|t+160819ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1100|t+161123ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1101|t+161125ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1102|t+161126ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1103|t+161430ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1104|t+161431ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1105|t+161432ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1106|t+161737ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1107|t+161737ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1108|t+161739ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1109|t+162042ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1110|t+162043ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1111|t+162044ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1112|t+162347ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1113|t+162348ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1114|t+162349ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1115|t+162655ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1116|t+162655ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1117|t+162656ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1118|t+162961ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1119|t+162962ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1120|t+162962ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1121|t+163266ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1122|t+163267ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1123|t+163269ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1124|t+163574ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1125|t+163576ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1126|t+163577ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1127|t+163881ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1128|t+163882ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1129|t+163883ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1130|t+164188ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1131|t+164189ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1132|t+164190ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1133|t+164496ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1134|t+164497ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1135|t+164497ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1136|t+164803ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1137|t+164804ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1138|t+164805ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1139|t+165110ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1140|t+165110ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1141|t+165111ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1142|t+165416ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1143|t+165416ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1144|t+165418ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1145|t+165723ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1146|t+165724ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1147|t+165725ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1148|t+166028ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1149|t+166029ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1150|t+166030ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1151|t+166334ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1152|t+166335ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1153|t+166335ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1154|t+166640ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1155|t+166641ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1156|t+166642ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1157|t+166949ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1158|t+166958ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1159|t+166959ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1160|t+166959ms|ThreadId(2)] [step] tick_loop — alive tick=1440
+[1161|t+167263ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1162|t+167264ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1163|t+167265ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1164|t+167570ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1165|t+167571ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1166|t+167572ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1167|t+167878ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1168|t+167879ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1169|t+167879ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1170|t+168183ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1171|t+168190ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1172|t+168194ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1173|t+168507ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1174|t+168508ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1175|t+168509ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1176|t+168814ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1177|t+168815ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1178|t+168816ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1179|t+169121ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1180|t+169122ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1181|t+169123ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1182|t+169426ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1183|t+169428ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1184|t+169429ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1185|t+169757ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1186|t+169767ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1187|t+169767ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1188|t+170086ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1189|t+170087ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1190|t+170087ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1191|t+170399ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1192|t+170399ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1193|t+170400ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1194|t+170704ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1195|t+170705ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1196|t+170706ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1197|t+171011ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1198|t+171013ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1199|t+171015ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1200|t+171321ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1201|t+171322ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1202|t+171323ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1203|t+171627ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1204|t+171628ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1205|t+171629ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1206|t+171934ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1207|t+171935ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1208|t+171936ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1209|t+172242ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1210|t+172242ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1211|t+172243ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1212|t+172547ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1213|t+172549ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1214|t+172550ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1215|t+172852ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1216|t+172853ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1217|t+172854ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1218|t+173158ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1219|t+173160ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1220|t+173161ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1221|t+173465ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1222|t+173466ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1223|t+173467ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1224|t+173770ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1225|t+173770ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1226|t+173771ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1227|t+174073ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1228|t+174074ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1229|t+174074ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1230|t+174379ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1231|t+174380ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1232|t+174380ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1233|t+174684ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1234|t+174685ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1235|t+174686ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1236|t+174988ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1237|t+174989ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1238|t+174990ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1239|t+175292ms|ThreadId(2)] [RsiftRuntimeHooks] install failed: gfj.getConnection()
+[1240|t+175293ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
+[1241|t+175293ms|ThreadId(2)] [RsiftPlatformBridge] apply error: ClassNotFoundException: net.minecraft.core.registries.BuiltInRegistries
