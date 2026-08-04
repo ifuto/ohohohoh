@@ -102,22 +102,35 @@ pub fn ensure_engine() {
 
 /// Win32 HWND via GLFW (`org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window`).
 pub fn read_window_hwnd(env: &mut JNIEnv, minecraft: &JObject) -> Option<i64> {
+    // wave HR (#5 Phase 2): getWindow (Minecraft) + 戻り値 Window (com.mojang も難読化対象)
+    // のメソッド名 + descriptor を解決。
+    let gw_name = crate::obf_map::resolve_method_by_name(
+        "net.minecraft.client.Minecraft",
+        "getWindow",
+    )
+    .unwrap_or_else(|| "getWindow".to_string());
+    let gw_desc = crate::obf_map::resolve_descriptor("()Lcom/mojang/blaze3d/platform/Window;");
     let window = env
-        .call_method(
-            minecraft,
-            "getWindow",
-            "()Lcom/mojang/blaze3d/platform/Window;",
-            &[],
-        )
+        .call_method(minecraft, &gw_name, &gw_desc, &[])
         .ok()
         .and_then(|v| v.l().ok())?;
 
+    let wgw = crate::obf_map::resolve_method_by_name(
+        "com.mojang.blaze3d.platform.Window",
+        "getWindow",
+    )
+    .unwrap_or_else(|| "getWindow".to_string());
     let glfw = env
-        .call_method(&window, "getWindow", "()J", &[])
+        .call_method(&window, &wgw, "()J", &[])
         .ok()
         .and_then(|v| v.j().ok())
         .or_else(|| {
-            env.call_method(&window, "getHandle", "()J", &[])
+            let gh = crate::obf_map::resolve_method_by_name(
+                "com.mojang.blaze3d.platform.Window",
+                "getHandle",
+            )
+            .unwrap_or_else(|| "getHandle".to_string());
+            env.call_method(&window, &gh, "()J", &[])
                 .ok()
                 .and_then(|v| v.j().ok())
         })?;

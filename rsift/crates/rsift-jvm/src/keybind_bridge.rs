@@ -53,6 +53,24 @@ const KEYMAPPING_CLASS: &str = "net/minecraft/client/KeyMapping";
 const KM_CATEGORY_CLASS: &str = "net/minecraft/client/KeyMapping$Category";
 const INPUT_TYPE_CLASS: &str = "com/mojang/blaze3d/platform/InputConstants$Type";
 
+// wave HR (#5 Phase 2): 難読化ランタイム向け名前解決ヘルパー (obf_map 経由)。
+// Unobfuscated/未 install 時は原名へ安全落下 = 従来挙動完全保存。
+#[inline]
+fn rcls(mojmap_slash: &str) -> String {
+    crate::obf_map::resolve_class_internal(&mojmap_slash.replace('/', "."))
+        .unwrap_or_else(|| mojmap_slash.to_string())
+}
+#[inline]
+fn rmname(mojmap_class_dotted: &str, mojmap_method: &str) -> String {
+    crate::obf_map::resolve_method_by_name(mojmap_class_dotted, mojmap_method)
+        .unwrap_or_else(|| mojmap_method.to_string())
+}
+#[inline]
+fn rfield(mojmap_class_dotted: &str, mojmap_field: &str) -> String {
+    crate::obf_map::resolve_field(mojmap_class_dotted, mojmap_field)
+        .unwrap_or_else(|| mojmap_field.to_string())
+}
+
 /// フック入口。env を伴うフレームで呼ぶ。失敗は内部で一度だけ警告して潰す。
 pub fn poll_and_sync(env: &mut JNIEnv) {
     let Some(rt) = rsift_api::runtime::runtime() else {
@@ -89,50 +107,35 @@ fn sync_inner(
     regs: &[rsift_api::keybinds::KeybindRegistration],
 ) -> Result<bool, String> {
     let mc = minecraft_instance(env)?;
-    let options = get_object_field(env, &mc, "options", &format!("L{OPTIONS_CLASS};"))?;
-    let arr = get_object_field(
-        env,
-        &options,
-        "keyMappings",
-        &format!("[L{KEYMAPPING_CLASS};"),
-    )?;
+    // wave HR (#5 Phase 2): options (Minecraft) / keyMappings (Options) フィールド名 + descriptor 解決。
+    let options_field = rfield("net.minecraft.client.Minecraft", "options");
+    let options_sig = crate::obf_map::resolve_descriptor(&format!("L{OPTIONS_CLASS};"));
+    let km_field = rfield("net.minecraft.client.Options", "keyMappings");
+    let km_sig = crate::obf_map::resolve_descriptor(&format!("[L{KEYMAPPING_CLASS};"));
+    let options = get_object_field(env, &mc, &options_field, &options_sig)?;
+    let arr = get_object_field(env, &options, &km_field, &km_sig)?;
     let arr = JObjectArray::from(arr);
     let km_class = find_game_class(env, KEYMAPPING_CLASS)?;
 
     // 1) 既存照合 & 欠損分の生成→追記
     let mut newly_installed = false;
     for reg in regs {
-        let arr_now = get_object_field(
-            env,
-            &options,
-            "keyMappings",
-            &format!("[L{KEYMAPPING_CLASS};"),
-        )?;
+        let arr_now = get_object_field(env, &options, &km_field, &km_sig)?;
         let arr_now = JObjectArray::from(arr_now);
         if mapping_index_of(env, &arr_now, &reg.name)?.is_some() {
             continue; // options.txt 復元済み or 前回追記済み
         }
         let mapping = new_key_mapping(env, &km_class, &reg.name, &reg.category, reg.default_code)?;
         let grown = grown_with(env, &arr_now, &km_class, &mapping)?;
-        env.set_field(
-            &options,
-            "keyMappings",
-            &format!("[L{KEYMAPPING_CLASS};"),
-            JValue::Object(&grown),
-        )
-        .map_err(|e| format!("set keyMappings: {e}"))?;
+        env.set_field(&options, &km_field, &km_sig, JValue::Object(&grown))
+            .map_err(|e| format!("set keyMappings: {e}"))?;
         clear_pending(env);
         newly_installed = true;
     }
     let _ = &arr; // 最初の配列は install 可否判定で都度読み直すため保持不要
 
     // 2) 状態同期 (追記後の配列を読み直す)
-    let arr = get_object_field(
-        env,
-        &options,
-        "keyMappings",
-        &format!("[L{KEYMAPPING_CLASS};"),
-    )?;
+    let arr = get_object_field(env, &options, &km_field, &km_sig)?;
     let arr = JObjectArray::from(arr);
     for reg in regs {
         let Some(idx) = mapping_index_of(env, &arr, &reg.name)? else {
@@ -141,8 +144,9 @@ fn sync_inner(
         let elem = env
             .get_object_array_element(&arr, idx as i32)
             .map_err(|e| format!("get keyMappings[{idx}]: {e}"))?;
+        let isdown = rmname("net.minecraft.client.KeyMapping", "isDown");
         let down = env
-            .call_method(&elem, "isDown", "()Z", &[])
+            .call_method(&elem, &isdown, "()Z", &[])
             .map_err(|e| format!("isDown: {e}"))?
             .z()
             .map_err(|e| format!("isDown ret: {e}"))?;
@@ -154,14 +158,18 @@ fn sync_inner(
 
 fn minecraft_instance<'local>(env: &mut JNIEnv<'local>) -> Result<JObject<'local>, String> {
     let cls = find_game_class(env, MC_CLASS)?;
-    env.call_static_method(cls, "getInstance", &format!("()L{MC_CLASS};"), &[])
+    let m = rmname("net.minecraft.client.Minecraft", "getInstance");
+    let d = crate::obf_map::resolve_descriptor(&format!("()L{MC_CLASS};"));
+    env.call_static_method(cls, &m, &d, &[])
         .map_err(|e| format!("Minecraft.getInstance: {e}"))?
         .l()
         .map_err(|e| format!("getInstance ret: {e}"))
 }
 
 fn find_game_class<'local>(env: &mut JNIEnv<'local>, name: &str) -> Result<JClass<'local>, String> {
-    if let Ok(c) = env.find_class(name) {
+    // wave HR (#5 Phase 2): 実行時内部名 (難読化版では難読名) へ解決して検索。
+    let resolved = rcls(name);
+    if let Ok(c) = env.find_class(&resolved) {
         clear_pending(env);
         return Ok(c);
     }
@@ -169,7 +177,7 @@ fn find_game_class<'local>(env: &mut JNIEnv<'local>, name: &str) -> Result<JClas
     let Some(loader) = super::screen_inject::game_class_loader(env) else {
         return Err(format!("game classloader unavailable for {name}"));
     };
-    let dotted = name.replace('/', ".");
+    let dotted = resolved.replace('/', ".");
     let jname: JString = env
         .new_string(&dotted)
         .map_err(|e| format!("new_string: {e}"))?;
@@ -218,8 +226,9 @@ fn mapping_index_of(
         let elem = env
             .get_object_array_element(arr, i as i32)
             .map_err(|e| format!("keyMappings[{i}]: {e}"))?;
+        let getname = rmname("net.minecraft.client.KeyMapping", "getName");
         let jname = env
-            .call_method(&elem, "getName", "()Ljava/lang/String;", &[])
+            .call_method(&elem, &getname, "()Ljava/lang/String;", &[])
             .map_err(|e| format!("getName: {e}"))?
             .l()
             .map_err(|e| format!("getName ret: {e}"))?;
@@ -318,7 +327,9 @@ fn try_ctor<'local>(
             let t = first_enum_constant(env, INPUT_TYPE_CLASS)?;
             env.new_object(
                 km_class,
-                &format!("(Ljava/lang/String;L{INPUT_TYPE_CLASS};ILjava/lang/String;)V"),
+                &crate::obf_map::resolve_descriptor(&format!(
+                    "(Ljava/lang/String;L{INPUT_TYPE_CLASS};ILjava/lang/String;)V"
+                )),
                 &[
                     JValue::Object(jname),
                     JValue::Object(&t),
@@ -333,7 +344,9 @@ fn try_ctor<'local>(
             let t = first_enum_constant(env, INPUT_TYPE_CLASS)?;
             env.new_object(
                 km_class,
-                &format!("(Ljava/lang/String;L{KM_CATEGORY_CLASS};L{INPUT_TYPE_CLASS};I)V"),
+                &crate::obf_map::resolve_descriptor(&format!(
+                    "(Ljava/lang/String;L{KM_CATEGORY_CLASS};L{INPUT_TYPE_CLASS};I)V"
+                )),
                 &[
                     JValue::Object(jname),
                     JValue::Object(&c),
@@ -357,7 +370,7 @@ fn first_enum_constant<'local>(
         .call_method(
             JObject::from(cls),
             "getEnumConstants",
-            &format!("()[L{class_name};"),
+            &crate::obf_map::resolve_descriptor(&format!("()[L{class_name};")),
             &[],
         )
         .map_err(|e| format!("getEnumConstants {class_name}: {e}"))?

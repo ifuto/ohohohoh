@@ -231,26 +231,46 @@ fn read_window_size(env: &mut JNIEnv, minecraft: &JObject) -> Option<(u32, u32)>
 }
 
 fn read_delta_seconds(env: &mut JNIEnv, minecraft: &JObject) -> Option<f32> {
+    // wave HR (#5 Phase 2): Minecraft/Timer/DeltaTracker のメソッド名 + descriptor を難読解決。
+    // resolve_* は Unobfuscated/未 install 時は原文名へ安全落下 = 従来挙動。
+    let dt_name = crate::obf_map::resolve_method_by_name(
+        "net.minecraft.client.Minecraft",
+        "getDeltaTracker",
+    )
+    .unwrap_or_else(|| "getDeltaTracker".to_string());
+    let dt_desc = crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/DeltaTracker;");
     let timer = env
-        .call_method(
-            minecraft,
-            "getDeltaTracker",
-            "()Lnet/minecraft/client/DeltaTracker;",
-            &[],
-        )
+        .call_method(minecraft, &dt_name, &dt_desc, &[])
         .ok()
         .and_then(|v| v.l().ok())
         .or_else(|| {
-            env.call_method(minecraft, "getTimer", "()Lnet/minecraft/client/Timer;", &[])
+            let t_name = crate::obf_map::resolve_method_by_name(
+                "net.minecraft.client.Minecraft",
+                "getTimer",
+            )
+            .unwrap_or_else(|| "getTimer".to_string());
+            let t_desc = crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/Timer;");
+            env.call_method(minecraft, &t_name, &t_desc, &[])
                 .ok()
                 .and_then(|v| v.l().ok())
         })?;
+    // getRealtimeDeltaTicks は DeltaTracker 上 (1.21.x 主経路)。legacy msPerTick も解決試行。
+    let rdt = crate::obf_map::resolve_method_by_name(
+        "net.minecraft.client.DeltaTracker",
+        "getRealtimeDeltaTicks",
+    )
+    .unwrap_or_else(|| "getRealtimeDeltaTicks".to_string());
     let ms = env
-        .call_method(&timer, "getRealtimeDeltaTicks", "()F", &[])
+        .call_method(&timer, &rdt, "()F", &[])
         .ok()
         .and_then(|v| v.f().ok())
         .or_else(|| {
-            env.call_method(&timer, "msPerTick", "()F", &[])
+            let mpt = crate::obf_map::resolve_method_by_name(
+                "net.minecraft.client.Timer",
+                "msPerTick",
+            )
+            .unwrap_or_else(|| "msPerTick".to_string());
+            env.call_method(&timer, &mpt, "()F", &[])
                 .ok()
                 .and_then(|v| v.f().ok())
         })?;

@@ -625,18 +625,23 @@ fn preregister_static_f3_specs() {
     if PREREGISTERED.swap(true, Ordering::SeqCst) {
         return;
     }
-    const STATIC_SPECS: &[(&str, &str, ListElement)] = &[(
-        "net/minecraft/client/gui/components/debug/DebugScreenEntryList",
-        "getLines",
-        ListElement::String,
-    )];
-    for (internal, method, element) in STATIC_SPECS {
-        rsift_parser::register_f3_marker(internal, method, "()Ljava/util/List;", *element);
-    }
+    // wave HR (#5 Phase 2): クラス名 + getLines メソッド名を難読解決して CFLH spec へ登録。
+    // CFLH は**実行時名 (難読名)** でロードクラスと照合するため、spec も実行時名でなければ
+    // 一致しない (= 難読化版で F3 不発の真因)。Unobfuscated/未 install は原名へ安全落下。
+    const MOJMAP_CLASS: &str = "net.minecraft.client.gui.components.debug.DebugScreenEntryList";
+    let internal = crate::obf_map::resolve_class_internal(MOJMAP_CLASS)
+        .unwrap_or_else(|| {
+            "net/minecraft/client/gui/components/debug/DebugScreenEntryList".to_string()
+        });
+    let method = crate::obf_map::resolve_method_by_name(MOJMAP_CLASS, "getLines")
+        .unwrap_or_else(|| "getLines".to_string());
+    rsift_parser::register_f3_marker(&internal, &method, "()Ljava/util/List;", ListElement::String);
     agent_log_step(
         "f3_marker",
-        "static spec pre-registered (load-free, reflection-independent): \
-         DebugScreenEntryList#getLines ()Ljava/util/List;",
+        &format!(
+            "static spec pre-registered (load-free, reflection-independent): {}#{} ()Ljava/util/List; (mojmap DebugScreenEntryList#getLines)",
+            internal, method
+        ),
     );
 }
 
@@ -828,13 +833,12 @@ fn maybe_set_window_title(env: &mut JNIEnv, inst: &JObject) {
         if inst.as_raw().is_null() {
             return Err("Minecraft instance is null (client not ready)".into());
         }
+        // wave HR (#5 Phase 2): getWindow (Minecraft) のメソッド名 + Window descriptor 解決。
+        let gw = crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft", "getWindow")
+            .unwrap_or_else(|| "getWindow".to_string());
+        let gw_desc = crate::obf_map::resolve_descriptor("()Lcom/mojang/blaze3d/platform/Window;");
         let window = env
-            .call_method(
-                inst,
-                "getWindow",
-                "()Lcom/mojang/blaze3d/platform/Window;",
-                &[],
-            )
+            .call_method(inst, &gw, &gw_desc, &[])
             .and_then(|v| v.l())
             .map_err(|e| format!("getWindow: {:?}", e))?;
         if window.as_raw().is_null() {
@@ -847,13 +851,13 @@ fn maybe_set_window_title(env: &mut JNIEnv, inst: &JObject) {
         let title_j = env
             .new_string(&title)
             .map_err(|e| format!("new_string: {:?}", e))?;
-        env.call_method(
-            &window,
+        let st = crate::obf_map::resolve_method_by_name(
+            "com.mojang.blaze3d.platform.Window",
             "setTitle",
-            "(Ljava/lang/String;)V",
-            &[JValue::Object(&title_j)],
         )
-        .map_err(|e| format!("setTitle: {:?}", e))?;
+        .unwrap_or_else(|| "setTitle".to_string());
+        env.call_method(&window, &st, "(Ljava/lang/String;)V", &[JValue::Object(&title_j)])
+            .map_err(|e| format!("setTitle: {:?}", e))?;
         agent_log_step("title_marker", &format!("window title set: {}", title));
         Ok(())
     })();
@@ -970,12 +974,11 @@ pub fn client_tick(env: &mut JNIEnv) {
         Some(c) => c,
         None => return,
     };
-    let inst = match env.call_static_method(
-        minecraft,
-        "getInstance",
-        "()Lnet/minecraft/client/Minecraft;",
-        &[],
-    ) {
+    // wave HR (#5 Phase 2): getInstance (Minecraft 静的) のメソッド名 + descriptor 解決。
+    let gi = crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft", "getInstance")
+        .unwrap_or_else(|| "getInstance".to_string());
+    let gi_desc = crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/Minecraft;");
+    let inst = match env.call_static_method(minecraft, &gi, &gi_desc, &[]) {
         Ok(v) => v.l().ok(),
         Err(_) => None,
     };
@@ -986,20 +989,19 @@ pub fn client_tick(env: &mut JNIEnv) {
     // wave 205: インスタンス確定後に確実にタイトルマーカーを入れる (冪等)。
     maybe_set_window_title(env, &inst);
 
-    let screen = match env.call_method(
-        &inst,
-        "screen",
-        "()Lnet/minecraft/client/gui/screens/Screen;",
-        &[],
-    ) {
+    // wave HR: screen (Minecraft) / getScreen (fallback) メソッド名 + descriptor 解決。
+    let screen_desc =
+        crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/gui/screens/Screen;");
+    let screen_m =
+        crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft", "screen")
+            .unwrap_or_else(|| "screen".to_string());
+    let getscreen_m =
+        crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft", "getScreen")
+            .unwrap_or_else(|| "getScreen".to_string());
+    let screen = match env.call_method(&inst, &screen_m, &screen_desc, &[]) {
         Ok(v) => v.l().ok(),
         Err(_) => env
-            .call_method(
-                &inst,
-                "getScreen",
-                "()Lnet/minecraft/client/gui/screens/Screen;",
-                &[],
-            )
+            .call_method(&inst, &getscreen_m, &screen_desc, &[])
             .ok()
             .and_then(|v| v.l().ok()),
     };

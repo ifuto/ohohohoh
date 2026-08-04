@@ -73,6 +73,41 @@ impl ObfMap {
             .map(|d| d.replace('.', "/"))
     }
 
+    /// wave HR (#5 Phase 2): JNI descriptor 内の全 `L<class>;` を mojmap→難読 internal
+    /// へ解決 (instance 版・テスト可能)。primitives/配列/`(`/`)` 不変。未収録は原状維持。
+    pub fn resolve_descriptor(&self, mode: RuntimeNaming, desc: &str) -> String {
+        if mode == RuntimeNaming::Unobfuscated {
+            return desc.to_string();
+        }
+        let mut out = String::with_capacity(desc.len());
+        let mut rest = desc;
+        while let Some(lpos) = rest.find('L') {
+            out.push_str(&rest[..lpos]);
+            let after = &rest[lpos..];
+            match after.find(';') {
+                Some(semi_rel) => {
+                    let internal = &after[1..semi_rel];
+                    let dotted = internal.replace('/', ".");
+                    match self.resolve_class(mode, &dotted) {
+                        Some(obf_dotted) => {
+                            out.push('L');
+                            out.push_str(&obf_dotted.replace('.', "/"));
+                            out.push(';');
+                        }
+                        None => out.push_str(&after[..=semi_rel]),
+                    }
+                    rest = &after[semi_rel + 1..];
+                }
+                None => {
+                    out.push_str(after);
+                    return out;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
     /// メソッド一意解決 (class, mojmap 名)。overload が 2 以上なら None
     /// (曖昧解消は `resolve_method_decl` を使う — 当て推測を構造的に排除)。
     pub fn resolve_method_by_name(
@@ -306,6 +341,32 @@ pub fn resolve_class_internal(mojmap_dotted: &str) -> Option<String> {
     resolve_class(mojmap_dotted).map(|d| d.replace('.', "/"))
 }
 
+/// wave HR (#5 Phase 2): JNI メソッド記述子 (descriptor) 内の全 `L<class>;` クラス参照を
+/// mojmap → 難読 internal へ解決する。primitives / 配列 `[` / `(` `)` は不変。
+/// `L` 参照のうち map に無いもの (java/*・com/rsift/*・未収録) は原状維持 (当て推測なし)。
+/// mode 未 install / Unobfuscated / map 無しは desc をそのまま返す (従来挙動)。
+///
+/// 例: `()Lnet/minecraft/client/Minecraft;` → `()Lgfj;` (Obfuscated 時)
+///     `(Lnet/minecraft/client/gui/screens/Screen;)V` → `(Lxyz;)V`
+///     `()[Lnet/minecraft/client/KeyMapping$Category;` → `()[La/b$C;`
+pub fn resolve_descriptor(desc: &str) -> String {
+    let mode = match current_mode() {
+        Some(m) => m,
+        None => return desc.to_string(),
+    };
+    match mode {
+        RuntimeNaming::Unobfuscated => desc.to_string(),
+        RuntimeNaming::Obfuscated => match map_slot()
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(|m| m.resolve_descriptor(mode, desc)))
+        {
+            Some(resolved) => resolved,
+            None => desc.to_string(),
+        },
+    }
+}
+
 pub fn resolve_method_by_name(class_dotted: &str, mojmap_name: &str) -> Option<String> {
     let mode = current_mode()?;
     let guard = map_slot().read().ok()?;
@@ -491,6 +552,43 @@ net.minecraft.client.gui.components.debug.DebugScreenEntryList -> abc:
         assert_eq!(
             m.resolve_method_by_name(un, "anything", "getLines").as_deref(),
             Some("getLines")
+        );
+    }
+
+    /// wave HR (#5 Phase 2): resolve_descriptor — descriptor 内の全 L<class>; を解決。
+    #[test]
+    fn resolve_descriptor_replaces_minecraft_class_refs() {
+        let m = ObfMap::parse(FIXTURE).expect("parse");
+        let ob = RuntimeNaming::Obfuscated;
+        assert_eq!(m.resolve_descriptor(ob, "()Lnet/minecraft/client/Minecraft;"), "()Lgfj;");
+        assert_eq!(
+            m.resolve_descriptor(ob, "(Lnet/minecraft/client/gui/screens/Screen;)V"),
+            "(Lxyz;)V"
+        );
+        assert_eq!(
+            m.resolve_descriptor(ob, "()[Lnet/minecraft/client/gui/components/debug/DebugScreenEntryList;"),
+            "()[Labc;"
+        );
+        // 非 Minecraft (java/*) は原状維持
+        assert_eq!(
+            m.resolve_descriptor(ob, "(Ljava/lang/String;)Ljava/util/List;"),
+            "(Ljava/lang/String;)Ljava/util/List;"
+        );
+        // primitives / 配列記号不変・複数引数 mix
+        assert_eq!(m.resolve_descriptor(ob, "(IJZ)V"), "(IJZ)V");
+        assert_eq!(
+            m.resolve_descriptor(ob, "(Lnet/minecraft/client/Minecraft;I)Lnet/minecraft/client/gui/screens/Screen;"),
+            "(Lgfj;I)Lxyz;"
+        );
+        // 不正 (終端 ';' 無し) は残り原状維持
+        assert_eq!(
+            m.resolve_descriptor(ob, "(Lnet/minecraft/client/Minecraft"),
+            "(Lnet/minecraft/client/Minecraft"
+        );
+        // Unobfuscated は恒等
+        assert_eq!(
+            m.resolve_descriptor(RuntimeNaming::Unobfuscated, "()Lnet/minecraft/client/Minecraft;"),
+            "()Lnet/minecraft/client/Minecraft;"
         );
     }
 

@@ -27,8 +27,8 @@ fn inject_screen_now_rust(env: &mut JNIEnv, minecraft: &JObject) {
     let screen = env
         .call_method(
             minecraft,
-            "screen",
-            "()Lnet/minecraft/client/gui/screens/Screen;",
+            &crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft","screen").unwrap_or_else(|| "screen".to_string()),
+            &crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/gui/screens/Screen;"),
             &[],
         )
         .ok()
@@ -36,8 +36,8 @@ fn inject_screen_now_rust(env: &mut JNIEnv, minecraft: &JObject) {
         .or_else(|| {
             env.call_method(
                 minecraft,
-                "getScreen",
-                "()Lnet/minecraft/client/gui/screens/Screen;",
+                &crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft","getScreen").unwrap_or_else(|| "getScreen".to_string()),
+                &crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/gui/screens/Screen;"),
                 &[],
             )
             .ok()
@@ -172,8 +172,8 @@ pub fn inject_buttons_rust<'local>(
 
         env.call_method(
             screen,
-            "addRenderableWidget",
-            "(Lnet/minecraft/client/gui/components/AbstractWidget;)Lnet/minecraft/client/gui/components/AbstractWidget;",
+            &crate::obf_map::resolve_method_by_name("net.minecraft.client.gui.components.ContainerEventHandler","addRenderableWidget").unwrap_or_else(|| "addRenderableWidget".to_string()),
+            &crate::obf_map::resolve_descriptor("(Lnet/minecraft/client/gui/components/AbstractWidget;)Lnet/minecraft/client/gui/components/AbstractWidget;"),
             &[JValue::Object(&JObject::from(btn_obj))],
         )
         .map_err(|e| format!("addRenderableWidget: {:?}", e))?;
@@ -181,7 +181,7 @@ pub fn inject_buttons_rust<'local>(
         added += 1;
     }
 
-    let _ = env.call_method(screen, "repositionElements", "()V", &[]);
+    let _ = env.call_method(screen, &crate::obf_map::resolve_method_by_name("net.minecraft.client.gui.screens.Screen","repositionElements").unwrap_or_else(|| "repositionElements".to_string()), "()V", &[]);
     agent_log(&format!(
         "[ScreenButtons] injected {} button(s) on {} ({}x{})",
         added, screen_class, sw, sh
@@ -230,8 +230,10 @@ fn load_class<'local>(
     loader: &JObject<'local>,
     dotted: &str,
 ) -> Result<JClass<'local>, String> {
+    // wave HR (#5 Phase 2): mojmap dotted → 難読 dotted へ解決して loadClass。
+    let resolved = crate::obf_map::resolve_class(dotted).unwrap_or_else(|| dotted.to_string());
     let name = env
-        .new_string(dotted)
+        .new_string(&resolved)
         .map_err(|e| format!("{:?}", e))?;
     let obj = env
         .call_method(
@@ -247,7 +249,10 @@ fn load_class<'local>(
 }
 
 fn call_int(env: &mut JNIEnv, obj: &JObject, method: &str) -> Result<i32, String> {
-    env.call_method(obj, method, "()I", &[])
+    // wave HR (#5 Phase 2): method は mojmap 名 → 実行時名へ解決してから呼出。
+    let resolved = crate::obf_map::resolve_method_by_name("net.minecraft.client.gui.screens.Screen", method)
+        .unwrap_or_else(|| method.to_string());
+    env.call_method(obj, &resolved, "()I", &[])
         .map_err(|e| format!("{}: {:?}", method, e))?
         .i()
         .map_err(|e| format!("{:?}", e))

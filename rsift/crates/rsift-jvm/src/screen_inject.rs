@@ -298,7 +298,14 @@ pub fn url_classloader_for_jar<'local>(
 
 pub fn minecraft_instance<'local>(env: &mut JNIEnv<'local>) -> Option<JObject<'local>> {
     let mc = find_minecraft_class(env)?;
-    env.call_static_method(mc, "getInstance", "()Lnet/minecraft/client/Minecraft;", &[])
+    // wave HR (#5 Phase 2): getInstance メソッド名 + 戻り値 descriptor を難読解決。
+    let m_name = crate::obf_map::resolve_method_by_name(
+        "net.minecraft.client.Minecraft",
+        "getInstance",
+    )
+    .unwrap_or_else(|| "getInstance".to_string());
+    let m_desc = crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/Minecraft;");
+    env.call_static_method(mc, &m_name, &m_desc, &[])
         .ok()
         .and_then(|v| v.l().ok())
 }
@@ -865,7 +872,14 @@ fn loader_from_minecraft_get_instance<'local>(env: &mut JNIEnv<'local>) -> Optio
     let mc = load_class_with_loader(env, &loader, "net.minecraft.client.Minecraft")?;
     clear_pending_exception(env);
     let inst = env
-        .call_static_method(mc, "getInstance", "()Lnet/minecraft/client/Minecraft;", &[])
+        .call_static_method(
+            mc,
+            crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft", "getInstance")
+                .unwrap_or_else(|| "getInstance".to_string())
+                .as_str(),
+            crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/Minecraft;").as_str(),
+            &[],
+        )
         .ok()
         .and_then(|v| v.l().ok())?;
     clear_pending_exception(env);
