@@ -1279,14 +1279,11 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeOnHook(
             }
             // フレーム粒度でもキー状態を同期 (押し始め遅延を tick より短く)。
             super::keybind_bridge::poll_and_sync(&mut env);
-            // wave HR renderer Wave 2: MC描画ループ(flipFrame HEAD)から DX12 present へ接続。
-            // 安全のため opt-in (rsift.render.present=1) — デフォルトは素通りで黒画面化を回避。
-            // 有効時: schedule_dx12_present → ensure_engine(DX12) → nativeOnFlip(hwnd,w,h) → present_frame。
-            // Wave 1 で flipFrame パッチが適用されるようになり、ここが毎フレーム発火する。
-            if std::env::var("rsift.render.present").ok().as_deref() == Some("1") {
-                if let Some(mc) = super::screen_inject::minecraft_instance(&mut env) {
-                    super::render_bridge::schedule_dx12_present(&mut env, &mc);
-                }
+            // wave HR renderer Wave 2→5: MC描画ループ(flipFrame HEAD)から DX12 present へ接続。
+            // デフォルト有効(ゲート解除)。DX12 init 失敗時は ensure_engine が GL パススルーへ
+            // フォールバックするため黒画面化はしない(バニラ描画継続)。
+            if let Some(mc) = super::screen_inject::minecraft_instance(&mut env) {
+                super::render_bridge::schedule_dx12_present(&mut env, &mc);
             }
         }
         "screen_init" => {

@@ -77,6 +77,8 @@ pub fn ensure_engine() {
                     rsift_render::backend::RenderBackendKind::Dx12,
                 );
                 super::glfw_hook::install_glfw_swap_hook();
+                // wave HR renderer Wave 5: DX12 実現 → エンジンへ毎フレーム描画を指示。
+                rsift_opt_gfx::set_live_render(true);
             }
             Err(e) => {
                 // 旧来は失敗時に無言で GL に落ちていた。ラダー契約として fail-loud。

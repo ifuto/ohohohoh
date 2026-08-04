@@ -1266,6 +1266,13 @@ pub fn init_pipeline(game_dir: &Path) {
     let _ = PIPELINE.set(Mutex::new(RsiftRenderPipeline::new(game_dir)));
 }
 
+/// wave HR renderer Wave 5: DX12 present が稼働中はエンジンに毎フレーム描かせる。
+/// ensure_engine が DX12 を実現した時に jvm 側から set_live_render(true) される。
+static LIVE_RENDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub fn set_live_render(on: bool) {
+    LIVE_RENDER.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 pub fn on_render_frame(width: u32, height: u32, delta_time: f32) {
     use std::sync::atomic::{AtomicU32, Ordering};
     static FRAME_COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -1275,7 +1282,7 @@ pub fn on_render_frame(width: u32, height: u32, delta_time: f32) {
     let dx12 = std::env::var("rsift.render.backend")
         .map(|s| s.contains("dx12"))
         .unwrap_or(false);
-    if !rp.native_wgpu_pipeline && !rp.feather.enabled && !dx12 {
+    if !rp.native_wgpu_pipeline && !rp.feather.enabled && !dx12 && !LIVE_RENDER.load(Ordering::Relaxed) {
         return;
     }
 
