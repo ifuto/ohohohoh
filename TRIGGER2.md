@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 32  (wave HR #5 根治 Phase 1+2 完結版ビルド — run 31 は client.txt ハッシュ照合バグ (Mojang 公開値 031a68be… は SHA-1 なのに SHA-256 で照合し必ず不一致→exit=1) を SHA-1 (sha1sum) 照合へ根治。client.txt DL 自体は run 31 で成功済 (11.8MB)。本 run = Phase 1 (クラス名解決基盤) + Phase 2 (メソッド名/descriptor 難読解決・全JNI call site) + client.txt 同梱の完全版を 3 OS ビルド。前回分 = run 31 完全同梱の上に積層)
 - run: 31  (wave HQ+ #5 根治 Phase 1: 難読化クラス解決の基盤配線 + client.txt バンドル化 — (a) obf_map を実行時ロード: deferred_init で CFLH install 前に install_from_dir (client.txt 在→Obfuscated/不在→Unobfuscated 安全落下) (b) load_class_with_loader が mojmap→難読を解決 (c) find_minecraft_class + jvmti_events match_wanted_at_runtime が難読名で jcache 照合 (格納/取得一貫) (d) setup に deploy_client_mappings (client.txt を agent 探索先へ配備・不在は warn) (e) payload が 1.21.11 client.txt (sha256 031a68be… 検証) を取得し各 OS バンドルへ同梱。前回分 = run 30 完全同梱の上に積層。**注意**: 本 run は #5 のクラス名解決基盤のみ。メソッド名/型記述子の難読化解決 (minecraft_instance の getInstance/getWindow/setTitle 等) は Phase 2 = 次 run。実機 CNFE 解消の最終確認は次回 rsift-bootstrap.log 待ち)
 - run: 30  (wave 219 HP-1 修正出荷 — run 29 は rsift-api コンパイル失敗 (log_bridge.rs が crate に無い `log` facade を参照 → 実際の facade は `tracing`・機械確定は DIAG-Linux exit=101 E0433)。fallback を tracing::error! に修正 + コメント整合。他は run 29 と完全同一 = api/jvm unit ゲート含め HP-1 としての初の 3 OS フル検証)
 - run: 29  (wave 219 HP-1: 難読化実行時の名変換層コア対応 — (a) obf_map 新設 (Mojang 公式 client_mappings ProGuard 形式パーサ + mojmap→難読 resolver + RuntimeNaming 両対応。未配線のデッドコード = 本 run では挙動ゼロ変化) (b) P1 根治 = NativeLoader 個別失敗を rsift-api log_bridge 経由で bootstrap ログへ橋渡し (実機 #5 は logger 未初期化で 「mods loaded OK []」の真因 0 行蒸発が発生) (c) payload に cargo test -p rsift-api -p rsift-jvm を 3 OS へ追加 (api/jvm の unit ゲート常設化)。前回分 = run 28 完全同梱の上に積層)
@@ -91,14 +92,18 @@ RB() {
 }
 
 # wave HQ+ (#5 根治): 1.21.11 難読化 mappings (agent が vanilla クラス解決に必須)。
-# 一次配布元 piston-data (CI runner は到達可)。sha256 検証で supply-chain 保証。
-# (jank.systems mappings guide で一次確認: 1.21.11 client_mappings sha1 固定)
+# 一次配布元 piston-data (CI runner は到達可)。**SHA-1** 検証で supply-chain 保証。
+# (jank.systems mappings guide で一次確認: 1.21.11 client_mappings の sha1 = 031a68be…
+#  ※これは Mojang が client_mappings メタデータで公開した SHA-1 (40桁)。SHA-256 ではない)
 CLIENT_URL="https://piston-data.mojang.com/v1/objects/031a68bebf55d824f66d6573d8c752f0e1bf232a/client.txt"
-CLIENT_SHA="031a68bebf55d824f66d6573d8c752f0e1bf232a"
+CLIENT_SHA1="031a68bebf55d824f66d6573d8c752f0e1bf232a"
 RB curl -fL "$CLIENT_URL" -o dist-ci/client.txt
-ACT=$(sha256sum dist-ci/client.txt 2>/dev/null | cut -d' ' -f1 || shasum -a 256 dist-ci/client.txt | cut -d' ' -f1)
-[ "$ACT" = "$CLIENT_SHA" ] || { echo "FATAL: client.txt sha256 mismatch ($ACT != $CLIENT_SHA)"; exit 1; }
-echo "[trigger2] client.txt OK sha256=$ACT ($(wc -c < dist-ci/client.txt) bytes)"
+ACT=$(sha1sum dist-ci/client.txt 2>/dev/null | cut -d' ' -f1 || shasum -a 1 dist-ci/client.txt | cut -d' ' -f1)
+if [ "$ACT" != "$CLIENT_SHA1" ]; then
+  echo "FATAL: client.txt SHA-1 mismatch ($ACT != $CLIENT_SHA1)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  exit 1
+fi
+echo "[trigger2] client.txt OK sha1=$ACT ($(wc -c < dist-ci/client.txt) bytes)"
 
 case "$RUNNER_OS" in
   Windows)
