@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 31  (wave HQ+ #5 根治 Phase 1: 難読化クラス解決の基盤配線 + client.txt バンドル化 — (a) obf_map を実行時ロード: deferred_init で CFLH install 前に install_from_dir (client.txt 在→Obfuscated/不在→Unobfuscated 安全落下) (b) load_class_with_loader が mojmap→難読を解決 (c) find_minecraft_class + jvmti_events match_wanted_at_runtime が難読名で jcache 照合 (格納/取得一貫) (d) setup に deploy_client_mappings (client.txt を agent 探索先へ配備・不在は warn) (e) payload が 1.21.11 client.txt (sha256 031a68be… 検証) を取得し各 OS バンドルへ同梱。前回分 = run 30 完全同梱の上に積層。**注意**: 本 run は #5 のクラス名解決基盤のみ。メソッド名/型記述子の難読化解決 (minecraft_instance の getInstance/getWindow/setTitle 等) は Phase 2 = 次 run。実機 CNFE 解消の最終確認は次回 rsift-bootstrap.log 待ち)
 - run: 30  (wave 219 HP-1 修正出荷 — run 29 は rsift-api コンパイル失敗 (log_bridge.rs が crate に無い `log` facade を参照 → 実際の facade は `tracing`・機械確定は DIAG-Linux exit=101 E0433)。fallback を tracing::error! に修正 + コメント整合。他は run 29 と完全同一 = api/jvm unit ゲート含め HP-1 としての初の 3 OS フル検証)
 - run: 29  (wave 219 HP-1: 難読化実行時の名変換層コア対応 — (a) obf_map 新設 (Mojang 公式 client_mappings ProGuard 形式パーサ + mojmap→難読 resolver + RuntimeNaming 両対応。未配線のデッドコード = 本 run では挙動ゼロ変化) (b) P1 根治 = NativeLoader 個別失敗を rsift-api log_bridge 経由で bootstrap ログへ橋渡し (実機 #5 は logger 未初期化で 「mods loaded OK []」の真因 0 行蒸発が発生) (c) payload に cargo test -p rsift-api -p rsift-jvm を 3 OS へ追加 (api/jvm の unit ゲート常設化)。前回分 = run 28 完全同梱の上に積層)
 - run: 28  (リリース候補スナップショット — commit f98d400 現状態同梱: wave 216 HM (RD24 2,401 チャンク判定版) + wave 217 HN (実体 40,016/編集 7,980 面積比例スケーリング + diff-slot 27→6 縮約 (OOM 根治) + edit_sim_diff 機械配分配線) + BENCH/AUDIT doc 整合修正。bench-ci 緑 (lib 1,492/1,492・36c 決定性 diff 一致) 確認済の上でのリリース化。前回分 = run 27 完全同梱の上に積層)
@@ -89,6 +90,16 @@ RB() {
   tail -3 /tmp/rb.log
 }
 
+# wave HQ+ (#5 根治): 1.21.11 難読化 mappings (agent が vanilla クラス解決に必須)。
+# 一次配布元 piston-data (CI runner は到達可)。sha256 検証で supply-chain 保証。
+# (jank.systems mappings guide で一次確認: 1.21.11 client_mappings sha1 固定)
+CLIENT_URL="https://piston-data.mojang.com/v1/objects/031a68bebf55d824f66d6573d8c752f0e1bf232a/client.txt"
+CLIENT_SHA="031a68bebf55d824f66d6573d8c752f0e1bf232a"
+RB curl -fL "$CLIENT_URL" -o dist-ci/client.txt
+ACT=$(sha256sum dist-ci/client.txt 2>/dev/null | cut -d' ' -f1 || shasum -a 256 dist-ci/client.txt | cut -d' ' -f1)
+[ "$ACT" = "$CLIENT_SHA" ] || { echo "FATAL: client.txt sha256 mismatch ($ACT != $CLIENT_SHA)"; exit 1; }
+echo "[trigger2] client.txt OK sha256=$ACT ($(wc -c < dist-ci/client.txt) bytes)"
+
 case "$RUNNER_OS" in
   Windows)
     RB cargo build -p rsift-setup --release --locked
@@ -105,6 +116,7 @@ case "$RUNNER_OS" in
     cp target/release/rsreplay.dll     dist-ci/windows/rsreplay.dll
     cp target/release/rszoom.dll       dist-ci/windows/rszoom.dll
     cp bootstrap/prebuilt/rsift-bootstrap.jar dist-ci/windows/rsift-bootstrap.jar
+    cp dist-ci/client.txt dist-ci/windows/client.txt
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/windows/README_JA.md
     (cd dist-ci/windows && tar -a -c -f ../rsift-bundle-windows-x64.zip .)
     ;;
@@ -130,6 +142,7 @@ case "$RUNNER_OS" in
       cp "target/$T/release/librsreplay.dylib"   "$APP/MacOS/librsreplay.dylib"
       cp "target/$T/release/librszoom.dylib"     "$APP/MacOS/librszoom.dylib"
       cp "bootstrap/prebuilt/rsift-bootstrap.jar" "$APP/MacOS/rsift-bootstrap.jar"
+      cp dist-ci/client.txt "$APP/MacOS/client.txt"
       cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -163,6 +176,7 @@ PLIST
     cp target/release/librsreplay.so   dist-ci/linux/librsreplay.so
     cp target/release/librszoom.so     dist-ci/linux/librszoom.so
     cp bootstrap/prebuilt/rsift-bootstrap.jar dist-ci/linux/rsift-bootstrap.jar
+    cp dist-ci/client.txt dist-ci/linux/client.txt
     cp docs/user/SETUP_BOOTSTRAPPER_JA.md dist-ci/linux/README_JA.md
     (cd dist-ci/linux && zip -qr ../rsift-bundle-linux-x64.zip .)
     ;;

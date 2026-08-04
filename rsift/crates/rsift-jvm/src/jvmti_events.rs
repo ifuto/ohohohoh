@@ -115,8 +115,11 @@ pub static WANTED_CLASSES: [&str; 6] = [
 static WANTED_CLASS_CACHE: std::sync::Mutex<[usize; 6]> = std::sync::Mutex::new([0; 6]);
 
 /// 内部名→捕捉済み jclass (global ref jobject 値)。未捕捉は None。
+/// wave HR (#5 根治): 引数 internal は**実行時名** (難読化版では難読名)。
+/// find_minecraft_class は obf_map で mojmap→難読を解決した実行時名を渡すため、
+/// ここでも WANTED を mojmap→難読解決して照合する (両者が同一変換で一貫)。
 pub fn wanted_class_raw(internal: &str) -> Option<usize> {
-    let idx = WANTED_CLASSES.iter().position(|c| *c == internal)?;
+    let idx = match_wanted_at_runtime(internal)?;
     let v = WANTED_CLASS_CACHE.lock().map(|g| g[idx]).unwrap_or(0);
     if v == 0 {
         None
@@ -127,6 +130,21 @@ pub fn wanted_class_raw(internal: &str) -> Option<usize> {
 
 fn wanted_class_index(internal: &str) -> Option<usize> {
     WANTED_CLASSES.iter().position(|c| *c == internal)
+}
+
+/// wave HR (#5 根治): 実行時内部名 (難読名) を WANTED (mojmap) へ照合。
+/// 各 WANTED エントリを obf_map で mojmap→難読 internal へ解決し、引数
+/// `incoming_internal` と比較する。obf_map 未 install / Unobfuscated /
+/// map 未収録は unwrap_or で mojmap internal へ落ち = 従来の直接照合と一致。
+/// class_load_event (格納) と wanted_class_raw (取得) の両方が本関数を使うことで
+/// 難読化・非難読化の両モードで格納/取得の index が一貫する。
+fn match_wanted_at_runtime(incoming_internal: &str) -> Option<usize> {
+    WANTED_CLASSES.iter().position(|mojmap_internal| {
+        let dotted = mojmap_internal.replace('/', ".");
+        let resolved = crate::obf_map::resolve_class_internal(&dotted)
+            .unwrap_or_else(|| mojmap_internal.to_string());
+        resolved == incoming_internal
+    })
 }
 
 /// 捕捉済み game loader のグローバル参照 (JNIEnv 上で使う生 jobject 値)。
@@ -236,12 +254,13 @@ unsafe extern "system" fn class_load_event(
         let dealloc: DeallocateFn2 = std::mem::transmute(df);
         let _ = dealloc(jvmti_env, sig as *mut c_uchar);
     }
-    // "Lnet/minecraft/client/Minecraft;" → 内部名
+    // "Lnet/minecraft/client/Minecraft;" → 内部名 (難読化版では難読名)
     let internal = sig_str
         .strip_prefix('L')
         .and_then(|s| s.strip_suffix(';'))
         .unwrap_or(sig_str.as_str());
-    let Some(idx) = wanted_class_index(internal) else {
+    // wave HR (#5 根治): internal は実行時名 (難読名)。WANTED (mojmap) を解決して照合。
+    let Some(idx) = match_wanted_at_runtime(internal) else {
         return;
     };
     let g = if jni_env.is_null() {
@@ -868,6 +887,28 @@ mod tests {
             // 同一プロセスで実 JVM ハーネスが先に走った場合のみあり得る
             // (test 単独実行では必ず None)。
         }
+    }
+
+    /// wave HR (#5 根治): match_wanted_at_runtime は obf_map 未 install 時
+    /// (テスト既定状態) は直接 mojmap 照合へ安全落下 = wanted_class_index と一致。
+    /// obf_map::resolve_class_internal は mode 未確定で None → unwrap_or(mojmap)。
+    /// (Obfuscated モードの解決ロジック自体は obf_map::tests で検証済み。本テストは
+    ///  fallback 一貫性の pin = 未 install で従来挙動が壊れないことの保証。)
+    #[test]
+    fn match_wanted_at_runtime_falls_back_to_direct_when_uninstalled() {
+        // obf_map 未 install (current_mode() = None) → 直接 mojmap 照合と同値。
+        assert_eq!(
+            match_wanted_at_runtime("net/minecraft/client/Minecraft"),
+            Some(0)
+        );
+        assert_eq!(
+            match_wanted_at_runtime("net/minecraft/network/Connection"),
+            wanted_class_index("net/minecraft/network/Connection")
+        );
+        // 非対象・難読名 (未 install なので解決不能) は None。
+        assert!(match_wanted_at_runtime("net/minecraft/client/main/Main").is_none());
+        assert!(match_wanted_at_runtime("java/lang/String").is_none());
+        assert!(match_wanted_at_runtime("gfj").is_none(), "未 install 時は難読名を解決できない (= Some にならない)");
     }
 
     #[test]

@@ -954,7 +954,11 @@ pub fn load_class_with_loader<'local>(
     loader: &JObject<'local>,
     dotted: &str,
 ) -> Option<JClass<'local>> {
-    let name = env.new_string(dotted).ok()?;
+    // wave HR (#5 根治): mojmap dotted → 難読 dotted へ解決してから loadClass。
+    // obf_map 未 install / Unobfuscated / map 未収録はいずれも unwrap_or で
+    // `dotted` (引数そのまま) へ安全落下 = 従来挙動完全保存。
+    let resolved = crate::obf_map::resolve_class(dotted).unwrap_or_else(|| dotted.to_string());
+    let name = env.new_string(&resolved).ok()?;
     let res = env.call_method(
         loader,
         "loadClass",
@@ -967,12 +971,12 @@ pub fn load_class_with_loader<'local>(
         // wave 209 HE: 実機 #5 で同一クラスの CNFE が 250ms 周期で 135 秒
         // (800 行超) 連発しログを埋没させたため、同名は 2 秒に 1 行へ絞る
         // (診断情報は残しつつ可読性を確保。間引きは失敗側のみ)。
-        if should_log_class_failure(dotted) {
+        if should_log_class_failure(&resolved) {
             dump_pending_exception(
                 env,
                 &format!(
-                    "loadClass({}) via game loader — returning None to caller",
-                    dotted
+                    "loadClass({} [from mojmap {}]) via game loader — returning None to caller",
+                    resolved, dotted
                 ),
             );
         } else {
@@ -1004,9 +1008,14 @@ fn should_log_class_failure(dotted: &str) -> bool {
 }
 
 pub fn find_minecraft_class<'local>(env: &mut JNIEnv<'local>) -> Option<JClass<'local>> {
+    // wave HR (#5 根治): mojmap internal → 難読 internal へ解決。
+    // jcache は ClassLoad イベントが**難読名**で格納するため、lookup キーも
+    // 難読 internal でなければならない (未 install/Unobfuscated は mojmap のまま = 従来)。
+    let mc_internal = crate::obf_map::resolve_class_internal("net.minecraft.client.Minecraft")
+        .unwrap_or_else(|| "net/minecraft/client/Minecraft".to_string());
     // wave 209 HE: ClassLoad jcache を最優先 (ローダー非依存 — Prism ラッパーの
     // 子ローダー分離でも確実に届く。実機 #5 の CNFE 永続の根治)。
-    if let Some(raw) = crate::jvmti_events::wanted_class_raw("net/minecraft/client/Minecraft") {
+    if let Some(raw) = crate::jvmti_events::wanted_class_raw(&mc_internal) {
         // SAFETY: raw は ClassLoad コールバック内で NewGlobalRef 済みの生存中 jclass。
         let obj = unsafe { JObject::from_raw(raw as jni::sys::jobject) };
         if let Ok(local) = env.new_local_ref(&obj) {
@@ -1015,13 +1024,14 @@ pub fn find_minecraft_class<'local>(env: &mut JNIEnv<'local>) -> Option<JClass<'
             }
         }
     }
-    if let Ok(c) = env.find_class("net/minecraft/client/Minecraft") {
+    if let Ok(c) = env.find_class(&mc_internal) {
         return Some(c);
     }
     clear_pending_exception(env);
     // Use cached loader only — find_game_class_loader() must not be called from here
     // (minecraft_instance → find_minecraft_class → find_game_class_loader → minecraft_instance).
     let loader = game_class_loader(env)?;
+    // load_class_with_loader が内部で mojmap→難読を解決するため mojmap dotted を渡す。
     load_class_with_loader(env, &loader, "net.minecraft.client.Minecraft")
 }
 

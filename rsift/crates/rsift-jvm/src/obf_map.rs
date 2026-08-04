@@ -349,6 +349,69 @@ pub fn stats() -> Option<(usize, usize, usize)> {
         .map(|m| (m.class_count(), m.method_count(), m.field_count()))
 }
 
+/// `<dir>/client.txt` (Mojang 公式 ProGuard mappings) を読み込み解析し、方向アンカー
+/// 検証済みの ObfMap を返す (wave HR #5 根治基盤)。
+///
+/// - ファイル不在 → `Ok(None)` (呼出側は Unobfuscated mode へ落下 = 従来挙動完全保存)。
+/// - 読取/解析/アンカー不適合 → `Err` (呼出側がログ化のうえ None 扱いへ)。
+///
+/// データ調達は rsift-setup が 1.21.11 client.txt (sha1 `031a68be…`, 11.8MB) を
+/// ユーザー機で取得して本ディレクトリへ配置する (agent 側はネットワーク非依存)。
+pub fn try_load_from_dir(dir: &std::path::Path) -> Result<Option<ObfMap>, String> {
+    let path = dir.join("client.txt");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("obf_map read {:?}: {}", path, e))?;
+    let map = ObfMap::parse(&text).map_err(|e| format!("obf_map parse {:?}: {}", path, e))?;
+    map.require_anchor()
+        .map_err(|e| format!("obf_map anchor {:?}: {}", path, e))?;
+    Ok(Some(map))
+}
+
+/// 起動プローブ: dll_dir の client.txt を読み、モードを確定して install する
+/// (冪等ではなく起動時に 1 度だけ呼ぶ)。戻り値は採用モード (ログ用)。
+/// - client.txt 在 + 解析成功 → Obfuscated モード (map 付き install)
+/// - 不在/失敗 → Unobfuscated モード (map 無し = 従来挙動。エラーはログ)
+///
+/// `install` は MODE.set を 1 度しか許さないため、本関数も 1 度のみ呼出可能
+/// (2 度目は Err — 起動点での単一呼出を前提)。
+pub fn install_from_dir(dir: &std::path::Path) -> Result<RuntimeNaming, String> {
+    match try_load_from_dir(dir) {
+        Ok(Some(map)) => {
+            let (c, mth, f) = (map.class_count(), map.method_count(), map.field_count());
+            install(RuntimeNaming::Obfuscated, Some(map))?;
+            agent_log_obf("obf_map", &format!(
+                "client.txt loaded → Obfuscated mode (classes={c} methods={mth} fields={f})"
+            ));
+            Ok(RuntimeNaming::Obfuscated)
+        }
+        Ok(None) => {
+            install(RuntimeNaming::Unobfuscated, None)?;
+            agent_log_obf("obf_map", &format!(
+                "client.txt absent in {:?} → Unobfuscated mode (mojmap identity, legacy behavior)",
+                dir
+            ));
+            Ok(RuntimeNaming::Unobfuscated)
+        }
+        Err(e) => {
+            // 解析/アンカー失敗は安全側へ落下 (従来挙動) するが理由は必ず残す。
+            install(RuntimeNaming::Unobfuscated, None)?;
+            agent_log_obf("obf_map", &format!(
+                "client.txt load failed ({e}) → falling back to Unobfuscated mode (legacy). FIX: re-run setup to fetch client.txt"
+            ));
+            Ok(RuntimeNaming::Unobfuscated)
+        }
+    }
+}
+
+/// obf_map モジュール内ロガー (agent_log への thin wrapper。循環依存回避のため
+/// 直接 crate::agent_log を呼ぶ — rsift-jvm 内なので安全)。
+fn agent_log_obf(tag: &str, msg: &str) {
+    crate::agent_log::agent_log(&format!("[Rsift] [{}] {}", tag, msg));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,5 +513,37 @@ net.minecraft.client.gui.components.debug.DebugScreenEntryList -> abc:
         assert_eq!(strip_line_numbers("187:187:void init"), "void init");
         assert_eq!(strip_line_numbers("void init"), "void init");
         assert_eq!(strip_line_numbers("4:12:int f"), "int f");
+    }
+
+    /// wave HR: try_load_from_dir — 在/不在/方向不適合の 3 ケース。
+    #[test]
+    fn try_load_from_dir_present_absent_bad() {
+        let dir = std::env::temp_dir().join(format!(
+            "rsift_obf_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // (1) 不在 → Ok(None)
+        assert!(try_load_from_dir(&dir).unwrap().is_none());
+
+        // (2) 在 + 正方向 → Ok(Some) でアンカー検証済
+        std::fs::write(dir.join("client.txt"), FIXTURE).unwrap();
+        let m = try_load_from_dir(&dir).unwrap().expect("Some(map)");
+        assert_eq!(m.class_count(), 3);
+        assert_eq!(
+            m.resolve_class(RuntimeNaming::Obfuscated, "net.minecraft.client.Minecraft")
+                .as_deref(),
+            Some("gfj")
+        );
+
+        // (3) 逆方向ファイル (難読名が左) → Err (アンカー検証拒否)
+        std::fs::write(dir.join("client.txt"), "gfj -> net.minecraft.client.Minecraft:\n").unwrap();
+        assert!(try_load_from_dir(&dir).is_err());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

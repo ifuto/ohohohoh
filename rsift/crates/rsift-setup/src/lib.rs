@@ -71,6 +71,19 @@ pub const BOOTSTRAP_JAR: &str = "rsift-bootstrap.jar";
 /// 破損/スタブ判定の下限サイズ (実物は ~44KB、manifest-only スタブは 152B)。
 pub const BOOTSTRAP_JAR_MIN_SIZE: u64 = 512;
 
+/// wave HR (#5 根治): Mojang 公式 ProGuard mappings (mojmap → 難読名)。
+/// 1.21.11 は実行時難読化のため、agent が vanilla クラスを解決するのに必須。
+/// 配布元 (一次): piston-data.mojang.com の 1.21.11 client_mappings。
+/// agent (obf_map::try_load_from_dir) は `<dll_dir>/client.txt` を探す。
+/// 不在時は agent は Unobfuscated (mojmap 恒等 = 従来挙動) へ安全落下する。
+pub const CLIENT_TXT: &str = "client.txt";
+/// 1.21.11 client_mappings の固定配布 URL と sha1 (jank.systems mappings guide
+/// で一次確認: version_manifest_v2 → 1.21.11.json → client_mappings)。
+pub const CLIENT_TXT_URL_1_21_11: &str =
+    "https://piston-data.mojang.com/v1/objects/031a68bebf55d824f66d6573d8c752f0e1bf232a/client.txt";
+pub const CLIENT_TXT_SHA1_1_21_11: &str = "031a68bebf55d824f66d6573d8c752f0e1bf232a";
+pub const CLIENT_TXT_MIN_SIZE: u64 = 1_000_000;
+
 /// 起動構成として登録する profile / version の識別子 (ユーザ仕様
 /// 「versions に rsift-1.21.11 みたいなフォルダ」)。
 pub const LAUNCHER_PROFILE_ID: &str = "rsift";
@@ -395,6 +408,36 @@ pub fn probe_bootstrap_jar(dir: &Path) -> Result<BootstrapJarState, String> {
         size: bytes.len() as u64,
         sha256: sha256_hex(&bytes),
     }))
+}
+
+/// wave HR (#5 根治): client.txt (ProGuard mappings) を source_dir → dst_dir へ
+/// 配備 (dst = agent の dll_directory と同階層)。source に無い場合は配備せず
+/// warn note を返す (agent は Unobfuscated へ安全落下 = 従来挙動)。
+/// 破損 (小さすぎ) も配備せず warn。戻り値 note は setup ログへ記録される。
+pub fn deploy_client_mappings(source_dir: &Path, dst_dir: &Path) -> Result<String, String> {
+    fs::create_dir_all(dst_dir).map_err(|e| format!("create {}: {e}", dst_dir.display()))?;
+    let src = source_dir.join(CLIENT_TXT);
+    if !src.is_file() {
+        return Ok(format!(
+            "{CLIENT_TXT} not bundled -> agent runs Unobfuscated (legacy mojmap). \
+             FIX: bundle {CLIENT_TXT} (1.21.11 client_mappings) next to setup"
+        ));
+    }
+    let bytes = fs::read(&src).map_err(|e| format!("read {}: {e}", src.display()))?;
+    if (bytes.len() as u64) < CLIENT_TXT_MIN_SIZE {
+        return Ok(format!(
+            "{CLIENT_TXT} bundled but too small ({}B < {}) -> not deployed; agent runs Unobfuscated",
+            bytes.len(),
+            CLIENT_TXT_MIN_SIZE
+        ));
+    }
+    let dst = dst_dir.join(CLIENT_TXT);
+    fs::write(&dst, &bytes).map_err(|e| format!("write {}: {e}", dst.display()))?;
+    Ok(format!(
+        "{CLIENT_TXT} deployed ({}B sha256={})",
+        bytes.len(),
+        sha256_hex(&bytes)
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1503,6 +1546,8 @@ pub fn setup_launcher(
         "{BOOTSTRAP_JAR} sha256={} (Java ブリッジ配置)",
         jar.sha256
     ));
+    // wave HR (#5 根治): client.txt (難読化 mappings) を agent 探索先と同階層へ配備。
+    notes.push(deploy_client_mappings(&source_dir, &version_dir)?);
 
     // 2) version JSON (inheritsFrom + jvm args、本流スキーマ準拠)
     let agent_path = version_dir.join(agent).display().to_string();
@@ -1804,6 +1849,8 @@ pub fn setup_prism(
         "{BOOTSTRAP_JAR} sha256={} (Java ブリッジ配置)",
         jar.sha256
     ));
+    // wave HR (#5 根治): client.txt (難読化 mappings) を agent 探索先と同階層へ配備。
+    notes.push(deploy_client_mappings(&source_dir, &natives_dir)?);
 
     // 2) instance.cfg (InstanceList が読む必須キー InstanceType を必ず書く)
     let cfg_text = concat!(
@@ -2773,6 +2820,37 @@ mod tests {
             other => panic!("有効 jar は Present: {other:?}"),
         }
         let _ = fs::remove_dir_all(&home);
+    }
+
+    /// wave HR (#5 根治): deploy_client_mappings の 在/不在/破損/有効 4 ケース。
+    #[test]
+    fn client_mappings_deploy_states() {
+        let home = tmpdir("clientmap");
+        let src = home.join("src");
+        let dst = home.join("dst");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&dst).unwrap();
+
+        // (1) 不在 → warn note (agent は Unobfuscated へ落下)。dst にファイル無し。
+        let note = deploy_client_mappings(&src, &dst).unwrap();
+        assert!(note.contains("not bundled"), "{note}");
+        assert!(!dst.join(CLIENT_TXT).exists());
+
+        // (2) 破損 (小さすぎ) → warn note。配備されず。
+        fs::write(src.join(CLIENT_TXT), b"# tiny not a mapping").unwrap();
+        let note = deploy_client_mappings(&src, &dst).unwrap();
+        assert!(note.contains("too small"), "{note}");
+        assert!(!dst.join(CLIENT_TXT).exists(), "破損は配備されない");
+
+        // (3) 有効 (下限以上) → 配備 + sha256 note。dst に byte 一致で存在。
+        let mut body = b"# ProGuard mappings (fake)\nnet.minecraft.client.Minecraft -> gfj:\n".to_vec();
+        body.resize(CLIENT_TXT_MIN_SIZE as usize + 100, b' ');
+        fs::write(src.join(CLIENT_TXT), &body).unwrap();
+        let note = deploy_client_mappings(&src, &dst).unwrap();
+        assert!(note.contains("deployed"), "{note}");
+        assert!(note.contains(&sha256_hex(&body)), "{note}");
+        let deployed = fs::read(dst.join(CLIENT_TXT)).unwrap();
+        assert_eq!(deployed, body, "byte 一致配置");
     }
 
     #[test]

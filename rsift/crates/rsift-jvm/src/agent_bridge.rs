@@ -304,6 +304,26 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
             return;
         }
     };
+    // wave HR (#5 根治基盤): CFLH install より**前に** obf_map モードを確定する。
+    // ClassLoad コールバックが難読名で jcache 照合する際に resolve が必要なため、
+    // obf_map は最初の CFLH/ClassLoad 発火前に install 済みでなければならない。
+    // client.txt 不在/失敗は Unobfuscated (mojmap 恒等 = 従来挙動) へ安全落下。
+    // (JNIEnv 不要・dll_dir のみで確定できるため attach ループの外で実行)
+    if let Some(dir) = crate::agent_opts::dll_directory() {
+        match crate::obf_map::install_from_dir(&dir) {
+            Ok(mode) => agent_log_step(
+                "deferred_init",
+                &format!("obf_map mode = {:?}", mode),
+            ),
+            Err(e) => agent_log_err(
+                "deferred_init",
+                &format!("obf_map install_from_dir failed: {} (continuing Unobfuscated)", e),
+            ),
+        }
+    } else {
+        // dll_dir 不明でも安全側へ (Unobfuscated install を試みる)。
+        let _ = crate::obf_map::install_from_dir(std::path::Path::new("."));
+    }
     for attempt in 0..300 {
         match vm.attach_current_thread() {
             Ok(mut env) => {
