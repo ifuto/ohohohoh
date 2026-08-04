@@ -959,11 +959,22 @@ fn native_yes_no_dialog(title: &str, body: &str) -> bool {
     }
     const MB_YESNO: u32 = 0x0000_0004;
     const MB_ICONQUESTION: u32 = 0x0000_0020;
+    const MB_TOPMOST: u32 = 0x0004_0000;
+    const MB_SETFOREGROUND: u32 = 0x0001_0000;
+    const MB_TASKMODAL: u32 = 0x0000_2000;
     const IDYES: i32 = 6;
     let wtext: Vec<u16> = body.encode_utf16().chain(std::iter::once(0)).collect();
     let wcap: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
     // SAFETY: MessageBoxW は入力ポインタを read-only で読む標準 Win32 API。null 終端 UTF-16。
-    let rc = unsafe { MessageBoxW(0, wtext.as_ptr(), wcap.as_ptr(), MB_YESNO | MB_ICONQUESTION) };
+    // MB_TOPMOST|SETFOREGROUND|TASKMODAL: MC 本体より前面に確実に出す (背景スレッド呼出で裏に隠れない)。
+    let rc = unsafe {
+        MessageBoxW(
+            0,
+            wtext.as_ptr(),
+            wcap.as_ptr(),
+            MB_YESNO | MB_ICONQUESTION | MB_TOPMOST | MB_SETFOREGROUND | MB_TASKMODAL,
+        )
+    };
     info!("[modsec] native dialog rc={} (IDYES=6)", rc);
     rc == IDYES
 }
