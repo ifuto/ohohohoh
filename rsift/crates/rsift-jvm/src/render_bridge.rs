@@ -363,13 +363,20 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeOnFlip(
     {
         use windows::Win32::Foundation::HWND;
         let hwnd = HWND(hwnd as *mut _);
+        let w = width.max(0) as u32;
+        let h = height.max(0) as u32;
+        // wave HR renderer Wave 3: present 直前にエンジンへフレーム描画を駆動 (delta は実経過時間)。
+        {
+            use std::sync::OnceLock;
+            use std::time::Instant;
+            static LAST: OnceLock<Instant> = OnceLock::new();
+            let now = Instant::now();
+            let delta = LAST.get().map(|t| now.duration_since(*t).as_secs_f32()).unwrap_or(0.016);
+            let _ = LAST.set(now);
+            rsift_opt_gfx::on_render_frame(w, h, delta);
+        }
         let _ = with_engine_mut(|engine| {
-            let _ = rsift_dx12::ensure_swap_chain(
-                engine,
-                hwnd,
-                width.max(0) as u32,
-                height.max(0) as u32,
-            );
+            let _ = rsift_dx12::ensure_swap_chain(engine, hwnd, w, h);
             if let Some(result) = rsift_opt_gfx::with_gpu_quad_bytes(|quads| {
                 let cb = rsift_opt_gfx::production_frame_constants().map(|c| {
                     rsift_dx12::terrain_pass::TerrainFrameCb {
