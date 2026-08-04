@@ -1,23 +1,23 @@
-== DIAG Windows exit=0 time=2026-08-04T07:59:47Z ==
+== DIAG Windows exit=0 time=2026-08-04T08:40:22Z ==
 -- target/release cdylib 候補 --
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
--rwxr-xr-x 2 runneradmin 197121  6554112 Aug  4 07:51 target/release/rsgraphics.dll
--rwxr-xr-x 2 runneradmin 197121   107008 Aug  4 07:52 target/release/rsift_api.dll
--rwxr-xr-x 2 runneradmin 197121 10678784 Aug  4 07:59 target/release/rsift_jvm.dll
--rwxr-xr-x 2 runneradmin 197121   993792 Aug  4 07:51 target/release/rsreplay.dll
--rwxr-xr-x 2 runneradmin 197121   534016 Aug  4 07:51 target/release/rszoom.dll
+-rwxr-xr-x 2 runneradmin 197121  6554112 Aug  4 08:32 target/release/rsgraphics.dll
+-rwxr-xr-x 2 runneradmin 197121   107008 Aug  4 08:33 target/release/rsift_api.dll
+-rwxr-xr-x 2 runneradmin 197121 10686976 Aug  4 08:40 target/release/rsift_jvm.dll
+-rwxr-xr-x 2 runneradmin 197121   993792 Aug  4 08:32 target/release/rsreplay.dll
+-rwxr-xr-x 2 runneradmin 197121   534016 Aug  4 08:32 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 41772
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 07:59 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 07:44 ..
--rw-r--r-- 1 runneradmin 197121      831 Aug  4 07:59 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 11779287 Aug  4 07:44 client.txt
--rw-r--r-- 1 runneradmin 197121 30976000 Aug  4 07:59 rsift-bundle-windows-x64.zip
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 07:59 selftest-win
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 07:59 windows
+total 41780
+drwxr-xr-x 1 runneradmin 197121        0 Aug  4 08:40 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug  4 08:25 ..
+-rw-r--r-- 1 runneradmin 197121      831 Aug  4 08:40 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 11779287 Aug  4 08:25 client.txt
+-rw-r--r-- 1 runneradmin 197121 30986240 Aug  4 08:40 rsift-bundle-windows-x64.zip
+drwxr-xr-x 1 runneradmin 197121        0 Aug  4 08:40 selftest-win
+drwxr-xr-x 1 runneradmin 197121        0 Aug  4 08:40 windows
 -- selftest result --
 selftest_exit=0
 dist-ci/selftest-win/client.txt
