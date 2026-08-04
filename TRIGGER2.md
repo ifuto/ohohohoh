@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 34  (Windows/macOS の cargo test 失敗を根治 — mod_security::gq_loader_integration が .so 固定で Windows/macOS ローダに拾われず落ちていたのを platform_extension 使用化。cdylib build は元から成功・テスト修正のみ。追加で opt-level=3→1 でビルド時間も更に短縮。前回分 = run 33 完全同梱)
 - run: 33  (CI バンドル高速化 — profile.release の lto=fat/CU=1 を CI のみ env var (CARGO_PROFILE_RELEASE_LTO=false / CODEGEN_UNITS=16) で上書き。run-32 は Windows 17m30s で fat LTO の link.exe 失敗だったのを LTO リンク工程ごと回避し全 OS ビルド時間を半減〜1/3 + Windows link 失敗も根治。Cargo.toml 本番 profile 不変。前回分 = run 32 完全同梱の上に積層)
 - run: 32  (wave HR #5 根治 Phase 1+2 完結版ビルド — run 31 は client.txt ハッシュ照合バグ (Mojang 公開値 031a68be… は SHA-1 なのに SHA-256 で照合し必ず不一致→exit=1) を SHA-1 (sha1sum) 照合へ根治。client.txt DL 自体は run 31 で成功済 (11.8MB)。本 run = Phase 1 (クラス名解決基盤) + Phase 2 (メソッド名/descriptor 難読解決・全JNI call site) + client.txt 同梱の完全版を 3 OS ビルド。前回分 = run 31 完全同梱の上に積層)
 - run: 31  (wave HQ+ #5 根治 Phase 1: 難読化クラス解決の基盤配線 + client.txt バンドル化 — (a) obf_map を実行時ロード: deferred_init で CFLH install 前に install_from_dir (client.txt 在→Obfuscated/不在→Unobfuscated 安全落下) (b) load_class_with_loader が mojmap→難読を解決 (c) find_minecraft_class + jvmti_events match_wanted_at_runtime が難読名で jcache 照合 (格納/取得一貫) (d) setup に deploy_client_mappings (client.txt を agent 探索先へ配備・不在は warn) (e) payload が 1.21.11 client.txt (sha256 031a68be… 検証) を取得し各 OS バンドルへ同梱。前回分 = run 30 完全同梱の上に積層。**注意**: 本 run は #5 のクラス名解決基盤のみ。メソッド名/型記述子の難読化解決 (minecraft_instance の getInstance/getWindow/setTitle 等) は Phase 2 = 次 run。実機 CNFE 解消の最終確認は次回 rsift-bootstrap.log 待ち)
@@ -112,6 +113,7 @@ echo "[trigger2] client.txt OK sha1=$ACT ($(wc -c < dist-ci/client.txt) bytes)"
 # 17m30s 失敗の最有力因) を丸ごと回避 + 全 OS ビルド時間を概ね半減〜1/3。
 export CARGO_PROFILE_RELEASE_LTO=false
 export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+export CARGO_PROFILE_RELEASE_OPT_LEVEL=1
 
 case "$RUNNER_OS" in
   Windows)
