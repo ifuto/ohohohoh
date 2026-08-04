@@ -449,14 +449,27 @@ fn load_single_mod(
                     granted.clone()
                 }
                 crate::mod_security::LoadVerdict::RequireConsent(missing) => {
-                    crate::mod_security::ensure_pending_entry(&outcome, &mod_id);
-                    return Err(format!(
+                    // wave HR: 公式 Mod (プロジェクト同梱の固定3名 = 信頼済み) は
+                    // ユーザー手動同意を要求せず自動承認する。第三者 Mod は従来どおり同意必須。
+                    if OFFICIAL_MOD_IDS.contains(&mod_id.as_str()) {
+                        let auto = outcome.report.capabilities_detected.clone();
+                        info!(
+                            "[modsec] official mod {} auto-approved (trusted) host capabilities: {:?}",
+                            mod_id,
+                            auto.iter().map(|c| c.as_str()).collect::<Vec<_>>()
+                        );
+                        crate::mod_security::SecurityGate::register(&mod_id, auto.clone());
+                        auto
+                    } else {
+                        crate::mod_security::ensure_pending_entry(&outcome, &mod_id);
+                        return Err(format!(
                     "[modsec] {} requires user consent for host capabilities [{}] — approve in {:?} ({})。承認後に再ロードされます",
                     mod_id,
                     missing.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", "),
                     outcome.consent_path,
                     missing.iter().map(|c| c.label_ja()).collect::<Vec<_>>().join(" / ")
                 ));
+                    }
                 }
                 crate::mod_security::LoadVerdict::Deny(reasons) => {
                     error!("[modsec] {} HARD-DENIED: {}", mod_id, reasons.join("; "));

@@ -216,7 +216,10 @@ mod tests {
         std::env::set_current_dir(&cwd).unwrap();
         let got = resolve_mod_dir_with("", Some(&dll), |_| {});
         std::env::set_current_dir(&saved).unwrap();
-        assert_eq!(got, cwd.join("mods"));
+        assert_eq!(
+            std::fs::canonicalize(&got).unwrap_or_else(|_| got.clone()),
+            std::fs::canonicalize(&cwd.join("mods")).unwrap_or_else(|_| cwd.join("mods"))
+        );
         let _ = std::fs::remove_dir_all(&cwd);
         let _ = std::fs::remove_dir_all(&dll);
     }
@@ -248,7 +251,10 @@ mod tests {
         std::env::set_current_dir(&cwd).unwrap();
         let got = resolve_mod_dir_with("", Some(&dll), |_| {});
         std::env::set_current_dir(&saved).unwrap();
-        assert_eq!(got, cwd.join("mods"));
+        assert_eq!(
+            std::fs::canonicalize(&got).unwrap_or_else(|_| got.clone()),
+            std::fs::canonicalize(&cwd.join("mods")).unwrap_or_else(|_| cwd.join("mods"))
+        );
         let _ = std::fs::remove_dir_all(&cwd);
         let _ = std::fs::remove_dir_all(&dll);
     }
