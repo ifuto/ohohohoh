@@ -1,13 +1,13 @@
 FATAL: cargo test -p rsift-api -p rsift-jvm --release --locked (exit=101)
-warning: `rsift-api` (lib test) generated 1 warning (1 duplicate)
-warning: `rsift-jvm` (lib) generated 13 warnings (run `cargo fix --lib -p rsift-jvm` to apply 7 suggestions)
+
 warning: `rsift-jvm` (lib test) generated 12 warnings (12 duplicates)
-    Finished `release` profile [optimized] target(s) in 9m 22s
-     Running unittests src\lib.rs (target\release\deps\rsift_api-a882e22a966b27eb.exe)
+warning: `rsift-jvm` (lib) generated 13 warnings (run `cargo fix --lib -p rsift-jvm` to apply 7 suggestions)
+    Finished `release` profile [optimized] target(s) in 6m 16s
+     Running unittests src\lib.rs (target\release\deps\rsift_api-29a78c9621c97a5c.exe)
 
 running 97 tests
-test adaptive_perf::tests::eco_tier_is_lightest ... ok
 test adaptive_perf::tests::pick_best_gpu_prefers_discrete ... ok
+test adaptive_perf::tests::eco_tier_is_lightest ... ok
 test adaptive_perf::tests::rx7800xt_gets_performance_tier ... ok
 test adaptive_perf::tests::ryzen_7800x3d_profile ... ok
 test advancements::tests::already_granted_no_double_progress ... ok
@@ -57,45 +57,45 @@ test mod_security::tests::gq_consent_store_roundtrip_and_tamper ... ok
 test mod_security::tests::gq_manifest_parse_roundtrip_unknown_rejected ... ok
 test mod_security::tests::gq_pe_benign_imports_clean ... ok
 test mod_security::tests::gq_pe_imports_parse_and_classify ... ok
-test mod_security::tests::gq_loader_integration_deny_precedes_linker ... FAILED
 test mod_security::tests::gq_pe_malformed_no_panic_all_truncations ... ok
-test mod_security::tests::gq_sha256_nist_vectors ... ok
-test mod_security::tests::gq_string_scan_capabilities ... ok
+test mod_security::tests::gq_loader_integration_deny_precedes_linker ... FAILED
 test mod_security::tests::gq_sidecar_path_and_declared_scaffold ... ok
-test native_loader::tests::hf_official_mod_file_names_pin ... ok
+test mod_security::tests::gq_string_scan_capabilities ... ok
+test mod_security::tests::gq_sha256_nist_vectors ... ok
 test mod_security::tests::gq_verdict_lattice_with_consent_store ... ok
-test native_loader::tests::hf_restore_copies_official_mods_when_mods_dir_empty ... ok
+test native_loader::tests::hf_official_mod_file_names_pin ... ok
 test native_loader::tests::hf_restore_fills_missing_only_and_never_overwrites ... ok
+test native_loader::tests::hf_restore_copies_official_mods_when_mods_dir_empty ... ok
 test native_loader::tests::hf_restore_is_idempotent_second_call_is_noop ... ok
 test native_loader::tests::hf_restore_only_copies_fixed_official_names ... ok
 test native_loader::tests::hf_restore_refuses_when_home_equals_mods_dir ... ok
 test native_loader::tests::hf_restore_respects_user_deletion_marker ... ok
-test native_loader::tests::hg_default_restore_source_dirs_order_pin ... ok
 test native_loader::tests::hf_restore_skips_when_home_lacks_official_mods ... ok
+test native_loader::tests::hg_default_restore_source_dirs_order_pin ... ok
 test native_loader::tests::hg_search_empty_when_no_source_has_official ... ok
 test native_loader::tests::hg_search_marker_stops_scan_regardless_of_sources ... ok
 test native_loader::tests::hg_search_falls_back_to_second_source ... ok
-test native_loader::tests::hg_search_prefers_first_available_source ... ok
+test native_loader::tests::hg_search_source_equal_to_mod_dir_does_not_block_fallback ... ok
 test native_loader::tests::hg_vanilla_minecraft_dir_platform_shape_pin ... ok
 test platform::tests::dirty_and_apply_flags ... ok
 test runtime::fov_scale_tests::broken_mod_neutralized_not_contagious ... ok
 test runtime::fov_scale_tests::empty_and_identity_are_1 ... ok
 test runtime::fov_scale_tests::per_mod_and_total_clamps_hold ... ok
 test runtime::fov_scale_tests::product_of_valid_scales ... ok
-test ui_ext::tests::add_button_to_title_only_targets_title ... ok
+test native_loader::tests::hg_search_prefers_first_available_source ... ok
 test ui_ext::tests::class_keys_match_java_suffixes ... ok
+test ui_ext::tests::add_button_to_title_only_targets_title ... ok
 test ui_ext::tests::clear_buttons_for_removes_exact_screen_only ... ok
 test ui_ext::tests::lifecycle_close_fires_close ... ok
 test ui_ext::tests::lifecycle_only_targeted_screen ... ok
 test ui_ext::tests::lifecycle_open_fires_only_open ... ok
 test ui_ext::tests::lifecycle_wildcard_receives_all ... ok
 test ui_ext::tests::multiple_screens_are_independent ... ok
-test native_loader::tests::hg_search_source_equal_to_mod_dir_does_not_block_fallback ... ok
-test worldgen::tests::biome_is_assigned ... ok
 test worldgen::tests::builder_sets_fields ... ok
+test worldgen::tests::biome_is_assigned ... ok
 test worldgen::tests::column_layering_is_correct ... ok
-test worldgen::tests::fbm_in_unit_range ... ok
 test worldgen::tests::custom_surface_block_reflected ... ok
+test worldgen::tests::fbm_in_unit_range ... ok
 test worldgen::tests::generate_dimensions_correct ... ok
 test worldgen::tests::noise_sample_in_unit_range ... ok
 test worldgen::tests::generation_is_deterministic ... ok
@@ -108,7 +108,7 @@ failures:
 
 ---- mod_security::tests::gq_loader_integration_deny_precedes_linker stdout ----
 
-thread 'mod_security::tests::gq_loader_integration_deny_precedes_linker' (6728) panicked at crates\rsift-api\src\mod_security.rs:1555:9:
+thread 'mod_security::tests::gq_loader_integration_deny_precedes_linker' (4300) panicked at crates\rsift-api\src\mod_security.rs:1555:9:
 assertion failed: SecurityGate::granted_set("gqok").is_some()
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
@@ -116,25 +116,25 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 failures:
     mod_security::tests::gq_loader_integration_deny_precedes_linker
 
-test result: FAILED. 96 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+test result: FAILED. 96 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
 error: test failed, to rerun pass `-p rsift-api --lib`
-== DIAG Windows exit=101 time=2026-08-04T06:18:21Z ==
+== DIAG Windows exit=101 time=2026-08-04T06:38:58Z ==
 -- target/release cdylib 候補 --
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
--rwxr-xr-x 2 runneradmin 197121 6315520 Aug  4 06:08 target/release/rsgraphics.dll
--rwxr-xr-x 2 runneradmin 197121  107008 Aug  4 06:09 target/release/rsift_api.dll
--rwxr-xr-x 2 runneradmin 197121 9789952 Aug  4 06:16 target/release/rsift_jvm.dll
--rwxr-xr-x 2 runneradmin 197121 1033728 Aug  4 06:08 target/release/rsreplay.dll
--rwxr-xr-x 2 runneradmin 197121  557056 Aug  4 06:08 target/release/rszoom.dll
+-rwxr-xr-x 2 runneradmin 197121  6821888 Aug  4 06:32 target/release/rsgraphics.dll
+-rwxr-xr-x 2 runneradmin 197121   107008 Aug  4 06:33 target/release/rsift_api.dll
+-rwxr-xr-x 2 runneradmin 197121 10606592 Aug  4 06:38 target/release/rsift_jvm.dll
+-rwxr-xr-x 2 runneradmin 197121  1040384 Aug  4 06:32 target/release/rsreplay.dll
+-rwxr-xr-x 2 runneradmin 197121   209920 Aug  4 06:32 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
 total 11520
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 06:18 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 06:01 ..
--rw-r--r-- 1 runneradmin 197121     8623 Aug  4 06:18 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 11779287 Aug  4 06:01 client.txt
+drwxr-xr-x 1 runneradmin 197121        0 Aug  4 06:38 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug  4 06:26 ..
+-rw-r--r-- 1 runneradmin 197121     8563 Aug  4 06:38 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 11779287 Aug  4 06:26 client.txt
 -- selftest result --
 cat: 'dist-ci/selftest-*/result.txt': No such file or directory
