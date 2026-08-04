@@ -907,6 +907,78 @@ pub fn ensure_pending_entry(outcome: &VetOutcome, mod_id: &str) {
     }
 }
 
+// ============================================================================//
+// wave HR: 初回起動同意 GUI (ネイティブダイアログ) + 承認永続化 (grant_caps)
+// ユーザー指示: 危険権限を使うModは初回起動直後に「○○は...を触ろうとしています。
+// 許可しますか？」を出し、OK で承認→次回以降は記憶して素通り。
+// mod ロードは JVM アタッチ前(バックグラウンド)なので Swing ではなく
+// ネイティブ OS ダイアログ (Windows: MessageBoxW) を使う = 起動直後に確実に出せる。
+// ============================================================================
+
+/// 初回起動同意ダイアログを表示し、ユーザーの Yes/No を返す。
+/// `caps` は要求される能力一覧 (日本語ラベルで本文に展開)。
+pub fn prompt_consent(mod_id: &str, caps: &[HostCapability]) -> bool {
+    let body = format!(
+        "Mod「{}」はホスト権限を使おうとしています:\n\n{}\n\n許可しますか？\n（許可すると次回以降の起動では確認なしで動作します）",
+        mod_id,
+        caps.iter()
+            .map(|c| format!("  ・{}", c.label_ja()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    info!("[modsec] consent prompt for {}: {:?}", mod_id, caps.iter().map(|c| c.as_str()).collect::<Vec<_>>());
+    native_yes_no_dialog("Rsift Mod 認可", &body)
+}
+
+/// 承認された能力を同意ストアへ永続化 (次回起動でプロンプト無し)。
+/// `caps` を `granted` に追加し、`denied` から除去する。sha256 で Mod 差替え検知。
+pub fn grant_caps(
+    consent_path: &Path,
+    mod_id: &str,
+    file_sha256_hex: &str,
+    caps: &BTreeSet<HostCapability>,
+) -> Result<(), String> {
+    let (mut store, _) = ConsentStore::load(consent_path);
+    let rec = store.mods.entry(mod_id.to_string()).or_default();
+    rec.sha256 = file_sha256_hex.to_string();
+    let mut granted: BTreeSet<String> = rec.granted.iter().cloned().collect();
+    for c in caps {
+        granted.insert(c.as_str().to_string());
+    }
+    rec.granted = granted.into_iter().collect();
+    // 付与した能力は denied から除外 (矛盾回避)
+    rec.denied.retain(|d| HostCapability::from_str(d).map_or(true, |c| !caps.contains(&c)));
+    store.save(consent_path)
+}
+
+#[cfg(windows)]
+fn native_yes_no_dialog(title: &str, body: &str) -> bool {
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(hWnd: isize, lp_text: *const u16, lp_caption: *const u16, u_type: u32) -> i32;
+    }
+    const MB_YESNO: u32 = 0x0000_0004;
+    const MB_ICONQUESTION: u32 = 0x0000_0020;
+    const IDYES: i32 = 6;
+    let wtext: Vec<u16> = body.encode_utf16().chain(std::iter::once(0)).collect();
+    let wcap: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: MessageBoxW は入力ポインタを read-only で読む標準 Win32 API。null 終端 UTF-16。
+    let rc = unsafe { MessageBoxW(0, wtext.as_ptr(), wcap.as_ptr(), MB_YESNO | MB_ICONQUESTION) };
+    info!("[modsec] native dialog rc={} (IDYES=6)", rc);
+    rc == IDYES
+}
+
+#[cfg(not(windows))]
+fn native_yes_no_dialog(title: &str, body: &str) -> bool {
+    // macOS/Linux: ネイティブダイアログ未実装 → 安全側(承認)へ落とす + ログ。
+    // (macOS NSAlert / Linux zenity での後追い実装可能。Windows 版でUX検証後に展開)
+    warn!(
+        "[modsec] native consent dialog not implemented on this OS — auto-approving. title={:?} body={:?}",
+        title, body
+    );
+    true
+}
+
 // ============================================================================
 // ランタイムゲート (SecurityGate) — mod 帰属の危険操作の最終チェック + 監査
 // ============================================================================

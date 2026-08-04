@@ -449,26 +449,29 @@ fn load_single_mod(
                     granted.clone()
                 }
                 crate::mod_security::LoadVerdict::RequireConsent(missing) => {
-                    // wave HR: 公式 Mod (プロジェクト同梱の固定3名 = 信頼済み) は
-                    // ユーザー手動同意を要求せず自動承認する。第三者 Mod は従来どおり同意必須。
-                    if OFFICIAL_MOD_IDS.contains(&mod_id.as_str()) {
-                        let auto = outcome.report.capabilities_detected.clone();
-                        info!(
-                            "[modsec] official mod {} auto-approved (trusted) host capabilities: {:?}",
-                            mod_id,
-                            auto.iter().map(|c| c.as_str()).collect::<Vec<_>>()
-                        );
-                        crate::mod_security::SecurityGate::register(&mod_id, auto.clone());
-                        auto
+                    // wave HR: 初回起動同意 GUI — 危険権限を使うMod(公式/第三者問わず)は
+                    // 起動直後にネイティブダイアログで「○○は...を触ろうとしています。許可しますか？」
+                    // を出す。OK→承認を永続化→次回起動は素通り。No→スキップ。
+                    let approved = crate::mod_security::prompt_consent(&mod_id, &missing);
+                    if approved {
+                        let caps = outcome.report.capabilities_detected.clone();
+                        if let Err(e) = crate::mod_security::grant_caps(
+                            &outcome.consent_path,
+                            &mod_id,
+                            &outcome.file_sha256_hex,
+                            &caps,
+                        ) {
+                            warn!("[modsec] grant_caps persist failed for {}: {}", mod_id, e);
+                        }
+                        crate::mod_security::SecurityGate::register(&mod_id, caps.clone());
+                        caps
                     } else {
                         crate::mod_security::ensure_pending_entry(&outcome, &mod_id);
                         return Err(format!(
-                    "[modsec] {} requires user consent for host capabilities [{}] — approve in {:?} ({})。承認後に再ロードされます",
-                    mod_id,
-                    missing.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", "),
-                    outcome.consent_path,
-                    missing.iter().map(|c| c.label_ja()).collect::<Vec<_>>().join(" / ")
-                ));
+                            "[modsec] {} not approved by user (host capabilities [{}] declined)",
+                            mod_id,
+                            missing.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")
+                        ));
                     }
                 }
                 crate::mod_security::LoadVerdict::Deny(reasons) => {
