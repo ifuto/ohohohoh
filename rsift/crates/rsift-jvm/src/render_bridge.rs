@@ -40,10 +40,7 @@ pub fn ensure_engine() {
     let (force, force_reason) = std::env::var("rsift.render.backend")
         .ok()
         .map(|v| rsift_render::backend::parse_force_env(&v))
-        .unwrap_or((
-            rsift_render::backend::ForceMode::Force(rsift_render::backend::RenderBackendKind::GlPassthrough),
-            "env 未指定 → GL パススルー (バニラ描画・DX12差替えは実験中: 同一HWNDでGLと競合し白画面/フリーズするため明示時のみ)",
-        ));
+        .unwrap_or((rsift_render::backend::ForceMode::Auto, "env 未指定 → auto (DX12優先ラダー)"));
     let sel = rsift_render::backend::select(
         &rsift_render::backend::BackendProbe::default(),
         force,
@@ -75,7 +72,10 @@ pub fn ensure_engine() {
         match rsift_dx12::Dx12Engine::create(caps) {
             Ok(engine) => {
                 install_engine(engine);
-                rsift_render::proxy::global_proxy().enable();
+                // wave HS: global_proxy (dx12_active = GL描画/スワップ抑制) は
+                // ここでは有効化しない。スワップチェーン未生成・present未成功の段階で
+                // GLを抑制すると白画面になる (#12)。nativeOnFlip で present が成功して
+                // 初めて有効化する。
                 rsift_render::backend::record_realized_backend(
                     rsift_render::backend::RenderBackendKind::Dx12,
                 );
@@ -383,9 +383,9 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeOnFlip(
             let _ = LAST.set(now);
             rsift_opt_gfx::on_render_frame(w, h, delta);
         }
-        let _ = with_engine_mut(|engine| {
+        let presented_ok = with_engine_mut(|engine| {
             let _ = rsift_dx12::ensure_swap_chain(engine, hwnd, w, h);
-            if let Some(result) = rsift_opt_gfx::with_gpu_quad_bytes(|quads| {
+            let result = match rsift_opt_gfx::with_gpu_quad_bytes(|quads| {
                 let cb = rsift_opt_gfx::production_frame_constants().map(|c| {
                     rsift_dx12::terrain_pass::TerrainFrameCb {
                         view_proj: c.view_proj,
@@ -394,11 +394,24 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeOnFlip(
                 });
                 rsift_dx12::present_frame_with_cb(engine, Some(quads), cb.as_ref())
             }) {
-                let _ = result;
-            } else {
-                let _ = rsift_dx12::present_frame(engine, None);
+                Some(r) => r,
+                None => rsift_dx12::present_frame(engine, None),
+            };
+            result.map(|s| s.presented).unwrap_or(false)
+        })
+        .unwrap_or(false);
+        // wave HS (#12 白画面根治): DX12 present が実際に成功した時だけ GL 描画/スワップ
+        // を抑制 (dx12_active 有効化)。スワップチェーン未生成や present 失敗で GL を抑制
+        // するとバニラ描画も消えて白画面になる。present 成功時のみ GL 抑制 = FPS 向上、
+        // 失敗時は GL 描画継続 = バニラ描画で白画面なし。
+        if presented_ok {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static FIRST_PRESENT_LOGGED: AtomicBool = AtomicBool::new(false);
+            rsift_render::proxy::global_proxy().enable();
+            if !FIRST_PRESENT_LOGGED.swap(true, Ordering::SeqCst) {
+                agent_log("[RsiftRender] DX12 present OK — GL suppression enabled (DX12 owns present, FPS route active)");
             }
-        });
+        }
     }
     }));
 }
