@@ -1360,9 +1360,30 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeOnHook(
             // Packet tap is primary; this is a secondary HEAD marker.
         }
         "render_flip" => {
-            if let Some(rt) = rsift_api::runtime::runtime() {
-                if rt.has_render_handlers() {
-                    rt.dispatch_render(0, 0, 0.016);
+            // wave HS (#10 クラッシュ根治): mod render handler (opt-gfx) 内の panic が
+            // JNI 境界へ unwind すると JVM ごと abort する (実機 #10: cluster_should_draw
+            // の assert で exit -1073740791)。dispatch_render を catch_unwind し、任意の
+            // レンダーパス panic を握り潰して vanilla 描画を継続させる。
+            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if let Some(rt) = rsift_api::runtime::runtime() {
+                    if rt.has_render_handlers() {
+                        rt.dispatch_render(0, 0, 0.016);
+                    }
+                }
+            }))
+            .is_err();
+            if panicked {
+                use std::sync::atomic::{AtomicU64, Ordering as O};
+                static RENDER_PANIC_COUNT: AtomicU64 = AtomicU64::new(0);
+                let n = RENDER_PANIC_COUNT.fetch_add(1, O::Relaxed) + 1;
+                if n <= 3 || n % 600 == 0 {
+                    agent_log_warn(
+                        "render_flip",
+                        &format!(
+                            "dispatch_render panicked (caught, count={}) — vanilla render continues",
+                            n
+                        ),
+                    );
                 }
             }
             // フレーム粒度でもキー状態を同期 (押し始め遅延を tick より短く)。

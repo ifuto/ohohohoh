@@ -348,16 +348,23 @@ pub fn cluster_should_draw(
     proj_factor: f32, // screen_height / (2 * tan(fov/2))
     error_px: f32,
 ) -> bool {
-    assert!(
-        cam_pos.iter().all(|c| c.is_finite())
-            && proj_factor.is_finite()
-            && proj_factor > 0.0
-            && error_px.is_finite()
-            && m.error.is_finite()
-            && m.sphere_center.iter().all(|c| c.is_finite())
-            && m.sphere_radius.is_finite(),
-        "cluster_should_draw 契約違反: 非有限/非正の入力 (NaN の .max マスク経路による静寂な誤カリングを遮断)"
-    );
+    // wave HS (#10 クラッシュ根治): 非有限/非正入力は false (描画しない) へ落とす。
+    // production JNI 経路では panic = Rust unwind が JNI 境界を越えてプロセス abort
+    // (= MC exit -1073740791) になるため、旧 assert! (fail-loud) はゲームをクラッシュ
+    // させていた。起動直後はカメラ/射影行列が未初期化で NaN が入るのが常態。
+    // 早期 return で NaN の .max マスクによる「静寂な常時誤描画」も回避される
+    // (誤描画でなく単に非描画 = 安全)。clusterize 側の有限頂点契約はビルド時経路
+    // (チャンク取り込み) なので render ホットパスとは別。
+    let input_ok = cam_pos.iter().all(|c| c.is_finite())
+        && proj_factor.is_finite()
+        && proj_factor > 0.0
+        && error_px.is_finite()
+        && m.error.is_finite()
+        && m.sphere_center.iter().all(|c| c.is_finite())
+        && m.sphere_radius.is_finite();
+    if !input_ok {
+        return false;
+    }
     let d = dist3(m.sphere_center, cam_pos).max(1.0);
     (m.error * proj_factor) / d < error_px.max(1.0)
 }
@@ -693,9 +700,10 @@ mod strict_tests {
         assert!(cluster_should_draw(&leaf, [0.0, 0.0, 0.0], 100.0, 1.0));
     }
 
-    /// CY-5: 非有限/非正入力は NaN の .max マスク経路ごと入口で遮断。
+    /// CY-5 / wave HS (#10): 非有限/非正入力は panic せず false (安全側) を返す。
+    /// production JNI で panic = ゲームクラッシュのため、契約は graceful に。
     #[test]
-    fn should_draw_rejects_non_finite() {
+    fn should_draw_returns_false_on_non_finite() {
         for (name, cam, proj, eps, err) in [
             ("NaN cam", [f32::NAN, 0.0, 0.0], 100.0, 1.0, 0.5),
             ("proj=0 非正", [10.0, 0.0, 0.0], 0.0, 1.0, 0.5),
@@ -703,23 +711,25 @@ mod strict_tests {
             ("NaN eps", [10.0, 0.0, 0.0], 100.0, f32::NAN, 0.5),
             ("NaN error", [10.0, 0.0, 0.0], 100.0, 1.0, f32::NAN),
         ] {
-            let r = std::panic::catch_unwind(|| {
-                let m = meshlet_at([0.0, 0.0, 0.0], 1.0, err);
-                cluster_should_draw(&m, cam, proj, eps);
-            });
-            assert!(r.is_err(), "{name}: panic 必須 (NaN マスク経路遮断)");
+            let m = meshlet_at([0.0, 0.0, 0.0], 1.0, err);
+            assert!(
+                !cluster_should_draw(&m, cam, proj, eps),
+                "{name}: 非有限/非正入力は false (描画しない)"
+            );
         }
-        // NaN sphere_center / radius も遮断
-        let r = std::panic::catch_unwind(|| {
-            let m = meshlet_at([f32::NAN, 0.0, 0.0], 1.0, 0.5);
-            cluster_should_draw(&m, [10.0, 0.0, 0.0], 100.0, 1.0);
-        });
-        assert!(r.is_err(), "NaN sphere_center は panic 必須");
-        let r = std::panic::catch_unwind(|| {
-            let m = meshlet_at([0.0, 0.0, 0.0], f32::NAN, 0.5);
-            cluster_should_draw(&m, [10.0, 0.0, 0.0], 100.0, 1.0);
-        });
-        assert!(r.is_err(), "NaN sphere_radius は panic 必須");
+        // NaN sphere_center / radius も false
+        assert!(!cluster_should_draw(
+            &meshlet_at([f32::NAN, 0.0, 0.0], 1.0, 0.5),
+            [10.0, 0.0, 0.0],
+            100.0,
+            1.0
+        ));
+        assert!(!cluster_should_draw(
+            &meshlet_at([0.0, 0.0, 0.0], f32::NAN, 0.5),
+            [10.0, 0.0, 0.0],
+            100.0,
+            1.0
+        ));
     }
 
     /// CY-2: coprime step 選定の数学的基礎 (ユークリッド互除法) の基本形ピン。
