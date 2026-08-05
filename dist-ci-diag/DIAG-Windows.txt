@@ -1,32 +1,15 @@
-== DIAG Windows exit=0 time=2026-08-04T10:03:49Z ==
+== DIAG Windows exit=1 time=2026-08-05T01:00:55Z ==
 -- target/release cdylib 候補 --
+ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
--rwxr-xr-x 2 runneradmin 197121  6554112 Aug  4 09:56 target/release/rsgraphics.dll
--rwxr-xr-x 2 runneradmin 197121   107008 Aug  4 09:57 target/release/rsift_api.dll
--rwxr-xr-x 2 runneradmin 197121 11668992 Aug  4 10:03 target/release/rsift_jvm.dll
--rwxr-xr-x 2 runneradmin 197121   993792 Aug  4 09:56 target/release/rsreplay.dll
--rwxr-xr-x 2 runneradmin 197121   534016 Aug  4 09:56 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 42740
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 10:03 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 09:49 ..
--rw-r--r-- 1 runneradmin 197121      831 Aug  4 10:03 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 11779287 Aug  4 09:49 client.txt
--rw-r--r-- 1 runneradmin 197121 31969280 Aug  4 10:03 rsift-bundle-windows-x64.zip
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 10:03 selftest-win
-drwxr-xr-x 1 runneradmin 197121        0 Aug  4 10:03 windows
+total 11509
+drwxr-xr-x 1 runneradmin 197121        0 Aug  5 01:00 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug  5 01:00 ..
+-rw-r--r-- 1 runneradmin 197121      487 Aug  5 01:00 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 11779287 Aug  5 01:00 client.txt
 -- selftest result --
-selftest_exit=0
-dist-ci/selftest-win/client.txt
-dist-ci/selftest-win/README_JA.md
-dist-ci/selftest-win/result.txt
-dist-ci/selftest-win/rsgraphics.dll
-dist-ci/selftest-win/rsift-bootstrap.jar
-dist-ci/selftest-win/rsift-setup.exe
-dist-ci/selftest-win/rsift.dll
-dist-ci/selftest-win/rsift_jvm.dll
-dist-ci/selftest-win/rsift_launch.json
-dist-ci/selftest-win/rsift_setup_log.jsonl
+cat: 'dist-ci/selftest-*/result.txt': No such file or directory
