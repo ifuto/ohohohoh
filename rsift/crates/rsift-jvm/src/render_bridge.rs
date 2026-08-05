@@ -40,7 +40,10 @@ pub fn ensure_engine() {
     let (force, force_reason) = std::env::var("rsift.render.backend")
         .ok()
         .map(|v| rsift_render::backend::parse_force_env(&v))
-        .unwrap_or((rsift_render::backend::ForceMode::Auto, "env 未指定 → auto"));
+        .unwrap_or((
+            rsift_render::backend::ForceMode::Force(rsift_render::backend::RenderBackendKind::GlPassthrough),
+            "env 未指定 → GL パススルー (バニラ描画・DX12差替えは実験中: 同一HWNDでGLと競合し白画面/フリーズするため明示時のみ)",
+        ));
     let sel = rsift_render::backend::select(
         &rsift_render::backend::BackendProbe::default(),
         force,
