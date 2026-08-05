@@ -1061,7 +1061,23 @@ pub fn client_tick(env: &mut JNIEnv) {
     };
     let screen = match screen {
         Some(s) => s,
-        None => return,
+        None => {
+            // wave HS 診断 (#13 Modsボタン不注入): screen getter が null。
+            // どのメソッド名を試したかを1回だけ記録 (obf解決失敗/ambiguous 切り分け用)。
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static SCREEN_GETTER_DIAG: AtomicBool = AtomicBool::new(false);
+            screen_inject::clear_pending_exception(env);
+            if !SCREEN_GETTER_DIAG.swap(true, Ordering::SeqCst) {
+                agent_log_step(
+                    "client_tick",
+                    &format!(
+                        "screen getter returned None — screen_m=\"{}\" getscreen_m=\"{}\" desc=\"{}\" (obf解決失敗/ambiguous が疑われる)",
+                        screen_m, getscreen_m, screen_desc
+                    ),
+                );
+            }
+            return;
+        }
     };
 
     let class_obj = match env.call_method(&screen, "getClass", "()Ljava/lang/Class;", &[]) {
@@ -1372,6 +1388,7 @@ fn register_runtime_method_aliases() {
         ("net/minecraft/world/level/material/FlowingFluid", "tick"),
     ];
     let mut registered = 0usize;
+    let mut details: Vec<String> = Vec::new();
     for (class_internal, mojmap_method) in TARGETS {
         let dotted = class_internal.replace('/', ".");
         match crate::obf_map::resolve_method_by_name(&dotted, mojmap_method) {
@@ -1382,16 +1399,21 @@ fn register_runtime_method_aliases() {
                     &runtime_method,
                 );
                 registered += 1;
+                details.push(format!("{}#{}={}", class_internal, mojmap_method, runtime_method));
             }
-            None => {} // 非難読・または map 未収録 → patcher は mojmap 名へ安全落下
+            None => details.push(format!(
+                "{}#{}=<FAIL: ambiguous(2+ overloads) or not in client.txt>",
+                class_internal, mojmap_method
+            )),
         }
     }
     agent_log_step(
         "obf_method_aliases",
         &format!(
-            "registered {} / {} runtime method aliases (rest fall back to mojmap name)",
+            "registered {} / {} runtime method aliases [{}]",
             registered,
-            TARGETS.len()
+            TARGETS.len(),
+            details.join(", ")
         ),
     );
 }
