@@ -91,6 +91,12 @@ pub static BOOTSTRAP_CLASSPATH_ADDED: AtomicBool = AtomicBool::new(false);
 /// CFLH で捕捉した game loader の global ref (jobject アドレス、0=未捕捉)。
 static CAPTURED_LOADER: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_LOGGED: AtomicBool = AtomicBool::new(false);
+/// wave HS (ログ #8 観測強化): CFLH がパッチ対象クラスへ到達したか・パッチが
+/// 適用されたかをクラス毎 1 回だけ可視化する throttle 集合。
+/// これが無いと「flipFrame/tick の CFLH パッチが当たっているか」が原理上判定不能
+/// (info!/debug! は tracing subscriber 未初期化で虚空へ消える)。agent_log 経由で確実可視化。
+static CFLH_OUTCOME_LOGGED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::OnceLock::new();
 
 // ----------------------------------------------------------------------
 // wave 209 HE: 重要クラスのローダー非依存 jcache
@@ -349,7 +355,30 @@ unsafe extern "system" fn class_file_load_hook(
     }
 
     let slice = std::slice::from_raw_parts(class_data, class_data_len as usize);
-    let Some(patched) = ClassTransformer::on_class_load(&mojmap_name, slice) else {
+    // パッチは毎回(冪等)実行し、結果の可視化だけクラス毎1回に throttle する。
+    let patched = ClassTransformer::on_class_load(&mojmap_name, slice);
+
+    // wave HS 観測: 対象クラス到達 + パッチ結果 (クラス毎1回)。レンダー/ティック
+    // 不発の原因を次ログで決定づける一次情報。
+    let should_log = CFLH_OUTCOME_LOGGED
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+        .lock()
+        .map(|mut g| g.insert(mojmap_name.clone()))
+        .unwrap_or(false);
+    if should_log {
+        match &patched {
+            Some(p) => agent_log(&format!(
+                "[CFLH] PATCHED {} (runtime={}) {} → {} bytes",
+                mojmap_name, class_name, slice.len(), p.len()
+            )),
+            None => agent_log(&format!(
+                "[CFLH] {} (runtime={}) matched target but NOT modified (method name/desc not found or refused) — {} bytes",
+                mojmap_name, class_name, slice.len()
+            )),
+        }
+    }
+
+    let Some(patched) = patched else {
         return;
     };
     if patched.is_empty() || patched.len() == slice.len() && patched.as_slice() == slice {

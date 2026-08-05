@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 45  (ログ #8 根治 2点 + 観測強化: (1) javac --release 21 必須化 — runner 既定 JDK25 が class 69 を吐き MC(Java21) が RsiftScreenHooks 以下全 bootstrap クラスを UnsupportedClassVersionError で拒否 → 11,575 spam + Ui/Mod/PlatformBridge 全ロード失敗していたのを class 65 強制で根治 (生成 class の major=65 を CI で機械検証) (2) CFLH パッチャの flipFrame descriptor を "()V"→""(ワイルドカード) へ — 実シグネチャは (J)V なのに ()V 厳密一致でマッチせず HEAD 注入0 → render_flip が1度も発火せず DX12 チェーン全死していたのを根治 (yarn/mojmap 一次情報で (J)V 確定・flipFrame は RenderSystem 内で一意) (3) CFLH コールバック + nativeOnHook に throttled agent_log 観測追加 — どの対象クラスを CFLH が見てパッチしたか/flipFrame 等の発火を次ログで決定的に可視化。前回分=run 44 完全同梱)
 - run: 44  (javacステップのcd rsift二重バグ修正 — スクリプト冒頭でcd rsift済みなのにさらにcd rsiftして存在しないrsift/rsiftへ移動→set -e即死していた。前回分=run 43完全同梱)
 - run: 43  (Public化後初ビルド — run-42と同内容: 全クラスダンプ+Modsボタン修正+Java obf解決+javac+タイトル定期+spamスロットル。前回分=run 42完全同梱)
 - run: 42  (全クラスダンプ+Modsボタン修正+Java obf解決+javac再コンパイル+タイトル定期+spamスロットル。前回分=run 41完全同梱)
@@ -128,9 +129,15 @@ export CARGO_PROFILE_RELEASE_OPT_LEVEL=1
 # wave HR: bootstrap jar を Java ソースから再コンパイル (Java bridge の obf 解決対応を反映)
 echo "[trigger2] compiling bootstrap jar from sources..."
 # NOTE: already in rsift/ (cd'd at script top) — no extra cd needed
+# wave HS (ログ #8 根治): javac に --release 21 を必須化。MC 1.21.11 は Java 21
+# (class file 65) で動くが、runner 既定の javac が Java 25 (class 69) を吐き、
+# ログ #8 で RsiftScreenHooks ほか全 bootstrap クラスが UnsupportedClassVersionError
+# (class version 69.0, this runtime recognizes up to 65.0) を出して 11,575 件の spam +
+# UiBridge/ModBridge/PlatformBridge 全ロード失敗 = Mods ボタン/プラットフォーム橋渡し全死。
+# --release 21 で class 65 を強制 (JDK 25 javac の CT.sym が 21 を内包するため確実)。
 mkdir -p bootstrap/prebuilt/classes
 find bootstrap/java -name "*.java" > /tmp/rsift_srcs.txt
-javac -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt 2>&1 || {
+javac --release 21 -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt 2>&1 || {
   echo "FATAL: javac failed — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 }
 if [ -d bootstrap/prebuilt/classes/com ]; then
@@ -138,6 +145,19 @@ if [ -d bootstrap/prebuilt/classes/com ]; then
   echo "Created-By: Rsift CI" >> /tmp/rsift_manifest.txt
   (cd bootstrap/prebuilt/classes && jar cfm ../rsift-bootstrap.jar /tmp/rsift_manifest.txt com/)
   echo "[trigger2] bootstrap jar compiled OK ($(wc -c < bootstrap/prebuilt/rsift-bootstrap.jar) bytes)"
+  # wave HS (#8 根治検証): 生成 class の major version を検査。--release 21 が効いて
+  # class 65 (Java21) になっていることを機械保証。69 (Java25) なら MC 1.21.11 で
+  # UnsupportedClassVersionError → 即 FATAL。od が無い環境 (Windows Git Bash 等) は
+  # 静黙スキップ (--release 21 自体が class 65 を構造的に保証しているため二重安全)。
+  VMAJ_HEX=$(od -An -j6 -N2 -tx1 bootstrap/prebuilt/classes/com/rsift/RsiftHooks.class 2>/dev/null | tr -d ' \t\n' || true)
+  echo "[trigger2] bootstrap class major-version (hex) = ${VMAJ_HEX:-unknown} (expect 0041=Java21)"
+  if [ -n "$VMAJ_HEX" ]; then
+    case "$VMAJ_HEX" in
+      0041) echo "[trigger2] bootstrap classes OK (Java21 / class 65)";;
+      0045) echo "FATAL: bootstrap class version is Java25 (class 69) — MC 1.21.11 (Java21) rejects with UnsupportedClassVersionError. --release 21 not effective" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1;;
+      *) echo "[trigger2] WARNING: unexpected bootstrap class version ${VMAJ_HEX} — verify manually (rsift-bootstrap.log on user machine)";;
+    esac
+  fi
 else
   echo "[trigger2] WARNING: javac produced no classes — using prebuilt jar"
 fi

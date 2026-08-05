@@ -1316,6 +1316,28 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftClassTransformer_nativeIsTarge
     }
 }
 
+/// wave HS (ログ #8 観測強化): CFLH パッチ経由で RsiftHooks から呼ばれる各フックの
+/// 発火を可視化する。flipFrame→onRenderFlip→nativeOnHook("render_flip") 等のチェーンが
+/// 実行時に本当に駆動しているかの決定的証拠。スパム抑止: 各フック 1 回目 + 600 回毎。
+fn log_hook_firing(hook: &str) {
+    use std::collections::HashMap;
+    static COUNTS: std::sync::OnceLock<std::sync::Mutex<HashMap<String, u64>>> =
+        std::sync::OnceLock::new();
+    let counts = COUNTS.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+    let n = {
+        let mut g = match counts.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let e = g.entry(hook.to_string()).or_insert(0);
+        *e += 1;
+        *e
+    };
+    if n == 1 || n % 600 == 0 {
+        agent_log(&format!("[hook] {} fired (count={})", hook, n));
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeOnHook(
     mut env: JNIEnv,
@@ -1323,6 +1345,7 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeOnHook(
     name: JString,
 ) {
     let hook: String = env.get_string(&name).map(|s| s.into()).unwrap_or_default();
+    log_hook_firing(&hook);
     match hook.as_str() {
         "client_tick" | "client_run" => {
             rsift_api::mod_dispatch::dispatch_op("client_tick", 0, 0, 0);

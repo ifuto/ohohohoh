@@ -167,7 +167,12 @@ impl BytecodePatcher {
                 ));
             }
             TARGET_RENDER_CLASS => {
-                injects.push(hook_inject_for_redirect("flipFrame", "()V", "onRenderFlip"));
+                // wave HS (renderer #8 根治): RenderSystem.flipFrame の実シグネチャは
+                // (J)V (long window 引数 = mojmap/yarn 一次情報で確定)。旧コードは "()V"
+                // を渡し descriptor 厳密一致でマッチせず → HEAD 注入0 → render_flip が
+                // 1度も発火せず DX12 チェーン全体が死んでいた (ログ #8 で [RsiftRender] 0件)。
+                // ワイルドカード "" にして名前一致で注入 (flipFrame は RenderSystem 内で一意)。
+                injects.push(hook_inject_for_redirect("flipFrame", "", "onRenderFlip"));
             }
             TARGET_MINECRAFT_CLIENT => {
                 injects.push(hook_inject_for_redirect("tick", "", "onClientTickHook"));
