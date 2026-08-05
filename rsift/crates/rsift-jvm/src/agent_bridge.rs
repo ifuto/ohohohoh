@@ -911,7 +911,11 @@ fn maybe_set_window_title(env: &mut JNIEnv, inst: &JObject) {
         Ok(()) => TITLE_MARKER_SET.store(true, Ordering::SeqCst),
         Err(e) => {
             screen_inject::clear_pending_exception(env);
-            agent_log_step("title_marker", &format!("skipped this attempt: {}", e));
+            // wave HS (#9 spam抑制): MC ロード中は instance null で毎tick失敗する。
+            // 失敗ログは 1 回目 + 200 回毎のみ (成功すれば throttle が効くまで数行)。
+            if n == 0 || n % 200 == 0 {
+                agent_log_step("title_marker", &format!("skipped this attempt (tick={}): {}", n, e));
+            }
         }
     }
 }

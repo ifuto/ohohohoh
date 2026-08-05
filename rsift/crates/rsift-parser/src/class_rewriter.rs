@@ -419,6 +419,26 @@ impl ClassRewriter {
                             self.write_u16_at(lp, start);
                             lp += 4;
                         }
+                    } else if (name == "LocalVariableTable" || name == "LocalVariableTypeTable")
+                        && data_off + 2 <= self.data.len()
+                    {
+                        // wave HS (#9 クラッシュ根治): HEAD 注入で全バイトコードが +3
+                        // シフトするため、LVT/LVTT 各エントリの start_pc も +3 しないと
+                        // verifier が "Illegal local variable table length" (ClassFormatError)
+                        // で RenderSystem.flipFrame を拒否 → MC が exit 2 クラッシュしていた (#9)。
+                        // エントリ 10 byte: start_pc(2) length(2) name(2) desc/sig(2) index(2)。
+                        // length は不変 (変数のスコープ長は +3 シフトで変わらない)、
+                        // start_pc のみ +3 (元の命令境界が S→S+3 へ移動)。LineNumberTable と同義。
+                        let n = self.read_u16_at(data_off) as usize;
+                        let mut lp = data_off + 2;
+                        for _ in 0..n {
+                            if lp + 10 > self.data.len() {
+                                break;
+                            }
+                            let start = self.read_u16_at(lp).saturating_add(3);
+                            self.write_u16_at(lp, start);
+                            lp += 10;
+                        }
                     }
                     p = data_off + alen;
                 }
