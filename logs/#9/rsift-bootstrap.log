@@ -1,0 +1,1770 @@
+[0001|t+0ms|ThreadId(1)] ==========================================================================
+[0002|t+1ms|ThreadId(1)] [Rsift] session start: agentpath opts=
+[0003|t+1ms|ThreadId(1)] [Rsift] log file: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\rsift-bootstrap.log"
+[0004|t+1ms|ThreadId(1)] [Rsift] dll directory: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives"
+[0005|t+2ms|ThreadId(1)] [Rsift] bootstrap jar: exists=true size=Some(43992)
+[0006|t+2ms|ThreadId(1)] [Rsift] rsift_jvm.dll: exists=true size=Some(11686400)
+[0007|t+2ms|ThreadId(1)] ==========================================================================
+[0008|t+3ms|ThreadId(1)] [step] Agent_OnLoad — entered
+[0009|t+3ms|ThreadId(1)] [step] Agent_OnLoad — options=""
+[0010|t+3ms|ThreadId(1)] [step] jvmti — Agent_OnLoad: AddToBootstrapClassLoaderSearch rc=0 — RsiftHooks 可視化 (bootstrap CL): C:\Users\Junji\AppData\Roaming\PrismLauncher\instances\rsift\rsift-natives\rsift-bootstrap.jar
+[0011|t+4ms|ThreadId(1)] [step] Agent_OnLoad — bootstrap classpath ensure rc=0
+[0012|t+4ms|ThreadId(1)] [step] Agent_OnLoad — scheduling deferred init thread (mods load in background thread)
+[0013|t+4ms|ThreadId(1)] [step] schedule_deferred_init — from_agentpath=true opts_len=0 agentpath_active=false
+[0014|t+5ms|ThreadId(1)] [step] agentpath — marker written "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\rsift-natives\\.rsift-agentpath-active"
+[0015|t+5ms|ThreadId(1)] [step] schedule_deferred_init — thread spawn OK
+[0016|t+5ms|ThreadId(2)] [step] deferred_init — thread entered
+[0017|t+6ms|ThreadId(1)] [step] Agent_OnLoad — complete — returning 0 to JVM
+[0018|t+6ms|ThreadId(2)] [step] deferred_init — brief wait before JNI (agentpath-only, no javaagent)
+[0019|t+1007ms|ThreadId(2)] [step] deferred_init — pre-JNI wait complete
+[0020|t+1007ms|ThreadId(2)] [step] boot_markers — agentpath=true javaagent=false
+[0021|t+1008ms|ThreadId(2)] [step] deferred_init — loading mods
+[0022|t+1008ms|ThreadId(2)] [step] agent_premain — loading mods args=
+[0023|t+1009ms|ThreadId(2)] [Rsift] mod_dir from game cwd: "C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\.minecraft\\mods"
+[0024|t+1009ms|ThreadId(2)] [step] agent_premain — mod_dir="C:\\Users\\Junji\\AppData\\Roaming\\PrismLauncher\\instances\\rsift\\.minecraft\\mods"
+[0025|t+1010ms|ThreadId(2)] [step] agent_premain — mod candidates (3): ["rsgraphics.dll", "rsreplay.dll", "rszoom.dll"]
+[0026|t+1011ms|ThreadId(2)] [step] agent_premain — official mod restore: all official mods already present
+[0027|t+1012ms|ThreadId(2)] [step] agent_premain — abi table installed v1.21.11
+[0028|t+1014ms|ThreadId(2)] [step] agent_premain — sim runtime ready backend=std_seek cores=8
+[0029|t+1487ms|ThreadId(2)] [step] agent_premain — mods loaded OK: ["rsgraphics", "rsreplay", "rszoom"]
+[0030|t+1487ms|ThreadId(2)] [step] deferred_init — JavaVM::from_raw addr=0x7ff8a2f137b0
+[0031|t+1803ms|ThreadId(2)] [Rsift] [obf_map] client.txt loaded → Obfuscated mode (classes=10291 methods=89557 fields=45679)
+[0032|t+1804ms|ThreadId(2)] [step] deferred_init — obf_map mode = Obfuscated
+[0033|t+1804ms|ThreadId(2)] [step] classloader_probe — attempt 0 attach OK
+[0034|t+1805ms|ThreadId(2)] [step] jvmti — AddCapabilities request all_hook=true early_hook=false redefine=true retransform=true retransform_any=true (potential ∩ desired)
+[0035|t+1805ms|ThreadId(2)] [step] jvmti — AddCapabilities rc=0 (全請求受理)
+[0036|t+1805ms|ThreadId(2)] [step] jvmti — GetCapabilities rc=0 all_hook=true early_hook=false redefine=true retransform=true retransform_any=true
+[0037|t+1805ms|ThreadId(2)] [JVMTI] ClassFileLoadHook + ClassLoad enabled (exact-spec indices)
+[0038|t+1806ms|ThreadId(2)] [step] f3_marker — static spec pre-registered (load-free, reflection-independent): glz#getLines ()Ljava/util/List; (mojmap DebugScreenEntryList#getLines)
+[0039|t+1806ms|ThreadId(2)] [step] deferred_init — JVMTI CFLH install (attached thread, attempt 0) = true
+[0040|t+1806ms|ThreadId(2)] [step] classloader — attempt 0 — game still booting, deferring JNI probes
+[0041|t+1806ms|ThreadId(2)] [step] classloader_probe — attempt 0 — not ready yet
+[0042|t+4582ms|ThreadId(1)] [CFLH] net/minecraft/world/entity/Entity (runtime=cgk) matched target but NOT modified (method name/desc not found or refused) — 106567 bytes
+[0043|t+4597ms|ThreadId(1)] [CFLH] net/minecraft/server/level/ServerLevel (runtime=axf) matched target but NOT modified (method name/desc not found or refused) — 58743 bytes
+[0044|t+5130ms|ThreadId(1)] [CFLH] net/minecraft/world/level/material/FlowingFluid (runtime=fkz) matched target but NOT modified (method name/desc not found or refused) — 14050 bytes
+[0045|t+5550ms|ThreadId(1)] [CFLH] net/minecraft/world/entity/Mob (runtime=chn) matched target but NOT modified (method name/desc not found or refused) — 38522 bytes
+[0046|t+6079ms|ThreadId(1)] [CFLH] net/minecraft/world/level/block/entity/HopperBlockEntity (runtime=emf) matched target but NOT modified (method name/desc not found or refused) — 12215 bytes
+[0047|t+6843ms|ThreadId(2)] [step] classloader_probe — attempt 5 attach OK
+[0048|t+6846ms|ThreadId(2)] [CFLH] net/minecraft/client/Minecraft (runtime=gfj) matched target but NOT modified (method name/desc not found or refused) — 88505 bytes
+[0049|t+6850ms|ThreadId(2)] [JVMTI] wanted class captured at ClassLoad (loader-independent): gfj
+[0050|t+6851ms|ThreadId(2)] [Rsift] game ClassLoader cached
+[0051|t+6851ms|ThreadId(2)] [step] classloader — FOUND via named thread context ClassLoader
+[0052|t+6852ms|ThreadId(2)] [step] classloader_probe — FOUND on attempt 5
+[0053|t+6855ms|ThreadId(2)] [Rsift] RsiftScreenHooks ready (minimal bootstrap)
+[0054|t+6858ms|ThreadId(2)] [Rsift] RsiftPacketTap は同梱 bootstrap jar に未収録のためパケットタップは無効 (継続)
+[0055|t+6858ms|ThreadId(2)] [Rsift] RsiftModBridge loaded
+[0056|t+6860ms|ThreadId(2)] [Rsift] RsiftPlatformBridge loaded
+[0057|t+6862ms|ThreadId(2)] [step] bridge_load — UiBridge=true ModBridge=true
+[0058|t+6866ms|ThreadId(2)] [JVMTI] wanted class captured at ClassLoad (loader-independent): gjm
+[0059|t+6875ms|ThreadId(2)] [CFLH] net/minecraft/world/level/chunk/LevelChunk (runtime=eqq) matched target but NOT modified (method name/desc not found or refused) — 23059 bytes
+[0060|t+6885ms|ThreadId(2)] [JVMTI] game ClassLoader captured via CFLH (first class: net/minecraft/server/MinecraftServer)
+[0061|t+6899ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.client.gui.components.debug.DebugScreenOverlay [from mojmap net.minecraft.client.gui.components.debug.DebugScreenOverlay]) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.client.gui.components.debug.DebugScreenOverlay
+[0062|t+6899ms|ThreadId(2)] [step] f3_marker — no F3-lines method (0-arg, List<String|Component>) found via reflection — F3 marker skipped honestly (window title marker remains)
+[0063|t+6900ms|ThreadId(2)] [CFLH] PATCHED com/mojang/blaze3d/systems/RenderSystem (runtime=com/mojang/blaze3d/systems/RenderSystem) 11688 → 11742 bytes
+[0064|t+6902ms|ThreadId(2)] [CFLH] net/minecraft/client/gui/screens/Screen (runtime=gsb) matched target but NOT modified (method name/desc not found or refused) — 19699 bytes
+[0065|t+6907ms|ThreadId(2)] [JVMTI] wanted class captured at ClassLoad (loader-independent): gsb
+[0066|t+6908ms|ThreadId(2)] [CFLH] net/minecraft/network/Connection (runtime=wu) matched target but NOT modified (method name/desc not found or refused) — 22766 bytes
+[0067|t+6913ms|ThreadId(2)] [JVMTI] wanted class captured at ClassLoad (loader-independent): wu
+[0068|t+6914ms|ThreadId(2)] [warn] jni_exc — loadClass(net.minecraft.world.level.redstone.RedstoneWireBlock [from mojmap net.minecraft.world.level.redstone.RedstoneWireBlock]) via game loader — returning None to caller: java.lang.ClassNotFoundException: net.minecraft.world.level.redstone.RedstoneWireBlock
+[0069|t+6914ms|ThreadId(2)] [warn] jni_exc — retransform sweep: could not obtain jclass for net.minecraft.world.level.redstone.RedstoneWireBlock: java.lang.ClassNotFoundException: net.minecraft.world.level.redstone.RedstoneWireBlock
+[0070|t+6923ms|ThreadId(2)] [step] retransform — RetransformClasses rc=113 (10 of 11 target classes already loaded)
+[0071|t+6982ms|ThreadId(2)] [step] class_dump — 1650 interesting classes loaded (of 9814 total)
+[0072|t+6982ms|ThreadId(2)] [class_dump] [B
+[0073|t+6982ms|ThreadId(2)] [class_dump] [C
+[0074|t+6983ms|ThreadId(2)] [class_dump] [D
+[0075|t+6983ms|ThreadId(2)] [class_dump] [F
+[0076|t+6983ms|ThreadId(2)] [class_dump] [I
+[0077|t+6983ms|ThreadId(2)] [class_dump] [J
+[0078|t+6984ms|ThreadId(2)] [class_dump] [Lbhh;
+[0079|t+6984ms|ThreadId(2)] [class_dump] [Lbhr;
+[0080|t+6984ms|ThreadId(2)] [class_dump] [Lbhz;
+[0081|t+6984ms|ThreadId(2)] [class_dump] [Lcfl;
+[0082|t+6985ms|ThreadId(2)] [class_dump] [Ldkr;
+[0083|t+6985ms|ThreadId(2)] [class_dump] [Ldvt;
+[0084|t+6985ms|ThreadId(2)] [class_dump] [Ldwf;
+[0085|t+6985ms|ThreadId(2)] [class_dump] [Ldwq;
+[0086|t+6986ms|ThreadId(2)] [class_dump] [Leev;
+[0087|t+6986ms|ThreadId(2)] [class_dump] [Legm;
+[0088|t+6987ms|ThreadId(2)] [class_dump] [Leig;
+[0089|t+6987ms|ThreadId(2)] [class_dump] [Lenk;
+[0090|t+6987ms|ThreadId(2)] [class_dump] [Lens;
+[0091|t+6988ms|ThreadId(2)] [class_dump] [Leos;
+[0092|t+6988ms|ThreadId(2)] [class_dump] [Leot;
+[0093|t+6988ms|ThreadId(2)] [class_dump] [Leou;
+[0094|t+6989ms|ThreadId(2)] [class_dump] [Leov;
+[0095|t+6989ms|ThreadId(2)] [class_dump] [Leoy;
+[0096|t+6989ms|ThreadId(2)] [class_dump] [Leoz;
+[0097|t+6990ms|ThreadId(2)] [class_dump] [Lepa;
+[0098|t+6990ms|ThreadId(2)] [class_dump] [Lepb;
+[0099|t+6990ms|ThreadId(2)] [class_dump] [Lepc;
+[0100|t+6991ms|ThreadId(2)] [class_dump] [Lepd;
+[0101|t+6991ms|ThreadId(2)] [class_dump] [Lepe;
+[0102|t+6991ms|ThreadId(2)] [class_dump] [Lepg;
+[0103|t+6991ms|ThreadId(2)] [class_dump] [Lepi;
+[0104|t+6992ms|ThreadId(2)] [class_dump] [Lepj;
+[0105|t+6992ms|ThreadId(2)] [class_dump] [Lepk;
+[0106|t+6992ms|ThreadId(2)] [class_dump] [Lepl;
+[0107|t+6993ms|ThreadId(2)] [class_dump] [Lepm;
+[0108|t+6993ms|ThreadId(2)] [class_dump] [Lepo;
+[0109|t+6993ms|ThreadId(2)] [class_dump] [Lepp;
+[0110|t+6994ms|ThreadId(2)] [class_dump] [Lepq;
+[0111|t+6994ms|ThreadId(2)] [class_dump] [Lepr;
+[0112|t+6994ms|ThreadId(2)] [class_dump] [Leps;
+[0113|t+6995ms|ThreadId(2)] [class_dump] [Lept;
+[0114|t+6995ms|ThreadId(2)] [class_dump] [Lepu;
+[0115|t+6995ms|ThreadId(2)] [class_dump] [Lepv;
+[0116|t+6995ms|ThreadId(2)] [class_dump] [Lf;
+[0117|t+6996ms|ThreadId(2)] [class_dump] [Lflf;
+[0118|t+6996ms|ThreadId(2)] [class_dump] [Lflg;
+[0119|t+6996ms|ThreadId(2)] [class_dump] [Lfug;
+[0120|t+6997ms|ThreadId(2)] [class_dump] [Lh;
+[0121|t+6997ms|ThreadId(2)] [class_dump] [Lip;
+[0122|t+6997ms|ThreadId(2)] [class_dump] [Liz;
+[0123|t+6997ms|ThreadId(2)] [class_dump] [Ljb;
+[0124|t+6998ms|ThreadId(2)] [class_dump] [Ll;
+[0125|t+6998ms|ThreadId(2)] [class_dump] [S
+[0126|t+6998ms|ThreadId(2)] [class_dump] [Z
+[0127|t+6999ms|ThreadId(2)] [class_dump] [[B
+[0128|t+6999ms|ThreadId(2)] [class_dump] [[C
+[0129|t+6999ms|ThreadId(2)] [class_dump] [[I
+[0130|t+6999ms|ThreadId(2)] [class_dump] [[J
+[0131|t+7000ms|ThreadId(2)] [class_dump] [[Lbhh;
+[0132|t+7000ms|ThreadId(2)] [class_dump] [[Lf;
+[0133|t+7000ms|ThreadId(2)] [class_dump] [[Lh;
+[0134|t+7000ms|ThreadId(2)] [class_dump] [[S
+[0135|t+7001ms|ThreadId(2)] [class_dump] [[[C
+[0136|t+7001ms|ThreadId(2)] [class_dump] aa → net.minecraft.WorldVersion
+[0137|t+7001ms|ThreadId(2)] [class_dump] aah → net.minecraft.network.chat.numbers.NumberFormatType
+[0138|t+7001ms|ThreadId(2)] [class_dump] aai → net.minecraft.network.chat.numbers.NumberFormatTypes
+[0139|t+7002ms|ThreadId(2)] [class_dump] aam → net.minecraft.network.codec.ByteBufCodecs
+[0140|t+7002ms|ThreadId(2)] [class_dump] aao → net.minecraft.network.codec.StreamCodec
+[0141|t+7004ms|ThreadId(2)] [class_dump] aap → net.minecraft.network.codec.StreamDecoder
+[0142|t+7005ms|ThreadId(2)] [class_dump] aaq → net.minecraft.network.codec.StreamEncoder
+[0143|t+7005ms|ThreadId(2)] [class_dump] aj → net.minecraft.advancements.CriteriaTriggers
+[0144|t+7006ms|ThreadId(2)] [class_dump] alz → net.minecraft.network.syncher.SyncedDataHolder
+[0145|t+7006ms|ThreadId(2)] [class_dump] am → net.minecraft.advancements.CriterionTrigger
+[0146|t+7006ms|ThreadId(2)] [class_dump] amh → net.minecraft.references.Blocks
+[0147|t+7007ms|ThreadId(2)] [class_dump] ami → net.minecraft.references.Items
+[0148|t+7007ms|ThreadId(2)] [class_dump] aml → net.minecraft.resources.DependantName
+[0149|t+7007ms|ThreadId(2)] [class_dump] amo → net.minecraft.resources.Identifier
+[0150|t+7008ms|ThreadId(2)] [class_dump] amq → net.minecraft.resources.RegistryFileCodec
+[0151|t+7008ms|ThreadId(2)] [class_dump] amr → net.minecraft.resources.RegistryFixedCodec
+[0152|t+7008ms|ThreadId(2)] [class_dump] amt → net.minecraft.resources.ResourceKey
+[0153|t+7009ms|ThreadId(2)] [class_dump] amv → net.minecraft.server.Bootstrap
+[0154|t+7009ms|ThreadId(2)] [class_dump] amy → net.minecraft.server.DebugLoggedPrintStream
+[0155|t+7009ms|ThreadId(2)] [class_dump] ana → net.minecraft.server.LoggedPrintStream
+[0156|t+7009ms|ThreadId(2)] [class_dump] anj → net.minecraft.server.ServerInfo
+[0157|t+7010ms|ThreadId(2)] [class_dump] asm → net.minecraft.server.dialog.DialogTypes
+[0158|t+7010ms|ThreadId(2)] [class_dump] asu → net.minecraft.server.dialog.action.ActionTypes
+[0159|t+7010ms|ThreadId(2)] [class_dump] atb → net.minecraft.server.dialog.body.DialogBodyTypes
+[0160|t+7011ms|ThreadId(2)] [class_dump] ath → net.minecraft.server.dialog.input.InputControlTypes
+[0161|t+7011ms|ThreadId(2)] [class_dump] ats → net.minecraft.server.jsonrpc.IncomingRpcMethod
+[0162|t+7011ms|ThreadId(2)] [class_dump] att → net.minecraft.server.jsonrpc.IncomingRpcMethods
+[0163|t+7012ms|ThreadId(2)] [class_dump] awk → net.minecraft.server.level.ChunkResult
+[0164|t+7012ms|ThreadId(2)] [class_dump] axe → net.minecraft.server.level.ServerEntityGetter
+[0165|t+7012ms|ThreadId(2)] [class_dump] axf → net.minecraft.server.level.ServerLevel
+[0166|t+7012ms|ThreadId(2)] [class_dump] azz → net.minecraft.server.packs.metadata.pack.PackFormat
+[0167|t+7013ms|ThreadId(2)] [class_dump] bbk → net.minecraft.server.permissions.PermissionCheckTypes
+[0168|t+7013ms|ThreadId(2)] [class_dump] bbq → net.minecraft.server.permissions.PermissionTypes
+[0169|t+7013ms|ThreadId(2)] [class_dump] bcz → net.minecraft.sounds.SoundEvent
+[0170|t+7014ms|ThreadId(2)] [class_dump] bda → net.minecraft.sounds.SoundEvents
+[0171|t+7014ms|ThreadId(2)] [class_dump] bel → net.minecraft.util.ARGB
+[0172|t+7014ms|ThreadId(2)] [class_dump] beu → net.minecraft.util.ByIdMap
+[0173|t+7014ms|ThreadId(2)] [class_dump] bex → net.minecraft.util.ColorRGBA
+[0174|t+7015ms|ThreadId(2)] [class_dump] bfm → net.minecraft.util.ExtraCodecs
+[0175|t+7015ms|ThreadId(2)] [class_dump] bfr → net.minecraft.util.FormattedCharSequence
+[0176|t+7015ms|ThreadId(2)] [class_dump] bfs → net.minecraft.util.FormattedCharSink
+[0177|t+7016ms|ThreadId(2)] [class_dump] bfv → net.minecraft.util.GsonHelper
+[0178|t+7016ms|ThreadId(2)] [class_dump] bgh → net.minecraft.util.MemoryReserve
+[0179|t+7016ms|ThreadId(2)] [class_dump] bgj → net.minecraft.util.Mth
+[0180|t+7017ms|ThreadId(2)] [class_dump] bgr → net.minecraft.util.RandomSource
+[0181|t+7017ms|ThreadId(2)] [class_dump] bgt → net.minecraft.util.SegmentedAnglePrecision
+[0182|t+7017ms|ThreadId(2)] [class_dump] bhh → net.minecraft.util.StringRepresentable
+[0183|t+7018ms|ThreadId(2)] [class_dump] bhm → net.minecraft.util.TimeSource
+[0184|t+7018ms|ThreadId(2)] [class_dump] bhr → net.minecraft.util.Unit
+[0185|t+7018ms|ThreadId(2)] [class_dump] bhs → net.minecraft.util.Util
+[0186|t+7018ms|ThreadId(2)] [class_dump] bhz → net.minecraft.util.datafix.DataFixTypes
+[0187|t+7019ms|ThreadId(2)] [class_dump] bia → net.minecraft.util.datafix.DataFixers
+[0188|t+7019ms|ThreadId(2)] [class_dump] bib → net.minecraft.util.datafix.ExtraDataFixUtils
+[0189|t+7020ms|ThreadId(2)] [class_dump] bie → net.minecraft.util.datafix.fixes.AbstractArrowPickupFix
+[0190|t+7020ms|ThreadId(2)] [class_dump] bif → net.minecraft.util.datafix.fixes.AbstractBlockPropertyFix
+[0191|t+7021ms|ThreadId(2)] [class_dump] big → net.minecraft.util.datafix.fixes.AbstractPoiSectionFix
+[0192|t+7021ms|ThreadId(2)] [class_dump] bih → net.minecraft.util.datafix.fixes.AbstractUUIDFix
+[0193|t+7021ms|ThreadId(2)] [class_dump] bii → net.minecraft.util.datafix.fixes.AddFieldFix
+[0194|t+7021ms|ThreadId(2)] [class_dump] bij → net.minecraft.util.datafix.fixes.AddFlagIfNotPresentFix
+[0195|t+7022ms|ThreadId(2)] [class_dump] bik → net.minecraft.util.datafix.fixes.AddNewChoices
+[0196|t+7022ms|ThreadId(2)] [class_dump] bil → net.minecraft.util.datafix.fixes.AdvancementsFix
+[0197|t+7022ms|ThreadId(2)] [class_dump] bim → net.minecraft.util.datafix.fixes.AdvancementsRenameFix
+[0198|t+7023ms|ThreadId(2)] [class_dump] bin → net.minecraft.util.datafix.fixes.AreaEffectCloudDurationScaleFix
+[0199|t+7023ms|ThreadId(2)] [class_dump] bio → net.minecraft.util.datafix.fixes.AreaEffectCloudPotionFix
+[0200|t+7023ms|ThreadId(2)] [class_dump] bip → net.minecraft.util.datafix.fixes.AttributeIdPrefixFix
+[0201|t+7024ms|ThreadId(2)] [class_dump] biq → net.minecraft.util.datafix.fixes.AttributeModifierIdFix
+[0202|t+7024ms|ThreadId(2)] [class_dump] bir → net.minecraft.util.datafix.fixes.AttributesRenameFix
+[0203|t+7024ms|ThreadId(2)] [class_dump] bis → net.minecraft.util.datafix.fixes.AttributesRenameLegacy
+[0204|t+7024ms|ThreadId(2)] [class_dump] bit → net.minecraft.util.datafix.fixes.BannerEntityCustomNameToOverrideComponentFix
+[0205|t+7025ms|ThreadId(2)] [class_dump] biu → net.minecraft.util.datafix.fixes.BannerPatternFormatFix
+[0206|t+7025ms|ThreadId(2)] [class_dump] biv → net.minecraft.util.datafix.fixes.BedItemColorFix
+[0207|t+7025ms|ThreadId(2)] [class_dump] biw → net.minecraft.util.datafix.fixes.BeehiveFieldRenameFix
+[0208|t+7025ms|ThreadId(2)] [class_dump] bix → net.minecraft.util.datafix.fixes.BiomeFix
+[0209|t+7026ms|ThreadId(2)] [class_dump] biy → net.minecraft.util.datafix.fixes.BitStorageAlignFix
+[0210|t+7026ms|ThreadId(2)] [class_dump] biz → net.minecraft.util.datafix.fixes.BlendingDataFix
+[0211|t+7026ms|ThreadId(2)] [class_dump] bja → net.minecraft.util.datafix.fixes.BlendingDataRemoveFromNetherEndFix
+[0212|t+7026ms|ThreadId(2)] [class_dump] bjb → net.minecraft.util.datafix.fixes.BlockEntityBannerColorFix
+[0213|t+7027ms|ThreadId(2)] [class_dump] bjc → net.minecraft.util.datafix.fixes.BlockEntityBlockStateFix
+[0214|t+7027ms|ThreadId(2)] [class_dump] bjd → net.minecraft.util.datafix.fixes.BlockEntityCustomNameToComponentFix
+[0215|t+7027ms|ThreadId(2)] [class_dump] bje → net.minecraft.util.datafix.fixes.BlockEntityFurnaceBurnTimeFix
+[0216|t+7028ms|ThreadId(2)] [class_dump] bjf → net.minecraft.util.datafix.fixes.BlockEntityIdFix
+[0217|t+7028ms|ThreadId(2)] [class_dump] bjg → net.minecraft.util.datafix.fixes.BlockEntityJukeboxFix
+[0218|t+7028ms|ThreadId(2)] [class_dump] bjh → net.minecraft.util.datafix.fixes.BlockEntityKeepPacked
+[0219|t+7028ms|ThreadId(2)] [class_dump] bji → net.minecraft.util.datafix.fixes.BlockEntityRenameFix
+[0220|t+7029ms|ThreadId(2)] [class_dump] bjj → net.minecraft.util.datafix.fixes.BlockEntityShulkerBoxColorFix
+[0221|t+7029ms|ThreadId(2)] [class_dump] bjk → net.minecraft.util.datafix.fixes.BlockEntitySignDoubleSidedEditableTextFix
+[0222|t+7029ms|ThreadId(2)] [class_dump] bjl → net.minecraft.util.datafix.fixes.BlockEntityUUIDFix
+[0223|t+7030ms|ThreadId(2)] [class_dump] bjm → net.minecraft.util.datafix.fixes.BlockNameFlatteningFix
+[0224|t+7030ms|ThreadId(2)] [class_dump] bjn → net.minecraft.util.datafix.fixes.BlockPosFormatAndRenamesFix
+[0225|t+7030ms|ThreadId(2)] [class_dump] bjo → net.minecraft.util.datafix.fixes.BlockPropertyRenameAndFix
+[0226|t+7030ms|ThreadId(2)] [class_dump] bjp → net.minecraft.util.datafix.fixes.BlockRenameFix
+[0227|t+7031ms|ThreadId(2)] [class_dump] bjr → net.minecraft.util.datafix.fixes.BlockStateStructureTemplateFix
+[0228|t+7031ms|ThreadId(2)] [class_dump] bjs → net.minecraft.util.datafix.fixes.BoatSplitFix
+[0229|t+7031ms|ThreadId(2)] [class_dump] bjt → net.minecraft.util.datafix.fixes.CarvingStepRemoveFix
+[0230|t+7032ms|ThreadId(2)] [class_dump] bju → net.minecraft.util.datafix.fixes.CatTypeFix
+[0231|t+7032ms|ThreadId(2)] [class_dump] bjv → net.minecraft.util.datafix.fixes.CauldronRenameFix
+[0232|t+7033ms|ThreadId(2)] [class_dump] bjw → net.minecraft.util.datafix.fixes.CavesAndCliffsRenames
+[0233|t+7033ms|ThreadId(2)] [class_dump] bjx → net.minecraft.util.datafix.fixes.ChestedHorsesInventoryZeroIndexingFix
+[0234|t+7033ms|ThreadId(2)] [class_dump] bjy → net.minecraft.util.datafix.fixes.ChunkBedBlockEntityInjecterFix
+[0235|t+7034ms|ThreadId(2)] [class_dump] bjz → net.minecraft.util.datafix.fixes.ChunkBiomeFix
+[0236|t+7034ms|ThreadId(2)] [class_dump] bka → net.minecraft.util.datafix.fixes.ChunkDeleteIgnoredLightDataFix
+[0237|t+7034ms|ThreadId(2)] [class_dump] bkb → net.minecraft.util.datafix.fixes.ChunkDeleteLightFix
+[0238|t+7035ms|ThreadId(2)] [class_dump] bkc → net.minecraft.util.datafix.fixes.ChunkHeightAndBiomeFix
+[0239|t+7035ms|ThreadId(2)] [class_dump] bkd → net.minecraft.util.datafix.fixes.ChunkLightRemoveFix
+[0240|t+7035ms|ThreadId(2)] [class_dump] bke → net.minecraft.util.datafix.fixes.ChunkPalettedStorageFix
+[0241|t+7036ms|ThreadId(2)] [class_dump] bkf → net.minecraft.util.datafix.fixes.ChunkProtoTickListFix
+[0242|t+7040ms|ThreadId(2)] [class_dump] bkg → net.minecraft.util.datafix.fixes.ChunkRenamesFix
+[0243|t+7041ms|ThreadId(2)] [class_dump] bkh → net.minecraft.util.datafix.fixes.ChunkStatusFix
+[0244|t+7041ms|ThreadId(2)] [class_dump] bki → net.minecraft.util.datafix.fixes.ChunkStatusFix2
+[0245|t+7041ms|ThreadId(2)] [class_dump] bkj → net.minecraft.util.datafix.fixes.ChunkStructuresTemplateRenameFix
+[0246|t+7042ms|ThreadId(2)] [class_dump] bkk → net.minecraft.util.datafix.fixes.ChunkTicketUnpackPosFix
+[0247|t+7042ms|ThreadId(2)] [class_dump] bkl → net.minecraft.util.datafix.fixes.ChunkToProtochunkFix
+[0248|t+7042ms|ThreadId(2)] [class_dump] bkm → net.minecraft.util.datafix.fixes.ColorlessShulkerEntityFix
+[0249|t+7043ms|ThreadId(2)] [class_dump] bkn → net.minecraft.util.datafix.fixes.ContainerBlockEntityLockPredicateFix
+[0250|t+7043ms|ThreadId(2)] [class_dump] bko → net.minecraft.util.datafix.fixes.CopperGolemWeatherStateFix
+[0251|t+7043ms|ThreadId(2)] [class_dump] bkp → net.minecraft.util.datafix.fixes.CriteriaRenameFix
+[0252|t+7044ms|ThreadId(2)] [class_dump] bkq → net.minecraft.util.datafix.fixes.CustomModelDataExpandFix
+[0253|t+7044ms|ThreadId(2)] [class_dump] bkr → net.minecraft.util.datafix.fixes.DataComponentRemainderFix
+[0254|t+7044ms|ThreadId(2)] [class_dump] bks → net.minecraft.util.datafix.fixes.DebugProfileOverlayReferenceFix
+[0255|t+7044ms|ThreadId(2)] [class_dump] bkt → net.minecraft.util.datafix.fixes.DecoratedPotFieldRenameFix
+[0256|t+7045ms|ThreadId(2)] [class_dump] bku → net.minecraft.util.datafix.fixes.DropChancesFormatFix
+[0257|t+7045ms|ThreadId(2)] [class_dump] bkv → net.minecraft.util.datafix.fixes.DropInvalidSignDataFix
+[0258|t+7046ms|ThreadId(2)] [class_dump] bkw → net.minecraft.util.datafix.fixes.DyeItemRenameFix
+[0259|t+7046ms|ThreadId(2)] [class_dump] bkx → net.minecraft.util.datafix.fixes.EffectDurationFix
+[0260|t+7047ms|ThreadId(2)] [class_dump] bky → net.minecraft.util.datafix.fixes.EmptyItemInHotbarFix
+[0261|t+7047ms|ThreadId(2)] [class_dump] bkz → net.minecraft.util.datafix.fixes.EmptyItemInVillagerTradeFix
+[0262|t+7047ms|ThreadId(2)] [class_dump] bla → net.minecraft.util.datafix.fixes.EntityArmorStandSilentFix
+[0263|t+7048ms|ThreadId(2)] [class_dump] blb → net.minecraft.util.datafix.fixes.EntityAttributeBaseValueFix
+[0264|t+7048ms|ThreadId(2)] [class_dump] blc → net.minecraft.util.datafix.fixes.EntityBlockStateFix
+[0265|t+7048ms|ThreadId(2)] [class_dump] bld → net.minecraft.util.datafix.fixes.EntityBrushableBlockFieldsRenameFix
+[0266|t+7049ms|ThreadId(2)] [class_dump] ble → net.minecraft.util.datafix.fixes.EntityCatSplitFix
+[0267|t+7049ms|ThreadId(2)] [class_dump] blf → net.minecraft.util.datafix.fixes.EntityCodSalmonFix
+[0268|t+7049ms|ThreadId(2)] [class_dump] blg → net.minecraft.util.datafix.fixes.EntityCustomNameToComponentFix
+[0269|t+7050ms|ThreadId(2)] [class_dump] blh → net.minecraft.util.datafix.fixes.EntityElderGuardianSplitFix
+[0270|t+7050ms|ThreadId(2)] [class_dump] bli → net.minecraft.util.datafix.fixes.EntityEquipmentToArmorAndHandFix
+[0271|t+7051ms|ThreadId(2)] [class_dump] blj → net.minecraft.util.datafix.fixes.EntityFallDistanceFloatToDoubleFix
+[0272|t+7051ms|ThreadId(2)] [class_dump] blk → net.minecraft.util.datafix.fixes.EntityFieldsRenameFix
+[0273|t+7051ms|ThreadId(2)] [class_dump] bll → net.minecraft.util.datafix.fixes.EntityGoatMissingStateFix
+[0274|t+7052ms|ThreadId(2)] [class_dump] blm → net.minecraft.util.datafix.fixes.EntityHealthFix
+[0275|t+7052ms|ThreadId(2)] [class_dump] bln → net.minecraft.util.datafix.fixes.EntityHorseSaddleFix
+[0276|t+7053ms|ThreadId(2)] [class_dump] blo → net.minecraft.util.datafix.fixes.EntityHorseSplitFix
+[0277|t+7053ms|ThreadId(2)] [class_dump] blp → net.minecraft.util.datafix.fixes.EntityIdFix
+[0278|t+7054ms|ThreadId(2)] [class_dump] blq → net.minecraft.util.datafix.fixes.EntityItemFrameDirectionFix
+[0279|t+7054ms|ThreadId(2)] [class_dump] blr → net.minecraft.util.datafix.fixes.EntityMinecartIdentifiersFix
+[0280|t+7054ms|ThreadId(2)] [class_dump] bls → net.minecraft.util.datafix.fixes.EntityPaintingItemFrameDirectionFix
+[0281|t+7055ms|ThreadId(2)] [class_dump] blt → net.minecraft.util.datafix.fixes.EntityPaintingMotiveFix
+[0282|t+7055ms|ThreadId(2)] [class_dump] blu → net.minecraft.util.datafix.fixes.EntityProjectileOwnerFix
+[0283|t+7055ms|ThreadId(2)] [class_dump] blv → net.minecraft.util.datafix.fixes.EntityPufferfishRenameFix
+[0284|t+7056ms|ThreadId(2)] [class_dump] blw → net.minecraft.util.datafix.fixes.EntityRavagerRenameFix
+[0285|t+7056ms|ThreadId(2)] [class_dump] blx → net.minecraft.util.datafix.fixes.EntityRedundantChanceTagsFix
+[0286|t+7056ms|ThreadId(2)] [class_dump] bly → net.minecraft.util.datafix.fixes.EntityRenameFix
+[0287|t+7057ms|ThreadId(2)] [class_dump] blz → net.minecraft.util.datafix.fixes.EntityRidingToPassengersFix
+[0288|t+7057ms|ThreadId(2)] [class_dump] bma → net.minecraft.util.datafix.fixes.EntitySalmonSizeFix
+[0289|t+7057ms|ThreadId(2)] [class_dump] bmb → net.minecraft.util.datafix.fixes.EntityShulkerColorFix
+[0290|t+7058ms|ThreadId(2)] [class_dump] bmc → net.minecraft.util.datafix.fixes.EntityShulkerRotationFix
+[0291|t+7058ms|ThreadId(2)] [class_dump] bmd → net.minecraft.util.datafix.fixes.EntitySkeletonSplitFix
+[0292|t+7058ms|ThreadId(2)] [class_dump] bme → net.minecraft.util.datafix.fixes.EntitySpawnerItemVariantComponentFix
+[0293|t+7059ms|ThreadId(2)] [class_dump] bmf → net.minecraft.util.datafix.fixes.EntityStringUuidFix
+[0294|t+7059ms|ThreadId(2)] [class_dump] bmg → net.minecraft.util.datafix.fixes.EntityTheRenameningFix
+[0295|t+7059ms|ThreadId(2)] [class_dump] bmh → net.minecraft.util.datafix.fixes.EntityTippedArrowFix
+[0296|t+7060ms|ThreadId(2)] [class_dump] bmi → net.minecraft.util.datafix.fixes.EntityUUIDFix
+[0297|t+7060ms|ThreadId(2)] [class_dump] bmj → net.minecraft.util.datafix.fixes.EntityVariantFix
+[0298|t+7060ms|ThreadId(2)] [class_dump] bmk → net.minecraft.util.datafix.fixes.EntityWolfColorFix
+[0299|t+7060ms|ThreadId(2)] [class_dump] bml → net.minecraft.util.datafix.fixes.EntityZombieSplitFix
+[0300|t+7061ms|ThreadId(2)] [class_dump] bmm → net.minecraft.util.datafix.fixes.EntityZombieVillagerTypeFix
+[0301|t+7061ms|ThreadId(2)] [class_dump] bmn → net.minecraft.util.datafix.fixes.EntityZombifiedPiglinRenameFix
+[0302|t+7061ms|ThreadId(2)] [class_dump] bmo → net.minecraft.util.datafix.fixes.EquipmentFormatFix
+[0303|t+7061ms|ThreadId(2)] [class_dump] bmp → net.minecraft.util.datafix.fixes.EquippableAssetRenameFix
+[0304|t+7062ms|ThreadId(2)] [class_dump] bmq → net.minecraft.util.datafix.fixes.FeatureFlagRemoveFix
+[0305|t+7062ms|ThreadId(2)] [class_dump] bmr → net.minecraft.util.datafix.fixes.FilteredBooksFix
+[0306|t+7062ms|ThreadId(2)] [class_dump] bms → net.minecraft.util.datafix.fixes.FilteredSignsFix
+[0307|t+7063ms|ThreadId(2)] [class_dump] bmt → net.minecraft.util.datafix.fixes.FireResistantToDamageResistantComponentFix
+[0308|t+7064ms|ThreadId(2)] [class_dump] bmu → net.minecraft.util.datafix.fixes.FixProjectileStoredItem
+[0309|t+7064ms|ThreadId(2)] [class_dump] bmv → net.minecraft.util.datafix.fixes.FixWolfHealth
+[0310|t+7064ms|ThreadId(2)] [class_dump] bmw → net.minecraft.util.datafix.fixes.FoodToConsumableFix
+[0311|t+7065ms|ThreadId(2)] [class_dump] bmx → net.minecraft.util.datafix.fixes.ForcePoiRebuild
+[0312|t+7065ms|ThreadId(2)] [class_dump] bmy → net.minecraft.util.datafix.fixes.ForcedChunkToTicketFix
+[0313|t+7065ms|ThreadId(2)] [class_dump] bmz → net.minecraft.util.datafix.fixes.FurnaceRecipeFix
+[0314|t+7065ms|ThreadId(2)] [class_dump] bna → net.minecraft.util.datafix.fixes.GameRuleRegistryFix
+[0315|t+7066ms|ThreadId(2)] [class_dump] bnb → net.minecraft.util.datafix.fixes.GoatHornIdFix
+[0316|t+7066ms|ThreadId(2)] [class_dump] bnc → net.minecraft.util.datafix.fixes.GossipUUIDFix
+[0317|t+7066ms|ThreadId(2)] [class_dump] bnd → net.minecraft.util.datafix.fixes.HeightmapRenamingFix
+[0318|t+7067ms|ThreadId(2)] [class_dump] bne → net.minecraft.util.datafix.fixes.HorseBodyArmorItemFix
+[0319|t+7067ms|ThreadId(2)] [class_dump] bnf → net.minecraft.util.datafix.fixes.IglooMetadataRemovalFix
+[0320|t+7067ms|ThreadId(2)] [class_dump] bng → net.minecraft.util.datafix.fixes.InlineBlockPosFormatFix
+[0321|t+7068ms|ThreadId(2)] [class_dump] bnh → net.minecraft.util.datafix.fixes.InvalidBlockEntityLockFix
+[0322|t+7068ms|ThreadId(2)] [class_dump] bni → net.minecraft.util.datafix.fixes.InvalidLockComponentFix
+[0323|t+7068ms|ThreadId(2)] [class_dump] bnj → net.minecraft.util.datafix.fixes.ItemBannerColorFix
+[0324|t+7069ms|ThreadId(2)] [class_dump] bnk → net.minecraft.util.datafix.fixes.ItemCustomNameToComponentFix
+[0325|t+7074ms|ThreadId(2)] [class_dump] bnl → net.minecraft.util.datafix.fixes.ItemIdFix
+[0326|t+7075ms|ThreadId(2)] [class_dump] bnm → net.minecraft.util.datafix.fixes.ItemLoreFix
+[0327|t+7075ms|ThreadId(2)] [class_dump] bnn → net.minecraft.util.datafix.fixes.ItemPotionFix
+[0328|t+7075ms|ThreadId(2)] [class_dump] bno → net.minecraft.util.datafix.fixes.ItemRenameFix
+[0329|t+7075ms|ThreadId(2)] [class_dump] bnp → net.minecraft.util.datafix.fixes.ItemShulkerBoxColorFix
+[0330|t+7076ms|ThreadId(2)] [class_dump] bnq → net.minecraft.util.datafix.fixes.ItemSpawnEggFix
+[0331|t+7076ms|ThreadId(2)] [class_dump] bnr → net.minecraft.util.datafix.fixes.ItemStackComponentizationFix
+[0332|t+7076ms|ThreadId(2)] [class_dump] bns → net.minecraft.util.datafix.fixes.ItemStackCustomNameToOverrideComponentFix
+[0333|t+7076ms|ThreadId(2)] [class_dump] bnt → net.minecraft.util.datafix.fixes.ItemStackEnchantmentNamesFix
+[0334|t+7077ms|ThreadId(2)] [class_dump] bnu → net.minecraft.util.datafix.fixes.ItemStackMapIdFix
+[0335|t+7077ms|ThreadId(2)] [class_dump] bnv → net.minecraft.util.datafix.fixes.ItemStackSpawnEggFix
+[0336|t+7077ms|ThreadId(2)] [class_dump] bnw → net.minecraft.util.datafix.fixes.ItemStackTagFix
+[0337|t+7077ms|ThreadId(2)] [class_dump] bnx → net.minecraft.util.datafix.fixes.ItemStackTagRemainderFix
+[0338|t+7078ms|ThreadId(2)] [class_dump] bny → net.minecraft.util.datafix.fixes.ItemStackTheFlatteningFix
+[0339|t+7078ms|ThreadId(2)] [class_dump] bnz → net.minecraft.util.datafix.fixes.ItemStackUUIDFix
+[0340|t+7078ms|ThreadId(2)] [class_dump] boa → net.minecraft.util.datafix.fixes.ItemWaterPotionFix
+[0341|t+7078ms|ThreadId(2)] [class_dump] bob → net.minecraft.util.datafix.fixes.JigsawPropertiesFix
+[0342|t+7078ms|ThreadId(2)] [class_dump] boc → net.minecraft.util.datafix.fixes.JigsawRotationFix
+[0343|t+7079ms|ThreadId(2)] [class_dump] bod → net.minecraft.util.datafix.fixes.JukeboxTicksSinceSongStartedFix
+[0344|t+7079ms|ThreadId(2)] [class_dump] boe → net.minecraft.util.datafix.fixes.LeavesFix
+[0345|t+7079ms|ThreadId(2)] [class_dump] bof → net.minecraft.util.datafix.fixes.LegacyDimensionIdFix
+[0346|t+7080ms|ThreadId(2)] [class_dump] bog → net.minecraft.util.datafix.fixes.LegacyDragonFightFix
+[0347|t+7080ms|ThreadId(2)] [class_dump] boh → net.minecraft.util.datafix.fixes.LegacyHoverEventFix
+[0348|t+7080ms|ThreadId(2)] [class_dump] boi → net.minecraft.util.datafix.fixes.LegacyWorldBorderFix
+[0349|t+7080ms|ThreadId(2)] [class_dump] boj → net.minecraft.util.datafix.fixes.LevelDataGeneratorOptionsFix
+[0350|t+7080ms|ThreadId(2)] [class_dump] bok → net.minecraft.util.datafix.fixes.LevelFlatGeneratorInfoFix
+[0351|t+7081ms|ThreadId(2)] [class_dump] bol → net.minecraft.util.datafix.fixes.LevelLegacyWorldGenSettingsFix
+[0352|t+7081ms|ThreadId(2)] [class_dump] bom → net.minecraft.util.datafix.fixes.LevelUUIDFix
+[0353|t+7081ms|ThreadId(2)] [class_dump] bon → net.minecraft.util.datafix.fixes.LockComponentPredicateFix
+[0354|t+7082ms|ThreadId(2)] [class_dump] boo → net.minecraft.util.datafix.fixes.LodestoneCompassComponentFix
+[0355|t+7082ms|ThreadId(2)] [class_dump] bop → net.minecraft.util.datafix.fixes.MapBannerBlockPosFormatFix
+[0356|t+7082ms|ThreadId(2)] [class_dump] boq → net.minecraft.util.datafix.fixes.MapIdFix
+[0357|t+7083ms|ThreadId(2)] [class_dump] bor → net.minecraft.util.datafix.fixes.MemoryExpiryDataFix
+[0358|t+7083ms|ThreadId(2)] [class_dump] bos → net.minecraft.util.datafix.fixes.MissingDimensionFix
+[0359|t+7083ms|ThreadId(2)] [class_dump] bot → net.minecraft.util.datafix.fixes.MobEffectIdFix
+[0360|t+7083ms|ThreadId(2)] [class_dump] bou → net.minecraft.util.datafix.fixes.MobSpawnerEntityIdentifiersFix
+[0361|t+7084ms|ThreadId(2)] [class_dump] bov → net.minecraft.util.datafix.fixes.NamedEntityConvertUncheckedFix
+[0362|t+7084ms|ThreadId(2)] [class_dump] bow → net.minecraft.util.datafix.fixes.NamedEntityFix
+[0363|t+7084ms|ThreadId(2)] [class_dump] box → net.minecraft.util.datafix.fixes.NamedEntityWriteReadFix
+[0364|t+7085ms|ThreadId(2)] [class_dump] boy → net.minecraft.util.datafix.fixes.NamespacedTypeRenameFix
+[0365|t+7085ms|ThreadId(2)] [class_dump] boz → net.minecraft.util.datafix.fixes.NewVillageFix
+[0366|t+7085ms|ThreadId(2)] [class_dump] bpa → net.minecraft.util.datafix.fixes.ObjectiveRenderTypeFix
+[0367|t+7086ms|ThreadId(2)] [class_dump] bpb → net.minecraft.util.datafix.fixes.OminousBannerBlockEntityRenameFix
+[0368|t+7086ms|ThreadId(2)] [class_dump] bpc → net.minecraft.util.datafix.fixes.OminousBannerRarityFix
+[0369|t+7086ms|ThreadId(2)] [class_dump] bpd → net.minecraft.util.datafix.fixes.OminousBannerRenameFix
+[0370|t+7087ms|ThreadId(2)] [class_dump] bpe → net.minecraft.util.datafix.fixes.OptionsAccessibilityOnboardFix
+[0371|t+7087ms|ThreadId(2)] [class_dump] bpf → net.minecraft.util.datafix.fixes.OptionsAddTextBackgroundFix
+[0372|t+7088ms|ThreadId(2)] [class_dump] bpg → net.minecraft.util.datafix.fixes.OptionsAmbientOcclusionFix
+[0373|t+7088ms|ThreadId(2)] [class_dump] bph → net.minecraft.util.datafix.fixes.OptionsFancyGraphicsToGraphicsModeFix
+[0374|t+7088ms|ThreadId(2)] [class_dump] bpi → net.minecraft.util.datafix.fixes.OptionsForceVBOFix
+[0375|t+7089ms|ThreadId(2)] [class_dump] bpj → net.minecraft.util.datafix.fixes.OptionsGraphicsModeSplitFix
+[0376|t+7089ms|ThreadId(2)] [class_dump] bpk → net.minecraft.util.datafix.fixes.OptionsKeyLwjgl3Fix
+[0377|t+7090ms|ThreadId(2)] [class_dump] bpl → net.minecraft.util.datafix.fixes.OptionsKeyTranslationFix
+[0378|t+7090ms|ThreadId(2)] [class_dump] bpm → net.minecraft.util.datafix.fixes.OptionsLowerCaseLanguageFix
+[0379|t+7090ms|ThreadId(2)] [class_dump] bpn → net.minecraft.util.datafix.fixes.OptionsMenuBlurrinessFix
+[0380|t+7091ms|ThreadId(2)] [class_dump] bpo → net.minecraft.util.datafix.fixes.OptionsMusicToastFix
+[0381|t+7091ms|ThreadId(2)] [class_dump] bpp → net.minecraft.util.datafix.fixes.OptionsProgrammerArtFix
+[0382|t+7091ms|ThreadId(2)] [class_dump] bpq → net.minecraft.util.datafix.fixes.OptionsRenameFieldFix
+[0383|t+7092ms|ThreadId(2)] [class_dump] bpr → net.minecraft.util.datafix.fixes.OptionsSetGraphicsPresetToCustomFix
+[0384|t+7092ms|ThreadId(2)] [class_dump] bps → net.minecraft.util.datafix.fixes.OverreachingTickFix
+[0385|t+7092ms|ThreadId(2)] [class_dump] bpt → net.minecraft.util.datafix.fixes.ParticleUnflatteningFix
+[0386|t+7092ms|ThreadId(2)] [class_dump] bpu → net.minecraft.util.datafix.fixes.PlayerEquipmentFix
+[0387|t+7093ms|ThreadId(2)] [class_dump] bpv → net.minecraft.util.datafix.fixes.PlayerHeadBlockProfileFix
+[0388|t+7093ms|ThreadId(2)] [class_dump] bpw → net.minecraft.util.datafix.fixes.PlayerRespawnDataFix
+[0389|t+7093ms|ThreadId(2)] [class_dump] bpx → net.minecraft.util.datafix.fixes.PlayerUUIDFix
+[0390|t+7094ms|ThreadId(2)] [class_dump] bpy → net.minecraft.util.datafix.fixes.PoiTypeRemoveFix
+[0391|t+7094ms|ThreadId(2)] [class_dump] bpz → net.minecraft.util.datafix.fixes.PoiTypeRenameFix
+[0392|t+7094ms|ThreadId(2)] [class_dump] bqa → net.minecraft.util.datafix.fixes.PrimedTntBlockStateFixer
+[0393|t+7095ms|ThreadId(2)] [class_dump] bqb → net.minecraft.util.datafix.fixes.ProjectileStoredWeaponFix
+[0394|t+7095ms|ThreadId(2)] [class_dump] bqc → net.minecraft.util.datafix.fixes.RaidRenamesDataFix
+[0395|t+7095ms|ThreadId(2)] [class_dump] bqd → net.minecraft.util.datafix.fixes.RandomSequenceSettingsFix
+[0396|t+7096ms|ThreadId(2)] [class_dump] bqe → net.minecraft.util.datafix.fixes.RecipesFix
+[0397|t+7096ms|ThreadId(2)] [class_dump] bqf → net.minecraft.util.datafix.fixes.RecipesRenameningFix
+[0398|t+7096ms|ThreadId(2)] [class_dump] bqg → net.minecraft.util.datafix.fixes.RedstoneWireConnectionsFix
+[0399|t+7097ms|ThreadId(2)] [class_dump] bqh → net.minecraft.util.datafix.fixes.References
+[0400|t+7097ms|ThreadId(2)] [class_dump] bqi → net.minecraft.util.datafix.fixes.RemapChunkStatusFix
+[0401|t+7097ms|ThreadId(2)] [class_dump] bqj → net.minecraft.util.datafix.fixes.RemoveBlockEntityTagFix
+[0402|t+7098ms|ThreadId(2)] [class_dump] bqk → net.minecraft.util.datafix.fixes.RemoveEmptyItemInBrushableBlockFix
+[0403|t+7098ms|ThreadId(2)] [class_dump] bql → net.minecraft.util.datafix.fixes.RemoveGolemGossipFix
+[0404|t+7098ms|ThreadId(2)] [class_dump] bqm → net.minecraft.util.datafix.fixes.RenameEnchantmentsFix
+[0405|t+7099ms|ThreadId(2)] [class_dump] bqn → net.minecraft.util.datafix.fixes.RenamedCoralFansFix
+[0406|t+7099ms|ThreadId(2)] [class_dump] bqo → net.minecraft.util.datafix.fixes.RenamedCoralFix
+[0407|t+7099ms|ThreadId(2)] [class_dump] bqp → net.minecraft.util.datafix.fixes.ReorganizePoi
+[0408|t+7099ms|ThreadId(2)] [class_dump] bqq → net.minecraft.util.datafix.fixes.SaddleEquipmentSlotFix
+[0409|t+7100ms|ThreadId(2)] [class_dump] bqr → net.minecraft.util.datafix.fixes.SavedDataFeaturePoolElementFix
+[0410|t+7100ms|ThreadId(2)] [class_dump] bqs → net.minecraft.util.datafix.fixes.SavedDataUUIDFix
+[0411|t+7100ms|ThreadId(2)] [class_dump] bqt → net.minecraft.util.datafix.fixes.ScoreboardDisplayNameFix
+[0412|t+7101ms|ThreadId(2)] [class_dump] bqu → net.minecraft.util.datafix.fixes.ScoreboardDisplaySlotFix
+[0413|t+7101ms|ThreadId(2)] [class_dump] bqv → net.minecraft.util.datafix.fixes.SignTextStrictJsonFix
+[0414|t+7101ms|ThreadId(2)] [class_dump] bqw → net.minecraft.util.datafix.fixes.SimpleEntityRenameFix
+[0415|t+7102ms|ThreadId(2)] [class_dump] bqx → net.minecraft.util.datafix.fixes.SimplestEntityRenameFix
+[0416|t+7102ms|ThreadId(2)] [class_dump] bqy → net.minecraft.util.datafix.fixes.SpawnerDataFix
+[0417|t+7102ms|ThreadId(2)] [class_dump] bqz → net.minecraft.util.datafix.fixes.StatsCounterFix
+[0418|t+7103ms|ThreadId(2)] [class_dump] bra → net.minecraft.util.datafix.fixes.StatsRenameFix
+[0419|t+7104ms|ThreadId(2)] [class_dump] brb → net.minecraft.util.datafix.fixes.StriderGravityFix
+[0420|t+7104ms|ThreadId(2)] [class_dump] brc → net.minecraft.util.datafix.fixes.StructureReferenceCountFix
+[0421|t+7105ms|ThreadId(2)] [class_dump] brd → net.minecraft.util.datafix.fixes.StructureSettingsFlattenFix
+[0422|t+7105ms|ThreadId(2)] [class_dump] bre → net.minecraft.util.datafix.fixes.StructuresBecomeConfiguredFix
+[0423|t+7105ms|ThreadId(2)] [class_dump] brf → net.minecraft.util.datafix.fixes.TextComponentHoverAndClickEventFix
+[0424|t+7106ms|ThreadId(2)] [class_dump] brg → net.minecraft.util.datafix.fixes.TextComponentStringifiedFlagsFix
+[0425|t+7106ms|ThreadId(2)] [class_dump] brh → net.minecraft.util.datafix.fixes.ThrownPotionSplitFix
+[0426|t+7106ms|ThreadId(2)] [class_dump] bri → net.minecraft.util.datafix.fixes.TippedArrowPotionToItemFix
+[0427|t+7107ms|ThreadId(2)] [class_dump] brj → net.minecraft.util.datafix.fixes.TooltipDisplayComponentFix
+[0428|t+7107ms|ThreadId(2)] [class_dump] brk → net.minecraft.util.datafix.fixes.TrappedChestBlockEntityFix
+[0429|t+7107ms|ThreadId(2)] [class_dump] brl → net.minecraft.util.datafix.fixes.TrialSpawnerConfigFix
+[0430|t+7107ms|ThreadId(2)] [class_dump] brm → net.minecraft.util.datafix.fixes.TrialSpawnerConfigInRegistryFix
+[0431|t+7108ms|ThreadId(2)] [class_dump] brn → net.minecraft.util.datafix.fixes.TridentAnimationFix
+[0432|t+7108ms|ThreadId(2)] [class_dump] bro → net.minecraft.util.datafix.fixes.UnflattenTextComponentFix
+[0433|t+7108ms|ThreadId(2)] [class_dump] brp → net.minecraft.util.datafix.fixes.VariantRenameFix
+[0434|t+7109ms|ThreadId(2)] [class_dump] brq → net.minecraft.util.datafix.fixes.VillagerDataFix
+[0435|t+7109ms|ThreadId(2)] [class_dump] brr → net.minecraft.util.datafix.fixes.VillagerFollowRangeFix
+[0436|t+7109ms|ThreadId(2)] [class_dump] brs → net.minecraft.util.datafix.fixes.VillagerRebuildLevelAndXpFix
+[0437|t+7110ms|ThreadId(2)] [class_dump] brt → net.minecraft.util.datafix.fixes.VillagerSetCanPickUpLootFix
+[0438|t+7110ms|ThreadId(2)] [class_dump] bru → net.minecraft.util.datafix.fixes.VillagerTradeFix
+[0439|t+7110ms|ThreadId(2)] [class_dump] brv → net.minecraft.util.datafix.fixes.WallPropertyFix
+[0440|t+7111ms|ThreadId(2)] [class_dump] brw → net.minecraft.util.datafix.fixes.WeaponSmithChestLootTableFix
+[0441|t+7111ms|ThreadId(2)] [class_dump] brx → net.minecraft.util.datafix.fixes.WorldBorderWarningTimeFix
+[0442|t+7111ms|ThreadId(2)] [class_dump] bry → net.minecraft.util.datafix.fixes.WorldGenSettingsDisallowOldCustomWorldsFix
+[0443|t+7111ms|ThreadId(2)] [class_dump] brz → net.minecraft.util.datafix.fixes.WorldGenSettingsFix
+[0444|t+7112ms|ThreadId(2)] [class_dump] bsa → net.minecraft.util.datafix.fixes.WorldGenSettingsHeightAndBiomeFix
+[0445|t+7112ms|ThreadId(2)] [class_dump] bsb → net.minecraft.util.datafix.fixes.WorldSpawnDataFix
+[0446|t+7112ms|ThreadId(2)] [class_dump] bsc → net.minecraft.util.datafix.fixes.WriteAndReadFix
+[0447|t+7113ms|ThreadId(2)] [class_dump] bsd → net.minecraft.util.datafix.fixes.WrittenBookPagesStrictJsonFix
+[0448|t+7113ms|ThreadId(2)] [class_dump] bse → net.minecraft.util.datafix.fixes.ZombieVillagerRebuildXpFix
+[0449|t+7113ms|ThreadId(2)] [class_dump] bsh → net.minecraft.util.datafix.schemas.NamespacedSchema
+[0450|t+7114ms|ThreadId(2)] [class_dump] bsi → net.minecraft.util.datafix.schemas.V100
+[0451|t+7114ms|ThreadId(2)] [class_dump] bsj → net.minecraft.util.datafix.schemas.V102
+[0452|t+7114ms|ThreadId(2)] [class_dump] bsk → net.minecraft.util.datafix.schemas.V1022
+[0453|t+7115ms|ThreadId(2)] [class_dump] bsl → net.minecraft.util.datafix.schemas.V106
+[0454|t+7115ms|ThreadId(2)] [class_dump] bsm → net.minecraft.util.datafix.schemas.V107
+[0455|t+7115ms|ThreadId(2)] [class_dump] bsn → net.minecraft.util.datafix.schemas.V1125
+[0456|t+7116ms|ThreadId(2)] [class_dump] bso → net.minecraft.util.datafix.schemas.V135
+[0457|t+7116ms|ThreadId(2)] [class_dump] bsp → net.minecraft.util.datafix.schemas.V143
+[0458|t+7116ms|ThreadId(2)] [class_dump] bsq → net.minecraft.util.datafix.schemas.V1451
+[0459|t+7117ms|ThreadId(2)] [class_dump] bsr → net.minecraft.util.datafix.schemas.V1451_1
+[0460|t+7117ms|ThreadId(2)] [class_dump] bss → net.minecraft.util.datafix.schemas.V1451_2
+[0461|t+7117ms|ThreadId(2)] [class_dump] bst → net.minecraft.util.datafix.schemas.V1451_3
+[0462|t+7117ms|ThreadId(2)] [class_dump] bsu → net.minecraft.util.datafix.schemas.V1451_4
+[0463|t+7118ms|ThreadId(2)] [class_dump] bsv → net.minecraft.util.datafix.schemas.V1451_5
+[0464|t+7118ms|ThreadId(2)] [class_dump] bsw → net.minecraft.util.datafix.schemas.V1451_6
+[0465|t+7118ms|ThreadId(2)] [class_dump] bsx → net.minecraft.util.datafix.schemas.V1458
+[0466|t+7119ms|ThreadId(2)] [class_dump] bsy → net.minecraft.util.datafix.schemas.V1460
+[0467|t+7119ms|ThreadId(2)] [class_dump] bsz → net.minecraft.util.datafix.schemas.V1466
+[0468|t+7120ms|ThreadId(2)] [class_dump] bta → net.minecraft.util.datafix.schemas.V1470
+[0469|t+7120ms|ThreadId(2)] [class_dump] btb → net.minecraft.util.datafix.schemas.V1481
+[0470|t+7120ms|ThreadId(2)] [class_dump] btc → net.minecraft.util.datafix.schemas.V1483
+[0471|t+7121ms|ThreadId(2)] [class_dump] btd → net.minecraft.util.datafix.schemas.V1486
+[0472|t+7121ms|ThreadId(2)] [class_dump] bte → net.minecraft.util.datafix.schemas.V1488
+[0473|t+7121ms|ThreadId(2)] [class_dump] btf → net.minecraft.util.datafix.schemas.V1510
+[0474|t+7121ms|ThreadId(2)] [class_dump] btg → net.minecraft.util.datafix.schemas.V1800
+[0475|t+7122ms|ThreadId(2)] [class_dump] bth → net.minecraft.util.datafix.schemas.V1801
+[0476|t+7122ms|ThreadId(2)] [class_dump] bti → net.minecraft.util.datafix.schemas.V1904
+[0477|t+7122ms|ThreadId(2)] [class_dump] btj → net.minecraft.util.datafix.schemas.V1906
+[0478|t+7123ms|ThreadId(2)] [class_dump] btk → net.minecraft.util.datafix.schemas.V1909
+[0479|t+7123ms|ThreadId(2)] [class_dump] btl → net.minecraft.util.datafix.schemas.V1920
+[0480|t+7123ms|ThreadId(2)] [class_dump] btm → net.minecraft.util.datafix.schemas.V1928
+[0481|t+7124ms|ThreadId(2)] [class_dump] btn → net.minecraft.util.datafix.schemas.V1929
+[0482|t+7124ms|ThreadId(2)] [class_dump] bto → net.minecraft.util.datafix.schemas.V1931
+[0483|t+7124ms|ThreadId(2)] [class_dump] btp → net.minecraft.util.datafix.schemas.V2100
+[0484|t+7124ms|ThreadId(2)] [class_dump] btq → net.minecraft.util.datafix.schemas.V2501
+[0485|t+7125ms|ThreadId(2)] [class_dump] btr → net.minecraft.util.datafix.schemas.V2502
+[0486|t+7125ms|ThreadId(2)] [class_dump] bts → net.minecraft.util.datafix.schemas.V2505
+[0487|t+7125ms|ThreadId(2)] [class_dump] btt → net.minecraft.util.datafix.schemas.V2509
+[0488|t+7126ms|ThreadId(2)] [class_dump] btu → net.minecraft.util.datafix.schemas.V2511_1
+[0489|t+7126ms|ThreadId(2)] [class_dump] btv → net.minecraft.util.datafix.schemas.V2519
+[0490|t+7126ms|ThreadId(2)] [class_dump] btw → net.minecraft.util.datafix.schemas.V2522
+[0491|t+7126ms|ThreadId(2)] [class_dump] btx → net.minecraft.util.datafix.schemas.V2551
+[0492|t+7127ms|ThreadId(2)] [class_dump] bty → net.minecraft.util.datafix.schemas.V2568
+[0493|t+7127ms|ThreadId(2)] [class_dump] btz → net.minecraft.util.datafix.schemas.V2571
+[0494|t+7127ms|ThreadId(2)] [class_dump] bu → net.minecraft.advancements.criterion.EntitySubPredicates
+[0495|t+7127ms|ThreadId(2)] [class_dump] bua → net.minecraft.util.datafix.schemas.V2684
+[0496|t+7128ms|ThreadId(2)] [class_dump] bub → net.minecraft.util.datafix.schemas.V2686
+[0497|t+7128ms|ThreadId(2)] [class_dump] buc → net.minecraft.util.datafix.schemas.V2688
+[0498|t+7128ms|ThreadId(2)] [class_dump] bud → net.minecraft.util.datafix.schemas.V2704
+[0499|t+7129ms|ThreadId(2)] [class_dump] bue → net.minecraft.util.datafix.schemas.V2707
+[0500|t+7129ms|ThreadId(2)] [class_dump] buf → net.minecraft.util.datafix.schemas.V2831
+[0501|t+7129ms|ThreadId(2)] [class_dump] bug → net.minecraft.util.datafix.schemas.V2832
+[0502|t+7129ms|ThreadId(2)] [class_dump] buh → net.minecraft.util.datafix.schemas.V2842
+[0503|t+7130ms|ThreadId(2)] [class_dump] bui → net.minecraft.util.datafix.schemas.V3076
+[0504|t+7130ms|ThreadId(2)] [class_dump] buj → net.minecraft.util.datafix.schemas.V3078
+[0505|t+7130ms|ThreadId(2)] [class_dump] buk → net.minecraft.util.datafix.schemas.V3081
+[0506|t+7131ms|ThreadId(2)] [class_dump] bul → net.minecraft.util.datafix.schemas.V3082
+[0507|t+7131ms|ThreadId(2)] [class_dump] bum → net.minecraft.util.datafix.schemas.V3083
+[0508|t+7131ms|ThreadId(2)] [class_dump] bun → net.minecraft.util.datafix.schemas.V3202
+[0509|t+7132ms|ThreadId(2)] [class_dump] buo → net.minecraft.util.datafix.schemas.V3203
+[0510|t+7132ms|ThreadId(2)] [class_dump] bup → net.minecraft.util.datafix.schemas.V3204
+[0511|t+7132ms|ThreadId(2)] [class_dump] buq → net.minecraft.util.datafix.schemas.V3325
+[0512|t+7133ms|ThreadId(2)] [class_dump] bur → net.minecraft.util.datafix.schemas.V3326
+[0513|t+7133ms|ThreadId(2)] [class_dump] bus → net.minecraft.util.datafix.schemas.V3327
+[0514|t+7133ms|ThreadId(2)] [class_dump] but → net.minecraft.util.datafix.schemas.V3328
+[0515|t+7134ms|ThreadId(2)] [class_dump] buu → net.minecraft.util.datafix.schemas.V3438
+[0516|t+7134ms|ThreadId(2)] [class_dump] buv → net.minecraft.util.datafix.schemas.V3439
+[0517|t+7134ms|ThreadId(2)] [class_dump] buw → net.minecraft.util.datafix.schemas.V3439_1
+[0518|t+7134ms|ThreadId(2)] [class_dump] bux → net.minecraft.util.datafix.schemas.V3448
+[0519|t+7135ms|ThreadId(2)] [class_dump] buy → net.minecraft.util.datafix.schemas.V3682
+[0520|t+7135ms|ThreadId(2)] [class_dump] buz → net.minecraft.util.datafix.schemas.V3683
+[0521|t+7135ms|ThreadId(2)] [class_dump] bva → net.minecraft.util.datafix.schemas.V3685
+[0522|t+7136ms|ThreadId(2)] [class_dump] bvb → net.minecraft.util.datafix.schemas.V3689
+[0523|t+7138ms|ThreadId(2)] [class_dump] bvc → net.minecraft.util.datafix.schemas.V3799
+[0524|t+7139ms|ThreadId(2)] [class_dump] bvd → net.minecraft.util.datafix.schemas.V3807
+[0525|t+7139ms|ThreadId(2)] [class_dump] bve → net.minecraft.util.datafix.schemas.V3808
+[0526|t+7139ms|ThreadId(2)] [class_dump] bvf → net.minecraft.util.datafix.schemas.V3808_1
+[0527|t+7140ms|ThreadId(2)] [class_dump] bvg → net.minecraft.util.datafix.schemas.V3808_2
+[0528|t+7140ms|ThreadId(2)] [class_dump] bvh → net.minecraft.util.datafix.schemas.V3813
+[0529|t+7140ms|ThreadId(2)] [class_dump] bvi → net.minecraft.util.datafix.schemas.V3816
+[0530|t+7140ms|ThreadId(2)] [class_dump] bvj → net.minecraft.util.datafix.schemas.V3818
+[0531|t+7141ms|ThreadId(2)] [class_dump] bvk → net.minecraft.util.datafix.schemas.V3818_3
+[0532|t+7141ms|ThreadId(2)] [class_dump] bvl → net.minecraft.util.datafix.schemas.V3818_4
+[0533|t+7141ms|ThreadId(2)] [class_dump] bvm → net.minecraft.util.datafix.schemas.V3818_5
+[0534|t+7142ms|ThreadId(2)] [class_dump] bvn → net.minecraft.util.datafix.schemas.V3825
+[0535|t+7142ms|ThreadId(2)] [class_dump] bvo → net.minecraft.util.datafix.schemas.V3938
+[0536|t+7142ms|ThreadId(2)] [class_dump] bvp → net.minecraft.util.datafix.schemas.V4059
+[0537|t+7142ms|ThreadId(2)] [class_dump] bvq → net.minecraft.util.datafix.schemas.V4067
+[0538|t+7143ms|ThreadId(2)] [class_dump] bvr → net.minecraft.util.datafix.schemas.V4070
+[0539|t+7143ms|ThreadId(2)] [class_dump] bvs → net.minecraft.util.datafix.schemas.V4071
+[0540|t+7143ms|ThreadId(2)] [class_dump] bvt → net.minecraft.util.datafix.schemas.V4290
+[0541|t+7144ms|ThreadId(2)] [class_dump] bvu → net.minecraft.util.datafix.schemas.V4292
+[0542|t+7144ms|ThreadId(2)] [class_dump] bvv → net.minecraft.util.datafix.schemas.V4300
+[0543|t+7145ms|ThreadId(2)] [class_dump] bvw → net.minecraft.util.datafix.schemas.V4301
+[0544|t+7145ms|ThreadId(2)] [class_dump] bvx → net.minecraft.util.datafix.schemas.V4302
+[0545|t+7145ms|ThreadId(2)] [class_dump] bvy → net.minecraft.util.datafix.schemas.V4306
+[0546|t+7145ms|ThreadId(2)] [class_dump] bvz → net.minecraft.util.datafix.schemas.V4307
+[0547|t+7146ms|ThreadId(2)] [class_dump] bwa → net.minecraft.util.datafix.schemas.V4312
+[0548|t+7146ms|ThreadId(2)] [class_dump] bwb → net.minecraft.util.datafix.schemas.V4420
+[0549|t+7146ms|ThreadId(2)] [class_dump] bwc → net.minecraft.util.datafix.schemas.V4421
+[0550|t+7147ms|ThreadId(2)] [class_dump] bwd → net.minecraft.util.datafix.schemas.V4531
+[0551|t+7147ms|ThreadId(2)] [class_dump] bwe → net.minecraft.util.datafix.schemas.V4532
+[0552|t+7147ms|ThreadId(2)] [class_dump] bwf → net.minecraft.util.datafix.schemas.V4533
+[0553|t+7148ms|ThreadId(2)] [class_dump] bwg → net.minecraft.util.datafix.schemas.V4543
+[0554|t+7148ms|ThreadId(2)] [class_dump] bwh → net.minecraft.util.datafix.schemas.V4648
+[0555|t+7148ms|ThreadId(2)] [class_dump] bwi → net.minecraft.util.datafix.schemas.V4656
+[0556|t+7149ms|ThreadId(2)] [class_dump] bwj → net.minecraft.util.datafix.schemas.V501
+[0557|t+7149ms|ThreadId(2)] [class_dump] bwk → net.minecraft.util.datafix.schemas.V700
+[0558|t+7149ms|ThreadId(2)] [class_dump] bwl → net.minecraft.util.datafix.schemas.V701
+[0559|t+7149ms|ThreadId(2)] [class_dump] bwm → net.minecraft.util.datafix.schemas.V702
+[0560|t+7150ms|ThreadId(2)] [class_dump] bwn → net.minecraft.util.datafix.schemas.V703
+[0561|t+7150ms|ThreadId(2)] [class_dump] bwo → net.minecraft.util.datafix.schemas.V704
+[0562|t+7150ms|ThreadId(2)] [class_dump] bwp → net.minecraft.util.datafix.schemas.V705
+[0563|t+7150ms|ThreadId(2)] [class_dump] bwq → net.minecraft.util.datafix.schemas.V808
+[0564|t+7151ms|ThreadId(2)] [class_dump] bwr → net.minecraft.util.datafix.schemas.V99
+[0565|t+7151ms|ThreadId(2)] [class_dump] bxe → net.minecraft.util.debug.DebugSubscription
+[0566|t+7151ms|ThreadId(2)] [class_dump] bxf → net.minecraft.util.debug.DebugSubscriptions
+[0567|t+7152ms|ThreadId(2)] [class_dump] bxh → net.minecraft.util.debug.DebugValueSource
+[0568|t+7152ms|ThreadId(2)] [class_dump] bxm → net.minecraft.util.debugchart.AbstractSampleLogger
+[0569|t+7152ms|ThreadId(2)] [class_dump] bxn → net.minecraft.util.debugchart.LocalSampleLogger
+[0570|t+7153ms|ThreadId(2)] [class_dump] bxo → net.minecraft.util.debugchart.RemoteDebugSampleType
+[0571|t+7153ms|ThreadId(2)] [class_dump] bxq → net.minecraft.util.debugchart.SampleLogger
+[0572|t+7153ms|ThreadId(2)] [class_dump] bxr → net.minecraft.util.debugchart.SampleStorage
+[0573|t+7153ms|ThreadId(2)] [class_dump] cba → net.minecraft.util.profiling.metrics.ProfilerMeasured
+[0574|t+7154ms|ThreadId(2)] [class_dump] cbr → net.minecraft.util.thread.BlockableEventLoop
+[0575|t+7154ms|ThreadId(2)] [class_dump] cbv → net.minecraft.util.thread.ReentrantBlockableEventLoop
+[0576|t+7154ms|ThreadId(2)] [class_dump] cbx → net.minecraft.util.thread.TaskScheduler
+[0577|t+7155ms|ThreadId(2)] [class_dump] cbz → net.minecraft.util.valueproviders.BiasedToBottomInt
+[0578|t+7155ms|ThreadId(2)] [class_dump] ccb → net.minecraft.util.valueproviders.ClampedNormalFloat
+[0579|t+7155ms|ThreadId(2)] [class_dump] cce → net.minecraft.util.valueproviders.ConstantInt
+[0580|t+7155ms|ThreadId(2)] [class_dump] ccf → net.minecraft.util.valueproviders.FloatProvider
+[0581|t+7156ms|ThreadId(2)] [class_dump] cch → net.minecraft.util.valueproviders.IntProvider
+[0582|t+7156ms|ThreadId(2)] [class_dump] cci → net.minecraft.util.valueproviders.IntProviderType
+[0583|t+7156ms|ThreadId(2)] [class_dump] cck → net.minecraft.util.valueproviders.SampledFloat
+[0584|t+7157ms|ThreadId(2)] [class_dump] ccm → net.minecraft.util.valueproviders.UniformFloat
+[0585|t+7157ms|ThreadId(2)] [class_dump] ccn → net.minecraft.util.valueproviders.UniformInt
+[0586|t+7157ms|ThreadId(2)] [class_dump] cco → net.minecraft.util.valueproviders.WeightedListInt
+[0587|t+7158ms|ThreadId(2)] [class_dump] cct → net.minecraft.world.Clearable
+[0588|t+7158ms|ThreadId(2)] [class_dump] ccv → net.minecraft.world.Container
+[0589|t+7158ms|ThreadId(2)] [class_dump] cdb → net.minecraft.world.InteractionHand
+[0590|t+7158ms|ThreadId(2)] [class_dump] cdc → net.minecraft.world.InteractionResult
+[0591|t+7159ms|ThreadId(2)] [class_dump] cdf → net.minecraft.world.MenuProvider
+[0592|t+7159ms|ThreadId(2)] [class_dump] cdg → net.minecraft.world.Nameable
+[0593|t+7160ms|ThreadId(2)] [class_dump] cdj → net.minecraft.world.RandomizableContainer
+[0594|t+7160ms|ThreadId(2)] [class_dump] cdp → net.minecraft.world.WorldlyContainer
+[0595|t+7160ms|ThreadId(2)] [class_dump] cdq → net.minecraft.world.WorldlyContainerHolder
+[0596|t+7160ms|ThreadId(2)] [class_dump] cdw → net.minecraft.world.attribute.AttributeType
+[0597|t+7161ms|ThreadId(2)] [class_dump] cdx → net.minecraft.world.attribute.AttributeTypes
+[0598|t+7161ms|ThreadId(2)] [class_dump] cea → net.minecraft.world.attribute.EnvironmentAttribute
+[0599|t+7161ms|ThreadId(2)] [class_dump] ceg → net.minecraft.world.attribute.EnvironmentAttributes
+[0600|t+7162ms|ThreadId(2)] [class_dump] cfe → net.minecraft.world.effect.AbsorptionMobEffect
+[0601|t+7162ms|ThreadId(2)] [class_dump] cff → net.minecraft.world.effect.BadOmenMobEffect
+[0602|t+7162ms|ThreadId(2)] [class_dump] cfg → net.minecraft.world.effect.HealOrHarmMobEffect
+[0603|t+7163ms|ThreadId(2)] [class_dump] cfh → net.minecraft.world.effect.HungerMobEffect
+[0604|t+7163ms|ThreadId(2)] [class_dump] cfi → net.minecraft.world.effect.InfestedMobEffect
+[0605|t+7163ms|ThreadId(2)] [class_dump] cfj → net.minecraft.world.effect.InstantenousMobEffect
+[0606|t+7164ms|ThreadId(2)] [class_dump] cfk → net.minecraft.world.effect.MobEffect
+[0607|t+7164ms|ThreadId(2)] [class_dump] cfl → net.minecraft.world.effect.MobEffectCategory
+[0608|t+7164ms|ThreadId(2)] [class_dump] cfm → net.minecraft.world.effect.MobEffectInstance
+[0609|t+7164ms|ThreadId(2)] [class_dump] cfo → net.minecraft.world.effect.MobEffects
+[0610|t+7165ms|ThreadId(2)] [class_dump] cfp → net.minecraft.world.effect.OozingMobEffect
+[0611|t+7165ms|ThreadId(2)] [class_dump] cfq → net.minecraft.world.effect.PoisonMobEffect
+[0612|t+7165ms|ThreadId(2)] [class_dump] cfr → net.minecraft.world.effect.RaidOmenMobEffect
+[0613|t+7166ms|ThreadId(2)] [class_dump] cfs → net.minecraft.world.effect.RegenerationMobEffect
+[0614|t+7166ms|ThreadId(2)] [class_dump] cft → net.minecraft.world.effect.SaturationMobEffect
+[0615|t+7166ms|ThreadId(2)] [class_dump] cfu → net.minecraft.world.effect.WeavingMobEffect
+[0616|t+7167ms|ThreadId(2)] [class_dump] cfv → net.minecraft.world.effect.WindChargedMobEffect
+[0617|t+7167ms|ThreadId(2)] [class_dump] cfw → net.minecraft.world.effect.WitherMobEffect
+[0618|t+7167ms|ThreadId(2)] [class_dump] cfy → net.minecraft.world.entity.AgeableMob
+[0619|t+7167ms|ThreadId(2)] [class_dump] cgb → net.minecraft.world.entity.Attackable
+[0620|t+7168ms|ThreadId(2)] [class_dump] cgc → net.minecraft.world.entity.Avatar
+[0621|t+7168ms|ThreadId(2)] [class_dump] cgd → net.minecraft.world.entity.ContainerUser
+[0622|t+7168ms|ThreadId(2)] [class_dump] cgk → net.minecraft.world.entity.Entity
+[0623|t+7169ms|ThreadId(2)] [class_dump] cgu → net.minecraft.world.entity.EntityType
+[0624|t+7169ms|ThreadId(2)] [class_dump] cgy → net.minecraft.world.entity.EquipmentUser
+[0625|t+7172ms|ThreadId(2)] [class_dump] chh → net.minecraft.world.entity.ItemOwner
+[0626|t+7173ms|ThreadId(2)] [class_dump] chj → net.minecraft.world.entity.Leashable
+[0627|t+7173ms|ThreadId(2)] [class_dump] chl → net.minecraft.world.entity.LivingEntity
+[0628|t+7173ms|ThreadId(2)] [class_dump] chn → net.minecraft.world.entity.Mob
+[0629|t+7174ms|ThreadId(2)] [class_dump] chq → net.minecraft.world.entity.NeutralMob
+[0630|t+7174ms|ThreadId(2)] [class_dump] chr → net.minecraft.world.entity.OminousItemSpawner
+[0631|t+7174ms|ThreadId(2)] [class_dump] cht → net.minecraft.world.entity.PathfinderMob
+[0632|t+7174ms|ThreadId(2)] [class_dump] cib → net.minecraft.world.entity.Shearable
+[0633|t+7175ms|ThreadId(2)] [class_dump] cid → net.minecraft.world.entity.SlotProvider
+[0634|t+7175ms|ThreadId(2)] [class_dump] cij → net.minecraft.world.entity.Targeting
+[0635|t+7175ms|ThreadId(2)] [class_dump] cik → net.minecraft.world.entity.TraceableEntity
+[0636|t+7175ms|ThreadId(2)] [class_dump] cin → net.minecraft.world.entity.ai.attributes.Attribute
+[0637|t+7176ms|ThreadId(2)] [class_dump] ciq → net.minecraft.world.entity.ai.attributes.AttributeModifier
+[0638|t+7176ms|ThreadId(2)] [class_dump] cis → net.minecraft.world.entity.ai.attributes.Attributes
+[0639|t+7176ms|ThreadId(2)] [class_dump] ciu → net.minecraft.world.entity.ai.attributes.RangedAttribute
+[0640|t+7177ms|ThreadId(2)] [class_dump] com.mojang.authlib.GameProfile
+[0641|t+7177ms|ThreadId(2)] [class_dump] com.mojang.authlib.minecraft.TelemetryPropertyContainer
+[0642|t+7177ms|ThreadId(2)] [class_dump] com.mojang.authlib.properties.Property
+[0643|t+7178ms|ThreadId(2)] [class_dump] com.mojang.authlib.properties.PropertyMap
+[0644|t+7178ms|ThreadId(2)] [class_dump] com.mojang.blaze3d.systems.GpuDevice → com.mojang.blaze3d.systems.GpuDevice
+[0645|t+7178ms|ThreadId(2)] [class_dump] com.mojang.blaze3d.systems.RenderSystem → com.mojang.blaze3d.systems.RenderSystem
+[0646|t+7179ms|ThreadId(2)] [class_dump] com.mojang.brigadier.ImmutableStringReader
+[0647|t+7179ms|ThreadId(2)] [class_dump] com.mojang.brigadier.LiteralMessage
+[0648|t+7179ms|ThreadId(2)] [class_dump] com.mojang.brigadier.Message
+[0649|t+7179ms|ThreadId(2)] [class_dump] com.mojang.brigadier.arguments.ArgumentType
+[0650|t+7180ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptionProvider
+[0651|t+7180ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions
+[0652|t+7180ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800257400
+[0653|t+7181ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800257800
+[0654|t+7181ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800257a10
+[0655|t+7181ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800257c20
+[0656|t+7182ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800258000
+[0657|t+7182ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800258210
+[0658|t+7182ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800258420
+[0659|t+7182ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800258630
+[0660|t+7183ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800258a50
+[0661|t+7183ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x00000008002590b0
+[0662|t+7183ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x00000008002592e0
+[0663|t+7184ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800259510
+[0664|t+7184ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800259740
+[0665|t+7184ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800259970
+[0666|t+7185ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800259ba0
+[0667|t+7185ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x0000000800259dd0
+[0668|t+7185ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.BuiltInExceptions$$Lambda/0x000000080025a000
+[0669|t+7185ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.CommandExceptionType
+[0670|t+7186ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.CommandSyntaxException
+[0671|t+7187ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType
+[0672|t+7187ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType$Function
+[0673|t+7188ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.DynamicCommandExceptionType
+[0674|t+7188ms|ThreadId(2)] [class_dump] com.mojang.brigadier.exceptions.SimpleCommandExceptionType
+[0675|t+7189ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL
+[0676|t+7189ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL$$Lambda/0x00000008002d1ce0
+[0677|t+7189ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL$$Lambda/0x00000008002d5e78
+[0678|t+7189ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL$$Lambda/0x00000008002d60a8
+[0679|t+7190ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL$$Lambda/0x0000000800328708
+[0680|t+7190ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL$$Lambda/0x0000000800369920
+[0681|t+7190ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL$Instances
+[0682|t+7191ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL$Instances$TaggedChoiceCacheKey
+[0683|t+7191ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DSL$TypeReference
+[0684|t+7191ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFix
+[0685|t+7192ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFix$$Lambda/0x0000000800382f08
+[0686|t+7192ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFix$$Lambda/0x00000008003872d0
+[0687|t+7192ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFix$$Lambda/0x000000080038e2e8
+[0688|t+7193ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFix$$Lambda/0x00000008003a0b48
+[0689|t+7193ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFix$NamedFunctionWrapper
+[0690|t+7193ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixUtils
+[0691|t+7194ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixUtils$$Lambda/0x0000000800385910
+[0692|t+7194ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixUtils$$Lambda/0x00000008003861d0
+[0693|t+7194ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixUtils$$Lambda/0x00000008004e8a18
+[0694|t+7194ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixer
+[0695|t+7195ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder
+[0696|t+7195ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder$Result
+[0697|t+7195ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder$Result$$Lambda/0x000000080037eda0
+[0698|t+7196ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder$Result$$Lambda/0x000000080037efd0
+[0699|t+7196ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder$Result$$Lambda/0x000000080037f1e8
+[0700|t+7196ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder$Result$$Lambda/0x000000080037f420
+[0701|t+7196ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder$Result$$Lambda/0x0000000800384000
+[0702|t+7197ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder$Result$$Lambda/0x0000000800384db0
+[0703|t+7197ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerBuilder$Result$$Lambda/0x00000008003851f8
+[0704|t+7197ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerUpper
+[0705|t+7197ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerUpper$$Lambda/0x0000000800306ea8
+[0706|t+7198ms|ThreadId(2)] [class_dump] com.mojang.datafixers.DataFixerUpper$$Lambda/0x000000080037fa70
+[0707|t+7198ms|ThreadId(2)] [class_dump] com.mojang.datafixers.FieldFinder
+[0708|t+7198ms|ThreadId(2)] [class_dump] com.mojang.datafixers.NamedChoiceFinder
+[0709|t+7199ms|ThreadId(2)] [class_dump] com.mojang.datafixers.OpticFinder
+[0710|t+7199ms|ThreadId(2)] [class_dump] com.mojang.datafixers.Products$P1
+[0711|t+7199ms|ThreadId(2)] [class_dump] com.mojang.datafixers.Products$P2
+[0712|t+7199ms|ThreadId(2)] [class_dump] com.mojang.datafixers.Products$P3
+[0713|t+7200ms|ThreadId(2)] [class_dump] com.mojang.datafixers.Products$P4
+[0714|t+7200ms|ThreadId(2)] [class_dump] com.mojang.datafixers.Products$P6
+[0715|t+7200ms|ThreadId(2)] [class_dump] com.mojang.datafixers.RewriteResult
+[0716|t+7201ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypeRewriteRule
+[0717|t+7201ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypeRewriteRule$All
+[0718|t+7201ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypeRewriteRule$Everywhere
+[0719|t+7202ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypeRewriteRule$IfSame
+[0720|t+7207ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypeRewriteRule$Nop
+[0721|t+7207ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypeRewriteRule$OrElse
+[0722|t+7208ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypeRewriteRule$Seq
+[0723|t+7208ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypeRewriteRule$Seq$$Lambda/0x000000080038fbb0
+[0724|t+7208ms|ThreadId(2)] [class_dump] com.mojang.datafixers.Typed
+[0725|t+7208ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypedOptic
+[0726|t+7209ms|ThreadId(2)] [class_dump] com.mojang.datafixers.TypedOptic$Element
+[0727|t+7209ms|ThreadId(2)] [class_dump] com.mojang.datafixers.View
+[0728|t+7209ms|ThreadId(2)] [class_dump] com.mojang.datafixers.View$$Lambda/0x0000000800394a80
+[0729|t+7209ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.Apply
+[0730|t+7210ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.Comp
+[0731|t+7210ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.Comp$$Lambda/0x00000008003d0d60
+[0732|t+7210ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.Fold
+[0733|t+7211ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.FunctionWrapper
+[0734|t+7211ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.Functions
+[0735|t+7211ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.Id
+[0736|t+7212ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.In
+[0737|t+7212ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.Out
+[0738|t+7212ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFree
+[0739|t+7212ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule
+[0740|t+7213ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$AppNest
+[0741|t+7213ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$CataFuseDifferent
+[0742|t+7213ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$CataFuseSame
+[0743|t+7214ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$CompRewrite
+[0744|t+7214ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$CompRewrite$$Lambda/0x00000008003033f0
+[0745|t+7214ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$CompRewrite$$Lambda/0x00000008003d0920
+[0746|t+7215ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$CompRewrite$$Lambda/0x00000008003d0b50
+[0747|t+7215ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$Everywhere
+[0748|t+7215ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$LensComp
+[0749|t+7215ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$Nop
+[0750|t+7216ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$Seq
+[0751|t+7216ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$SortInj
+[0752|t+7216ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.PointFreeRule$SortProj
+[0753|t+7217ms|ThreadId(2)] [class_dump] com.mojang.datafixers.functions.ProfunctorTransformer
+[0754|t+7217ms|ThreadId(2)] [class_dump] com.mojang.datafixers.kinds.App
+[0755|t+7217ms|ThreadId(2)] [class_dump] com.mojang.datafixers.kinds.App2
+[0756|t+7218ms|ThreadId(2)] [class_dump] com.mojang.datafixers.kinds.Applicative
+[0757|t+7218ms|ThreadId(2)] [class_dump] com.mojang.datafixers.kinds.Applicative$$Lambda/0x00000008004aa250
+[0758|t+7218ms|ThreadId(2)] [class_dump] com.mojang.datafixers.kinds.Functor
+[0759|t+7219ms|ThreadId(2)] [class_dump] com.mojang.datafixers.kinds.K1
+[0760|t+7221ms|ThreadId(2)] [class_dump] com.mojang.datafixers.kinds.Kind1
+[0761|t+7222ms|ThreadId(2)] [class_dump] com.mojang.datafixers.kinds.Kind2$Mu
+[0762|t+7222ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Adapter
+[0763|t+7222ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Affine
+[0764|t+7223ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.IdAdapter
+[0765|t+7223ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Inj1
+[0766|t+7223ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Inj2
+[0767|t+7223ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Lens
+[0768|t+7224ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.ListTraversal
+[0769|t+7224ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Optic
+[0770|t+7224ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Optics
+[0771|t+7225ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.PStore
+[0772|t+7225ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Prism
+[0773|t+7225ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Proj1
+[0774|t+7226ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Proj2
+[0775|t+7226ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.ReForgetC
+[0776|t+7226ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.ReForgetE
+[0777|t+7227ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.ReForgetEP
+[0778|t+7227ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.ReForgetP
+[0779|t+7227ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Traversal
+[0780|t+7228ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.Wander
+[0781|t+7228ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.AffineP$Mu
+[0782|t+7228ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.AffineP$Mu$1
+[0783|t+7229ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.Cartesian$Mu
+[0784|t+7229ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.Cartesian$Mu$1
+[0785|t+7229ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.Cocartesian$Mu
+[0786|t+7230ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.Cocartesian$Mu$1
+[0787|t+7230ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.Profunctor$Mu
+[0788|t+7231ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.Profunctor$Mu$1
+[0789|t+7231ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.TraversalP$Mu
+[0790|t+7231ms|ThreadId(2)] [class_dump] com.mojang.datafixers.optics.profunctors.TraversalP$Mu$1
+[0791|t+7232ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema
+[0792|t+7232ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema$$Lambda/0x00000008002c1790
+[0793|t+7232ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema$$Lambda/0x00000008002c2c20
+[0794|t+7233ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema$$Lambda/0x00000008002d0630
+[0795|t+7233ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema$$Lambda/0x00000008002d6718
+[0796|t+7233ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema$$Lambda/0x000000080037f648
+[0797|t+7233ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema$$Lambda/0x0000000800385b40
+[0798|t+7234ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema$$Lambda/0x0000000800386618
+[0799|t+7234ms|ThreadId(2)] [class_dump] com.mojang.datafixers.schemas.Schema$$Lambda/0x000000080038c000
+[0800|t+7235ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Func
+[0801|t+7235ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type
+[0802|t+7235ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type$$Lambda/0x0000000800381a10
+[0803|t+7236ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type$$Lambda/0x000000080038e710
+[0804|t+7237ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type$$Lambda/0x000000080038f780
+[0805|t+7237ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type$$Lambda/0x0000000800394228
+[0806|t+7237ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type$$Lambda/0x0000000800394848
+[0807|t+7238ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type$$Lambda/0x0000000800394cb0
+[0808|t+7238ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type$RewriteCacheKey
+[0809|t+7238ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.Type$TypeMatcher
+[0810|t+7239ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.constant.EmptyPart
+[0811|t+7239ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.constant.EmptyPartPassthrough
+[0812|t+7239ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.families.Algebra
+[0813|t+7240ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.families.ListAlgebra
+[0814|t+7240ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.families.RecursiveTypeFamily
+[0815|t+7241ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.families.RecursiveTypeFamily$$Lambda/0x0000000800304fa0
+[0816|t+7241ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.families.RecursiveTypeFamily$$Lambda/0x0000000800305468
+[0817|t+7242ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.families.RecursiveTypeFamily$$Lambda/0x00000008003a7bf8
+[0818|t+7242ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.families.TypeFamily
+[0819|t+7243ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Check
+[0820|t+7243ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Check$1
+[0821|t+7243ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Check$CheckType
+[0822|t+7244ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.CompoundList
+[0823|t+7244ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.CompoundList$$Lambda/0x00000008003058a0
+[0824|t+7244ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.CompoundList$CompoundListType
+[0825|t+7245ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Const
+[0826|t+7245ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Const$1
+[0827|t+7245ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Const$PrimitiveType
+[0828|t+7245ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Hook
+[0829|t+7246ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Hook$$Lambda/0x0000000800326778
+[0830|t+7246ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Hook$HookFunction
+[0831|t+7246ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Hook$HookFunction$1
+[0832|t+7247ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Hook$HookType
+[0833|t+7247ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.List
+[0834|t+7247ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.List$1
+[0835|t+7248ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.List$ListType
+[0836|t+7248ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Named
+[0837|t+7248ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Named$$Lambda/0x0000000800304000
+[0838|t+7249ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Named$NamedType
+[0839|t+7249ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Product
+[0840|t+7249ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Product$1
+[0841|t+7250ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Product$ProductType
+[0842|t+7250ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Product$ProductType$$Lambda/0x0000000800383bf0
+[0843|t+7250ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Product$ProductType$$Lambda/0x0000000800386400
+[0844|t+7251ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.RecursivePoint
+[0845|t+7251ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.RecursivePoint$1
+[0846|t+7252ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.RecursivePoint$RecursivePointType
+[0847|t+7252ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.RecursivePoint$RecursivePointType$$Lambda/0x000000080039f750
+[0848|t+7252ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Sum
+[0849|t+7255ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Sum$1
+[0850|t+7255ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Sum$SumType
+[0851|t+7256ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Sum$SumType$$Lambda/0x00000008003839d8
+[0852|t+7256ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Sum$SumType$$Lambda/0x00000008003856f8
+[0853|t+7257ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Sum$SumType$$Lambda/0x0000000800385fb8
+[0854|t+7257ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Tag
+[0855|t+7257ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Tag$1
+[0856|t+7258ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.Tag$TagType
+[0857|t+7258ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TaggedChoice
+[0858|t+7259ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TaggedChoice$$Lambda/0x00000008002d5120
+[0859|t+7259ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TaggedChoice$$Lambda/0x0000000800326990
+[0860|t+7259ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TaggedChoice$$Lambda/0x0000000800326ba8
+[0861|t+7260ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TaggedChoice$TaggedChoiceType
+[0862|t+7260ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TaggedChoice$TaggedChoiceType$$Lambda/0x00000008003d13e0
+[0863|t+7260ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TaggedChoice$TaggedChoiceType$$Lambda/0x00000008003d1618
+[0864|t+7261ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TaggedChoice$TaggedChoiceType$RewriteFunc
+[0865|t+7261ms|ThreadId(2)] [class_dump] com.mojang.datafixers.types.templates.TypeTemplate
+[0866|t+7261ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Either
+[0867|t+7261ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Either$Left
+[0868|t+7262ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Either$Right
+[0869|t+7262ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Function3
+[0870|t+7262ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Function4
+[0871|t+7263ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Function6
+[0872|t+7263ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Pair
+[0873|t+7264ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Pair$$Lambda/0x00000008002d1f10
+[0874|t+7264ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Pair$$Lambda/0x00000008002d2140
+[0875|t+7265ms|ThreadId(2)] [class_dump] com.mojang.datafixers.util.Unit
+[0876|t+7265ms|ThreadId(2)] [class_dump] com.mojang.jtracy.TracyClient
+[0877|t+7266ms|ThreadId(2)] [class_dump] com.mojang.logging.LogListeners
+[0878|t+7266ms|ThreadId(2)] [class_dump] com.mojang.logging.LogListeners$$Lambda/0x00000008001b7a78
+[0879|t+7267ms|ThreadId(2)] [class_dump] com.mojang.logging.LogListeners$Target
+[0880|t+7267ms|ThreadId(2)] [class_dump] com.mojang.logging.LogQueues
+[0881|t+7267ms|ThreadId(2)] [class_dump] com.mojang.logging.LogQueues$$Lambda/0x00000008001ad598
+[0882|t+7268ms|ThreadId(2)] [class_dump] com.mojang.logging.LogUtils
+[0883|t+7268ms|ThreadId(2)] [class_dump] com.mojang.logging.plugins.LegacyXMLLayout
+[0884|t+7269ms|ThreadId(2)] [class_dump] com.mojang.logging.plugins.ListenerLogAppender
+[0885|t+7269ms|ThreadId(2)] [class_dump] com.mojang.logging.plugins.QueueLogAppender
+[0886|t+7273ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec
+[0887|t+7273ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x00000008002120d0
+[0888|t+7274ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x0000000800212300
+[0889|t+7274ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x000000080021ede8
+[0890|t+7274ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x000000080021f020
+[0891|t+7275ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x00000008002255a0
+[0892|t+7276ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x000000080022f2b0
+[0893|t+7276ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x000000080022f4e8
+[0894|t+7277ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x000000080023d150
+[0895|t+7277ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x0000000800243ad8
+[0896|t+7278ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x0000000800243d10
+[0897|t+7278ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x000000080058d518
+[0898|t+7278ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$$Lambda/0x000000080069d640
+[0899|t+7279ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$1
+[0900|t+7279ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$10
+[0901|t+7279ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$11
+[0902|t+7280ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$12
+[0903|t+7280ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$13
+[0904|t+7280ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$14
+[0905|t+7281ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$15
+[0906|t+7281ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$16
+[0907|t+7281ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$17
+[0908|t+7282ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$18
+[0909|t+7282ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$19
+[0910|t+7282ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$2
+[0911|t+7283ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$20
+[0912|t+7283ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$3
+[0913|t+7283ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$4
+[0914|t+7284ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$9
+[0915|t+7284ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$RecursiveCodec
+[0916|t+7284ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$RecursiveCodec$$Lambda/0x000000080025d730
+[0917|t+7285ms|ThreadId(2)] [class_dump] com.mojang.serialization.Codec$ResultFunction
+[0918|t+7285ms|ThreadId(2)] [class_dump] com.mojang.serialization.Compressable
+[0919|t+7285ms|ThreadId(2)] [class_dump] com.mojang.serialization.CompressorHolder
+[0920|t+7286ms|ThreadId(2)] [class_dump] com.mojang.serialization.DataResult
+[0921|t+7287ms|ThreadId(2)] [class_dump] com.mojang.serialization.Decoder
+[0922|t+7287ms|ThreadId(2)] [class_dump] com.mojang.serialization.Decoder$$Lambda/0x000000080022c468
+[0923|t+7289ms|ThreadId(2)] [class_dump] com.mojang.serialization.Decoder$1
+[0924|t+7289ms|ThreadId(2)] [class_dump] com.mojang.serialization.Decoder$2
+[0925|t+7289ms|ThreadId(2)] [class_dump] com.mojang.serialization.Decoder$5
+[0926|t+7290ms|ThreadId(2)] [class_dump] com.mojang.serialization.Dynamic
+[0927|t+7290ms|ThreadId(2)] [class_dump] com.mojang.serialization.DynamicLike
+[0928|t+7291ms|ThreadId(2)] [class_dump] com.mojang.serialization.DynamicOps
+[0929|t+7291ms|ThreadId(2)] [class_dump] com.mojang.serialization.Encoder
+[0930|t+7292ms|ThreadId(2)] [class_dump] com.mojang.serialization.Encoder$1
+[0931|t+7292ms|ThreadId(2)] [class_dump] com.mojang.serialization.Encoder$2
+[0932|t+7292ms|ThreadId(2)] [class_dump] com.mojang.serialization.Encoder$4
+[0933|t+7293ms|ThreadId(2)] [class_dump] com.mojang.serialization.JavaOps
+[0934|t+7293ms|ThreadId(2)] [class_dump] com.mojang.serialization.JsonOps
+[0935|t+7293ms|ThreadId(2)] [class_dump] com.mojang.serialization.Keyable
+[0936|t+7294ms|ThreadId(2)] [class_dump] com.mojang.serialization.Lifecycle
+[0937|t+7294ms|ThreadId(2)] [class_dump] com.mojang.serialization.Lifecycle$1
+[0938|t+7294ms|ThreadId(2)] [class_dump] com.mojang.serialization.Lifecycle$2
+[0939|t+7295ms|ThreadId(2)] [class_dump] com.mojang.serialization.Lifecycle$Deprecated
+[0940|t+7295ms|ThreadId(2)] [class_dump] com.mojang.serialization.ListBuilder
+[0941|t+7296ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec
+[0942|t+7296ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$$Lambda/0x0000000800206fe8
+[0943|t+7296ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$$Lambda/0x0000000800248590
+[0944|t+7297ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$$Lambda/0x0000000800268f10
+[0945|t+7297ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$$Lambda/0x00000008004e57c8
+[0946|t+7298ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$$Lambda/0x00000008004ec238
+[0947|t+7298ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$$Lambda/0x00000008004ec468
+[0948|t+7298ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$$Lambda/0x0000000800505000
+[0949|t+7298ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$1
+[0950|t+7299ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$10
+[0951|t+7299ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$11
+[0952|t+7299ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$2
+[0953|t+7299ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$3
+[0954|t+7300ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$4
+[0955|t+7300ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$6
+[0956|t+7300ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$Dependent
+[0957|t+7301ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$MapCodecCodec
+[0958|t+7301ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$RecursiveMapCodec
+[0959|t+7301ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$RecursiveMapCodec$$Lambda/0x000000080069c000
+[0960|t+7302ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapCodec$ResultFunction
+[0961|t+7302ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapDecoder
+[0962|t+7302ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapDecoder$3
+[0963|t+7307ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapDecoder$4
+[0964|t+7307ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapDecoder$Implementation
+[0965|t+7308ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapEncoder
+[0966|t+7309ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapEncoder$1
+[0967|t+7309ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapEncoder$2
+[0968|t+7309ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapEncoder$Implementation
+[0969|t+7310ms|ThreadId(2)] [class_dump] com.mojang.serialization.MapLike
+[0970|t+7310ms|ThreadId(2)] [class_dump] com.mojang.serialization.RecordBuilder
+[0971|t+7311ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.BaseMapCodec
+[0972|t+7312ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.DispatchedMapCodec
+[0973|t+7312ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.EitherCodec
+[0974|t+7312ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.EitherMapCodec
+[0975|t+7313ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.FieldDecoder
+[0976|t+7313ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.FieldEncoder
+[0977|t+7313ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.KeyDispatchCodec
+[0978|t+7314ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.KeyDispatchCodec$$Lambda/0x00000008004ec698
+[0979|t+7314ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.ListCodec
+[0980|t+7315ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.OptionalFieldCodec
+[0981|t+7315ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.PairMapCodec
+[0982|t+7315ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.PrimitiveCodec
+[0983|t+7316ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder
+[0984|t+7316ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$$Lambda/0x0000000800225ce0
+[0985|t+7316ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$$Lambda/0x000000080022c000
+[0986|t+7317ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$$Lambda/0x000000080022c238
+[0987|t+7317ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$2
+[0988|t+7317ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance
+[0989|t+7317ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x000000080022c950
+[0990|t+7317ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x000000080022cb88
+[0991|t+7318ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x000000080023e230
+[0992|t+7318ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x000000080023e468
+[0993|t+7318ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x0000000800486aa8
+[0994|t+7318ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x0000000800486ce0
+[0995|t+7319ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x0000000800486f18
+[0996|t+7319ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x00000008004aa480
+[0997|t+7319ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x0000000800501d68
+[0998|t+7320ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$$Lambda/0x0000000800501fa0
+[0999|t+7321ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$1
+[1000|t+7321ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$3
+[1001|t+7322ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$5
+[1002|t+7322ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.RecordCodecBuilder$Instance$7
+[1003|t+7322ms|ThreadId(2)] [class_dump] com.mojang.serialization.codecs.UnboundedMapCodec
+[1004|t+7323ms|ThreadId(2)] [class_dump] com.mojang.util.UndashedUuid
+[1005|t+7323ms|ThreadId(2)] [class_dump] cta → net.minecraft.world.entity.ai.village.poi.PoiType
+[1006|t+7323ms|ThreadId(2)] [class_dump] ctb → net.minecraft.world.entity.ai.village.poi.PoiTypes
+[1007|t+7324ms|ThreadId(2)] [class_dump] cth → net.minecraft.world.entity.animal.Animal
+[1008|t+7324ms|ThreadId(2)] [class_dump] cti → net.minecraft.world.entity.animal.Bucketable
+[1009|t+7324ms|ThreadId(2)] [class_dump] cvg → net.minecraft.world.entity.animal.fish.AbstractFish
+[1010|t+7325ms|ThreadId(2)] [class_dump] cvm → net.minecraft.world.entity.animal.fish.WaterAnimal
+[1011|t+7325ms|ThreadId(2)] [class_dump] cvv → net.minecraft.world.entity.animal.frog.Tadpole
+[1012|t+7326ms|ThreadId(2)] [class_dump] cwb → net.minecraft.world.entity.animal.golem.AbstractGolem
+[1013|t+7326ms|ThreadId(2)] [class_dump] cwc → net.minecraft.world.entity.animal.golem.CopperGolem
+[1014|t+7326ms|ThreadId(2)] [class_dump] cwh → net.minecraft.world.entity.animal.golem.IronGolem
+[1015|t+7327ms|ThreadId(2)] [class_dump] cwi → net.minecraft.world.entity.animal.golem.SnowGolem
+[1016|t+7327ms|ThreadId(2)] [class_dump] cwk → net.minecraft.world.entity.animal.happyghast.HappyGhast
+[1017|t+7327ms|ThreadId(2)] [class_dump] cxm → net.minecraft.world.entity.animal.sniffer.Sniffer
+[1018|t+7328ms|ThreadId(2)] [class_dump] cxs → net.minecraft.world.entity.animal.turtle.Turtle
+[1019|t+7328ms|ThreadId(2)] [class_dump] cxv → net.minecraft.world.entity.animal.wolf.WolfSoundVariant
+[1020|t+7328ms|ThreadId(2)] [class_dump] cyw → net.minecraft.world.entity.boss.wither.WitherBoss
+[1021|t+7329ms|ThreadId(2)] [class_dump] czk → net.minecraft.world.entity.item.FallingBlockEntity
+[1022|t+7329ms|ThreadId(2)] [class_dump] czl → net.minecraft.world.entity.item.ItemEntity
+[1023|t+7329ms|ThreadId(2)] [class_dump] czm → net.minecraft.world.entity.item.PrimedTnt
+[1024|t+7329ms|ThreadId(2)] [class_dump] czu → net.minecraft.world.entity.monster.Enemy
+[1025|t+7329ms|ThreadId(2)] [class_dump] czz → net.minecraft.world.entity.monster.Monster
+[1026|t+7330ms|ThreadId(2)] [class_dump] dac → net.minecraft.world.entity.monster.RangedAttackMob
+[1027|t+7330ms|ThreadId(2)] [class_dump] daf → net.minecraft.world.entity.monster.Silverfish
+[1028|t+7330ms|ThreadId(2)] [class_dump] dag → net.minecraft.world.entity.monster.Slime
+[1029|t+7330ms|ThreadId(2)] [class_dump] dda → net.minecraft.world.entity.npc.villager.VillagerProfession
+[1030|t+7331ms|ThreadId(2)] [class_dump] ddc → net.minecraft.world.entity.npc.villager.VillagerType
+[1031|t+7331ms|ThreadId(2)] [class_dump] ddm → net.minecraft.world.entity.player.Player
+[1032|t+7331ms|ThreadId(2)] [class_dump] dec → net.minecraft.world.entity.projectile.Projectile
+[1033|t+7332ms|ThreadId(2)] [class_dump] deh → net.minecraft.world.entity.projectile.arrow.AbstractArrow
+[1034|t+7332ms|ThreadId(2)] [class_dump] dfs → net.minecraft.world.entity.variant.SpawnConditions
+[1035|t+7332ms|ThreadId(2)] [class_dump] dgw → net.minecraft.world.flag.FeatureElement
+[1036|t+7333ms|ThreadId(2)] [class_dump] dgx → net.minecraft.world.flag.FeatureFlag
+[1037|t+7333ms|ThreadId(2)] [class_dump] dgy → net.minecraft.world.flag.FeatureFlagRegistry
+[1038|t+7333ms|ThreadId(2)] [class_dump] dgz → net.minecraft.world.flag.FeatureFlagSet
+[1039|t+7334ms|ThreadId(2)] [class_dump] dha → net.minecraft.world.flag.FeatureFlagUniverse
+[1040|t+7334ms|ThreadId(2)] [class_dump] dhb → net.minecraft.world.flag.FeatureFlags
+[1041|t+7334ms|ThreadId(2)] [class_dump] dhi → net.minecraft.world.inventory.AbstractContainerMenu
+[1042|t+7335ms|ThreadId(2)] [class_dump] dhj → net.minecraft.world.inventory.AbstractCraftingMenu
+[1043|t+7335ms|ThreadId(2)] [class_dump] dhm → net.minecraft.world.inventory.AnvilMenu
+[1044|t+7335ms|ThreadId(2)] [class_dump] dhr → net.minecraft.world.inventory.CartographyTableMenu
+[1045|t+7335ms|ThreadId(2)] [class_dump] dhs → net.minecraft.world.inventory.ChestMenu
+[1046|t+7336ms|ThreadId(2)] [class_dump] dib → net.minecraft.world.inventory.CraftingContainer
+[1047|t+7340ms|ThreadId(2)] [class_dump] dic → net.minecraft.world.inventory.CraftingMenu
+[1048|t+7340ms|ThreadId(2)] [class_dump] dif → net.minecraft.world.inventory.EnchantmentMenu
+[1049|t+7341ms|ThreadId(2)] [class_dump] dij → net.minecraft.world.inventory.GrindstoneMenu
+[1050|t+7341ms|ThreadId(2)] [class_dump] din → net.minecraft.world.inventory.ItemCombinerMenu
+[1051|t+7342ms|ThreadId(2)] [class_dump] diq → net.minecraft.world.inventory.LoomMenu
+[1052|t+7342ms|ThreadId(2)] [class_dump] dir → net.minecraft.world.inventory.MenuConstructor
+[1053|t+7343ms|ThreadId(2)] [class_dump] diz → net.minecraft.world.inventory.RecipeBookMenu
+[1054|t+7343ms|ThreadId(2)] [class_dump] djb → net.minecraft.world.inventory.RecipeCraftingHolder
+[1055|t+7343ms|ThreadId(2)] [class_dump] djl → net.minecraft.world.inventory.SmithingMenu
+[1056|t+7344ms|ThreadId(2)] [class_dump] djn → net.minecraft.world.inventory.StackedContentsCompatible
+[1057|t+7344ms|ThreadId(2)] [class_dump] djo → net.minecraft.world.inventory.StonecutterMenu
+[1058|t+7345ms|ThreadId(2)] [class_dump] dkk → net.minecraft.world.item.CreativeModeTab
+[1059|t+7345ms|ThreadId(2)] [class_dump] dkl → net.minecraft.world.item.CreativeModeTabs
+[1060|t+7345ms|ThreadId(2)] [class_dump] dkr → net.minecraft.world.item.DyeColor
+[1061|t+7345ms|ThreadId(2)] [class_dump] dlp → net.minecraft.world.item.Item
+[1062|t+7346ms|ThreadId(2)] [class_dump] dlt → net.minecraft.world.item.ItemStack
+[1063|t+7346ms|ThreadId(2)] [class_dump] dns → net.minecraft.world.item.alchemy.Potions
+[1064|t+7346ms|ThreadId(2)] [class_dump] doc → net.minecraft.world.item.component.ConsumableListener
+[1065|t+7347ms|ThreadId(2)] [class_dump] dpa → net.minecraft.world.item.component.SuspiciousStewEffects
+[1066|t+7347ms|ThreadId(2)] [class_dump] dpe → net.minecraft.world.item.component.TooltipProvider
+[1067|t+7347ms|ThreadId(2)] [class_dump] dqk → net.minecraft.world.item.crafting.ExtendedRecipeBookCategory
+[1068|t+7348ms|ThreadId(2)] [class_dump] dqu → net.minecraft.world.item.crafting.RecipeBookCategories
+[1069|t+7348ms|ThreadId(2)] [class_dump] dqv → net.minecraft.world.item.crafting.RecipeBookCategory
+[1070|t+7348ms|ThreadId(2)] [class_dump] dqw → net.minecraft.world.item.crafting.RecipeCache
+[1071|t+7349ms|ThreadId(2)] [class_dump] dqy → net.minecraft.world.item.crafting.RecipeInput
+[1072|t+7349ms|ThreadId(2)] [class_dump] dsb → net.minecraft.world.item.crafting.display.RecipeDisplays
+[1073|t+7350ms|ThreadId(2)] [class_dump] dsg → net.minecraft.world.item.crafting.display.SlotDisplays
+[1074|t+7350ms|ThreadId(2)] [class_dump] dsp → net.minecraft.world.item.enchantment.EnchantmentEffectComponents
+[1075|t+7350ms|ThreadId(2)] [class_dump] dsv → net.minecraft.world.item.enchantment.LevelBasedValue
+[1076|t+7351ms|ThreadId(2)] [class_dump] dth → net.minecraft.world.item.enchantment.effects.EnchantmentEntityEffect
+[1077|t+7351ms|ThreadId(2)] [class_dump] dti → net.minecraft.world.item.enchantment.effects.EnchantmentLocationBasedEffect
+[1078|t+7351ms|ThreadId(2)] [class_dump] dtj → net.minecraft.world.item.enchantment.effects.EnchantmentValueEffect
+[1079|t+7352ms|ThreadId(2)] [class_dump] dua → net.minecraft.world.item.enchantment.providers.EnchantmentProviderTypes
+[1080|t+7352ms|ThreadId(2)] [class_dump] dvg → net.minecraft.world.item.slot.SlotSources
+[1081|t+7352ms|ThreadId(2)] [class_dump] dvq → net.minecraft.world.level.BlockAndTintGetter
+[1082|t+7353ms|ThreadId(2)] [class_dump] dvt → net.minecraft.world.level.BlockGetter
+[1083|t+7353ms|ThreadId(2)] [class_dump] dvx → net.minecraft.world.level.CollisionGetter
+[1084|t+7355ms|ThreadId(2)] [class_dump] dwa → net.minecraft.world.level.CommonLevelAccessor
+[1085|t+7355ms|ThreadId(2)] [class_dump] dwf → net.minecraft.world.level.EmptyBlockGetter
+[1086|t+7356ms|ThreadId(2)] [class_dump] dwh → net.minecraft.world.level.EntityGetter
+[1087|t+7357ms|ThreadId(2)] [class_dump] dwj → net.minecraft.world.level.ExplosionDamageCalculator
+[1088|t+7357ms|ThreadId(2)] [class_dump] dwn → net.minecraft.world.level.ItemLike
+[1089|t+7357ms|ThreadId(2)] [class_dump] dwo → net.minecraft.world.level.Level
+[1090|t+7358ms|ThreadId(2)] [class_dump] dwp → net.minecraft.world.level.LevelAccessor
+[1091|t+7359ms|ThreadId(2)] [class_dump] dwq → net.minecraft.world.level.LevelHeightAccessor
+[1092|t+7359ms|ThreadId(2)] [class_dump] dwr → net.minecraft.world.level.LevelReader
+[1093|t+7359ms|ThreadId(2)] [class_dump] dwt → net.minecraft.world.level.LevelSimulatedRW
+[1094|t+7360ms|ThreadId(2)] [class_dump] dwu → net.minecraft.world.level.LevelSimulatedReader
+[1095|t+7360ms|ThreadId(2)] [class_dump] dwv → net.minecraft.world.level.LevelWriter
+[1096|t+7360ms|ThreadId(2)] [class_dump] dx → net.minecraft.commands.BrigadierExceptions
+[1097|t+7361ms|ThreadId(2)] [class_dump] dxd → net.minecraft.world.level.ScheduledTickAccess
+[1098|t+7361ms|ThreadId(2)] [class_dump] dxf → net.minecraft.world.level.ServerLevelAccessor
+[1099|t+7361ms|ThreadId(2)] [class_dump] dxg → net.minecraft.world.level.SignalGetter
+[1100|t+7362ms|ThreadId(2)] [class_dump] dxj → net.minecraft.world.level.Spawner
+[1101|t+7362ms|ThreadId(2)] [class_dump] dxn → net.minecraft.world.level.WorldGenLevel
+[1102|t+7362ms|ThreadId(2)] [class_dump] dxo → net.minecraft.world.level.biome.Biome
+[1103|t+7362ms|ThreadId(2)] [class_dump] dxt → net.minecraft.world.level.biome.BiomeSources
+[1104|t+7363ms|ThreadId(2)] [class_dump] dyh → net.minecraft.world.level.block.AbstractBannerBlock
+[1105|t+7363ms|ThreadId(2)] [class_dump] dyi → net.minecraft.world.level.block.AbstractCandleBlock
+[1106|t+7363ms|ThreadId(2)] [class_dump] dyj → net.minecraft.world.level.block.AbstractCauldronBlock
+[1107|t+7364ms|ThreadId(2)] [class_dump] dyk → net.minecraft.world.level.block.AbstractChestBlock
+[1108|t+7364ms|ThreadId(2)] [class_dump] dyl → net.minecraft.world.level.block.AbstractFurnaceBlock
+[1109|t+7364ms|ThreadId(2)] [class_dump] dym → net.minecraft.world.level.block.AbstractSkullBlock
+[1110|t+7365ms|ThreadId(2)] [class_dump] dyn → net.minecraft.world.level.block.AirBlock
+[1111|t+7365ms|ThreadId(2)] [class_dump] dyo → net.minecraft.world.level.block.AmethystBlock
+[1112|t+7365ms|ThreadId(2)] [class_dump] dyp → net.minecraft.world.level.block.AmethystClusterBlock
+[1113|t+7366ms|ThreadId(2)] [class_dump] dyq → net.minecraft.world.level.block.AnvilBlock
+[1114|t+7366ms|ThreadId(2)] [class_dump] dyr → net.minecraft.world.level.block.AttachedStemBlock
+[1115|t+7366ms|ThreadId(2)] [class_dump] dys → net.minecraft.world.level.block.AzaleaBlock
+[1116|t+7367ms|ThreadId(2)] [class_dump] dyt → net.minecraft.world.level.block.BambooSaplingBlock
+[1117|t+7367ms|ThreadId(2)] [class_dump] dyu → net.minecraft.world.level.block.BambooStalkBlock
+[1118|t+7367ms|ThreadId(2)] [class_dump] dyv → net.minecraft.world.level.block.BannerBlock
+[1119|t+7368ms|ThreadId(2)] [class_dump] dyw → net.minecraft.world.level.block.BarrelBlock
+[1120|t+7368ms|ThreadId(2)] [class_dump] dyx → net.minecraft.world.level.block.BarrierBlock
+[1121|t+7368ms|ThreadId(2)] [class_dump] dyy → net.minecraft.world.level.block.BaseCoralFanBlock
+[1122|t+7369ms|ThreadId(2)] [class_dump] dyz → net.minecraft.world.level.block.BaseCoralPlantBlock
+[1123|t+7369ms|ThreadId(2)] [class_dump] dza → net.minecraft.world.level.block.BaseCoralPlantTypeBlock
+[1124|t+7370ms|ThreadId(2)] [class_dump] dzb → net.minecraft.world.level.block.BaseCoralWallFanBlock
+[1125|t+7370ms|ThreadId(2)] [class_dump] dzc → net.minecraft.world.level.block.BaseEntityBlock
+[1126|t+7371ms|ThreadId(2)] [class_dump] dzd → net.minecraft.world.level.block.BaseFireBlock
+[1127|t+7371ms|ThreadId(2)] [class_dump] dze → net.minecraft.world.level.block.BasePressurePlateBlock
+[1128|t+7372ms|ThreadId(2)] [class_dump] dzf → net.minecraft.world.level.block.BaseRailBlock
+[1129|t+7372ms|ThreadId(2)] [class_dump] dzg → net.minecraft.world.level.block.BaseTorchBlock
+[1130|t+7373ms|ThreadId(2)] [class_dump] dzh → net.minecraft.world.level.block.BeaconBeamBlock
+[1131|t+7373ms|ThreadId(2)] [class_dump] dzi → net.minecraft.world.level.block.BeaconBlock
+[1132|t+7373ms|ThreadId(2)] [class_dump] dzj → net.minecraft.world.level.block.BedBlock
+[1133|t+7375ms|ThreadId(2)] [class_dump] dzk → net.minecraft.world.level.block.BeehiveBlock
+[1134|t+7375ms|ThreadId(2)] [class_dump] dzl → net.minecraft.world.level.block.BeetrootBlock
+[1135|t+7375ms|ThreadId(2)] [class_dump] dzm → net.minecraft.world.level.block.BellBlock
+[1136|t+7376ms|ThreadId(2)] [class_dump] dzn → net.minecraft.world.level.block.BigDripleafBlock
+[1137|t+7376ms|ThreadId(2)] [class_dump] dzo → net.minecraft.world.level.block.BigDripleafStemBlock
+[1138|t+7377ms|ThreadId(2)] [class_dump] dzp → net.minecraft.world.level.block.BlastFurnaceBlock
+[1139|t+7377ms|ThreadId(2)] [class_dump] dzq → net.minecraft.world.level.block.Block
+[1140|t+7377ms|ThreadId(2)] [class_dump] dzr → net.minecraft.world.level.block.BlockTypes
+[1141|t+7377ms|ThreadId(2)] [class_dump] dzs → net.minecraft.world.level.block.Blocks
+[1142|t+7378ms|ThreadId(2)] [class_dump] dzt → net.minecraft.world.level.block.BonemealableBlock
+[1143|t+7378ms|ThreadId(2)] [class_dump] dzu → net.minecraft.world.level.block.BonemealableFeaturePlacerBlock
+[1144|t+7378ms|ThreadId(2)] [class_dump] dzv → net.minecraft.world.level.block.BrewingStandBlock
+[1145|t+7379ms|ThreadId(2)] [class_dump] dzw → net.minecraft.world.level.block.BrushableBlock
+[1146|t+7379ms|ThreadId(2)] [class_dump] dzx → net.minecraft.world.level.block.BubbleColumnBlock
+[1147|t+7380ms|ThreadId(2)] [class_dump] dzy → net.minecraft.world.level.block.BucketPickup
+[1148|t+7380ms|ThreadId(2)] [class_dump] dzz → net.minecraft.world.level.block.BuddingAmethystBlock
+[1149|t+7380ms|ThreadId(2)] [class_dump] eaa → net.minecraft.world.level.block.BushBlock
+[1150|t+7381ms|ThreadId(2)] [class_dump] eab → net.minecraft.world.level.block.ButtonBlock
+[1151|t+7381ms|ThreadId(2)] [class_dump] eac → net.minecraft.world.level.block.CactusBlock
+[1152|t+7382ms|ThreadId(2)] [class_dump] ead → net.minecraft.world.level.block.CactusFlowerBlock
+[1153|t+7382ms|ThreadId(2)] [class_dump] eae → net.minecraft.world.level.block.CakeBlock
+[1154|t+7382ms|ThreadId(2)] [class_dump] eaf → net.minecraft.world.level.block.CalibratedSculkSensorBlock
+[1155|t+7383ms|ThreadId(2)] [class_dump] eag → net.minecraft.world.level.block.CampfireBlock
+[1156|t+7383ms|ThreadId(2)] [class_dump] eah → net.minecraft.world.level.block.CandleBlock
+[1157|t+7383ms|ThreadId(2)] [class_dump] eai → net.minecraft.world.level.block.CandleCakeBlock
+[1158|t+7384ms|ThreadId(2)] [class_dump] eaj → net.minecraft.world.level.block.CarpetBlock
+[1159|t+7384ms|ThreadId(2)] [class_dump] eak → net.minecraft.world.level.block.CarrotBlock
+[1160|t+7385ms|ThreadId(2)] [class_dump] eal → net.minecraft.world.level.block.CartographyTableBlock
+[1161|t+7385ms|ThreadId(2)] [class_dump] eam → net.minecraft.world.level.block.CarvedPumpkinBlock
+[1162|t+7385ms|ThreadId(2)] [class_dump] ean → net.minecraft.world.level.block.CauldronBlock
+[1163|t+7386ms|ThreadId(2)] [class_dump] eao → net.minecraft.world.level.block.CaveVines
+[1164|t+7386ms|ThreadId(2)] [class_dump] eap → net.minecraft.world.level.block.CaveVinesBlock
+[1165|t+7386ms|ThreadId(2)] [class_dump] eaq → net.minecraft.world.level.block.CaveVinesPlantBlock
+[1166|t+7388ms|ThreadId(2)] [class_dump] ear → net.minecraft.world.level.block.CeilingHangingSignBlock
+[1167|t+7389ms|ThreadId(2)] [class_dump] eas → net.minecraft.world.level.block.ChainBlock
+[1168|t+7390ms|ThreadId(2)] [class_dump] eat → net.minecraft.world.level.block.ChangeOverTimeBlock
+[1169|t+7390ms|ThreadId(2)] [class_dump] eau → net.minecraft.world.level.block.ChestBlock
+[1170|t+7391ms|ThreadId(2)] [class_dump] eav → net.minecraft.world.level.block.ChiseledBookShelfBlock
+[1171|t+7391ms|ThreadId(2)] [class_dump] eaw → net.minecraft.world.level.block.ChorusFlowerBlock
+[1172|t+7392ms|ThreadId(2)] [class_dump] eax → net.minecraft.world.level.block.ChorusPlantBlock
+[1173|t+7392ms|ThreadId(2)] [class_dump] eay → net.minecraft.world.level.block.CocoaBlock
+[1174|t+7393ms|ThreadId(2)] [class_dump] eaz → net.minecraft.world.level.block.ColoredFallingBlock
+[1175|t+7393ms|ThreadId(2)] [class_dump] eba → net.minecraft.world.level.block.CommandBlock
+[1176|t+7393ms|ThreadId(2)] [class_dump] ebb → net.minecraft.world.level.block.ComparatorBlock
+[1177|t+7394ms|ThreadId(2)] [class_dump] ebc → net.minecraft.world.level.block.ComposterBlock
+[1178|t+7394ms|ThreadId(2)] [class_dump] ebd → net.minecraft.world.level.block.ConcretePowderBlock
+[1179|t+7394ms|ThreadId(2)] [class_dump] ebe → net.minecraft.world.level.block.ConduitBlock
+[1180|t+7395ms|ThreadId(2)] [class_dump] ebf → net.minecraft.world.level.block.CopperBulbBlock
+[1181|t+7395ms|ThreadId(2)] [class_dump] ebg → net.minecraft.world.level.block.CopperChestBlock
+[1182|t+7395ms|ThreadId(2)] [class_dump] ebh → net.minecraft.world.level.block.CopperGolemStatueBlock
+[1183|t+7395ms|ThreadId(2)] [class_dump] ebi → net.minecraft.world.level.block.CoralBlock
+[1184|t+7396ms|ThreadId(2)] [class_dump] ebj → net.minecraft.world.level.block.CoralFanBlock
+[1185|t+7396ms|ThreadId(2)] [class_dump] ebk → net.minecraft.world.level.block.CoralPlantBlock
+[1186|t+7396ms|ThreadId(2)] [class_dump] ebl → net.minecraft.world.level.block.CoralWallFanBlock
+[1187|t+7397ms|ThreadId(2)] [class_dump] ebm → net.minecraft.world.level.block.CrafterBlock
+[1188|t+7397ms|ThreadId(2)] [class_dump] ebn → net.minecraft.world.level.block.CraftingTableBlock
+[1189|t+7397ms|ThreadId(2)] [class_dump] ebo → net.minecraft.world.level.block.CreakingHeartBlock
+[1190|t+7398ms|ThreadId(2)] [class_dump] ebp → net.minecraft.world.level.block.CropBlock
+[1191|t+7398ms|ThreadId(2)] [class_dump] ebq → net.minecraft.world.level.block.CrossCollisionBlock
+[1192|t+7398ms|ThreadId(2)] [class_dump] ebr → net.minecraft.world.level.block.CryingObsidianBlock
+[1193|t+7399ms|ThreadId(2)] [class_dump] ebs → net.minecraft.world.level.block.DaylightDetectorBlock
+[1194|t+7399ms|ThreadId(2)] [class_dump] ebt → net.minecraft.world.level.block.DecoratedPotBlock
+[1195|t+7400ms|ThreadId(2)] [class_dump] ebu → net.minecraft.world.level.block.DetectorRailBlock
+[1196|t+7400ms|ThreadId(2)] [class_dump] ebv → net.minecraft.world.level.block.DiodeBlock
+[1197|t+7400ms|ThreadId(2)] [class_dump] ebw → net.minecraft.world.level.block.DirectionalBlock
+[1198|t+7400ms|ThreadId(2)] [class_dump] ebx → net.minecraft.world.level.block.DirtPathBlock
+[1199|t+7401ms|ThreadId(2)] [class_dump] eby → net.minecraft.world.level.block.DispenserBlock
+[1200|t+7401ms|ThreadId(2)] [class_dump] ebz → net.minecraft.world.level.block.DoorBlock
+[1201|t+7401ms|ThreadId(2)] [class_dump] ec → net.minecraft.commands.CommandSource
+[1202|t+7402ms|ThreadId(2)] [class_dump] ecb → net.minecraft.world.level.block.DoublePlantBlock
+[1203|t+7402ms|ThreadId(2)] [class_dump] ecc → net.minecraft.world.level.block.DragonEggBlock
+[1204|t+7402ms|ThreadId(2)] [class_dump] ecd → net.minecraft.world.level.block.DriedGhastBlock
+[1205|t+7407ms|ThreadId(2)] [class_dump] ece → net.minecraft.world.level.block.DropExperienceBlock
+[1206|t+7408ms|ThreadId(2)] [class_dump] ecf → net.minecraft.world.level.block.DropperBlock
+[1207|t+7408ms|ThreadId(2)] [class_dump] ecg → net.minecraft.world.level.block.DryVegetationBlock
+[1208|t+7410ms|ThreadId(2)] [class_dump] ech → net.minecraft.world.level.block.EnchantingTableBlock
+[1209|t+7411ms|ThreadId(2)] [class_dump] eci → net.minecraft.world.level.block.EndGatewayBlock
+[1210|t+7412ms|ThreadId(2)] [class_dump] ecj → net.minecraft.world.level.block.EndPortalBlock
+[1211|t+7412ms|ThreadId(2)] [class_dump] eck → net.minecraft.world.level.block.EndPortalFrameBlock
+[1212|t+7413ms|ThreadId(2)] [class_dump] ecl → net.minecraft.world.level.block.EndRodBlock
+[1213|t+7413ms|ThreadId(2)] [class_dump] ecm → net.minecraft.world.level.block.EnderChestBlock
+[1214|t+7413ms|ThreadId(2)] [class_dump] ecn → net.minecraft.world.level.block.EntityBlock
+[1215|t+7414ms|ThreadId(2)] [class_dump] eco → net.minecraft.world.level.block.EyeblossomBlock
+[1216|t+7414ms|ThreadId(2)] [class_dump] ecp → net.minecraft.world.level.block.FaceAttachedHorizontalDirectionalBlock
+[1217|t+7414ms|ThreadId(2)] [class_dump] ecq → net.minecraft.world.level.block.Fallable
+[1218|t+7415ms|ThreadId(2)] [class_dump] ecr → net.minecraft.world.level.block.FallingBlock
+[1219|t+7415ms|ThreadId(2)] [class_dump] ecs → net.minecraft.world.level.block.FarmBlock
+[1220|t+7415ms|ThreadId(2)] [class_dump] ect → net.minecraft.world.level.block.FenceBlock
+[1221|t+7416ms|ThreadId(2)] [class_dump] ecu → net.minecraft.world.level.block.FenceGateBlock
+[1222|t+7416ms|ThreadId(2)] [class_dump] ecv → net.minecraft.world.level.block.FireBlock
+[1223|t+7416ms|ThreadId(2)] [class_dump] ecw → net.minecraft.world.level.block.FireflyBushBlock
+[1224|t+7417ms|ThreadId(2)] [class_dump] ecx → net.minecraft.world.level.block.FlowerBedBlock
+[1225|t+7417ms|ThreadId(2)] [class_dump] ecy → net.minecraft.world.level.block.FlowerBlock
+[1226|t+7417ms|ThreadId(2)] [class_dump] ecz → net.minecraft.world.level.block.FlowerPotBlock
+[1227|t+7418ms|ThreadId(2)] [class_dump] eda → net.minecraft.world.level.block.FrogspawnBlock
+[1228|t+7418ms|ThreadId(2)] [class_dump] edb → net.minecraft.world.level.block.FrostedIceBlock
+[1229|t+7418ms|ThreadId(2)] [class_dump] edc → net.minecraft.world.level.block.FungusBlock
+[1230|t+7419ms|ThreadId(2)] [class_dump] edd → net.minecraft.world.level.block.FurnaceBlock
+[1231|t+7419ms|ThreadId(2)] [class_dump] ede → net.minecraft.world.level.block.GameMasterBlock
+[1232|t+7420ms|ThreadId(2)] [class_dump] edf → net.minecraft.world.level.block.GlazedTerracottaBlock
+[1233|t+7421ms|ThreadId(2)] [class_dump] edg → net.minecraft.world.level.block.GlowLichenBlock
+[1234|t+7421ms|ThreadId(2)] [class_dump] edh → net.minecraft.world.level.block.GrassBlock
+[1235|t+7422ms|ThreadId(2)] [class_dump] edi → net.minecraft.world.level.block.GrindstoneBlock
+[1236|t+7423ms|ThreadId(2)] [class_dump] edj → net.minecraft.world.level.block.GrowingPlantBlock
+[1237|t+7423ms|ThreadId(2)] [class_dump] edk → net.minecraft.world.level.block.GrowingPlantBodyBlock
+[1238|t+7424ms|ThreadId(2)] [class_dump] edl → net.minecraft.world.level.block.GrowingPlantHeadBlock
+[1239|t+7424ms|ThreadId(2)] [class_dump] edm → net.minecraft.world.level.block.HalfTransparentBlock
+[1240|t+7425ms|ThreadId(2)] [class_dump] edn → net.minecraft.world.level.block.HangingMossBlock
+[1241|t+7425ms|ThreadId(2)] [class_dump] edo → net.minecraft.world.level.block.HangingRootsBlock
+[1242|t+7426ms|ThreadId(2)] [class_dump] edp → net.minecraft.world.level.block.HayBlock
+[1243|t+7426ms|ThreadId(2)] [class_dump] edq → net.minecraft.world.level.block.HeavyCoreBlock
+[1244|t+7426ms|ThreadId(2)] [class_dump] edr → net.minecraft.world.level.block.HoneyBlock
+[1245|t+7427ms|ThreadId(2)] [class_dump] eds → net.minecraft.world.level.block.HopperBlock
+[1246|t+7427ms|ThreadId(2)] [class_dump] edt → net.minecraft.world.level.block.HorizontalDirectionalBlock
+[1247|t+7427ms|ThreadId(2)] [class_dump] edu → net.minecraft.world.level.block.HugeMushroomBlock
+[1248|t+7428ms|ThreadId(2)] [class_dump] edv → net.minecraft.world.level.block.IceBlock
+[1249|t+7428ms|ThreadId(2)] [class_dump] edw → net.minecraft.world.level.block.InfestedBlock
+[1250|t+7429ms|ThreadId(2)] [class_dump] edx → net.minecraft.world.level.block.InfestedRotatedPillarBlock
+[1251|t+7430ms|ThreadId(2)] [class_dump] edy → net.minecraft.world.level.block.IronBarsBlock
+[1252|t+7430ms|ThreadId(2)] [class_dump] edz → net.minecraft.world.level.block.JigsawBlock
+[1253|t+7430ms|ThreadId(2)] [class_dump] eea → net.minecraft.world.level.block.JukeboxBlock
+[1254|t+7431ms|ThreadId(2)] [class_dump] eeb → net.minecraft.world.level.block.KelpBlock
+[1255|t+7432ms|ThreadId(2)] [class_dump] eec → net.minecraft.world.level.block.KelpPlantBlock
+[1256|t+7432ms|ThreadId(2)] [class_dump] eed → net.minecraft.world.level.block.LadderBlock
+[1257|t+7432ms|ThreadId(2)] [class_dump] eee → net.minecraft.world.level.block.LanternBlock
+[1258|t+7433ms|ThreadId(2)] [class_dump] eef → net.minecraft.world.level.block.LavaCauldronBlock
+[1259|t+7433ms|ThreadId(2)] [class_dump] eeg → net.minecraft.world.level.block.LayeredCauldronBlock
+[1260|t+7433ms|ThreadId(2)] [class_dump] eeh → net.minecraft.world.level.block.LeafLitterBlock
+[1261|t+7434ms|ThreadId(2)] [class_dump] eei → net.minecraft.world.level.block.LeavesBlock
+[1262|t+7434ms|ThreadId(2)] [class_dump] eej → net.minecraft.world.level.block.LecternBlock
+[1263|t+7434ms|ThreadId(2)] [class_dump] eel → net.minecraft.world.level.block.LeverBlock
+[1264|t+7435ms|ThreadId(2)] [class_dump] eem → net.minecraft.world.level.block.LightBlock
+[1265|t+7435ms|ThreadId(2)] [class_dump] een → net.minecraft.world.level.block.LightningRodBlock
+[1266|t+7442ms|ThreadId(2)] [class_dump] eeo → net.minecraft.world.level.block.LiquidBlock
+[1267|t+7443ms|ThreadId(2)] [class_dump] eep → net.minecraft.world.level.block.LiquidBlockContainer
+[1268|t+7443ms|ThreadId(2)] [class_dump] eeq → net.minecraft.world.level.block.LoomBlock
+[1269|t+7444ms|ThreadId(2)] [class_dump] eer → net.minecraft.world.level.block.MagmaBlock
+[1270|t+7444ms|ThreadId(2)] [class_dump] ees → net.minecraft.world.level.block.MangroveLeavesBlock
+[1271|t+7445ms|ThreadId(2)] [class_dump] eet → net.minecraft.world.level.block.MangrovePropaguleBlock
+[1272|t+7445ms|ThreadId(2)] [class_dump] eeu → net.minecraft.world.level.block.MangroveRootsBlock
+[1273|t+7445ms|ThreadId(2)] [class_dump] eev → net.minecraft.world.level.block.Mirror
+[1274|t+7446ms|ThreadId(2)] [class_dump] eew → net.minecraft.world.level.block.MossyCarpetBlock
+[1275|t+7446ms|ThreadId(2)] [class_dump] eex → net.minecraft.world.level.block.MudBlock
+[1276|t+7447ms|ThreadId(2)] [class_dump] eey → net.minecraft.world.level.block.MultifaceBlock
+[1277|t+7447ms|ThreadId(2)] [class_dump] eez → net.minecraft.world.level.block.MultifaceSpreadeableBlock
+[1278|t+7448ms|ThreadId(2)] [class_dump] efa → net.minecraft.world.level.block.MultifaceSpreader
+[1279|t+7448ms|ThreadId(2)] [class_dump] efb → net.minecraft.world.level.block.MushroomBlock
+[1280|t+7448ms|ThreadId(2)] [class_dump] efc → net.minecraft.world.level.block.MyceliumBlock
+[1281|t+7448ms|ThreadId(2)] [class_dump] efd → net.minecraft.world.level.block.NetherPortalBlock
+[1282|t+7449ms|ThreadId(2)] [class_dump] efe → net.minecraft.world.level.block.NetherSproutsBlock
+[1283|t+7449ms|ThreadId(2)] [class_dump] efg → net.minecraft.world.level.block.NetherWartBlock
+[1284|t+7449ms|ThreadId(2)] [class_dump] efh → net.minecraft.world.level.block.NetherrackBlock
+[1285|t+7450ms|ThreadId(2)] [class_dump] efi → net.minecraft.world.level.block.NoteBlock
+[1286|t+7450ms|ThreadId(2)] [class_dump] efj → net.minecraft.world.level.block.NyliumBlock
+[1287|t+7450ms|ThreadId(2)] [class_dump] efk → net.minecraft.world.level.block.ObserverBlock
+[1288|t+7451ms|ThreadId(2)] [class_dump] efl → net.minecraft.world.level.block.PiglinWallSkullBlock
+[1289|t+7451ms|ThreadId(2)] [class_dump] efm → net.minecraft.world.level.block.PipeBlock
+[1290|t+7452ms|ThreadId(2)] [class_dump] efn → net.minecraft.world.level.block.PitcherCropBlock
+[1291|t+7452ms|ThreadId(2)] [class_dump] efo → net.minecraft.world.level.block.PlayerHeadBlock
+[1292|t+7452ms|ThreadId(2)] [class_dump] efp → net.minecraft.world.level.block.PlayerWallHeadBlock
+[1293|t+7453ms|ThreadId(2)] [class_dump] efq → net.minecraft.world.level.block.PointedDripstoneBlock
+[1294|t+7453ms|ThreadId(2)] [class_dump] efr → net.minecraft.world.level.block.Portal
+[1295|t+7454ms|ThreadId(2)] [class_dump] efs → net.minecraft.world.level.block.PotatoBlock
+[1296|t+7455ms|ThreadId(2)] [class_dump] eft → net.minecraft.world.level.block.PowderSnowBlock
+[1297|t+7455ms|ThreadId(2)] [class_dump] efu → net.minecraft.world.level.block.PoweredBlock
+[1298|t+7455ms|ThreadId(2)] [class_dump] efv → net.minecraft.world.level.block.PoweredRailBlock
+[1299|t+7456ms|ThreadId(2)] [class_dump] efw → net.minecraft.world.level.block.PressurePlateBlock
+[1300|t+7456ms|ThreadId(2)] [class_dump] efx → net.minecraft.world.level.block.PumpkinBlock
+[1301|t+7456ms|ThreadId(2)] [class_dump] efy → net.minecraft.world.level.block.RailBlock
+[1302|t+7457ms|ThreadId(2)] [class_dump] ega → net.minecraft.world.level.block.RedStoneOreBlock
+[1303|t+7457ms|ThreadId(2)] [class_dump] egb → net.minecraft.world.level.block.RedStoneWireBlock
+[1304|t+7458ms|ThreadId(2)] [class_dump] egc → net.minecraft.world.level.block.RedstoneLampBlock
+[1305|t+7458ms|ThreadId(2)] [class_dump] egd → net.minecraft.world.level.block.RedstoneTorchBlock
+[1306|t+7459ms|ThreadId(2)] [class_dump] ege → net.minecraft.world.level.block.RedstoneWallTorchBlock
+[1307|t+7459ms|ThreadId(2)] [class_dump] egg → net.minecraft.world.level.block.RepeaterBlock
+[1308|t+7460ms|ThreadId(2)] [class_dump] egh → net.minecraft.world.level.block.RespawnAnchorBlock
+[1309|t+7460ms|ThreadId(2)] [class_dump] egi → net.minecraft.world.level.block.RodBlock
+[1310|t+7461ms|ThreadId(2)] [class_dump] egj → net.minecraft.world.level.block.RootedDirtBlock
+[1311|t+7461ms|ThreadId(2)] [class_dump] egk → net.minecraft.world.level.block.RootsBlock
+[1312|t+7461ms|ThreadId(2)] [class_dump] egl → net.minecraft.world.level.block.RotatedPillarBlock
+[1313|t+7462ms|ThreadId(2)] [class_dump] egm → net.minecraft.world.level.block.Rotation
+[1314|t+7462ms|ThreadId(2)] [class_dump] egn → net.minecraft.world.level.block.SandBlock
+[1315|t+7462ms|ThreadId(2)] [class_dump] ego → net.minecraft.world.level.block.SaplingBlock
+[1316|t+7463ms|ThreadId(2)] [class_dump] egp → net.minecraft.world.level.block.ScaffoldingBlock
+[1317|t+7463ms|ThreadId(2)] [class_dump] egq → net.minecraft.world.level.block.SculkBehaviour
+[1318|t+7463ms|ThreadId(2)] [class_dump] egr → net.minecraft.world.level.block.SculkBlock
+[1319|t+7464ms|ThreadId(2)] [class_dump] egs → net.minecraft.world.level.block.SculkCatalystBlock
+[1320|t+7464ms|ThreadId(2)] [class_dump] egt → net.minecraft.world.level.block.SculkSensorBlock
+[1321|t+7464ms|ThreadId(2)] [class_dump] egu → net.minecraft.world.level.block.SculkShriekerBlock
+[1322|t+7465ms|ThreadId(2)] [class_dump] egw → net.minecraft.world.level.block.SculkVeinBlock
+[1323|t+7465ms|ThreadId(2)] [class_dump] egx → net.minecraft.world.level.block.SeaPickleBlock
+[1324|t+7466ms|ThreadId(2)] [class_dump] egy → net.minecraft.world.level.block.SeagrassBlock
+[1325|t+7466ms|ThreadId(2)] [class_dump] egz → net.minecraft.world.level.block.SegmentableBlock
+[1326|t+7466ms|ThreadId(2)] [class_dump] eha → net.minecraft.world.level.block.SelectableSlotContainer
+[1327|t+7467ms|ThreadId(2)] [class_dump] ehb → net.minecraft.world.level.block.ShelfBlock
+[1328|t+7467ms|ThreadId(2)] [class_dump] ehc → net.minecraft.world.level.block.ShortDryGrassBlock
+[1329|t+7468ms|ThreadId(2)] [class_dump] ehd → net.minecraft.world.level.block.ShulkerBoxBlock
+[1330|t+7468ms|ThreadId(2)] [class_dump] ehe → net.minecraft.world.level.block.SideChainPartBlock
+[1331|t+7468ms|ThreadId(2)] [class_dump] ehf → net.minecraft.world.level.block.SignBlock
+[1332|t+7469ms|ThreadId(2)] [class_dump] ehg → net.minecraft.world.level.block.SimpleWaterloggedBlock
+[1333|t+7469ms|ThreadId(2)] [class_dump] ehh → net.minecraft.world.level.block.SkullBlock
+[1334|t+7472ms|ThreadId(2)] [class_dump] ehi → net.minecraft.world.level.block.SlabBlock
+[1335|t+7473ms|ThreadId(2)] [class_dump] ehj → net.minecraft.world.level.block.SlimeBlock
+[1336|t+7473ms|ThreadId(2)] [class_dump] ehk → net.minecraft.world.level.block.SmallDripleafBlock
+[1337|t+7473ms|ThreadId(2)] [class_dump] ehl → net.minecraft.world.level.block.SmithingTableBlock
+[1338|t+7474ms|ThreadId(2)] [class_dump] ehm → net.minecraft.world.level.block.SmokerBlock
+[1339|t+7474ms|ThreadId(2)] [class_dump] ehn → net.minecraft.world.level.block.SnifferEggBlock
+[1340|t+7475ms|ThreadId(2)] [class_dump] eho → net.minecraft.world.level.block.SnowLayerBlock
+[1341|t+7475ms|ThreadId(2)] [class_dump] ehp → net.minecraft.world.level.block.SnowyDirtBlock
+[1342|t+7475ms|ThreadId(2)] [class_dump] ehq → net.minecraft.world.level.block.SoulFireBlock
+[1343|t+7476ms|ThreadId(2)] [class_dump] ehr → net.minecraft.world.level.block.SoulSandBlock
+[1344|t+7476ms|ThreadId(2)] [class_dump] ehs → net.minecraft.world.level.block.SoundType
+[1345|t+7477ms|ThreadId(2)] [class_dump] eht → net.minecraft.world.level.block.SpawnerBlock
+[1346|t+7477ms|ThreadId(2)] [class_dump] ehu → net.minecraft.world.level.block.SpongeBlock
+[1347|t+7477ms|ThreadId(2)] [class_dump] ehv → net.minecraft.world.level.block.SporeBlossomBlock
+[1348|t+7478ms|ThreadId(2)] [class_dump] ehw → net.minecraft.world.level.block.SpreadingSnowyDirtBlock
+[1349|t+7478ms|ThreadId(2)] [class_dump] ehx → net.minecraft.world.level.block.StainedGlassBlock
+[1350|t+7478ms|ThreadId(2)] [class_dump] ehy → net.minecraft.world.level.block.StainedGlassPaneBlock
+[1351|t+7479ms|ThreadId(2)] [class_dump] ehz → net.minecraft.world.level.block.StairBlock
+[1352|t+7479ms|ThreadId(2)] [class_dump] eia → net.minecraft.world.level.block.StandingSignBlock
+[1353|t+7480ms|ThreadId(2)] [class_dump] eib → net.minecraft.world.level.block.StemBlock
+[1354|t+7480ms|ThreadId(2)] [class_dump] eic → net.minecraft.world.level.block.StonecutterBlock
+[1355|t+7480ms|ThreadId(2)] [class_dump] eid → net.minecraft.world.level.block.StructureBlock
+[1356|t+7481ms|ThreadId(2)] [class_dump] eie → net.minecraft.world.level.block.StructureVoidBlock
+[1357|t+7481ms|ThreadId(2)] [class_dump] eif → net.minecraft.world.level.block.SugarCaneBlock
+[1358|t+7481ms|ThreadId(2)] [class_dump] eig → net.minecraft.world.level.block.SupportType
+[1359|t+7482ms|ThreadId(2)] [class_dump] eih → net.minecraft.world.level.block.SuspiciousEffectHolder
+[1360|t+7482ms|ThreadId(2)] [class_dump] eii → net.minecraft.world.level.block.SweetBerryBushBlock
+[1361|t+7482ms|ThreadId(2)] [class_dump] eij → net.minecraft.world.level.block.TallDryGrassBlock
+[1362|t+7483ms|ThreadId(2)] [class_dump] eik → net.minecraft.world.level.block.TallFlowerBlock
+[1363|t+7483ms|ThreadId(2)] [class_dump] eil → net.minecraft.world.level.block.TallGrassBlock
+[1364|t+7483ms|ThreadId(2)] [class_dump] eim → net.minecraft.world.level.block.TallSeagrassBlock
+[1365|t+7484ms|ThreadId(2)] [class_dump] ein → net.minecraft.world.level.block.TargetBlock
+[1366|t+7484ms|ThreadId(2)] [class_dump] eio → net.minecraft.world.level.block.TestBlock
+[1367|t+7484ms|ThreadId(2)] [class_dump] eip → net.minecraft.world.level.block.TestInstanceBlock
+[1368|t+7485ms|ThreadId(2)] [class_dump] eiq → net.minecraft.world.level.block.TintedGlassBlock
+[1369|t+7485ms|ThreadId(2)] [class_dump] eir → net.minecraft.world.level.block.TintedParticleLeavesBlock
+[1370|t+7485ms|ThreadId(2)] [class_dump] eis → net.minecraft.world.level.block.TntBlock
+[1371|t+7485ms|ThreadId(2)] [class_dump] eit → net.minecraft.world.level.block.TorchBlock
+[1372|t+7486ms|ThreadId(2)] [class_dump] eiu → net.minecraft.world.level.block.TorchflowerCropBlock
+[1373|t+7486ms|ThreadId(2)] [class_dump] eiv → net.minecraft.world.level.block.TransparentBlock
+[1374|t+7487ms|ThreadId(2)] [class_dump] eiw → net.minecraft.world.level.block.TrapDoorBlock
+[1375|t+7487ms|ThreadId(2)] [class_dump] eix → net.minecraft.world.level.block.TrappedChestBlock
+[1376|t+7488ms|ThreadId(2)] [class_dump] eiy → net.minecraft.world.level.block.TrialSpawnerBlock
+[1377|t+7488ms|ThreadId(2)] [class_dump] eiz → net.minecraft.world.level.block.TripWireBlock
+[1378|t+7489ms|ThreadId(2)] [class_dump] eja → net.minecraft.world.level.block.TripWireHookBlock
+[1379|t+7489ms|ThreadId(2)] [class_dump] ejb → net.minecraft.world.level.block.TurtleEggBlock
+[1380|t+7490ms|ThreadId(2)] [class_dump] ejc → net.minecraft.world.level.block.TwistingVinesBlock
+[1381|t+7490ms|ThreadId(2)] [class_dump] ejd → net.minecraft.world.level.block.TwistingVinesPlantBlock
+[1382|t+7491ms|ThreadId(2)] [class_dump] eje → net.minecraft.world.level.block.UntintedParticleLeavesBlock
+[1383|t+7491ms|ThreadId(2)] [class_dump] ejf → net.minecraft.world.level.block.VaultBlock
+[1384|t+7491ms|ThreadId(2)] [class_dump] ejg → net.minecraft.world.level.block.VegetationBlock
+[1385|t+7492ms|ThreadId(2)] [class_dump] ejh → net.minecraft.world.level.block.VineBlock
+[1386|t+7492ms|ThreadId(2)] [class_dump] eji → net.minecraft.world.level.block.WallBannerBlock
+[1387|t+7492ms|ThreadId(2)] [class_dump] ejj → net.minecraft.world.level.block.WallBlock
+[1388|t+7492ms|ThreadId(2)] [class_dump] ejk → net.minecraft.world.level.block.WallHangingSignBlock
+[1389|t+7493ms|ThreadId(2)] [class_dump] ejl → net.minecraft.world.level.block.WallSignBlock
+[1390|t+7493ms|ThreadId(2)] [class_dump] ejm → net.minecraft.world.level.block.WallSkullBlock
+[1391|t+7493ms|ThreadId(2)] [class_dump] ejn → net.minecraft.world.level.block.WallTorchBlock
+[1392|t+7494ms|ThreadId(2)] [class_dump] ejo → net.minecraft.world.level.block.WaterlilyBlock
+[1393|t+7494ms|ThreadId(2)] [class_dump] ejp → net.minecraft.world.level.block.WaterloggedTransparentBlock
+[1394|t+7494ms|ThreadId(2)] [class_dump] ejq → net.minecraft.world.level.block.WeatheringCopper
+[1395|t+7495ms|ThreadId(2)] [class_dump] ejr → net.minecraft.world.level.block.WeatheringCopperBarsBlock
+[1396|t+7495ms|ThreadId(2)] [class_dump] ejs → net.minecraft.world.level.block.WeatheringCopperBlocks
+[1397|t+7495ms|ThreadId(2)] [class_dump] ejt → net.minecraft.world.level.block.WeatheringCopperBulbBlock
+[1398|t+7495ms|ThreadId(2)] [class_dump] eju → net.minecraft.world.level.block.WeatheringCopperChainBlock
+[1399|t+7496ms|ThreadId(2)] [class_dump] ejv → net.minecraft.world.level.block.WeatheringCopperChestBlock
+[1400|t+7496ms|ThreadId(2)] [class_dump] ejw → net.minecraft.world.level.block.WeatheringCopperDoorBlock
+[1401|t+7496ms|ThreadId(2)] [class_dump] ejx → net.minecraft.world.level.block.WeatheringCopperFullBlock
+[1402|t+7497ms|ThreadId(2)] [class_dump] ejy → net.minecraft.world.level.block.WeatheringCopperGolemStatueBlock
+[1403|t+7497ms|ThreadId(2)] [class_dump] ejz → net.minecraft.world.level.block.WeatheringCopperGrateBlock
+[1404|t+7498ms|ThreadId(2)] [class_dump] eka → net.minecraft.world.level.block.WeatheringCopperSlabBlock
+[1405|t+7498ms|ThreadId(2)] [class_dump] ekb → net.minecraft.world.level.block.WeatheringCopperStairBlock
+[1406|t+7498ms|ThreadId(2)] [class_dump] ekc → net.minecraft.world.level.block.WeatheringCopperTrapDoorBlock
+[1407|t+7499ms|ThreadId(2)] [class_dump] ekd → net.minecraft.world.level.block.WeatheringLanternBlock
+[1408|t+7499ms|ThreadId(2)] [class_dump] eke → net.minecraft.world.level.block.WeatheringLightningRodBlock
+[1409|t+7499ms|ThreadId(2)] [class_dump] ekf → net.minecraft.world.level.block.WebBlock
+[1410|t+7500ms|ThreadId(2)] [class_dump] ekg → net.minecraft.world.level.block.WeepingVinesBlock
+[1411|t+7500ms|ThreadId(2)] [class_dump] ekh → net.minecraft.world.level.block.WeepingVinesPlantBlock
+[1412|t+7500ms|ThreadId(2)] [class_dump] eki → net.minecraft.world.level.block.WeightedPressurePlateBlock
+[1413|t+7501ms|ThreadId(2)] [class_dump] ekj → net.minecraft.world.level.block.WetSpongeBlock
+[1414|t+7501ms|ThreadId(2)] [class_dump] ekk → net.minecraft.world.level.block.WitherRoseBlock
+[1415|t+7501ms|ThreadId(2)] [class_dump] ekl → net.minecraft.world.level.block.WitherSkullBlock
+[1416|t+7502ms|ThreadId(2)] [class_dump] ekm → net.minecraft.world.level.block.WitherWallSkullBlock
+[1417|t+7502ms|ThreadId(2)] [class_dump] ekn → net.minecraft.world.level.block.WoolCarpetBlock
+[1418|t+7502ms|ThreadId(2)] [class_dump] eko → net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity
+[1419|t+7503ms|ThreadId(2)] [class_dump] ekp → net.minecraft.world.level.block.entity.BannerBlockEntity
+[1420|t+7504ms|ThreadId(2)] [class_dump] ekt → net.minecraft.world.level.block.entity.BarrelBlockEntity
+[1421|t+7505ms|ThreadId(2)] [class_dump] eku → net.minecraft.world.level.block.entity.BaseContainerBlockEntity
+[1422|t+7505ms|ThreadId(2)] [class_dump] ekv → net.minecraft.world.level.block.entity.BeaconBeamOwner
+[1423|t+7506ms|ThreadId(2)] [class_dump] ekw → net.minecraft.world.level.block.entity.BeaconBlockEntity
+[1424|t+7506ms|ThreadId(2)] [class_dump] ekx → net.minecraft.world.level.block.entity.BedBlockEntity
+[1425|t+7506ms|ThreadId(2)] [class_dump] eky → net.minecraft.world.level.block.entity.BeehiveBlockEntity
+[1426|t+7507ms|ThreadId(2)] [class_dump] ekz → net.minecraft.world.level.block.entity.BellBlockEntity
+[1427|t+7507ms|ThreadId(2)] [class_dump] ela → net.minecraft.world.level.block.entity.BlastFurnaceBlockEntity
+[1428|t+7507ms|ThreadId(2)] [class_dump] elb → net.minecraft.world.level.block.entity.BlockEntity
+[1429|t+7508ms|ThreadId(2)] [class_dump] eld → net.minecraft.world.level.block.entity.BlockEntityType
+[1430|t+7508ms|ThreadId(2)] [class_dump] ele → net.minecraft.world.level.block.entity.BoundingBoxRenderable
+[1431|t+7509ms|ThreadId(2)] [class_dump] elf → net.minecraft.world.level.block.entity.BrewingStandBlockEntity
+[1432|t+7509ms|ThreadId(2)] [class_dump] elg → net.minecraft.world.level.block.entity.BrushableBlockEntity
+[1433|t+7509ms|ThreadId(2)] [class_dump] elh → net.minecraft.world.level.block.entity.CalibratedSculkSensorBlockEntity
+[1434|t+7510ms|ThreadId(2)] [class_dump] eli → net.minecraft.world.level.block.entity.CampfireBlockEntity
+[1435|t+7510ms|ThreadId(2)] [class_dump] elj → net.minecraft.world.level.block.entity.ChestBlockEntity
+[1436|t+7510ms|ThreadId(2)] [class_dump] ell → net.minecraft.world.level.block.entity.ChiseledBookShelfBlockEntity
+[1437|t+7511ms|ThreadId(2)] [class_dump] elm → net.minecraft.world.level.block.entity.CommandBlockEntity
+[1438|t+7511ms|ThreadId(2)] [class_dump] eln → net.minecraft.world.level.block.entity.ComparatorBlockEntity
+[1439|t+7512ms|ThreadId(2)] [class_dump] elo → net.minecraft.world.level.block.entity.ConduitBlockEntity
+[1440|t+7513ms|ThreadId(2)] [class_dump] elq → net.minecraft.world.level.block.entity.CopperGolemStatueBlockEntity
+[1441|t+7513ms|ThreadId(2)] [class_dump] elr → net.minecraft.world.level.block.entity.CrafterBlockEntity
+[1442|t+7514ms|ThreadId(2)] [class_dump] els → net.minecraft.world.level.block.entity.CreakingHeartBlockEntity
+[1443|t+7514ms|ThreadId(2)] [class_dump] elt → net.minecraft.world.level.block.entity.DaylightDetectorBlockEntity
+[1444|t+7514ms|ThreadId(2)] [class_dump] elu → net.minecraft.world.level.block.entity.DecoratedPotBlockEntity
+[1445|t+7515ms|ThreadId(2)] [class_dump] elv → net.minecraft.world.level.block.entity.DecoratedPotPattern
+[1446|t+7515ms|ThreadId(2)] [class_dump] elw → net.minecraft.world.level.block.entity.DecoratedPotPatterns
+[1447|t+7515ms|ThreadId(2)] [class_dump] elx → net.minecraft.world.level.block.entity.DispenserBlockEntity
+[1448|t+7516ms|ThreadId(2)] [class_dump] ely → net.minecraft.world.level.block.entity.DropperBlockEntity
+[1449|t+7516ms|ThreadId(2)] [class_dump] elz → net.minecraft.world.level.block.entity.EnchantingTableBlockEntity
+[1450|t+7516ms|ThreadId(2)] [class_dump] ema → net.minecraft.world.level.block.entity.EnderChestBlockEntity
+[1451|t+7517ms|ThreadId(2)] [class_dump] emc → net.minecraft.world.level.block.entity.FurnaceBlockEntity
+[1452|t+7517ms|ThreadId(2)] [class_dump] emd → net.minecraft.world.level.block.entity.HangingSignBlockEntity
+[1453|t+7518ms|ThreadId(2)] [class_dump] eme → net.minecraft.world.level.block.entity.Hopper
+[1454|t+7518ms|ThreadId(2)] [class_dump] emf → net.minecraft.world.level.block.entity.HopperBlockEntity
+[1455|t+7518ms|ThreadId(2)] [class_dump] emg → net.minecraft.world.level.block.entity.JigsawBlockEntity
+[1456|t+7519ms|ThreadId(2)] [class_dump] emh → net.minecraft.world.level.block.entity.JukeboxBlockEntity
+[1457|t+7519ms|ThreadId(2)] [class_dump] emi → net.minecraft.world.level.block.entity.LecternBlockEntity
+[1458|t+7519ms|ThreadId(2)] [class_dump] emj → net.minecraft.world.level.block.entity.LidBlockEntity
+[1459|t+7520ms|ThreadId(2)] [class_dump] emk → net.minecraft.world.level.block.entity.ListBackedContainer
+[1460|t+7520ms|ThreadId(2)] [class_dump] emm → net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity
+[1461|t+7521ms|ThreadId(2)] [class_dump] emn → net.minecraft.world.level.block.entity.SculkCatalystBlockEntity
+[1462|t+7521ms|ThreadId(2)] [class_dump] emo → net.minecraft.world.level.block.entity.SculkSensorBlockEntity
+[1463|t+7522ms|ThreadId(2)] [class_dump] emp → net.minecraft.world.level.block.entity.SculkShriekerBlockEntity
+[1464|t+7522ms|ThreadId(2)] [class_dump] emq → net.minecraft.world.level.block.entity.ShelfBlockEntity
+[1465|t+7523ms|ThreadId(2)] [class_dump] emr → net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity
+[1466|t+7523ms|ThreadId(2)] [class_dump] ems → net.minecraft.world.level.block.entity.SignBlockEntity
+[1467|t+7524ms|ThreadId(2)] [class_dump] emu → net.minecraft.world.level.block.entity.SkullBlockEntity
+[1468|t+7524ms|ThreadId(2)] [class_dump] emv → net.minecraft.world.level.block.entity.SmokerBlockEntity
+[1469|t+7525ms|ThreadId(2)] [class_dump] emw → net.minecraft.world.level.block.entity.SpawnerBlockEntity
+[1470|t+7525ms|ThreadId(2)] [class_dump] emx → net.minecraft.world.level.block.entity.StructureBlockEntity
+[1471|t+7525ms|ThreadId(2)] [class_dump] emy → net.minecraft.world.level.block.entity.TestBlockEntity
+[1472|t+7526ms|ThreadId(2)] [class_dump] emz → net.minecraft.world.level.block.entity.TestInstanceBlockEntity
+[1473|t+7526ms|ThreadId(2)] [class_dump] ena → net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity
+[1474|t+7526ms|ThreadId(2)] [class_dump] enb → net.minecraft.world.level.block.entity.TheEndPortalBlockEntity
+[1475|t+7527ms|ThreadId(2)] [class_dump] end → net.minecraft.world.level.block.entity.TrappedChestBlockEntity
+[1476|t+7527ms|ThreadId(2)] [class_dump] ene → net.minecraft.world.level.block.entity.TrialSpawnerBlockEntity
+[1477|t+7527ms|ThreadId(2)] [class_dump] enk → net.minecraft.world.level.block.entity.trialspawner.TrialSpawnerState
+[1478|t+7527ms|ThreadId(2)] [class_dump] enn → net.minecraft.world.level.block.entity.vault.VaultBlockEntity
+[1479|t+7528ms|ThreadId(2)] [class_dump] enp → net.minecraft.world.level.block.entity.vault.VaultConfig
+[1480|t+7528ms|ThreadId(2)] [class_dump] enq → net.minecraft.world.level.block.entity.vault.VaultServerData
+[1481|t+7528ms|ThreadId(2)] [class_dump] enr → net.minecraft.world.level.block.entity.vault.VaultSharedData
+[1482|t+7529ms|ThreadId(2)] [class_dump] ens → net.minecraft.world.level.block.entity.vault.VaultState
+[1483|t+7529ms|ThreadId(2)] [class_dump] enu → net.minecraft.world.level.block.grower.TreeGrower
+[1484|t+7529ms|ThreadId(2)] [class_dump] enx → net.minecraft.world.level.block.piston.MovingPistonBlock
+[1485|t+7530ms|ThreadId(2)] [class_dump] eny → net.minecraft.world.level.block.piston.PistonBaseBlock
+[1486|t+7530ms|ThreadId(2)] [class_dump] enz → net.minecraft.world.level.block.piston.PistonHeadBlock
+[1487|t+7530ms|ThreadId(2)] [class_dump] eob → net.minecraft.world.level.block.piston.PistonMovingBlockEntity
+[1488|t+7531ms|ThreadId(2)] [class_dump] eog → net.minecraft.world.level.block.state.BlockBehaviour
+[1489|t+7531ms|ThreadId(2)] [class_dump] eoh → net.minecraft.world.level.block.state.BlockState
+[1490|t+7531ms|ThreadId(2)] [class_dump] eoi → net.minecraft.world.level.block.state.StateDefinition
+[1491|t+7532ms|ThreadId(2)] [class_dump] eoj → net.minecraft.world.level.block.state.StateHolder
+[1492|t+7532ms|ThreadId(2)] [class_dump] eos → net.minecraft.world.level.block.state.properties.AttachFace
+[1493|t+7532ms|ThreadId(2)] [class_dump] eot → net.minecraft.world.level.block.state.properties.BambooLeaves
+[1494|t+7533ms|ThreadId(2)] [class_dump] eou → net.minecraft.world.level.block.state.properties.BedPart
+[1495|t+7533ms|ThreadId(2)] [class_dump] eov → net.minecraft.world.level.block.state.properties.BellAttachType
+[1496|t+7533ms|ThreadId(2)] [class_dump] eow → net.minecraft.world.level.block.state.properties.BlockSetType
+[1497|t+7534ms|ThreadId(2)] [class_dump] eox → net.minecraft.world.level.block.state.properties.BlockStateProperties
+[1498|t+7534ms|ThreadId(2)] [class_dump] eoy → net.minecraft.world.level.block.state.properties.BooleanProperty
+[1499|t+7534ms|ThreadId(2)] [class_dump] eoz → net.minecraft.world.level.block.state.properties.ChestType
+[1500|t+7535ms|ThreadId(2)] [class_dump] epa → net.minecraft.world.level.block.state.properties.ComparatorMode
+[1501|t+7535ms|ThreadId(2)] [class_dump] epb → net.minecraft.world.level.block.state.properties.CreakingHeartState
+[1502|t+7535ms|ThreadId(2)] [class_dump] epc → net.minecraft.world.level.block.state.properties.DoorHingeSide
+[1503|t+7536ms|ThreadId(2)] [class_dump] epd → net.minecraft.world.level.block.state.properties.DoubleBlockHalf
+[1504|t+7536ms|ThreadId(2)] [class_dump] epe → net.minecraft.world.level.block.state.properties.DripstoneThickness
+[1505|t+7540ms|ThreadId(2)] [class_dump] epf → net.minecraft.world.level.block.state.properties.EnumProperty
+[1506|t+7541ms|ThreadId(2)] [class_dump] epg → net.minecraft.world.level.block.state.properties.Half
+[1507|t+7541ms|ThreadId(2)] [class_dump] eph → net.minecraft.world.level.block.state.properties.IntegerProperty
+[1508|t+7542ms|ThreadId(2)] [class_dump] epi → net.minecraft.world.level.block.state.properties.NoteBlockInstrument
+[1509|t+7542ms|ThreadId(2)] [class_dump] epj → net.minecraft.world.level.block.state.properties.PistonType
+[1510|t+7543ms|ThreadId(2)] [class_dump] epk → net.minecraft.world.level.block.state.properties.Property
+[1511|t+7543ms|ThreadId(2)] [class_dump] epl → net.minecraft.world.level.block.state.properties.RailShape
+[1512|t+7543ms|ThreadId(2)] [class_dump] epm → net.minecraft.world.level.block.state.properties.RedstoneSide
+[1513|t+7544ms|ThreadId(2)] [class_dump] epn → net.minecraft.world.level.block.state.properties.RotationSegment
+[1514|t+7544ms|ThreadId(2)] [class_dump] epo → net.minecraft.world.level.block.state.properties.SculkSensorPhase
+[1515|t+7545ms|ThreadId(2)] [class_dump] epp → net.minecraft.world.level.block.state.properties.SideChainPart
+[1516|t+7545ms|ThreadId(2)] [class_dump] epq → net.minecraft.world.level.block.state.properties.SlabType
+[1517|t+7545ms|ThreadId(2)] [class_dump] epr → net.minecraft.world.level.block.state.properties.StairsShape
+[1518|t+7546ms|ThreadId(2)] [class_dump] eps → net.minecraft.world.level.block.state.properties.StructureMode
+[1519|t+7546ms|ThreadId(2)] [class_dump] ept → net.minecraft.world.level.block.state.properties.TestBlockMode
+[1520|t+7546ms|ThreadId(2)] [class_dump] epu → net.minecraft.world.level.block.state.properties.Tilt
+[1521|t+7547ms|ThreadId(2)] [class_dump] epv → net.minecraft.world.level.block.state.properties.WallSide
+[1522|t+7547ms|ThreadId(2)] [class_dump] epw → net.minecraft.world.level.block.state.properties.WoodType
+[1523|t+7548ms|ThreadId(2)] [class_dump] eqf → net.minecraft.world.level.chunk.ChunkAccess
+[1524|t+7548ms|ThreadId(2)] [class_dump] eqi → net.minecraft.world.level.chunk.ChunkGenerators
+[1525|t+7548ms|ThreadId(2)] [class_dump] eqq → net.minecraft.world.level.chunk.LevelChunk
+[1526|t+7549ms|ThreadId(2)] [class_dump] eqs → net.minecraft.world.level.chunk.LightChunk
+[1527|t+7549ms|ThreadId(2)] [class_dump] ere → net.minecraft.world.level.chunk.StructureAccess
+[1528|t+7549ms|ThreadId(2)] [class_dump] erq → net.minecraft.world.level.chunk.storage.ChunkIOErrorReporter
+[1529|t+7550ms|ThreadId(2)] [class_dump] esp → net.minecraft.world.level.entity.EntityAccess
+[1530|t+7550ms|ThreadId(2)] [class_dump] esw → net.minecraft.world.level.entity.EntityTypeTest
+[1531|t+7551ms|ThreadId(2)] [class_dump] etd → net.minecraft.world.level.entity.UniquelyIdentifyable
+[1532|t+7551ms|ThreadId(2)] [class_dump] etk → net.minecraft.world.level.gameevent.GameEvent
+[1533|t+7551ms|ThreadId(2)] [class_dump] ett → net.minecraft.world.level.gameevent.vibrations.VibrationSystem
+[1534|t+7551ms|ThreadId(2)] [class_dump] etv → net.minecraft.world.level.gamerules.GameRule
+[1535|t+7552ms|ThreadId(2)] [class_dump] etz → net.minecraft.world.level.gamerules.GameRuleTypeVisitor
+[1536|t+7552ms|ThreadId(2)] [class_dump] eua → net.minecraft.world.level.gamerules.GameRules
+[1537|t+7552ms|ThreadId(2)] [class_dump] euf → net.minecraft.world.level.levelgen.BitRandomSource
+[1538|t+7553ms|ThreadId(2)] [class_dump] euj → net.minecraft.world.level.levelgen.DensityFunction
+[1539|t+7554ms|ThreadId(2)] [class_dump] euk → net.minecraft.world.level.levelgen.DensityFunctions
+[1540|t+7554ms|ThreadId(2)] [class_dump] eus → net.minecraft.world.level.levelgen.MarsagliaPolarGaussian
+[1541|t+7555ms|ThreadId(2)] [class_dump] evd → net.minecraft.world.level.levelgen.PositionalRandomFactory
+[1542|t+7555ms|ThreadId(2)] [class_dump] evf → net.minecraft.world.level.levelgen.RandomSupport
+[1543|t+7555ms|ThreadId(2)] [class_dump] evj → net.minecraft.world.level.levelgen.ThreadSafeLegacyRandomSource
+[1544|t+7556ms|ThreadId(2)] [class_dump] f → com.mojang.math.OctahedralGroup
+[1545|t+7556ms|ThreadId(2)] [class_dump] fac → net.minecraft.world.level.levelgen.feature.configurations.FeatureConfiguration
+[1546|t+7557ms|ThreadId(2)] [class_dump] fbd → net.minecraft.world.level.levelgen.feature.featuresize.FeatureSize
+[1547|t+7557ms|ThreadId(2)] [class_dump] fbf → net.minecraft.world.level.levelgen.feature.featuresize.ThreeLayersFeatureSize
+[1548|t+7558ms|ThreadId(2)] [class_dump] fbg → net.minecraft.world.level.levelgen.feature.featuresize.TwoLayersFeatureSize
+[1549|t+7558ms|ThreadId(2)] [class_dump] fbi → net.minecraft.world.level.levelgen.feature.foliageplacers.AcaciaFoliagePlacer
+[1550|t+7558ms|ThreadId(2)] [class_dump] fbj → net.minecraft.world.level.levelgen.feature.foliageplacers.BlobFoliagePlacer
+[1551|t+7559ms|ThreadId(2)] [class_dump] fbk → net.minecraft.world.level.levelgen.feature.foliageplacers.BushFoliagePlacer
+[1552|t+7559ms|ThreadId(2)] [class_dump] fbl → net.minecraft.world.level.levelgen.feature.foliageplacers.CherryFoliagePlacer
+[1553|t+7559ms|ThreadId(2)] [class_dump] fbm → net.minecraft.world.level.levelgen.feature.foliageplacers.DarkOakFoliagePlacer
+[1554|t+7559ms|ThreadId(2)] [class_dump] fbn → net.minecraft.world.level.levelgen.feature.foliageplacers.FancyFoliagePlacer
+[1555|t+7560ms|ThreadId(2)] [class_dump] fbo → net.minecraft.world.level.levelgen.feature.foliageplacers.FoliagePlacer
+[1556|t+7560ms|ThreadId(2)] [class_dump] fbq → net.minecraft.world.level.levelgen.feature.foliageplacers.MegaJungleFoliagePlacer
+[1557|t+7560ms|ThreadId(2)] [class_dump] fbr → net.minecraft.world.level.levelgen.feature.foliageplacers.MegaPineFoliagePlacer
+[1558|t+7561ms|ThreadId(2)] [class_dump] fbs → net.minecraft.world.level.levelgen.feature.foliageplacers.PineFoliagePlacer
+[1559|t+7561ms|ThreadId(2)] [class_dump] fbt → net.minecraft.world.level.levelgen.feature.foliageplacers.RandomSpreadFoliagePlacer
+[1560|t+7561ms|ThreadId(2)] [class_dump] fbu → net.minecraft.world.level.levelgen.feature.foliageplacers.SpruceFoliagePlacer
+[1561|t+7562ms|ThreadId(2)] [class_dump] fcd → net.minecraft.world.level.levelgen.feature.stateproviders.BlockStateProvider
+[1562|t+7562ms|ThreadId(2)] [class_dump] fcf → net.minecraft.world.level.levelgen.feature.stateproviders.DualNoiseProvider
+[1563|t+7562ms|ThreadId(2)] [class_dump] fcg → net.minecraft.world.level.levelgen.feature.stateproviders.NoiseBasedStateProvider
+[1564|t+7563ms|ThreadId(2)] [class_dump] fch → net.minecraft.world.level.levelgen.feature.stateproviders.NoiseProvider
+[1565|t+7563ms|ThreadId(2)] [class_dump] fci → net.minecraft.world.level.levelgen.feature.stateproviders.NoiseThresholdProvider
+[1566|t+7563ms|ThreadId(2)] [class_dump] fcj → net.minecraft.world.level.levelgen.feature.stateproviders.RandomizedIntStateProvider
+[1567|t+7564ms|ThreadId(2)] [class_dump] fcm → net.minecraft.world.level.levelgen.feature.stateproviders.SimpleStateProvider
+[1568|t+7564ms|ThreadId(2)] [class_dump] fcn → net.minecraft.world.level.levelgen.feature.stateproviders.WeightedStateProvider
+[1569|t+7564ms|ThreadId(2)] [class_dump] fdc → net.minecraft.world.level.levelgen.feature.trunkplacers.BendingTrunkPlacer
+[1570|t+7565ms|ThreadId(2)] [class_dump] fdd → net.minecraft.world.level.levelgen.feature.trunkplacers.CherryTrunkPlacer
+[1571|t+7565ms|ThreadId(2)] [class_dump] fde → net.minecraft.world.level.levelgen.feature.trunkplacers.DarkOakTrunkPlacer
+[1572|t+7565ms|ThreadId(2)] [class_dump] fdf → net.minecraft.world.level.levelgen.feature.trunkplacers.FancyTrunkPlacer
+[1573|t+7566ms|ThreadId(2)] [class_dump] fdg → net.minecraft.world.level.levelgen.feature.trunkplacers.ForkingTrunkPlacer
+[1574|t+7566ms|ThreadId(2)] [class_dump] fdh → net.minecraft.world.level.levelgen.feature.trunkplacers.GiantTrunkPlacer
+[1575|t+7566ms|ThreadId(2)] [class_dump] fdi → net.minecraft.world.level.levelgen.feature.trunkplacers.MegaJungleTrunkPlacer
+[1576|t+7567ms|ThreadId(2)] [class_dump] fdj → net.minecraft.world.level.levelgen.feature.trunkplacers.StraightTrunkPlacer
+[1577|t+7567ms|ThreadId(2)] [class_dump] fdk → net.minecraft.world.level.levelgen.feature.trunkplacers.TrunkPlacer
+[1578|t+7567ms|ThreadId(2)] [class_dump] fdm → net.minecraft.world.level.levelgen.feature.trunkplacers.UpwardsBranchingTrunkPlacer
+[1579|t+7568ms|ThreadId(2)] [class_dump] fhb → net.minecraft.world.level.levelgen.structure.pools.alias.PoolAliasBindings
+[1580|t+7568ms|ThreadId(2)] [class_dump] fky → net.minecraft.world.level.material.EmptyFluid
+[1581|t+7568ms|ThreadId(2)] [class_dump] fkz → net.minecraft.world.level.material.FlowingFluid
+[1582|t+7569ms|ThreadId(2)] [class_dump] fla → net.minecraft.world.level.material.Fluid
+[1583|t+7569ms|ThreadId(2)] [class_dump] flb → net.minecraft.world.level.material.FluidState
+[1584|t+7569ms|ThreadId(2)] [class_dump] flc → net.minecraft.world.level.material.Fluids
+[1585|t+7574ms|ThreadId(2)] [class_dump] fle → net.minecraft.world.level.material.LavaFluid
+[1586|t+7574ms|ThreadId(2)] [class_dump] flf → net.minecraft.world.level.material.MapColor
+[1587|t+7575ms|ThreadId(2)] [class_dump] flg → net.minecraft.world.level.material.PushReaction
+[1588|t+7575ms|ThreadId(2)] [class_dump] flh → net.minecraft.world.level.material.WaterFluid
+[1589|t+7576ms|ThreadId(2)] [class_dump] fme → net.minecraft.world.level.redstone.DefaultRedstoneWireEvaluator
+[1590|t+7576ms|ThreadId(2)] [class_dump] fml → net.minecraft.world.level.redstone.RedstoneWireEvaluator
+[1591|t+7576ms|ThreadId(2)] [class_dump] fms → net.minecraft.world.level.saveddata.maps.MapDecorationTypes
+[1592|t+7577ms|ThreadId(2)] [class_dump] fna → net.minecraft.world.level.storage.DataVersion
+[1593|t+7577ms|ThreadId(2)] [class_dump] fth → net.minecraft.world.phys.AABB
+[1594|t+7577ms|ThreadId(2)] [class_dump] ftm → net.minecraft.world.phys.Vec3
+[1595|t+7577ms|ThreadId(2)] [class_dump] fto → net.minecraft.world.phys.shapes.ArrayVoxelShape
+[1596|t+7578ms|ThreadId(2)] [class_dump] ftp → net.minecraft.world.phys.shapes.BitSetDiscreteVoxelShape
+[1597|t+7578ms|ThreadId(2)] [class_dump] ftq → net.minecraft.world.phys.shapes.BooleanOp
+[1598|t+7578ms|ThreadId(2)] [class_dump] ftr → net.minecraft.world.phys.shapes.CollisionContext
+[1599|t+7579ms|ThreadId(2)] [class_dump] fts → net.minecraft.world.phys.shapes.CubePointRange
+[1600|t+7579ms|ThreadId(2)] [class_dump] ftt → net.minecraft.world.phys.shapes.CubeVoxelShape
+[1601|t+7579ms|ThreadId(2)] [class_dump] ftu → net.minecraft.world.phys.shapes.DiscreteCubeMerger
+[1602|t+7580ms|ThreadId(2)] [class_dump] ftv → net.minecraft.world.phys.shapes.DiscreteVoxelShape
+[1603|t+7580ms|ThreadId(2)] [class_dump] ftw → net.minecraft.world.phys.shapes.EntityCollisionContext
+[1604|t+7580ms|ThreadId(2)] [class_dump] ftx → net.minecraft.world.phys.shapes.IdenticalMerger
+[1605|t+7581ms|ThreadId(2)] [class_dump] fty → net.minecraft.world.phys.shapes.IndexMerger
+[1606|t+7581ms|ThreadId(2)] [class_dump] ftz → net.minecraft.world.phys.shapes.IndirectMerger
+[1607|t+7582ms|ThreadId(2)] [class_dump] fua → net.minecraft.world.phys.shapes.MinecartCollisionContext
+[1608|t+7582ms|ThreadId(2)] [class_dump] fub → net.minecraft.world.phys.shapes.NonOverlappingMerger
+[1609|t+7582ms|ThreadId(2)] [class_dump] fuc → net.minecraft.world.phys.shapes.OffsetDoubleList
+[1610|t+7583ms|ThreadId(2)] [class_dump] fud → net.minecraft.world.phys.shapes.Shapes
+[1611|t+7583ms|ThreadId(2)] [class_dump] fue → net.minecraft.world.phys.shapes.SliceShape
+[1612|t+7583ms|ThreadId(2)] [class_dump] fug → net.minecraft.world.phys.shapes.VoxelShape
+[1613|t+7584ms|ThreadId(2)] [class_dump] fuq → net.minecraft.world.scores.ScoreHolder
+[1614|t+7584ms|ThreadId(2)] [class_dump] fuy → net.minecraft.world.ticks.ContainerSingleItem
+[1615|t+7585ms|ThreadId(2)] [class_dump] fvt → net.minecraft.world.waypoints.Waypoint
+[1616|t+7585ms|ThreadId(2)] [class_dump] fvx → net.minecraft.world.waypoints.WaypointTransmitter
+[1617|t+7585ms|ThreadId(2)] [class_dump] fyl → com.mojang.blaze3d.platform.WindowEventHandler
+[1618|t+7586ms|ThreadId(2)] [class_dump] ger → net.minecraft.client.Camera
+[1619|t+7586ms|ThreadId(2)] [class_dump] gfj → net.minecraft.client.Minecraft
+[1620|t+7588ms|ThreadId(2)] [class_dump] gir → net.minecraft.client.gui.GuiGraphics
+[1621|t+7589ms|ThreadId(2)] [class_dump] gjm → net.minecraft.client.gui.components.DebugScreenOverlay
+[1622|t+7589ms|ThreadId(2)] [class_dump] gki → net.minecraft.client.gui.components.Renderable
+[1623|t+7589ms|ThreadId(2)] [class_dump] gkr → net.minecraft.client.gui.components.TabOrderedElement
+[1624|t+7590ms|ThreadId(2)] [class_dump] glw → net.minecraft.client.gui.components.debug.DebugScreenDisplayer
+[1625|t+7590ms|ThreadId(2)] [class_dump] gmh → net.minecraft.client.gui.components.debugchart.ProfilerPieChart
+[1626|t+7590ms|ThreadId(2)] [class_dump] gmk → net.minecraft.client.gui.components.events.AbstractContainerEventHandler
+[1627|t+7591ms|ThreadId(2)] [class_dump] gml → net.minecraft.client.gui.components.events.ContainerEventHandler
+[1628|t+7591ms|ThreadId(2)] [class_dump] gmm → net.minecraft.client.gui.components.events.GuiEventListener
+[1629|t+7592ms|ThreadId(2)] [class_dump] gsb → net.minecraft.client.gui.screens.Screen
+[1630|t+7592ms|ThreadId(2)] [class_dump] gzg → net.minecraft.client.main.SilentInitException
+[1631|t+7592ms|ThreadId(2)] [class_dump] h → com.mojang.math.SymmetricGroup3
+[1632|t+7593ms|ThreadId(2)] [class_dump] ib → net.minecraft.commands.synchronization.ArgumentTypeInfo
+[1633|t+7593ms|ThreadId(2)] [class_dump] ic → net.minecraft.commands.synchronization.ArgumentTypeInfos
+[1634|t+7593ms|ThreadId(2)] [class_dump] ip → net.minecraft.core.AxisCycle
+[1635|t+7593ms|ThreadId(2)] [class_dump] iqa → net.minecraft.client.server.IntegratedServer
+[1636|t+7594ms|ThreadId(2)] [class_dump] ird → net.minecraft.client.telemetry.TelemetryProperty
+[1637|t+7594ms|ThreadId(2)] [class_dump] irh → net.minecraft.client.telemetry.events.GameLoadTimesEvent
+[1638|t+7594ms|ThreadId(2)] [class_dump] is → net.minecraft.core.BlockPos
+[1639|t+7595ms|ThreadId(2)] [class_dump] ix → net.minecraft.core.DefaultedMappedRegistry
+[1640|t+7595ms|ThreadId(2)] [class_dump] iy → net.minecraft.core.DefaultedRegistry
+[1641|t+7595ms|ThreadId(2)] [class_dump] iz → net.minecraft.core.Direction
+[1642|t+7596ms|ThreadId(2)] [class_dump] jb → net.minecraft.core.FrontAndTop
+[1643|t+7596ms|ThreadId(2)] [class_dump] jd → net.minecraft.core.Holder
+[1644|t+7596ms|ThreadId(2)] [class_dump] je → net.minecraft.core.HolderGetter
+[1645|t+7597ms|ThreadId(2)] [class_dump] jf → net.minecraft.core.HolderLookup
+[1646|t+7597ms|ThreadId(2)] [class_dump] jg → net.minecraft.core.HolderOwner
+[1647|t+7597ms|ThreadId(2)] [class_dump] jh → net.minecraft.core.HolderSet
+[1648|t+7597ms|ThreadId(2)] [class_dump] ji → net.minecraft.core.IdMap
+[1649|t+7598ms|ThreadId(2)] [class_dump] jj → net.minecraft.core.IdMapper
+[1650|t+7598ms|ThreadId(2)] [class_dump] jl → net.minecraft.core.MappedRegistry
+[1651|t+7598ms|ThreadId(2)] [class_dump] jm → net.minecraft.core.NonNullList
+[1652|t+7599ms|ThreadId(2)] [class_dump] jn → net.minecraft.core.Position
+[1653|t+7599ms|ThreadId(2)] [class_dump] jp → net.minecraft.core.RegistrationInfo
+[1654|t+7599ms|ThreadId(2)] [class_dump] jq → net.minecraft.core.Registry
+[1655|t+7600ms|ThreadId(2)] [class_dump] jx → net.minecraft.core.UUIDUtil
+[1656|t+7600ms|ThreadId(2)] [class_dump] jy → net.minecraft.core.Vec3i
+[1657|t+7600ms|ThreadId(2)] [class_dump] jz → net.minecraft.core.WritableRegistry
+[1658|t+7601ms|ThreadId(2)] [class_dump] ka → net.minecraft.core.cauldron.CauldronInteraction
+[1659|t+7601ms|ThreadId(2)] [class_dump] kd → net.minecraft.core.component.DataComponentGetter
+[1660|t+7601ms|ThreadId(2)] [class_dump] ke → net.minecraft.core.component.DataComponentHolder
+[1661|t+7602ms|ThreadId(2)] [class_dump] kf → net.minecraft.core.component.DataComponentMap
+[1662|t+7602ms|ThreadId(2)] [class_dump] kg → net.minecraft.core.component.DataComponentPatch
+[1663|t+7602ms|ThreadId(2)] [class_dump] kh → net.minecraft.core.component.DataComponentType
+[1664|t+7603ms|ThreadId(2)] [class_dump] ki → net.minecraft.core.component.DataComponents
+[1665|t+7609ms|ThreadId(2)] [class_dump] kj → net.minecraft.core.component.PatchedDataComponentMap
+[1666|t+7610ms|ThreadId(2)] [class_dump] kt → net.minecraft.core.component.predicates.DataComponentPredicates
+[1667|t+7610ms|ThreadId(2)] [class_dump] l → net.minecraft.ChatFormatting
+[1668|t+7610ms|ThreadId(2)] [class_dump] lf → net.minecraft.core.dispenser.DefaultDispenseItemBehavior
+[1669|t+7611ms|ThreadId(2)] [class_dump] lg → net.minecraft.core.dispenser.DispenseItemBehavior
+[1670|t+7611ms|ThreadId(2)] [class_dump] lp → net.minecraft.core.particles.BlockParticleOption
+[1671|t+7611ms|ThreadId(2)] [class_dump] lq → net.minecraft.core.particles.ColorParticleOption
+[1672|t+7611ms|ThreadId(2)] [class_dump] lu → net.minecraft.core.particles.ItemParticleOption
+[1673|t+7612ms|ThreadId(2)] [class_dump] lw → net.minecraft.core.particles.ParticleOptions
+[1674|t+7612ms|ThreadId(2)] [class_dump] lx → net.minecraft.core.particles.ParticleType
+[1675|t+7613ms|ThreadId(2)] [class_dump] ly → net.minecraft.core.particles.ParticleTypes
+[1676|t+7613ms|ThreadId(2)] [class_dump] lz → net.minecraft.core.particles.PowerParticleOption
+[1677|t+7613ms|ThreadId(2)] [class_dump] m → net.minecraft.CrashReport
+[1678|t+7613ms|ThreadId(2)] [class_dump] md → net.minecraft.core.particles.SimpleParticleType
+[1679|t+7614ms|ThreadId(2)] [class_dump] me → net.minecraft.core.particles.SpellParticleOption
+[1680|t+7614ms|ThreadId(2)] [class_dump] mi → net.minecraft.core.registries.BuiltInRegistries
+[1681|t+7614ms|ThreadId(2)] [class_dump] mj → net.minecraft.core.registries.Registries
+[1682|t+7614ms|ThreadId(2)] [class_dump] net.minecraft.client.main.Main → net.minecraft.client.main.Main
+[1683|t+7615ms|ThreadId(2)] [class_dump] net.minecraft.client.main.Main$1 → net.minecraft.client.main.Main$1
+[1684|t+7615ms|ThreadId(2)] [class_dump] net.minecraft.client.main.Main$2 → net.minecraft.client.main.Main$2
+[1685|t+7615ms|ThreadId(2)] [class_dump] net.minecraft.server.MinecraftServer → net.minecraft.server.MinecraftServer
+[1686|t+7616ms|ThreadId(2)] [class_dump] r → net.minecraft.DetectedVersion
+[1687|t+7616ms|ThreadId(2)] [class_dump] rq → net.minecraft.data.worldgen.features.CaveFeatures
+[1688|t+7616ms|ThreadId(2)] [class_dump] rs → net.minecraft.data.worldgen.features.FeatureUtils
+[1689|t+7616ms|ThreadId(2)] [class_dump] rx → net.minecraft.data.worldgen.features.TreeFeatures
+[1690|t+7617ms|ThreadId(2)] [class_dump] ry → net.minecraft.data.worldgen.features.VegetationFeatures
+[1691|t+7617ms|ThreadId(2)] [class_dump] s → net.minecraft.IdentifierException
+[1692|t+7617ms|ThreadId(2)] [class_dump] sn → net.minecraft.gametest.framework.BuiltinTestFunctions
+[1693|t+7617ms|ThreadId(2)] [class_dump] tb → net.minecraft.gametest.framework.GameTestInstance
+[1694|t+7618ms|ThreadId(2)] [class_dump] tv → net.minecraft.gametest.framework.TestEnvironmentDefinition
+[1695|t+7618ms|ThreadId(2)] [class_dump] tx → net.minecraft.gametest.framework.TestFunctionLoader
+[1696|t+7618ms|ThreadId(2)] [class_dump] u → net.minecraft.ReportType
+[1697|t+7618ms|ThreadId(2)] [class_dump] uz → net.minecraft.nbt.CompoundTag
+[1698|t+7619ms|ThreadId(2)] [class_dump] v → net.minecraft.ReportedException
+[1699|t+7619ms|ThreadId(2)] [class_dump] vi → net.minecraft.nbt.NbtAccounter
+[1700|t+7619ms|ThreadId(2)] [class_dump] vj → net.minecraft.nbt.NbtAccounterException
+[1701|t+7619ms|ThreadId(2)] [class_dump] vk → net.minecraft.nbt.NbtException
+[1702|t+7620ms|ThreadId(2)] [class_dump] vl → net.minecraft.nbt.NbtFormatException
+[1703|t+7620ms|ThreadId(2)] [class_dump] vn → net.minecraft.nbt.NbtOps
+[1704|t+7620ms|ThreadId(2)] [class_dump] vz → net.minecraft.nbt.Tag
+[1705|t+7621ms|ThreadId(2)] [class_dump] w → net.minecraft.SharedConstants
+[1706|t+7621ms|ThreadId(2)] [class_dump] wu → net.minecraft.network.Connection
+[1707|t+7622ms|ThreadId(2)] [class_dump] wx → net.minecraft.network.FriendlyByteBuf
+[1708|t+7622ms|ThreadId(2)] [class_dump] xq → net.minecraft.network.RegistryFriendlyByteBuf
+[1709|t+7622ms|ThreadId(2)] [class_dump] y → net.minecraft.SystemReport
+[1710|t+7623ms|ThreadId(2)] [class_dump] yh → net.minecraft.network.chat.Component
+[1711|t+7623ms|ThreadId(2)] [class_dump] yi → net.minecraft.network.chat.ComponentContents
+[1712|t+7623ms|ThreadId(2)] [class_dump] yj → net.minecraft.network.chat.ComponentSerialization
+[1713|t+7623ms|ThreadId(2)] [class_dump] ym → net.minecraft.network.chat.FontDescription
+[1714|t+7623ms|ThreadId(2)] [class_dump] yn → net.minecraft.network.chat.FormattedText
+[1715|t+7624ms|ThreadId(2)] [class_dump] yo → net.minecraft.network.chat.HoverEvent
+[1716|t+7624ms|ThreadId(2)] [class_dump] yw → net.minecraft.network.chat.MutableComponent
+[1717|t+7624ms|ThreadId(2)] [class_dump] z → net.minecraft.TracingExecutor
+[1718|t+7624ms|ThreadId(2)] [class_dump] zf → net.minecraft.network.chat.Style
+[1719|t+7625ms|ThreadId(2)] [class_dump] zh → net.minecraft.network.chat.TextColor
+[1720|t+7625ms|ThreadId(2)] [class_dump] zq → net.minecraft.network.chat.contents.TranslatableContents
+[1721|t+7625ms|ThreadId(2)] [class_dump] zr → net.minecraft.network.chat.contents.TranslatableFormatException
+[1722|t+7649ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1723|t+7650ms|ThreadId(2)] [step] deferred_init — entering render/tick loop
+[1724|t+7901ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1725|t+8053ms|ThreadId(2)] [VTable] vtable installed
+[1726|t+8054ms|ThreadId(2)] [Rsift] RsiftChunkBridge natives ready
+[1727|t+8054ms|ThreadId(2)] [step] tick_loop — alive tick=0
+[1728|t+8072ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1729|t+8089ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1730|t+8107ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1731|t+8358ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1732|t+8376ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1733|t+8393ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1734|t+8411ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1735|t+8678ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1736|t+8696ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1737|t+8713ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1738|t+8731ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1739|t+8982ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1740|t+9000ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1741|t+9018ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1742|t+9035ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1743|t+9286ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1744|t+9304ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1745|t+9321ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1746|t+9340ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1747|t+9591ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1748|t+9609ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1749|t+9626ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1750|t+9644ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1751|t+9895ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1752|t+9912ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1753|t+9929ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1754|t+9947ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1755|t+10199ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1756|t+10217ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1757|t+10234ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1758|t+10251ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1759|t+10503ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1760|t+10520ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1761|t+10537ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1762|t+10554ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1763|t+10805ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1764|t+10823ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1765|t+10840ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1766|t+10858ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1767|t+11111ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1768|t+11129ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1769|t+11146ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
+[1770|t+11163ms|ThreadId(2)] [step] title_marker — skipped this attempt: Minecraft instance is null (client not ready)
