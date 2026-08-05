@@ -539,6 +539,7 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
 fn post_bridge_boot(env: &mut JNIEnv, vm_addr: usize) {
     install_f3_marker(env, vm_addr);
     retransform_loaded_targets(env, vm_addr);
+    dump_loaded_classes(env, vm_addr);
     // タイトルは client_tick 側でもリトライするのでここは最善努力。
     if let Some(inst) = screen_inject::minecraft_instance(env) {
         maybe_set_window_title(env, &inst);
@@ -603,6 +604,47 @@ fn retransform_loaded_targets(env: &mut JNIEnv, vm_addr: usize) {
         ),
     );
     drop(locals);
+}
+
+
+/// 全ロード済みクラスを JVMTI GetLoadedClasses で列挙し、短い名前(難読化クラス)
+/// + com/mojang + net/minecraft をログにダンプする。1回のみ。
+fn dump_loaded_classes(env: &mut JNIEnv, vm_addr: usize) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static DUMPED: AtomicBool = AtomicBool::new(false);
+    if DUMPED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let vm_raw = vm_addr as *mut std::ffi::c_void;
+    let classes = match unsafe { jvmti_events::get_loaded_classes(vm_raw) } {
+        Some(c) => c,
+        None => {
+            agent_log_warn("class_dump", "GetLoadedClasses failed");
+            return;
+        }
+    };
+    let mut interesting: Vec<String> = Vec::new();
+    for jclass_raw in &classes {
+        if jclass_raw.is_null() { continue; }
+        let obj = unsafe { JObject::from_raw(*jclass_raw as jni::sys::jobject) };
+        let name_result = env.call_method(&obj, "getName", "()Ljava/lang/String;", &[]).and_then(|v| v.l());
+        screen_inject::clear_pending_exception(env);
+        if let Ok(name_obj) = name_result {
+            let name: String = env.get_string((&name_obj).into()).map(|s| s.into()).unwrap_or_default();
+            let is_short_obf = name.len() <= 8 && !name.contains('$') && !name.contains('/');
+            let is_mc = name.starts_with("net.minecraft.") || name.starts_with("com.mojang.");
+            if is_short_obf || is_mc {
+                let mojmap = crate::obf_map::resolve_class_reverse(&name)
+                    .map(|m| format!(" → {}", m)).unwrap_or_default();
+                interesting.push(format!("{}{}", name, mojmap));
+            }
+        }
+    }
+    interesting.sort();
+    agent_log_step("class_dump", &format!("{} interesting classes loaded (of {} total)", interesting.len(), classes.len()));
+    for name in &interesting {
+        agent_log(&format!("[class_dump] {}", name));
+    }
 }
 
 /// wave 209 HE: 1.21.11 確定マッピングの静的先行登録 (クラスをロードしない)。
@@ -1036,7 +1078,10 @@ pub fn client_tick(env: &mut JNIEnv) {
         Err(_) => return,
     };
 
-    if button_at(&name_str, 0).is_some() || name_str.contains("TitleScreen") {
+    // wave HR: 画面クラス名(難読化)を mojmap へ逆解決してから判定
+    let mojmap_screen = crate::obf_map::resolve_class_reverse(&name_str).unwrap_or_else(|| name_str.clone());
+    if button_at(&mojmap_screen, 0).is_some() || mojmap_screen.contains("TitleScreen") || mojmap_screen.contains("PauseScreen") {
+        agent_log_step("screen_check", &format!("obf={} mojmap={} → injecting", name_str, mojmap_screen));
         screen_buttons::inject_current_screen_on_render_thread(env, &inst);
     }
 
