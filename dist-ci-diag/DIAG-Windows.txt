@@ -1,15 +1,40 @@
-== DIAG Windows exit=1 time=2026-08-05T01:00:55Z ==
+[trigger2] compiling bootstrap jar from sources...
+FATAL: javac --release 21 failed (rc=2) — falling back to prebuilt jar
+error: release version 21 not supported
+Usage: javac <options> <source files>
+use --help for a list of possible options
+[trigger2] javac --release 21 rc=2
+[trigger2] WARNING: javac produced no classes — using prebuilt jar
+[trigger2] entering cargo build for RUNNER_OS=Windows
+== DIAG Windows exit=0 time=2026-08-05T02:19:47Z ==
 -- target/release cdylib 候補 --
-ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
+-rwxr-xr-x 2 runneradmin 197121  6554112 Aug  5 02:16 target/release/rsgraphics.dll
+-rwxr-xr-x 2 runneradmin 197121   107008 Aug  5 02:17 target/release/rsift_api.dll
+-rwxr-xr-x 2 runneradmin 197121 11686400 Aug  5 02:19 target/release/rsift_jvm.dll
+-rwxr-xr-x 2 runneradmin 197121   993792 Aug  5 02:16 target/release/rsreplay.dll
+-rwxr-xr-x 2 runneradmin 197121   534016 Aug  5 02:16 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 11509
-drwxr-xr-x 1 runneradmin 197121        0 Aug  5 01:00 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  5 01:00 ..
--rw-r--r-- 1 runneradmin 197121      487 Aug  5 01:00 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 11779287 Aug  5 01:00 client.txt
+total 42760
+drwxr-xr-x 1 runneradmin 197121        0 Aug  5 02:19 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug  5 02:12 ..
+-rw-r--r-- 1 runneradmin 197121     1236 Aug  5 02:19 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 11779287 Aug  5 02:12 client.txt
+-rw-r--r-- 1 runneradmin 197121 31989760 Aug  5 02:19 rsift-bundle-windows-x64.zip
+drwxr-xr-x 1 runneradmin 197121        0 Aug  5 02:19 selftest-win
+drwxr-xr-x 1 runneradmin 197121        0 Aug  5 02:19 windows
 -- selftest result --
-cat: 'dist-ci/selftest-*/result.txt': No such file or directory
+selftest_exit=0
+dist-ci/selftest-win/client.txt
+dist-ci/selftest-win/README_JA.md
+dist-ci/selftest-win/result.txt
+dist-ci/selftest-win/rsgraphics.dll
+dist-ci/selftest-win/rsift-bootstrap.jar
+dist-ci/selftest-win/rsift-setup.exe
+dist-ci/selftest-win/rsift.dll
+dist-ci/selftest-win/rsift_jvm.dll
+dist-ci/selftest-win/rsift_launch.json
+dist-ci/selftest-win/rsift_setup_log.jsonl
