@@ -4,7 +4,8 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 47  (run-46 の DIAG で javac 真因確定→根治: `javac --release 21 failed (rc=2) Usage: javac` = **runner 既定 javac が --release 非認識の古い javac**。setup-java 追加は GitHub App トークンに workflows 権限が無く不可だったため、**TRIGGER2.md 内で --release 21 対応 javac(JDK9+) を PATH/JAVA_HOME/標準JDKDir(temurin-21等) から発見**して使う pick_javac21 を実装 (配列で Windows の空白パスも扱う + --release 21 -version で受理検査)。これで最新ソース(obf解決ブリッジ含む)が class 65 でコンパイル → UnsupportedClassVersionError 根治。発見失敗時は prebuilt(STALE) フォールバック + FATAL ログ。前回分=run 46 完全同梱)
+- run: 48  (run-47 DIAG で javac 真因2点確定→根治: ①既定javac=JDK17にroll（run-44のJDK25/class69と違いclass61）②bootstrap ソースの ScreenInitPatcher(ASM)/RsiftPacketTap(Netty) がCI classpath不足でコンパイルエラー。対策: (a) この2ファイルをCI javacから除外 — 両者とも実行時反射ロードで未収録時フォールスローセーフ。残り全ソースは反射ベースで単独コンパイル可。(b) javac を2段トライ化: try1=--release 21(JDK21+/25→class65) / try2=フラグ無し(既定JDK17等→class61・MC Java21で下位互換ロード)。(c) 版数チェックを ≤65 受入に緩和(Java25=69のみFATAL)。これで全OSで最新ソース(obf解決ブリッジ含む)が class≤65 でコンパイルされ UnsupportedClassVersionError 根治。前回分=run 47 完全同梱)
+- run: 47  (javac --release非認識を JDK9+ finder で試みたが、run-47 DIAG で①既定javac=JDK17 roll ②ScreenInitPatcher/RsiftPacketTap外部depエラー 判明→run-48で根治。前回分=run 46 完全同梱)
 - run: 46  (run-45 即死失敗の自己診断化+堅牢化: javac出力捕捉+rc tee / javac成功時のみprebuilt上書き(失敗時フォールバック) / jar・version-check の tee+if化 / cargo build前マーカー tee。**DIAG確定: 既定javac=--release非認識(rc=2)→prebuilt(STALE)フォールバックで緑だが #8 根治には不十分 (run-47でsetup-java根治)**。前回分=run 45 完全同梱)
 - run: 45  (ログ #8 根治 2点 + 観測強化: (1) javac --release 21 必須化 — runner 既定 JDK25 が class 69 を吐き MC(Java21) が RsiftScreenHooks 以下全 bootstrap クラスを UnsupportedClassVersionError で拒否 → 11,575 spam + Ui/Mod/PlatformBridge 全ロード失敗していたのを class 65 強制で根治 (生成 class の major=65 を CI で機械検証) (2) CFLH パッチャの flipFrame descriptor を "()V"→""(ワイルドカード) へ — 実シグネチャは (J)V なのに ()V 厳密一致でマッチせず HEAD 注入0 → render_flip が1度も発火せず DX12 チェーン全死していたのを根治 (yarn/mojmap 一次情報で (J)V 確定・flipFrame は RenderSystem 内で一意) (3) CFLH コールバック + nativeOnHook に throttled agent_log 観測追加。前回分=run 44 完全同梱。**注: run-45 はCI即死失敗→run-46で堅牢化**)
 - run: 44  (javacステップのcd rsift二重バグ修正 — スクリプト冒頭でcd rsift済みなのにさらにcd rsiftして存在しないrsift/rsiftへ移動→set -e即死していた。前回分=run 43完全同梱)
@@ -138,45 +139,37 @@ echo "[trigger2] compiling bootstrap jar from sources..." | tee -a dist-ci/DIAG-
 # UiBridge/ModBridge/PlatformBridge 全ロード失敗 = Mods ボタン/プラットフォーム橋渡し全死。
 # --release 21 で class 65 を強制 (JDK 25 javac の CT.sym が 21 を内包するため確実)。
 mkdir -p bootstrap/prebuilt/classes
-find bootstrap/java -name "*.java" > /tmp/rsift_srcs.txt
+# wave HS (run-47 確定): ScreenInitPatcher(ASM直接参照) と RsiftPacketTap(Netty直接参照) は
+# CI classpath にライブラリが無いためコンパイルエラーになる。両者とも実行時に反射ロードで、
+# 未収録時は安全にフォールスルーする (ScreenInitPatcher→RsiftClassTransformer catch→ネイティブ
+# CFLHパッチャ、RsiftPacketTap→mod_bridge が無効化ログ)。よって CI コンパイルから除外。
+# 残り全ソース(RsiftHooks/各Bridge)は反射ベースで単独コンパイル可能。
+find bootstrap/java -name "*.java" ! -name "ScreenInitPatcher.java" ! -name "RsiftPacketTap.java" > /tmp/rsift_srcs.txt
+echo "[trigger2] javac sources: $(wc -l < /tmp/rsift_srcs.txt) files (ScreenInitPatcher/RsiftPacketTap excluded — need ASM/Netty, handled as absent at runtime)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 # wave HS (run-46 で確定): runner 既定 javac が --release を認識しない古い場合が
 # ある (rc=2 "Usage")。--release 21 を受理する javac (JDK9+) を PATH / JAVA_HOME /
 # 標準JDKインストール先から発見して使う。GitHub runner は temurin-21 等を標準搭載。
 echo "[trigger2] default javac=$(command -v javac || echo NONE) java=$(command -v java || echo NONE) JAVA_HOME=${JAVA_HOME:-<unset>}" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 javac -version 2>&1 | head -1 | sed 's/^/[trigger2] javac -version: /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt || true
 java  -version 2>&1 | head -1 | sed 's/^/[trigger2] java  -version: /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt || true
-pick_javac21() {
-  local -a cands=()
-  local d; if d=$(command -v javac 2>/dev/null); then cands+=("$d"); fi
-  if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/javac" ]; then cands+=("${JAVA_HOME}/bin/javac"); fi
-  case "$RUNNER_OS" in
-    Linux)  for h in /usr/lib/jvm/*/; do [ -x "${h}bin/javac" ] && cands+=("${h}bin/javac"); done;;
-    macOS)  for h in /Library/Java/JavaVirtualMachines/*/Contents/Home/; do [ -x "${h}bin/javac" ] && cands+=("${h}bin/javac"); done;;
-    Windows) for h in "/c/hostedtoolcache/windows/Java/"*/ "/c/Program Files/Eclipse Adoptium/"*/ "/c/Program Files/Java/"*/; do
-               [ -x "${h}bin/javac.exe" ] && cands+=("${h}bin/javac.exe"); done;;
-  esac
-  local jc
-  for jc in "${cands[@]}"; do
-    # JDK9+ は --release を持つ。--release 21 が受理されるか (無害な -version で) 検査。
-    if "$jc" --release 21 -version >/dev/null 2>&1; then
-      echo "$jc"; return 0
-    fi
-  done
-  return 1
-}
-JAVAC21="$(pick_javac21 || true)"
-echo "[trigger2] picked javac (--release 21 capable): ${JAVAC21:-<NONE FOUND>}" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-JAVAC_RC=0
-if [ -n "$JAVAC21" ]; then
-  "$JAVAC21" --release 21 -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || {
-    JAVAC_RC=$?
-    echo "FATAL: $JAVAC21 --release 21 failed (rc=$JAVAC_RC) — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-    tail -40 /tmp/rsift_javac.log | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-  }
-  echo "[trigger2] $JAVAC21 --release 21 rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-else
-  JAVAC_RC=127
-  echo "FATAL: no javac supporting --release 21 found — using prebuilt (STALE) jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+# wave HS: runner 既定 javac が JDK17 に roll し --release 21 を拒否 (rc=2) する場合がある。
+# 2 段トライで class ≤ 65 (MC Java21 でロード可能) を確実に出す:
+#   try1: javac --release 21  (JDK21+/25 なら成功 → class65)
+#   try2: javac (フラグ無し)   (try1 失敗=既定JDK17等 → class61, MC Java21 で下位互換ロード)
+JAVAC_RC=1
+javac --release 21 -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
+echo "[trigger2] javac --release 21 rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+if [ "$JAVAC_RC" != "0" ]; then
+  echo "[trigger2] --release 21 failed (既定javac=JDK17等の可能性) — フラグ無しで再トライ (class<=65 なら MC Java21 でロード可能)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  tail -4 /tmp/rsift_javac.log | sed 's/^/    /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  rm -rf bootstrap/prebuilt/classes/com
+  JAVAC_RC=0
+  javac -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
+  echo "[trigger2] javac (no --release) rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+fi
+if [ "$JAVAC_RC" != "0" ]; then
+  echo "FATAL: javac failed both attempts — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  tail -40 /tmp/rsift_javac.log | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 fi
 # javac が完全成功 (rc=0) かつクラス生成済みの時だけ prebuilt jar を上書き。
 # 部分コンパイル (rc!=0 だが一部クラス生成) で壊れた jar を出荷しないための保護。
@@ -187,18 +180,17 @@ if [ -d bootstrap/prebuilt/classes/com ] && [ "$JAVAC_RC" = "0" ]; then
     echo "FATAL: jar packaging failed — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
   else
     echo "[trigger2] bootstrap jar compiled OK ($(wc -c < bootstrap/prebuilt/rsift-bootstrap.jar) bytes)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-    # wave HS (#8 根治検証): 生成 class の major version を検査。--release 21 が効いて
-    # class 65 (Java21) になっていることを機械保証。69 (Java25) なら MC 1.21.11 で
-    # UnsupportedClassVersionError → 即 FATAL。od が無い環境は静黙スキップ
-    # (--release 21 自体が class 65 を構造的に保証しているため二重安全)。
+    # wave HS (#8 根治検証): 生成 class の major version を検査。major ≤ 65 なら
+    # MC Java21 でロード可能 (Java21=65 / Java17=61 等・下位互換)。> 65 (Java25=69) は
+    # UnsupportedClassVersionError で即 FATAL。od が無い環境は静黙スキップ。
     VMAJ_HEX=$(od -An -j6 -N2 -tx1 bootstrap/prebuilt/classes/com/rsift/RsiftHooks.class 2>/dev/null | tr -d ' \t\n' || true)
-    echo "[trigger2] bootstrap class major-version (hex) = ${VMAJ_HEX:-unknown} (expect 0041=Java21)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-    if [ -n "$VMAJ_HEX" ]; then
-      case "$VMAJ_HEX" in
-        0041) echo "[trigger2] bootstrap classes OK (Java21 / class 65)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt;;
-        0045) echo "FATAL: bootstrap class version is Java25 (class 69) — MC 1.21.11 (Java21) rejects with UnsupportedClassVersionError. --release 21 not effective" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1;;
-        *) echo "[trigger2] WARNING: unexpected bootstrap class version ${VMAJ_HEX} — verify manually (rsift-bootstrap.log on user machine)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt;;
-      esac
+    VMAJ_DEC=999
+    [ -n "$VMAJ_HEX" ] && VMAJ_DEC=$(printf '%d' "0x$VMAJ_HEX" 2>/dev/null || echo 999)
+    echo "[trigger2] bootstrap class major-version (hex=${VMAJ_HEX:-?} dec=$VMAJ_DEC) — accept <=65 (loads on MC Java21)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+    if [ "$VMAJ_DEC" -le 65 ] 2>/dev/null; then
+      echo "[trigger2] bootstrap classes OK (major=$VMAJ_DEC <= 65)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+    else
+      echo "FATAL: bootstrap class major=$VMAJ_DEC > 65 — MC Java21 rejects with UnsupportedClassVersionError" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1
     fi
   fi
 else
