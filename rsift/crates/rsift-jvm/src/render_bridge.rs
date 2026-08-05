@@ -360,6 +360,9 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeOnFlip(
     width: jni::sys::jint,
     height: jni::sys::jint,
 ) {
+    // wave HS: on_render_frame → opt-gfx の panic が JNI 境界へ unwind すると
+    // JVM abort (MC クラッシュ) のため全体を catch_unwind (vanilla GL 描画は継続)。
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     ensure_engine();
     #[cfg(windows)]
     {
@@ -394,6 +397,7 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftRenderHooks_nativeOnFlip(
             }
         });
     }
+    }));
 }
 
 #[no_mangle]

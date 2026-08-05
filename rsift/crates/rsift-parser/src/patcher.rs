@@ -9,7 +9,7 @@ use crate::class_rewriter::{hook_inject_for_redirect, ClassRewriter, HeadInject}
 use crate::compute_redirect::{is_compute_class, redirects_for_class};
 use crate::mixin_eq::MixinInjector;
 use rayon::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 use tracing::{debug, info};
 
@@ -41,6 +41,37 @@ static GLOBAL_MIXINS: OnceLock<Mutex<MixinInjector>> = OnceLock::new();
 
 fn global_mixins() -> &'static Mutex<MixinInjector> {
     GLOBAL_MIXINS.get_or_init(|| Mutex::new(MixinInjector::new()))
+}
+
+/// wave HS (メソッド名難読化の配線修正): CFLH は**難読 bytecode** を渡すため、
+/// mojmap メソッド名 ("tick"/"init"/"channelRead0"/"aiStep" 等) で検索しても
+/// 実行時の難読名に一致せず HEAD 注入0 になる (= #9 で Minecraft/Screen/Connection
+/// 等の全 net.minecraft 系が "NOT modified" だった真因)。agent 側が obf_map で
+/// mojmap→難読 を解決して本レジストリへ登録し、patcher は注入時に難読名を使う。
+/// 未登録 (非難読クラス・flipFrame 等) は mojmap 名へ安全落下。
+static METHOD_ALIASES: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
+
+/// (mojmap internal クラス名, mojmap メソッド名) → 実行時(難読)メソッド名 を登録。
+/// agent (rsift-jvm) が obf_map install 後に呼ぶ。patcher は obf bytecode 中の
+/// 実メソッド名をこれで特定する。
+pub fn register_runtime_method(class_internal_mojmap: &str, mojmap_method: &str, runtime_method: &str) {
+    let m = METHOD_ALIASES.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut g) = m.lock() {
+        g.insert(
+            (class_internal_mojmap.to_string(), mojmap_method.to_string()),
+            runtime_method.to_string(),
+        );
+    }
+}
+
+/// パッチ対象メソッドの実行時名を解決。alias 未登録なら mojmap 名をそのまま返す
+/// (非難読クラス・RenderSystem.flipFrame 等)。
+fn runtime_method_name(class_internal_mojmap: &str, mojmap_method: &str) -> String {
+    METHOD_ALIASES
+        .get()
+        .and_then(|m| m.lock().ok())
+        .and_then(|g| g.get(&(class_internal_mojmap.to_string(), mojmap_method.to_string())).cloned())
+        .unwrap_or_else(|| mojmap_method.to_string())
 }
 
 pub fn register_dynamic_target(class_name: &str) {
@@ -160,11 +191,9 @@ impl BytecodePatcher {
 
         match class_name.as_str() {
             TARGET_CONNECTION_CLASS => {
-                injects.push(hook_inject_for_redirect(
-                    "channelRead0",
-                    "",
-                    "onNetworkPacket",
-                ));
+                // wave HS: 難読 bytecode 中の実メソッド名を解決 (mojmap→難読)。
+                let m = runtime_method_name(&class_name, "channelRead0");
+                injects.push(hook_inject_for_redirect(&m, "", "onNetworkPacket"));
             }
             TARGET_RENDER_CLASS => {
                 // wave HS (renderer #8 根治): RenderSystem.flipFrame の実シグネチャは
@@ -175,16 +204,22 @@ impl BytecodePatcher {
                 injects.push(hook_inject_for_redirect("flipFrame", "", "onRenderFlip"));
             }
             TARGET_MINECRAFT_CLIENT => {
-                injects.push(hook_inject_for_redirect("tick", "", "onClientTickHook"));
-                injects.push(hook_inject_for_redirect("run", "", "onClientRun"));
+                let tick_m = runtime_method_name(&class_name, "tick");
+                let run_m = runtime_method_name(&class_name, "run");
+                injects.push(hook_inject_for_redirect(&tick_m, "", "onClientTickHook"));
+                injects.push(hook_inject_for_redirect(&run_m, "", "onClientRun"));
             }
             TARGET_SCREEN => {
-                injects.push(hook_inject_for_redirect("init", "()V", "onScreenInit"));
+                let init_m = runtime_method_name(&class_name, "init");
+                injects.push(hook_inject_for_redirect(&init_m, "", "onScreenInit"));
             }
             _ => {}
         }
 
         for redirect in redirects_for_class(&class_name) {
+            // wave HS: compute redirect のメソッド名も難読解決。descriptor は難読クラス
+            // 参照を含むため厳密一致せず — ワイルドカード "" で名前一致注入。
+            let mname = runtime_method_name(&class_name, redirect.method_name);
             let hook = match redirect.method_name {
                 "aiStep" => "onMobAiStep",
                 "travel" => "onEntityTravel",
@@ -200,11 +235,7 @@ impl BytecodePatcher {
                     "onGenericCompute"
                 }
             };
-            injects.push(hook_inject_for_redirect(
-                redirect.method_name,
-                redirect.descriptor,
-                hook,
-            ));
+            injects.push(hook_inject_for_redirect(&mname, "", hook));
         }
 
         let mut rewriter = ClassRewriter::from_bytes(raw_data).map_err(|e| format!("{:?}", e))?;

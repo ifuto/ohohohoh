@@ -324,6 +324,9 @@ fn deferred_init_main(vm_addr: usize, opts: &str) {
         // dll_dir 不明でも安全側へ (Unobfuscated install を試みる)。
         let _ = crate::obf_map::install_from_dir(std::path::Path::new("."));
     }
+    // wave HS (メソッド名難読化の配線修正): obf_map install 直後・CFLH パッチ前に、
+    // 各ターゲットの mojmap メソッド名→難読名 を解決して patcher へ登録する。
+    register_runtime_method_aliases();
     for attempt in 0..300 {
         match vm.attach_current_thread() {
             Ok(mut env) => {
@@ -1340,6 +1343,57 @@ fn log_hook_firing(hook: &str) {
     if n == 1 || n % 600 == 0 {
         agent_log(&format!("[hook] {} fired (count={})", hook, n));
     }
+}
+
+/// wave HS (メソッド名難読化の配線修正): obf_map で各 CFLH ターゲットの
+/// mojmap メソッド名 → 実行時(難読)メソッド名 を解決し、patcher へ登録する。
+/// CFLH は難読 bytecode を渡すため、patcher が mojmap 名 ("tick"/"init"/等) で
+/// 検索すると実行時の難読名に一致せず HEAD 注入0 になる (= #9 で Minecraft/Screen/
+/// Connection 等の全 net.minecraft 系が "NOT modified" だった真因)。obf_map install
+/// 直後 (CFLH パッチ前) に呼ぶ。非難読・map 未収録は patcher が mojmap 名へ安全落下。
+fn register_runtime_method_aliases() {
+    const TARGETS: &[(&str, &str)] = &[
+        ("net/minecraft/client/Minecraft", "tick"),
+        ("net/minecraft/client/Minecraft", "run"),
+        ("net/minecraft/client/gui/screens/Screen", "init"),
+        ("net/minecraft/network/Connection", "channelRead0"),
+        ("net/minecraft/world/entity/Mob", "aiStep"),
+        ("net/minecraft/world/entity/Entity", "travel"),
+        (
+            "net/minecraft/world/level/redstone/RedstoneWireBlock",
+            "calculateTargetStrength",
+        ),
+        ("net/minecraft/world/level/chunk/LevelChunk", "tick"),
+        (
+            "net/minecraft/world/level/block/entity/HopperBlockEntity",
+            "tick",
+        ),
+        ("net/minecraft/server/level/ServerLevel", "tick"),
+        ("net/minecraft/world/level/material/FlowingFluid", "tick"),
+    ];
+    let mut registered = 0usize;
+    for (class_internal, mojmap_method) in TARGETS {
+        let dotted = class_internal.replace('/', ".");
+        match crate::obf_map::resolve_method_by_name(&dotted, mojmap_method) {
+            Some(runtime_method) => {
+                rsift_parser::register_runtime_method(
+                    class_internal,
+                    mojmap_method,
+                    &runtime_method,
+                );
+                registered += 1;
+            }
+            None => {} // 非難読・または map 未収録 → patcher は mojmap 名へ安全落下
+        }
+    }
+    agent_log_step(
+        "obf_method_aliases",
+        &format!(
+            "registered {} / {} runtime method aliases (rest fall back to mojmap name)",
+            registered,
+            TARGETS.len()
+        ),
+    );
 }
 
 #[no_mangle]
