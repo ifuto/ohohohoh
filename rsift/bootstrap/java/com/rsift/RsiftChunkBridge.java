@@ -34,18 +34,24 @@ public final class RsiftChunkBridge {
         try {
             Object level = readLevel(minecraft);
             if (level == null) {
+                if (syncCounter <= 3) {
+                    nativeLog("[RsiftChunkBridge] level=null (sync #" + syncCounter + ") — readLevel obf resolve failed");
+                }
                 return;
             }
             Object player = readPlayer(minecraft);
             if (player == null) {
+                if (syncCounter <= 3) {
+                    nativeLog("[RsiftChunkBridge] player=null (sync #" + syncCounter + ")");
+                }
                 return;
             }
 
-            double px = asDouble(invokeNoArg(player, "getX"), 0);
-            double py = asDouble(invokeNoArg(player, "getY"), 64);
-            double pz = asDouble(invokeNoArg(player, "getZ"), 0);
-            float yaw = asFloat(invokeNoArg(player, "getYRot"), 0);
-            float pitch = asFloat(invokeNoArg(player, "getXRot"), 0);
+            double px = asDouble(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getX"), 0);
+            double py = asDouble(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getY"), 64);
+            double pz = asDouble(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getZ"), 0);
+            float yaw = asFloat(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getYRot"), 0);
+            float pitch = asFloat(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getXRot"), 0);
             nativeSetCamera((float) px, (float) py, (float) pz, yaw, pitch);
 
             int cx = floorDiv((int) Math.floor(px), SECTION);
@@ -79,13 +85,8 @@ public final class RsiftChunkBridge {
             return;
         }
         int base = minSection;
-        try {
-            Object v = invokeNoArg(chunk, "getMinSection");
-            if (v instanceof Number) {
-                base = ((Number) v).intValue();
-            }
-        } catch (Throwable ignored) {
-        }
+        Object msVal = resolveInvoke(chunk, "net.minecraft.world.level.chunk.LevelChunk", "getMinSection");
+        if (msVal instanceof Number) { base = ((Number) msVal).intValue(); }
 
         short[] flat = new short[sections.length * SECTION_VOLUME];
         int opaque = 0;
@@ -131,7 +132,7 @@ public final class RsiftChunkBridge {
         }
         // Prefer registry id when available (stable across reloads).
         try {
-            Object block = invokeNoArg(state, "getBlock");
+            Object block = resolveInvoke(state, "net.minecraft.world.level.block.state.BlockState", "getBlock");
             if (block != null) {
                 int reg = registryBlockId(block);
                 if (reg >= 0) {
@@ -163,84 +164,52 @@ public final class RsiftChunkBridge {
     }
 
     private static boolean isAir(Object state) {
-        try {
-            Object v = invokeNoArg(state, "isAir");
-            if (v instanceof Boolean) {
-                return (Boolean) v;
-            }
-        } catch (Throwable ignored) {
-        }
+        Object v = resolveInvoke(state, "net.minecraft.world.level.block.state.BlockState", "isAir");
+        if (v instanceof Boolean) { return (Boolean) v; }
         return false;
     }
 
     private static boolean isSectionEmpty(Object section) {
-        try {
-            Object v = invokeNoArg(section, "hasOnlyAir");
-            if (v instanceof Boolean) {
-                return (Boolean) v;
-            }
-        } catch (Throwable ignored) {
-        }
-        try {
-            Object v = invokeNoArg(section, "isEmpty");
-            if (v instanceof Boolean) {
-                return (Boolean) v;
-            }
-        } catch (Throwable ignored) {
-        }
+        Object v = resolveInvoke(section, "net.minecraft.world.level.chunk.LevelChunkSection", "hasOnlyAir");
+        if (v instanceof Boolean) { return (Boolean) v; }
+        v = resolveInvoke(section, "net.minecraft.world.level.chunk.LevelChunkSection", "isEmpty");
+        if (v instanceof Boolean) { return (Boolean) v; }
         return false;
     }
 
     private static Object getBlockState(Object section, int x, int y, int z) {
-        try {
-            Method m = findMethod(section.getClass(), "getBlockState", 3);
-            if (m != null) {
-                return m.invoke(section, x, y, z);
-            }
-        } catch (Throwable ignored) {
+        Method m = resolveFindMethod(section.getClass(), "net.minecraft.world.level.chunk.LevelChunkSection", "getBlockState", 3);
+        if (m != null) {
+            try { return m.invoke(section, x, y, z); } catch (Throwable ignored) {}
         }
         return null;
     }
 
     private static Object[] getSections(Object chunk) {
-        try {
-            Object v = invokeNoArg(chunk, "getSections");
-            if (v instanceof Object[]) {
-                return (Object[]) v;
-            }
-        } catch (Throwable ignored) {
-        }
-        Field f = findField(chunk.getClass(), "sections");
+        Object v = resolveInvoke(chunk, "net.minecraft.world.level.chunk.LevelChunk", "getSections");
+        if (v instanceof Object[]) { return (Object[]) v; }
+        Field f = resolveFindField(chunk.getClass(), "net.minecraft.world.level.chunk.LevelChunk", "sections");
         if (f != null) {
             try {
                 f.setAccessible(true);
-                Object v = f.get(chunk);
-                if (v instanceof Object[]) {
-                    return (Object[]) v;
-                }
-            } catch (Throwable ignored) {
-            }
+                Object fv = f.get(chunk);
+                if (fv instanceof Object[]) { return (Object[]) fv; }
+            } catch (Throwable ignored) {}
         }
         return null;
     }
 
     private static Object getChunk(Object level, int cx, int cz) {
-        try {
-            Method m = findMethod(level.getClass(), "getChunk", 2);
-            if (m != null) {
-                return m.invoke(level, cx, cz);
-            }
-        } catch (Throwable ignored) {
+        Method m = resolveFindMethod(level.getClass(), "net.minecraft.client.multiplayer.ClientLevel", "getChunk", 2);
+        if (m != null) {
+            try { return m.invoke(level, cx, cz); } catch (Throwable ignored) {}
         }
-        try {
-            Method m = findMethod(level.getClass(), "getChunkAt", 1);
-            if (m != null) {
+        m = resolveFindMethod(level.getClass(), "net.minecraft.client.multiplayer.ClientLevel", "getChunkAt", 1);
+        if (m != null) {
+            try {
                 Object pos = blockPos(level.getClass().getClassLoader(), cx * SECTION, 0, cz * SECTION);
-                if (pos != null) {
-                    return m.invoke(level, pos);
-                }
-            }
-        } catch (Throwable ignored) {
+                if (pos != null) { return m.invoke(level, pos); }
+            } catch (Throwable ignored) {}
         }
         return null;
     }
@@ -255,32 +224,27 @@ public final class RsiftChunkBridge {
     }
 
     private static int readMinSection(Object level) {
-        try {
-            Object v = invokeNoArg(level, "getMinSection");
-            if (v instanceof Number) {
-                return ((Number) v).intValue();
-            }
-        } catch (Throwable ignored) {
-        }
-        try {
-            Object v = invokeNoArg(level, "getMinSectionY");
-            if (v instanceof Number) {
-                return ((Number) v).intValue();
-            }
-        } catch (Throwable ignored) {
-        }
+        Object v = resolveInvoke(level, "net.minecraft.client.multiplayer.ClientLevel", "getMinSection");
+        if (v instanceof Number) { return ((Number) v).intValue(); }
+        v = resolveInvoke(level, "net.minecraft.client.multiplayer.ClientLevel", "getMinSectionY");
+        if (v instanceof Number) { return ((Number) v).intValue(); }
         return -4; // 1.18+ default overworld
     }
 
     private static Object readLevel(Object minecraft) {
         try {
-            Object level = invokeNoArg(minecraft, "level");
+            String name = RsiftHooks.resolveMethod("net.minecraft.client.Minecraft", "level");
+            Object level = minecraft.getClass().getMethod(name).invoke(minecraft);
             if (level != null) {
                 return level;
             }
         } catch (Throwable ignored) {
         }
-        Field f = findField(minecraft.getClass(), "level");
+        String fname = RsiftHooks.resolveField("net.minecraft.client.Minecraft", "level");
+        Field f = findField(minecraft.getClass(), fname);
+        if (f == null && !fname.equals("level")) {
+            f = findField(minecraft.getClass(), "level");
+        }
         if (f != null) {
             try {
                 f.setAccessible(true);
@@ -293,13 +257,18 @@ public final class RsiftChunkBridge {
 
     private static Object readPlayer(Object minecraft) {
         try {
-            Object p = invokeNoArg(minecraft, "player");
+            String name = RsiftHooks.resolveMethod("net.minecraft.client.Minecraft", "player");
+            Object p = minecraft.getClass().getMethod(name).invoke(minecraft);
             if (p != null) {
                 return p;
             }
         } catch (Throwable ignored) {
         }
-        Field f = findField(minecraft.getClass(), "player");
+        String fname = RsiftHooks.resolveField("net.minecraft.client.Minecraft", "player");
+        Field f = findField(minecraft.getClass(), fname);
+        if (f == null && !fname.equals("player")) {
+            f = findField(minecraft.getClass(), "player");
+        }
         if (f != null) {
             try {
                 f.setAccessible(true);
@@ -313,6 +282,37 @@ public final class RsiftChunkBridge {
     private static Object invokeNoArg(Object target, String method) throws ReflectiveOperationException {
         Method m = target.getClass().getMethod(method);
         return m.invoke(target);
+    }
+
+    /** obf解決済みメソッド名で0引数メソッドを反射実行。失敗は null。 */
+    private static Object resolveInvoke(Object target, String ownerMojmap, String mojmapMethod) {
+        try {
+            String name = RsiftHooks.resolveMethod(ownerMojmap, mojmapMethod);
+            Method m = target.getClass().getMethod(name);
+            return m.invoke(target);
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /** obf解決済みメソッド名で paramCount 引数メソッドを検索。 */
+    private static Method resolveFindMethod(Class<?> type, String ownerMojmap, String mojmapMethod, int paramCount) {
+        String name = RsiftHooks.resolveMethod(ownerMojmap, mojmapMethod);
+        Method m = findMethod(type, name, paramCount);
+        if (m == null && !name.equals(mojmapMethod)) {
+            m = findMethod(type, mojmapMethod, paramCount);
+        }
+        return m;
+    }
+
+    /** obf解決済みフィールド名でフィールドを検索。 */
+    private static Field resolveFindField(Class<?> type, String ownerMojmap, String mojmapField) {
+        String name = RsiftHooks.resolveField(ownerMojmap, mojmapField);
+        Field f = findField(type, name);
+        if (f == null && !name.equals(mojmapField)) {
+            f = findField(type, mojmapField);
+        }
+        return f;
     }
 
     private static Method findMethod(Class<?> type, String name, int paramCount) {

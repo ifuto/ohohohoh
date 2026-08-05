@@ -1308,6 +1308,11 @@ fn register_hooks_natives(env: &mut JNIEnv) {
                 sig: "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;".into(),
                 fn_ptr: Java_com_rsift_RsiftHooks_nativeResolveMethod as *mut _,
             },
+            NativeMethod {
+                name: "nativeResolveField0".into(),
+                sig: "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;".into(),
+                fn_ptr: Java_com_rsift_RsiftHooks_nativeResolveField as *mut _,
+            },
         ],
     );
 }
@@ -1525,6 +1530,19 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeResolveMethod(
     let cls: String = env.get_string(&class_dotted).map(|s| s.into()).unwrap_or_default();
     let mth: String = env.get_string(&mojmap_method).map(|s| s.into()).unwrap_or_default();
     let resolved = crate::obf_map::resolve_method_by_name(&cls, &mth).unwrap_or_else(|| mth.clone());
+    env.new_string(&resolved).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeResolveField(
+    mut env: JNIEnv,
+    _class: JClass,
+    class_dotted: JString,
+    mojmap_field: JString,
+) -> jstring {
+    let cls: String = env.get_string(&class_dotted).map(|s| s.into()).unwrap_or_default();
+    let fld: String = env.get_string(&mojmap_field).map(|s| s.into()).unwrap_or_default();
+    let resolved = crate::obf_map::resolve_field(&cls, &fld).unwrap_or_else(|| fld.clone());
     env.new_string(&resolved).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }
 

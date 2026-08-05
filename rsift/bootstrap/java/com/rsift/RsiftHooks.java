@@ -95,4 +95,16 @@ public final class RsiftHooks {
             return mojmapMethod;
         }
     }
+
+    private static native String nativeResolveField0(String classDotted, String mojmapField);
+
+    /** (mojmap クラス, mojmap フィールド名) → 実行時フィールド名。ネイティブ未登録時は原名。 */
+    public static String resolveField(String classDotted, String mojmapField) {
+        try {
+            String r = nativeResolveField0(classDotted, mojmapField);
+            return (r != null && !r.isEmpty()) ? r : mojmapField;
+        } catch (UnsatisfiedLinkError e) {
+            return mojmapField;
+        }
+    }
 }
