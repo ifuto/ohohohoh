@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 42  (全クラスダンプ+Modsボタン修正+Java obf解決+javac再コンパイル+タイトル定期+spamスロットル。前回分=run 41完全同梱)
 - run: 41  (Java bridge obf解決ブリッジ + bootstrap javac再コンパイル + タイトル定期再適用 + spamスロットル。ログ#7のCNFE/NoSuchMethodを根治。前回分 = run 40 完全同梱)
 - run: 40  (renderer Wave 1-5 完結: CFLH難読化+present接続+エンジン駆動+live-render有効化。レンダラー差替フルチェーン デフォルト稼働。前回分 = run 39 完全同梱)
 - run: 39  (renderer Wave 1+2: CFLHパッチャ難読化対応 + flipFrame→DX12 present接続(opt-in rsift.render.present=1)。前回分 = run 38 完全同梱)
