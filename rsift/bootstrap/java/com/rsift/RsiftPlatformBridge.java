@@ -772,7 +772,7 @@ public final class RsiftPlatformBridge {
 
     private static Object builtin(String fieldName) throws Exception {
         ClassLoader loader = gameLoader;
-        Class<?> regs = Class.forName("net.minecraft.core.registries.BuiltInRegistries", true, loader);
+        Class<?> regs = Class.forName(RsiftHooks.resolveClass("net.minecraft.core.registries.BuiltInRegistries"), true, loader);
         Field f = regs.getField(fieldName);
         return f.get(null);
     }

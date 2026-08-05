@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 41  (Java bridge obf解決ブリッジ + bootstrap javac再コンパイル + タイトル定期再適用 + spamスロットル。ログ#7のCNFE/NoSuchMethodを根治。前回分 = run 40 完全同梱)
 - run: 40  (renderer Wave 1-5 完結: CFLH難読化+present接続+エンジン駆動+live-render有効化。レンダラー差替フルチェーン デフォルト稼働。前回分 = run 39 完全同梱)
 - run: 39  (renderer Wave 1+2: CFLHパッチャ難読化対応 + flipFrame→DX12 present接続(opt-in rsift.render.present=1)。前回分 = run 38 完全同梱)
 - run: 38  (renderer Wave 1: CFLHパッチャ難読化対応 — flipFrame/tick/screen/network パッチが難読化runtimeで適用される基盤。前回分 = run 37 完全同梱)
@@ -120,6 +121,25 @@ echo "[trigger2] client.txt OK sha1=$ACT ($(wc -c < dist-ci/client.txt) bytes)"
 export CARGO_PROFILE_RELEASE_LTO=false
 export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
 export CARGO_PROFILE_RELEASE_OPT_LEVEL=1
+
+# wave HR: bootstrap jar を Java ソースから再コンパイル (Java bridge の obf 解決対応を反映)
+echo "[trigger2] compiling bootstrap jar from sources..."
+cd rsift
+mkdir -p bootstrap/prebuilt/classes
+find bootstrap/java -name "*.java" > /tmp/rsift_srcs.txt
+javac -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt 2>&1 || {
+  echo "FATAL: javac failed — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+}
+if [ -d bootstrap/prebuilt/classes/com ]; then
+  # manifest
+  echo "Manifest-Version: 1.0" > /tmp/rsift_manifest.txt
+  echo "Created-By: Rsift CI" >> /tmp/rsift_manifest.txt
+  (cd bootstrap/prebuilt/classes && jar cfm ../rsift-bootstrap.jar /tmp/rsift_manifest.txt com/)
+  echo "[trigger2] bootstrap jar compiled OK ($(wc -c < bootstrap/prebuilt/rsift-bootstrap.jar) bytes)"
+else
+  echo "[trigger2] WARNING: javac produced no classes — using prebuilt jar"
+fi
+cd "$ROOT"
 
 case "$RUNNER_OS" in
   Windows)

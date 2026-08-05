@@ -41,11 +41,13 @@ public final class RsiftRuntimeHooks {
             nativeLog("[RsiftRuntimeHooks] Netty not visible — packet tap skipped");
             return;
         }
-        Object connection = invokeNoArg(minecraft, "getConnection");
+        // wave HR: mojmap メソッド名を obf 解決してからリフレクション
+        String getConnMethod = RsiftHooks.resolveMethod("net.minecraft.client.Minecraft", "getConnection");
+        Object connection = invokeNoArg(minecraft, getConnMethod);
         if (connection == null) {
             return;
         }
-        Object channel = invokeNoArg(connection, "channel");
+        Object channel = invokeNoArg(connection, RsiftHooks.resolveMethod("net.minecraft.network.Connection", "channel"));
         if (channel == null) {
             return;
         }

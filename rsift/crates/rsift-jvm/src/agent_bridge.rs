@@ -826,7 +826,11 @@ fn call_string_method(env: &mut JNIEnv, obj: &JObject, name: &str, sig: &str) ->
 /// バニラ様式の `Minecraft* <version>` 接尾 (Mod UI はマイクラ味方針に整合)。
 /// client_tick から繰り返し呼ばれる前提で成功時のみフラグを立てて冪等化。
 fn maybe_set_window_title(env: &mut JNIEnv, inst: &JObject) {
-    if TITLE_MARKER_SET.load(Ordering::SeqCst) {
+    // wave HR: MC がロード中に setTitle で上書きするため定期再適用 (200ティック ≈ 50秒毎)
+    use std::sync::atomic::AtomicU32;
+    static TITLE_TICK: AtomicU32 = AtomicU32::new(0);
+    let n = TITLE_TICK.fetch_add(1, Ordering::Relaxed);
+    if TITLE_MARKER_SET.load(Ordering::SeqCst) && n % 200 != 0 {
         return;
     }
     let run = (|| -> Result<(), String> {
@@ -1220,11 +1224,23 @@ fn register_hooks_natives(env: &mut JNIEnv) {
     };
     let _ = env.register_native_methods(
         &cls,
-        &[NativeMethod {
-            name: "nativeOnHook".into(),
-            sig: "(Ljava/lang/String;)V".into(),
-            fn_ptr: Java_com_rsift_RsiftHooks_nativeOnHook as *mut _,
-        }],
+        &[
+            NativeMethod {
+                name: "nativeOnHook".into(),
+                sig: "(Ljava/lang/String;)V".into(),
+                fn_ptr: Java_com_rsift_RsiftHooks_nativeOnHook as *mut _,
+            },
+            NativeMethod {
+                name: "nativeResolveClass0".into(),
+                sig: "(Ljava/lang/String;)Ljava/lang/String;".into(),
+                fn_ptr: Java_com_rsift_RsiftHooks_nativeResolveClass as *mut _,
+            },
+            NativeMethod {
+                name: "nativeResolveMethod0".into(),
+                sig: "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;".into(),
+                fn_ptr: Java_com_rsift_RsiftHooks_nativeResolveMethod as *mut _,
+            },
+        ],
     );
 }
 
@@ -1317,6 +1333,30 @@ pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeOnHook(
         }
         _ => {}
     }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeResolveClass(
+    mut env: JNIEnv,
+    _class: JClass,
+    mojmap_dotted: JString,
+) -> jstring {
+    let input: String = env.get_string(&mojmap_dotted).map(|s| s.into()).unwrap_or_default();
+    let resolved = crate::obf_map::resolve_class(&input).unwrap_or_else(|| input.clone());
+    env.new_string(&resolved).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_rsift_RsiftHooks_nativeResolveMethod(
+    mut env: JNIEnv,
+    _class: JClass,
+    class_dotted: JString,
+    mojmap_method: JString,
+) -> jstring {
+    let cls: String = env.get_string(&class_dotted).map(|s| s.into()).unwrap_or_default();
+    let mth: String = env.get_string(&mojmap_method).map(|s| s.into()).unwrap_or_default();
+    let resolved = crate::obf_map::resolve_method_by_name(&cls, &mth).unwrap_or_else(|| mth.clone());
+    env.new_string(&resolved).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }
 
 #[no_mangle]

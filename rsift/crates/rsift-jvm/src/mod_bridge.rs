@@ -160,6 +160,12 @@ pub fn dispatch_render_only(env: &mut JNIEnv) {
 }
 
 fn try_install_runtime_hooks(env: &mut JNIEnv) {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static ATTEMPTS: AtomicU32 = AtomicU32::new(0);
+    let n = ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+    if n > 0 && n % 200 != 0 {
+        return;
+    }
     let Some(minecraft) = screen_inject::minecraft_instance(env) else {
         return;
     };

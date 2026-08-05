@@ -71,4 +71,28 @@ public final class RsiftHooks {
     }
 
     private static native void nativeOnHook(String name);
+
+    // wave HR: Java → Rust obf_map 解決ブリッジ (全 CNFE/NoSuchMethod の統一根治)
+    private static native String nativeResolveClass0(String mojmapDotted);
+    private static native String nativeResolveMethod0(String classDotted, String mojmapMethod);
+
+    /** mojmap クラス名 → 実行時名(難読化版では難読名)。ネイティブ未登録時は原名。 */
+    public static String resolveClass(String mojmapDotted) {
+        try {
+            String r = nativeResolveClass0(mojmapDotted);
+            return (r != null && !r.isEmpty()) ? r : mojmapDotted;
+        } catch (UnsatisfiedLinkError e) {
+            return mojmapDotted;
+        }
+    }
+
+    /** (mojmap クラス, mojmap メソッド名) → 実行時メソッド名。ネイティブ未登録時は原名。 */
+    public static String resolveMethod(String classDotted, String mojmapMethod) {
+        try {
+            String r = nativeResolveMethod0(classDotted, mojmapMethod);
+            return (r != null && !r.isEmpty()) ? r : mojmapMethod;
+        } catch (UnsatisfiedLinkError e) {
+            return mojmapMethod;
+        }
+    }
 }
