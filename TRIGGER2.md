@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 44  (javacステップのcd rsift二重バグ修正 — スクリプト冒頭でcd rsift済みなのにさらにcd rsiftして存在しないrsift/rsiftへ移動→set -e即死していた。前回分=run 43完全同梱)
 - run: 43  (Public化後初ビルド — run-42と同内容: 全クラスダンプ+Modsボタン修正+Java obf解決+javac+タイトル定期+spamスロットル。前回分=run 42完全同梱)
 - run: 42  (全クラスダンプ+Modsボタン修正+Java obf解決+javac再コンパイル+タイトル定期+spamスロットル。前回分=run 41完全同梱)
 - run: 41  (Java bridge obf解決ブリッジ + bootstrap javac再コンパイル + タイトル定期再適用 + spamスロットル。ログ#7のCNFE/NoSuchMethodを根治。前回分 = run 40 完全同梱)
@@ -126,14 +127,13 @@ export CARGO_PROFILE_RELEASE_OPT_LEVEL=1
 
 # wave HR: bootstrap jar を Java ソースから再コンパイル (Java bridge の obf 解決対応を反映)
 echo "[trigger2] compiling bootstrap jar from sources..."
-cd rsift
+# NOTE: already in rsift/ (cd'd at script top) — no extra cd needed
 mkdir -p bootstrap/prebuilt/classes
 find bootstrap/java -name "*.java" > /tmp/rsift_srcs.txt
 javac -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt 2>&1 || {
   echo "FATAL: javac failed — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 }
 if [ -d bootstrap/prebuilt/classes/com ]; then
-  # manifest
   echo "Manifest-Version: 1.0" > /tmp/rsift_manifest.txt
   echo "Created-By: Rsift CI" >> /tmp/rsift_manifest.txt
   (cd bootstrap/prebuilt/classes && jar cfm ../rsift-bootstrap.jar /tmp/rsift_manifest.txt com/)
@@ -141,7 +141,6 @@ if [ -d bootstrap/prebuilt/classes/com ]; then
 else
   echo "[trigger2] WARNING: javac produced no classes — using prebuilt jar"
 fi
-cd "$ROOT"
 
 case "$RUNNER_OS" in
   Windows)
