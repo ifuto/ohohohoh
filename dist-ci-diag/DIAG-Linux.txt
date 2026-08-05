@@ -1,30 +1,71 @@
 [trigger2] compiling bootstrap jar from sources...
-FATAL: javac --release 21 failed (rc=2) — falling back to prebuilt jar
-error: release version 21 not supported
-Usage: javac <options> <source files>
-use --help for a list of possible options
-[trigger2] javac --release 21 rc=2
+[trigger2] default javac=/usr/bin/javac java=/usr/bin/java JAVA_HOME=/usr/lib/jvm/temurin-17-jdk-amd64
+[trigger2] javac -version: javac 17.0.19
+[trigger2] java  -version: openjdk version "17.0.19" 2026-04-21
+[trigger2] picked javac (--release 21 capable): /usr/lib/jvm/temurin-21-jdk-amd64/bin/javac
+FATAL: /usr/lib/jvm/temurin-21-jdk-amd64/bin/javac --release 21 failed (rc=1) — falling back to prebuilt jar
+                    return new MethodVisitor(Opcodes.ASM9, mv) {
+                                             ^
+  symbol: variable Opcodes
+bootstrap/java/com/rsift/ScreenInitPatcher.java:38: error: method does not override or implement a method from a supertype
+                        @Override
+                        ^
+bootstrap/java/com/rsift/ScreenInitPatcher.java:40: error: cannot find symbol
+                            if (opcode == Opcodes.RETURN) {
+                                          ^
+  symbol: variable Opcodes
+bootstrap/java/com/rsift/ScreenInitPatcher.java:41: error: cannot find symbol
+                                mv.visitVarInsn(Opcodes.ALOAD, 0);
+                                                ^
+  symbol: variable Opcodes
+bootstrap/java/com/rsift/ScreenInitPatcher.java:43: error: cannot find symbol
+                                        Opcodes.INVOKESTATIC,
+                                        ^
+  symbol: variable Opcodes
+bootstrap/java/com/rsift/ScreenInitPatcher.java:49: error: non-static variable super cannot be referenced from a static context
+                            super.visitInsn(opcode);
+                            ^
+bootstrap/java/com/rsift/ScreenInitPatcher.java:49: error: cannot find symbol
+                            super.visitInsn(opcode);
+                                 ^
+  symbol: method visitInsn(int)
+bootstrap/java/com/rsift/ScreenInitPatcher.java:54: error: cannot find symbol
+            reader.accept(visitor, ClassReader.EXPAND_FRAMES);
+                                   ^
+  symbol:   variable ClassReader
+  location: class ScreenInitPatcher
+bootstrap/java/com/rsift/RsiftPacketTap.java:15: error: method does not override or implement a method from a supertype
+    @Override
+    ^
+bootstrap/java/com/rsift/RsiftPacketTap.java:74: error: package io.netty.buffer does not exist
+                    Object buf = c.getConstructor(io.netty.buffer.ByteBuf.class)
+                                                                 ^
+bootstrap/java/com/rsift/RsiftPacketTap.java:75: error: package io.netty.buffer does not exist
+                            .newInstance(io.netty.buffer.Unpooled.buffer(256));
+                                                        ^
+32 errors
+[trigger2] /usr/lib/jvm/temurin-21-jdk-amd64/bin/javac --release 21 rc=1
 [trigger2] WARNING: javac produced no classes — using prebuilt jar
 [trigger2] entering cargo build for RUNNER_OS=Linux
-== DIAG Linux exit=0 time=2026-08-05T02:15:29Z ==
+== DIAG Linux exit=0 time=2026-08-05T02:31:19Z ==
 -- target/release cdylib 候補 --
 ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
--rwxr-xr-x 2 runner runner 7101624 Aug  5 02:13 target/release/librsgraphics.so
--rwxr-xr-x 1 runner runner  309416 Aug  5 02:12 target/release/librsift_api.so
--rwxr-xr-x 1 runner runner 7381120 Aug  5 02:13 target/release/librsift_jvm.so
--rwxr-xr-x 2 runner runner 1426160 Aug  5 02:13 target/release/librsreplay.so
--rwxr-xr-x 2 runner runner  414184 Aug  5 02:13 target/release/librszoom.so
+-rwxr-xr-x 2 runner runner 7101624 Aug  5 02:29 target/release/librsgraphics.so
+-rwxr-xr-x 1 runner runner  309416 Aug  5 02:28 target/release/librsift_api.so
+-rwxr-xr-x 1 runner runner 7381120 Aug  5 02:29 target/release/librsift_jvm.so
+-rwxr-xr-x 2 runner runner 1426160 Aug  5 02:29 target/release/librsreplay.so
+-rwxr-xr-x 2 runner runner  414184 Aug  5 02:29 target/release/librszoom.so
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
 total 19232
-drwxr-xr-x  4 runner runner     4096 Aug  5 02:15 .
-drwxr-xr-x 19 runner runner     4096 Aug  5 02:12 ..
--rw-r--r--  1 runner runner     1210 Aug  5 02:15 DIAG-Linux.txt
--rw-r--r--  1 runner runner 11779287 Aug  5 02:12 client.txt
-drwxr-xr-x  2 runner runner     4096 Aug  5 02:15 linux
--rw-r--r--  1 runner runner  7891154 Aug  5 02:15 rsift-bundle-linux-x64.zip
-drwxr-xr-x  2 runner runner     4096 Aug  5 02:15 selftest-linux
+drwxr-xr-x  4 runner runner     4096 Aug  5 02:31 .
+drwxr-xr-x 19 runner runner     4096 Aug  5 02:28 ..
+-rw-r--r--  1 runner runner     3710 Aug  5 02:31 DIAG-Linux.txt
+-rw-r--r--  1 runner runner 11779287 Aug  5 02:28 client.txt
+drwxr-xr-x  2 runner runner     4096 Aug  5 02:31 linux
+-rw-r--r--  1 runner runner  7891154 Aug  5 02:31 rsift-bundle-linux-x64.zip
+drwxr-xr-x  2 runner runner     4096 Aug  5 02:31 selftest-linux
 -- selftest result --
 selftest_exit=0
