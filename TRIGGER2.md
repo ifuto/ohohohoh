@@ -4,7 +4,8 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
-- run: 46  (run-45 即死失敗の自己診断化+堅牢化: run-45 は3OS全て step4(スクリプト) で~55s exit=1。run-44(無--release)=8m成功との差=--release 21/バージョンチェック周り。だが GitHub Actions ログAPI が当該 run で継続 EOF 障害 + DIAG は3OS同時push競合で run-44 の stale が残り原因確定不能。対策: (a) javac出力を /tmp/rsift_javac.log へ捕捉+rc を DIAG へ tee (b) javac完全成功(rc=0)時のみ prebuilt jar を上書き — 失敗時は prebuilt(Java21) へフォールバックで **ビルド成功を保証** (c) jar/version-check を tee+if化し set -e 即死を排除 (d) cargo build 直前に "entering cargo build" マーカー tee。これで run-46 は javac の成否に関わらず Java21 jar で緑、かつ DIAG が --release 21 の挙動を確定。ローカルで cargo build --release が緑なことも確認済み(Rust変更は release でも問題なし)。前回分=run 45 完全同梱)
+- run: 47  (run-46 の DIAG で javac 真因確定→根治: `javac --release 21 failed (rc=2) Usage: javac` = **runner 既定 javac が --release 非認識の古い javac**。setup-java 追加は GitHub App トークンに workflows 権限が無く不可だったため、**TRIGGER2.md 内で --release 21 対応 javac(JDK9+) を PATH/JAVA_HOME/標準JDKDir(temurin-21等) から発見**して使う pick_javac21 を実装 (配列で Windows の空白パスも扱う + --release 21 -version で受理検査)。これで最新ソース(obf解決ブリッジ含む)が class 65 でコンパイル → UnsupportedClassVersionError 根治。発見失敗時は prebuilt(STALE) フォールバック + FATAL ログ。前回分=run 46 完全同梱)
+- run: 46  (run-45 即死失敗の自己診断化+堅牢化: javac出力捕捉+rc tee / javac成功時のみprebuilt上書き(失敗時フォールバック) / jar・version-check の tee+if化 / cargo build前マーカー tee。**DIAG確定: 既定javac=--release非認識(rc=2)→prebuilt(STALE)フォールバックで緑だが #8 根治には不十分 (run-47でsetup-java根治)**。前回分=run 45 完全同梱)
 - run: 45  (ログ #8 根治 2点 + 観測強化: (1) javac --release 21 必須化 — runner 既定 JDK25 が class 69 を吐き MC(Java21) が RsiftScreenHooks 以下全 bootstrap クラスを UnsupportedClassVersionError で拒否 → 11,575 spam + Ui/Mod/PlatformBridge 全ロード失敗していたのを class 65 強制で根治 (生成 class の major=65 を CI で機械検証) (2) CFLH パッチャの flipFrame descriptor を "()V"→""(ワイルドカード) へ — 実シグネチャは (J)V なのに ()V 厳密一致でマッチせず HEAD 注入0 → render_flip が1度も発火せず DX12 チェーン全死していたのを根治 (yarn/mojmap 一次情報で (J)V 確定・flipFrame は RenderSystem 内で一意) (3) CFLH コールバック + nativeOnHook に throttled agent_log 観測追加。前回分=run 44 完全同梱。**注: run-45 はCI即死失敗→run-46で堅牢化**)
 - run: 44  (javacステップのcd rsift二重バグ修正 — スクリプト冒頭でcd rsift済みなのにさらにcd rsiftして存在しないrsift/rsiftへ移動→set -e即死していた。前回分=run 43完全同梱)
 - run: 43  (Public化後初ビルド — run-42と同内容: 全クラスダンプ+Modsボタン修正+Java obf解決+javac+タイトル定期+spamスロットル。前回分=run 42完全同梱)
@@ -138,13 +139,45 @@ echo "[trigger2] compiling bootstrap jar from sources..." | tee -a dist-ci/DIAG-
 # --release 21 で class 65 を強制 (JDK 25 javac の CT.sym が 21 を内包するため確実)。
 mkdir -p bootstrap/prebuilt/classes
 find bootstrap/java -name "*.java" > /tmp/rsift_srcs.txt
-JAVAC_RC=0
-javac --release 21 -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || {
-  JAVAC_RC=$?
-  echo "FATAL: javac --release 21 failed (rc=$JAVAC_RC) — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-  tail -40 /tmp/rsift_javac.log | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+# wave HS (run-46 で確定): runner 既定 javac が --release を認識しない古い場合が
+# ある (rc=2 "Usage")。--release 21 を受理する javac (JDK9+) を PATH / JAVA_HOME /
+# 標準JDKインストール先から発見して使う。GitHub runner は temurin-21 等を標準搭載。
+echo "[trigger2] default javac=$(command -v javac || echo NONE) java=$(command -v java || echo NONE) JAVA_HOME=${JAVA_HOME:-<unset>}" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+javac -version 2>&1 | head -1 | sed 's/^/[trigger2] javac -version: /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt || true
+java  -version 2>&1 | head -1 | sed 's/^/[trigger2] java  -version: /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt || true
+pick_javac21() {
+  local -a cands=()
+  local d; if d=$(command -v javac 2>/dev/null); then cands+=("$d"); fi
+  if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/javac" ]; then cands+=("${JAVA_HOME}/bin/javac"); fi
+  case "$RUNNER_OS" in
+    Linux)  for h in /usr/lib/jvm/*/; do [ -x "${h}bin/javac" ] && cands+=("${h}bin/javac"); done;;
+    macOS)  for h in /Library/Java/JavaVirtualMachines/*/Contents/Home/; do [ -x "${h}bin/javac" ] && cands+=("${h}bin/javac"); done;;
+    Windows) for h in "/c/hostedtoolcache/windows/Java/"*/ "/c/Program Files/Eclipse Adoptium/"*/ "/c/Program Files/Java/"*/; do
+               [ -x "${h}bin/javac.exe" ] && cands+=("${h}bin/javac.exe"); done;;
+  esac
+  local jc
+  for jc in "${cands[@]}"; do
+    # JDK9+ は --release を持つ。--release 21 が受理されるか (無害な -version で) 検査。
+    if "$jc" --release 21 -version >/dev/null 2>&1; then
+      echo "$jc"; return 0
+    fi
+  done
+  return 1
 }
-echo "[trigger2] javac --release 21 rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+JAVAC21="$(pick_javac21 || true)"
+echo "[trigger2] picked javac (--release 21 capable): ${JAVAC21:-<NONE FOUND>}" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+JAVAC_RC=0
+if [ -n "$JAVAC21" ]; then
+  "$JAVAC21" --release 21 -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || {
+    JAVAC_RC=$?
+    echo "FATAL: $JAVAC21 --release 21 failed (rc=$JAVAC_RC) — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+    tail -40 /tmp/rsift_javac.log | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  }
+  echo "[trigger2] $JAVAC21 --release 21 rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+else
+  JAVAC_RC=127
+  echo "FATAL: no javac supporting --release 21 found — using prebuilt (STALE) jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+fi
 # javac が完全成功 (rc=0) かつクラス生成済みの時だけ prebuilt jar を上書き。
 # 部分コンパイル (rc!=0 だが一部クラス生成) で壊れた jar を出荷しないための保護。
 if [ -d bootstrap/prebuilt/classes/com ] && [ "$JAVAC_RC" = "0" ]; then
