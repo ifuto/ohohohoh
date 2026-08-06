@@ -170,21 +170,10 @@ impl BytecodePatcher {
             }
         };
 
-        if view.this_class_name != class_name && !class_name.ends_with(&view.this_class_name) {
-            // Allow subclass names for Screen hierarchy via dynamic targets
-            if !dynamic_targets()
-                .lock()
-                .map(|g| g.contains(&class_name))
-                .unwrap_or(false)
-            {
-                return Ok(PatchResult {
-                    class_name,
-                    was_modified: false,
-                    new_bytecode: Vec::new(),
-                });
-            }
-        }
-
+        // wave HS (#14 根治): this_class 検証を削除。
+        // CFLH は class_name を mojmap 名に正規化して渡すが、bytecode の this_class は
+        // 難読名(gfj 等)なので常に不一致 → 全 net.minecraft 系が却下されていた。
+        // is_target_class (CFLH 側で既に確認済み) が gate なので this_class 検証は不要。
         debug!("Rsift-Parser patching {}", class_name);
 
         let mut injects: Vec<HeadInject> = Vec::new();
