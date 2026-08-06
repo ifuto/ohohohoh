@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 57  (screen getter → field access追加 + ChunkBridge sync診断。前回分=run 56)
 - run: 56  (根本治療: patch_if_needed の this_class検証削除 — CFLHがmojmap名を渡すがbytecodeのthis_classは難読名で常時不一致→全net.minecraft系が却下されていた。is_target_classがgateなので安全。前回分=run 55)
 - run: 55  (M1: ChunkBridge obf解決全面リファクタ + resolveField bridge。前回分=run 54)
 - run: 54  (ログ #13 解析: 白画面フリーズは解消(MC稼働・render_flip 2400回安定・titleセット)。残課題の精確な特定のため診断強化: (1) #13でDX12 glfwHookが「rel32 out of range」でdetour失敗→DX12未稼働(GL描画に退化) (2) Modsボタン未注入=client_tickのscreen getterがNone返却(どのメソッド名か不明) (3) メソッド難読化5/11のみ解決(init/tick等のambiguity)。対策: obf_method_aliases を各メソッド単位で解決結果(obf名 or FAIL理由)をログ出力、client_tick のscreen getter失敗時に試行メソッド名を1回ログ。→ #14で screen_m/getscreen_m の実値と ambiguity 状況が確定し decl-based 解決等の正確な修正が可能に。前回分=run 53完全同梱)

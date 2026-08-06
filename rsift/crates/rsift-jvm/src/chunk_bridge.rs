@@ -75,12 +75,18 @@ pub fn sync(env: &mut JNIEnv) {
     if !ensure(env) {
         return;
     }
-    let Some(minecraft) = screen_inject::minecraft_instance(env) else {
-        return;
-    };
-    let Some(loader) = screen_inject::game_class_loader(env) else {
-        return;
-    };
+    let mc = screen_inject::minecraft_instance(env);
+    let ld = screen_inject::game_class_loader(env);
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SYNC_DIAG: AtomicBool = AtomicBool::new(false);
+    if !SYNC_DIAG.swap(true, Ordering::SeqCst) {
+        agent_log(&format!(
+            "[ChunkBridge] sync: minecraft={} loader={}",
+            mc.is_some(), ld.is_some()
+        ));
+    }
+    let Some(minecraft) = mc else { return; };
+    let Some(loader) = ld else { return; };
     let Ok(name) = env.new_string("com.rsift.RsiftChunkBridge") else {
         return;
     };

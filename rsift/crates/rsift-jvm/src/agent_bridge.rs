@@ -1043,21 +1043,37 @@ pub fn client_tick(env: &mut JNIEnv) {
     // wave 205: インスタンス確定後に確実にタイトルマーカーを入れる (冪等)。
     maybe_set_window_title(env, &inst);
 
-    // wave HR: screen (Minecraft) / getScreen (fallback) メソッド名 + descriptor 解決。
+    // wave HS (#15): screen はメソッドではなくフィールドの場合がある。
+    // まずメソッド取得を試し、失敗したらフィールドアクセスへ。
     let screen_desc =
         crate::obf_map::resolve_descriptor("()Lnet/minecraft/client/gui/screens/Screen;");
+    let screen_field_desc =
+        crate::obf_map::resolve_descriptor("Lnet/minecraft/client/gui/screens/Screen;");
     let screen_m =
         crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft", "screen")
             .unwrap_or_else(|| "screen".to_string());
     let getscreen_m =
         crate::obf_map::resolve_method_by_name("net.minecraft.client.Minecraft", "getScreen")
             .unwrap_or_else(|| "getScreen".to_string());
+    let screen_field_m =
+        crate::obf_map::resolve_field("net.minecraft.client.Minecraft", "screen")
+            .unwrap_or_else(|| "screen".to_string());
     let screen = match env.call_method(&inst, &screen_m, &screen_desc, &[]) {
         Ok(v) => v.l().ok(),
         Err(_) => env
             .call_method(&inst, &getscreen_m, &screen_desc, &[])
             .ok()
             .and_then(|v| v.l().ok()),
+    };
+    // メソッド取得失敗時 → フィールドアクセスで再試行
+    let screen = match screen {
+        Some(s) => Some(s),
+        None => {
+            screen_inject::clear_pending_exception(env);
+            env.get_field(&inst, &screen_field_m, &screen_field_desc)
+                .ok()
+                .and_then(|v| v.l().ok())
+        }
     };
     let screen = match screen {
         Some(s) => s,
