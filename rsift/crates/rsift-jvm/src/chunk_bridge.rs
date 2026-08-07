@@ -103,6 +103,9 @@ pub fn sync(env: &mut JNIEnv) {
         },
         Err(_) => return,
     };
+    // wave HS (#16): クラスローダー違いで nativesReady=false のままの場合があるため、
+    // syncFromMinecraft 呼出前に markNativesReady を再実行してフラグを確実に立てる。
+    let _ = env.call_static_method(&cls, "markNativesReady", "()V", &[]);
     let _ = env.call_static_method(
         cls,
         "syncFromMinecraft",
