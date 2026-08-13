@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 63  (Windows javac探索追加 + prebuilt削除で確実コンパイル。前回分=run 62)
 - run: 62  (prebuilt jar削除 → CI必ずソースからコンパイル。fallback完全排除。前回分=run 61)
 - run: 61  (ensure()もfind_class統一 → RegisterNatives+syncFromMinecraft完全一致。前回分=run 60)
 - run: 60  (ChunkBridge sync: loadClass→find_class でClassLoader統一。前回分=run 59)
@@ -170,15 +171,25 @@ java  -version 2>&1 | head -1 | sed 's/^/[trigger2] java  -version: /' | tee -a 
 # 2 段トライで class ≤ 65 (MC Java21 でロード可能) を確実に出す:
 #   try1: javac --release 21  (JDK21+/25 なら成功 → class65)
 #   try2: javac (フラグ無し)   (try1 失敗=既定JDK17等 → class61, MC Java21 で下位互換ロード)
+# wave HS: Windows では javac が PATH に無い場合がある → 標準JDKインストール先から探す
+JAVAC_BIN="javac"
+if ! command -v javac >/dev/null 2>&1; then
+  for jc in /c/hostedtoolcache/windows/Java_Temurin-Hotspot_jdk/*/x64/bin/javac.exe \
+            "/c/Program Files/Eclipse Adoptium/"*/bin/javac.exe \
+            "/c/Program Files/Java/"*/bin/javac.exe; do
+    if [ -x "$jc" ]; then JAVAC_BIN="$jc"; break; fi
+  done
+fi
+echo "[trigger2] using javac: $JAVAC_BIN" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 JAVAC_RC=1
-javac --release 21 -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
+"$JAVAC_BIN" --release 21 -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
 echo "[trigger2] javac --release 21 rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 if [ "$JAVAC_RC" != "0" ]; then
-  echo "[trigger2] --release 21 failed (既定javac=JDK17等の可能性) — フラグ無しで再トライ (class<=65 なら MC Java21 でロード可能)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  echo "[trigger2] --release 21 failed — フラグ無しで再トライ" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
   tail -4 /tmp/rsift_javac.log | sed 's/^/    /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt
   rm -rf bootstrap/prebuilt/classes/com
   JAVAC_RC=0
-  javac -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
+  "$JAVAC_BIN" -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
   echo "[trigger2] javac (no --release) rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 fi
 if [ "$JAVAC_RC" != "0" ]; then
