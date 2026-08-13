@@ -16,23 +16,35 @@ pub fn ensure(env: &mut JNIEnv) -> bool {
             return true;
         }
     }
-    let Some(loader) = screen_inject::game_class_loader(env) else {
-        return false;
-    };
-    let Ok(name) = env.new_string("com.rsift.RsiftChunkBridge") else {
-        return false;
-    };
-    let cls = match env.call_method(
-        loader,
-        "loadClass",
-        "(Ljava/lang/String;)Ljava/lang/Class;",
-        &[JValue::Object(&name)],
-    ) {
-        Ok(v) => match v.l() {
-            Ok(o) => JClass::from(o),
-            Err(_) => return false,
-        },
-        Err(_) => return false,
+    // wave HS (#17 根治): find_class (bootstrap CL) を使う。
+    // loadClass(ゲームローダー) は resolve=false → RegisterNatives 不正 + CL違い。
+    // bootstrap CL search は Agent_OnLoad で追加済みなので find_class で見つかる。
+    let cls = match env.find_class("com/rsift/RsiftChunkBridge") {
+        Ok(c) => c,
+        Err(_) => {
+            // フォールバック: loadClass
+            let Some(loader) = screen_inject::game_class_loader(env) else {
+                return false;
+            };
+            let Ok(name) = env.new_string("com.rsift.RsiftChunkBridge") else {
+                return false;
+            };
+            match env.call_method(
+                &loader,
+                "loadClass",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                &[JValue::Object(&name)],
+            ) {
+                Ok(v) => match v.l() {
+                    Ok(o) => {
+                        screen_inject::clear_pending_exception(env);
+                        JClass::from(o)
+                    }
+                    Err(_) => return false,
+                },
+                Err(_) => return false,
+            }
+        }
     };
 
     let natives = [
