@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 60  (ChunkBridge sync: loadClass→find_class でClassLoader統一。前回分=run 59)
 - run: 59  (ChunkBridge sync エラー可視化 + yaw/pitch field access修正。前回分=run 58)
 - run: 58  (ChunkBridge sync markNativesReady再実行でnativesReady確保。前回分=run 57)
 - run: 57  (screen getter → field access追加 + ChunkBridge sync診断。前回分=run 56)

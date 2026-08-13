@@ -87,41 +87,45 @@ pub fn sync(env: &mut JNIEnv) {
         ));
     }
     let Some(minecraft) = mc else { return; };
-    let Some(loader) = ld else { return; };
-    let Ok(name) = env.new_string("com.rsift.RsiftChunkBridge") else {
-        return;
-    };
-    let loader_ref = &loader;
-    let cls = match env.call_method(
-        loader_ref,
-        "loadClass",
-        "(Ljava/lang/String;)Ljava/lang/Class;",
-        &[JValue::Object(&name)],
-    ) {
-        Ok(v) => match v.l() {
-            Ok(o) => JClass::from(o),
-            Err(e) => {
-                if diag_n == 0 {
-                    agent_log(&format!("[ChunkBridge] loadClass l() failed: {:?}", e));
-                }
-                return;
-            }
-        },
+
+    // wave HS (#17 ClassLoader問題): find_class を使う(ensure()と同じCL)。
+    // loadClass(ゲームローダー) → 別CL由来のClass → native methods不可視(JNI spec)。
+    let cls = match env.find_class("com/rsift/RsiftChunkBridge") {
+        Ok(c) => c,
         Err(e) => {
             screen_inject::clear_pending_exception(env);
-            if diag_n == 0 {
-                agent_log(&format!("[ChunkBridge] loadClass call failed: {:?}", e));
+            // フォールバック: loadClass
+            let Some(loader) = &ld else {
+                if diag_n == 0 {
+                    agent_log(&format!("[ChunkBridge] find_class failed + no loader: {:?}", e));
+                }
+                return;
+            };
+            let Ok(name) = env.new_string("com.rsift.RsiftChunkBridge") else { return; };
+            match env.call_method(loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", &[JValue::Object(&name)]) {
+                Ok(v) => match v.l() {
+                    Ok(o) => { screen_inject::clear_pending_exception(env); JClass::from(o) }
+                    Err(e2) => {
+                        if diag_n == 0 { agent_log(&format!("[ChunkBridge] fallback loadClass failed: {:?}", e2)); }
+                        return;
+                    }
+                },
+                Err(e2) => {
+                    screen_inject::clear_pending_exception(env);
+                    if diag_n == 0 { agent_log(&format!("[ChunkBridge] fallback loadClass err: {:?}", e2)); }
+                    return;
+                }
             }
-            return;
         }
     };
     let _ = env.call_static_method(&cls, "markNativesReady", "()V", &[]);
     screen_inject::clear_pending_exception(env);
+    let loader_val = ld.unwrap_or_else(|| jni::objects::JObject::null());
     match env.call_static_method(
         &cls,
         "syncFromMinecraft",
         "(Ljava/lang/Object;Ljava/lang/ClassLoader;)V",
-        &[JValue::Object(&minecraft), JValue::Object(loader_ref)],
+        &[JValue::Object(&minecraft), JValue::Object(&loader_val)],
     ) {
         Ok(_) => {}
         Err(e) => {
