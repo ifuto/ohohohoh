@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 67  (jar検証 strings→grep -a Windows対応。前回分=run 66)
 - run: 66  (@/tmp/ → @bootstrap_srcs.txt (Windows javacが/tmp/を解釈できない問題)。前回分=run 65)
 - run: 65  (jar検証をunzip+grep化。前回分=run 64)
 - run: 64  (prebuilt復元+resolveField検証追加: javac成功→fresh jar→検証pass / javac失敗→prebuilt→検証fail。前回分=run 63)
@@ -219,7 +220,7 @@ if [ -d bootstrap/prebuilt/classes/com ] && [ "$JAVAC_RC" = "0" ]; then
       echo "[trigger2] bootstrap classes OK (major=$VMAJ_DEC <= 65)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 
 # wave HS: resolveField が jar に含まれているか検証 (stale prebuilt 検出)
-if ! unzip -p bootstrap/prebuilt/rsift-bootstrap.jar com/rsift/RsiftHooks.class 2>/dev/null | strings | grep -q "resolveField"; then
+if ! unzip -p bootstrap/prebuilt/rsift-bootstrap.jar com/rsift/RsiftHooks.class 2>/dev/null | grep -aq "resolveField"; then
   echo "FATAL: shipped jar missing resolveField — STALE prebuilt" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1
 fi
 echo "[trigger2] jar verification OK (resolveField present)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
