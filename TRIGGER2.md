@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 59  (ChunkBridge sync エラー可視化 + yaw/pitch field access修正。前回分=run 58)
 - run: 58  (ChunkBridge sync markNativesReady再実行でnativesReady確保。前回分=run 57)
 - run: 57  (screen getter → field access追加 + ChunkBridge sync診断。前回分=run 56)
 - run: 56  (根本治療: patch_if_needed の this_class検証削除 — CFLHがmojmap名を渡すがbytecodeのthis_classは難読名で常時不一致→全net.minecraft系が却下されていた。is_target_classがgateなので安全。前回分=run 55)

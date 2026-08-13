@@ -77,9 +77,10 @@ pub fn sync(env: &mut JNIEnv) {
     }
     let mc = screen_inject::minecraft_instance(env);
     let ld = screen_inject::game_class_loader(env);
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static SYNC_DIAG: AtomicBool = AtomicBool::new(false);
-    if !SYNC_DIAG.swap(true, Ordering::SeqCst) {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static SYNC_DIAG: AtomicU32 = AtomicU32::new(0);
+    let diag_n = SYNC_DIAG.fetch_add(1, Ordering::SeqCst);
+    if diag_n == 0 {
         agent_log(&format!(
             "[ChunkBridge] sync: minecraft={} loader={}",
             mc.is_some(), ld.is_some()
@@ -99,19 +100,37 @@ pub fn sync(env: &mut JNIEnv) {
     ) {
         Ok(v) => match v.l() {
             Ok(o) => JClass::from(o),
-            Err(_) => return,
+            Err(e) => {
+                if diag_n == 0 {
+                    agent_log(&format!("[ChunkBridge] loadClass l() failed: {:?}", e));
+                }
+                return;
+            }
         },
-        Err(_) => return,
+        Err(e) => {
+            screen_inject::clear_pending_exception(env);
+            if diag_n == 0 {
+                agent_log(&format!("[ChunkBridge] loadClass call failed: {:?}", e));
+            }
+            return;
+        }
     };
-    // wave HS (#16): クラスローダー違いで nativesReady=false のままの場合があるため、
-    // syncFromMinecraft 呼出前に markNativesReady を再実行してフラグを確実に立てる。
     let _ = env.call_static_method(&cls, "markNativesReady", "()V", &[]);
-    let _ = env.call_static_method(
-        cls,
+    screen_inject::clear_pending_exception(env);
+    match env.call_static_method(
+        &cls,
         "syncFromMinecraft",
         "(Ljava/lang/Object;Ljava/lang/ClassLoader;)V",
         &[JValue::Object(&minecraft), JValue::Object(loader_ref)],
-    );
+    ) {
+        Ok(_) => {}
+        Err(e) => {
+            screen_inject::clear_pending_exception(env);
+            if diag_n == 0 {
+                agent_log(&format!("[ChunkBridge] syncFromMinecraft failed: {:?}", e));
+            }
+        }
+    }
 }
 
 #[no_mangle]

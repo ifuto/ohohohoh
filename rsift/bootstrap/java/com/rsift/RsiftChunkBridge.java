@@ -50,8 +50,8 @@ public final class RsiftChunkBridge {
             double px = asDouble(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getX"), 0);
             double py = asDouble(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getY"), 64);
             double pz = asDouble(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getZ"), 0);
-            float yaw = asFloat(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getYRot"), 0);
-            float pitch = asFloat(resolveInvoke(player, "net.minecraft.world.entity.Entity", "getXRot"), 0);
+            float yaw = resolveFieldGetFloat(player, "net.minecraft.world.entity.Entity", "yRot", 0);
+            float pitch = resolveFieldGetFloat(player, "net.minecraft.world.entity.Entity", "xRot", 0);
             nativeSetCamera((float) px, (float) py, (float) pz, yaw, pitch);
 
             int cx = floorDiv((int) Math.floor(px), SECTION);
@@ -282,6 +282,23 @@ public final class RsiftChunkBridge {
     private static Object invokeNoArg(Object target, String method) throws ReflectiveOperationException {
         Method m = target.getClass().getMethod(method);
         return m.invoke(target);
+    }
+
+    /** obf解決済みフィールド名でfloatフィールドを読む。 */
+    private static float resolveFieldGetFloat(Object target, String ownerMojmap, String mojmapField, float def) {
+        try {
+            String name = RsiftHooks.resolveField(ownerMojmap, mojmapField);
+            Field f = findField(target.getClass(), name);
+            if (f == null && !name.equals(mojmapField)) {
+                f = findField(target.getClass(), mojmapField);
+            }
+            if (f != null) {
+                f.setAccessible(true);
+                return f.getFloat(target);
+            }
+        } catch (Throwable ignored) {
+        }
+        return def;
     }
 
     /** obf解決済みメソッド名で0引数メソッドを反射実行。失敗は null。 */
