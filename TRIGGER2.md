@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 66  (@/tmp/ → @bootstrap_srcs.txt (Windows javacが/tmp/を解釈できない問題)。前回分=run 65)
 - run: 65  (jar検証をunzip+grep化。前回分=run 64)
 - run: 64  (prebuilt復元+resolveField検証追加: javac成功→fresh jar→検証pass / javac失敗→prebuilt→検証fail。前回分=run 63)
 - run: 63  (Windows javac探索追加 + prebuilt削除で確実コンパイル。前回分=run 62)
@@ -161,8 +162,8 @@ mkdir -p bootstrap/prebuilt/classes
 # 未収録時は安全にフォールスルーする (ScreenInitPatcher→RsiftClassTransformer catch→ネイティブ
 # CFLHパッチャ、RsiftPacketTap→mod_bridge が無効化ログ)。よって CI コンパイルから除外。
 # 残り全ソース(RsiftHooks/各Bridge)は反射ベースで単独コンパイル可能。
-find bootstrap/java -name "*.java" ! -name "ScreenInitPatcher.java" ! -name "RsiftPacketTap.java" > /tmp/rsift_srcs.txt
-echo "[trigger2] javac sources: $(wc -l < /tmp/rsift_srcs.txt) files (ScreenInitPatcher/RsiftPacketTap excluded — need ASM/Netty, handled as absent at runtime)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+find bootstrap/java -name "*.java" ! -name "ScreenInitPatcher.java" ! -name "RsiftPacketTap.java" > bootstrap_srcs.txt
+echo "[trigger2] javac sources: $(wc -l < bootstrap_srcs.txt) files (ScreenInitPatcher/RsiftPacketTap excluded — need ASM/Netty, handled as absent at runtime)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 # wave HS (run-46 で確定): runner 既定 javac が --release を認識しない古い場合が
 # ある (rc=2 "Usage")。--release 21 を受理する javac (JDK9+) を PATH / JAVA_HOME /
 # 標準JDKインストール先から発見して使う。GitHub runner は temurin-21 等を標準搭載。
@@ -184,14 +185,14 @@ if ! command -v javac >/dev/null 2>&1; then
 fi
 echo "[trigger2] using javac: $JAVAC_BIN" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 JAVAC_RC=1
-"$JAVAC_BIN" --release 21 -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
+"$JAVAC_BIN" --release 21 -d bootstrap/prebuilt/classes @bootstrap_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
 echo "[trigger2] javac --release 21 rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 if [ "$JAVAC_RC" != "0" ]; then
   echo "[trigger2] --release 21 failed — フラグ無しで再トライ" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
   tail -4 /tmp/rsift_javac.log | sed 's/^/    /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt
   rm -rf bootstrap/prebuilt/classes/com
   JAVAC_RC=0
-  "$JAVAC_BIN" -d bootstrap/prebuilt/classes @/tmp/rsift_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
+  "$JAVAC_BIN" -d bootstrap/prebuilt/classes @bootstrap_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
   echo "[trigger2] javac (no --release) rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 fi
 if [ "$JAVAC_RC" != "0" ]; then
