@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 62  (prebuilt jar削除 → CI必ずソースからコンパイル。fallback完全排除。前回分=run 61)
 - run: 61  (ensure()もfind_class統一 → RegisterNatives+syncFromMinecraft完全一致。前回分=run 60)
 - run: 60  (ChunkBridge sync: loadClass→find_class でClassLoader統一。前回分=run 59)
 - run: 59  (ChunkBridge sync エラー可視化 + yaw/pitch field access修正。前回分=run 58)
@@ -207,7 +208,7 @@ if [ -d bootstrap/prebuilt/classes/com ] && [ "$JAVAC_RC" = "0" ]; then
     fi
   fi
 else
-  echo "[trigger2] WARNING: javac produced no classes — using prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  echo "FATAL: javac produced no classes — NO prebuilt fallback (prebuilt deleted). CI fails here." ; exit 1 | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 fi
 echo "[trigger2] entering cargo build for RUNNER_OS=$RUNNER_OS" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 
