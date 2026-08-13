@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 65  (jar検証をunzip+grep化。前回分=run 64)
 - run: 64  (prebuilt復元+resolveField検証追加: javac成功→fresh jar→検証pass / javac失敗→prebuilt→検証fail。前回分=run 63)
 - run: 63  (Windows javac探索追加 + prebuilt削除で確実コンパイル。前回分=run 62)
 - run: 62  (prebuilt jar削除 → CI必ずソースからコンパイル。fallback完全排除。前回分=run 61)
@@ -217,8 +218,9 @@ if [ -d bootstrap/prebuilt/classes/com ] && [ "$JAVAC_RC" = "0" ]; then
       echo "[trigger2] bootstrap classes OK (major=$VMAJ_DEC <= 65)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 
 # wave HS: resolveField が jar に含まれているか検証 (stale prebuilt 検出)
-python3 /tmp/jar_verify.py bootstrap/prebuilt/rsift-bootstrap.jar 2>/dev/null || python /tmp/jar_verify.py bootstrap/prebuilt/rsift-bootstrap.jar 2>/dev/null || {
-  echo "FATAL: shipped jar missing resolveField — STALE prebuilt. javac did not produce fresh classes." | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1; }
+if ! unzip -p bootstrap/prebuilt/rsift-bootstrap.jar com/rsift/RsiftHooks.class 2>/dev/null | strings | grep -q "resolveField"; then
+  echo "FATAL: shipped jar missing resolveField — STALE prebuilt" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1
+fi
 echo "[trigger2] jar verification OK (resolveField present)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
     else
       echo "FATAL: bootstrap class major=$VMAJ_DEC > 65 — MC Java21 rejects with UnsupportedClassVersionError" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1
