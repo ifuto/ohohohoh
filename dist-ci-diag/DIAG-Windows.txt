@@ -23,18 +23,36 @@ bootstrap\java\com\rsift\RsiftRuntimeHooks.java:44: error: unmappable character 
         // wave HR: mojmap メソッド�??を obf 解決�?��?��?�らリフレクション
                                                                ^
 73 errors
-== DIAG Windows exit=1 time=2026-08-15T11:59:25Z ==
+[trigger2] entering cargo build for RUNNER_OS=Windows
+== DIAG Windows exit=0 time=2026-08-15T12:17:47Z ==
 -- target/release cdylib 候補 --
-ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
+-rwxr-xr-x 2 runneradmin 197121  6554624 Aug 15 12:14 target/release/rsgraphics.dll
+-rwxr-xr-x 2 runneradmin 197121   107008 Aug 15 12:15 target/release/rsift_api.dll
+-rwxr-xr-x 2 runneradmin 197121 11702784 Aug 15 12:17 target/release/rsift_jvm.dll
+-rwxr-xr-x 2 runneradmin 197121   993792 Aug 15 12:14 target/release/rsreplay.dll
+-rwxr-xr-x 2 runneradmin 197121   534016 Aug 15 12:14 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 11512
-drwxr-xr-x 1 runneradmin 197121        0 Aug 15 11:59 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug 15 11:59 ..
--rw-r--r-- 1 runneradmin 197121     2506 Aug 15 11:59 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 11779287 Aug 15 11:59 client.txt
+total 42772
+drwxr-xr-x 1 runneradmin 197121        0 Aug 15 12:17 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug 15 12:10 ..
+-rw-r--r-- 1 runneradmin 197121     2904 Aug 15 12:17 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 11779287 Aug 15 12:09 client.txt
+-rw-r--r-- 1 runneradmin 197121 32000000 Aug 15 12:17 rsift-bundle-windows-x64.zip
+drwxr-xr-x 1 runneradmin 197121        0 Aug 15 12:17 selftest-win
+drwxr-xr-x 1 runneradmin 197121        0 Aug 15 12:17 windows
 -- selftest result --
-cat: 'dist-ci/selftest-*/result.txt': No such file or directory
+selftest_exit=0
+dist-ci/selftest-win/client.txt
+dist-ci/selftest-win/README_JA.md
+dist-ci/selftest-win/result.txt
+dist-ci/selftest-win/rsgraphics.dll
+dist-ci/selftest-win/rsift-bootstrap.jar
+dist-ci/selftest-win/rsift-setup.exe
+dist-ci/selftest-win/rsift.dll
+dist-ci/selftest-win/rsift_jvm.dll
+dist-ci/selftest-win/rsift_launch.json
+dist-ci/selftest-win/rsift_setup_log.jsonl
