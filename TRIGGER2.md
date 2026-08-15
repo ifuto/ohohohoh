@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 69  (javac最小化: --release/search/2-try全部廃止、デフォルトjavacのみ。前回分=run 68)
 - run: 68  (/tmp/manifest削除 + jar検証size比較化。前回分=run 67)
 - run: 67  (jar検証 strings→grep -a Windows対応。前回分=run 66)
 - run: 66  (@/tmp/ → @bootstrap_srcs.txt (Windows javacが/tmp/を解釈できない問題)。前回分=run 65)
@@ -166,40 +167,15 @@ mkdir -p bootstrap/prebuilt/classes
 # 残り全ソース(RsiftHooks/各Bridge)は反射ベースで単独コンパイル可能。
 find bootstrap/java -name "*.java" ! -name "ScreenInitPatcher.java" ! -name "RsiftPacketTap.java" > bootstrap_srcs.txt
 echo "[trigger2] javac sources: $(wc -l < bootstrap_srcs.txt) files (ScreenInitPatcher/RsiftPacketTap excluded — need ASM/Netty, handled as absent at runtime)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-# wave HS (run-46 で確定): runner 既定 javac が --release を認識しない古い場合が
-# ある (rc=2 "Usage")。--release 21 を受理する javac (JDK9+) を PATH / JAVA_HOME /
-# 標準JDKインストール先から発見して使う。GitHub runner は temurin-21 等を標準搭載。
-echo "[trigger2] default javac=$(command -v javac || echo NONE) java=$(command -v java || echo NONE) JAVA_HOME=${JAVA_HOME:-<unset>}" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-javac -version 2>&1 | head -1 | sed 's/^/[trigger2] javac -version: /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt || true
-java  -version 2>&1 | head -1 | sed 's/^/[trigger2] java  -version: /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt || true
-# wave HS: runner 既定 javac が JDK17 に roll し --release 21 を拒否 (rc=2) する場合がある。
-# 2 段トライで class ≤ 65 (MC Java21 でロード可能) を確実に出す:
-#   try1: javac --release 21  (JDK21+/25 なら成功 → class65)
-#   try2: javac (フラグ無し)   (try1 失敗=既定JDK17等 → class61, MC Java21 で下位互換ロード)
-# wave HS: Windows では javac が PATH に無い場合がある → 標準JDKインストール先から探す
-JAVAC_BIN="javac"
-if ! command -v javac >/dev/null 2>&1; then
-  for jc in /c/hostedtoolcache/windows/Java_Temurin-Hotspot_jdk/*/x64/bin/javac.exe \
-            "/c/Program Files/Eclipse Adoptium/"*/bin/javac.exe \
-            "/c/Program Files/Java/"*/bin/javac.exe; do
-    if [ -x "$jc" ]; then JAVAC_BIN="$jc"; break; fi
-  done
-fi
-echo "[trigger2] using javac: $JAVAC_BIN" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-JAVAC_RC=1
-"$JAVAC_BIN" --release 21 -d bootstrap/prebuilt/classes @bootstrap_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
-echo "[trigger2] javac --release 21 rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+echo "[trigger2] default javac=$(command -v javac || echo NONE)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+# 全OSで確実にコンパイルするため、--release 使わずデフォルトjavacのみ使用。
+# class version は javac のバージョンに従う(JDK17→class61, Java21 runtimeで下位互換ロード可)。
+JAVAC_RC=0
+javac -d bootstrap/prebuilt/classes @bootstrap_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
+echo "[trigger2] javac rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 if [ "$JAVAC_RC" != "0" ]; then
-  echo "[trigger2] --release 21 failed — フラグ無しで再トライ" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-  tail -4 /tmp/rsift_javac.log | sed 's/^/    /' | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-  rm -rf bootstrap/prebuilt/classes/com
-  JAVAC_RC=0
-  "$JAVAC_BIN" -d bootstrap/prebuilt/classes @bootstrap_srcs.txt > /tmp/rsift_javac.log 2>&1 || JAVAC_RC=$?
-  echo "[trigger2] javac (no --release) rc=$JAVAC_RC" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-fi
-if [ "$JAVAC_RC" != "0" ]; then
-  echo "FATAL: javac failed both attempts — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
-  tail -40 /tmp/rsift_javac.log | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  echo "FATAL: javac failed" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+  tail -20 /tmp/rsift_javac.log | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 fi
 # javac が完全成功 (rc=0) かつクラス生成済みの時だけ prebuilt jar を上書き。
 # 部分コンパイル (rc!=0 だが一部クラス生成) で壊れた jar を出荷しないための保護。
