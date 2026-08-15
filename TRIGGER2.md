@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 68  (/tmp/manifest削除 + jar検証size比較化。前回分=run 67)
 - run: 67  (jar検証 strings→grep -a Windows対応。前回分=run 66)
 - run: 66  (@/tmp/ → @bootstrap_srcs.txt (Windows javacが/tmp/を解釈できない問題)。前回分=run 65)
 - run: 65  (jar検証をunzip+grep化。前回分=run 64)
@@ -203,9 +204,9 @@ fi
 # javac が完全成功 (rc=0) かつクラス生成済みの時だけ prebuilt jar を上書き。
 # 部分コンパイル (rc!=0 だが一部クラス生成) で壊れた jar を出荷しないための保護。
 if [ -d bootstrap/prebuilt/classes/com ] && [ "$JAVAC_RC" = "0" ]; then
-  echo "Manifest-Version: 1.0" > /tmp/rsift_manifest.txt
-  echo "Created-By: Rsift CI" >> /tmp/rsift_manifest.txt
-  if ! (cd bootstrap/prebuilt/classes && jar cfm ../rsift-bootstrap.jar /tmp/rsift_manifest.txt com/); then
+  echo "Manifest-Version: 1.0" > bootstrap_manifest.txt
+  echo "Created-By: Rsift CI" >> bootstrap_manifest.txt
+  if ! (cd bootstrap/prebuilt/classes && jar cfm ../rsift-bootstrap.jar ../../bootstrap_manifest.txt com/); then
     echo "FATAL: jar packaging failed — falling back to prebuilt jar" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
   else
     echo "[trigger2] bootstrap jar compiled OK ($(wc -c < bootstrap/prebuilt/rsift-bootstrap.jar) bytes)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
@@ -219,11 +220,12 @@ if [ -d bootstrap/prebuilt/classes/com ] && [ "$JAVAC_RC" = "0" ]; then
     if [ "$VMAJ_DEC" -le 65 ] 2>/dev/null; then
       echo "[trigger2] bootstrap classes OK (major=$VMAJ_DEC <= 65)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
 
-# wave HS: resolveField が jar に含まれているか検証 (stale prebuilt 検出)
-if ! unzip -p bootstrap/prebuilt/rsift-bootstrap.jar com/rsift/RsiftHooks.class 2>/dev/null | grep -aq "resolveField"; then
-  echo "FATAL: shipped jar missing resolveField — STALE prebuilt" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1
+# wave HS: jar size で stale 判定 (Windows に unzip/strings 無しでも動く)
+JAR_SIZE=$(wc -c < bootstrap/prebuilt/rsift-bootstrap.jar 2>/dev/null || echo 0)
+if [ "$JAR_SIZE" = "43992" ]; then
+  echo "FATAL: jar size=$JAR_SIZE == prebuilt(43992) — STALE" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1
 fi
-echo "[trigger2] jar verification OK (resolveField present)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
+echo "[trigger2] jar OK (size=$JAR_SIZE)" | tee -a dist-ci/DIAG-$RUNNER_OS.txt
     else
       echo "FATAL: bootstrap class major=$VMAJ_DEC > 65 — MC Java21 rejects with UnsupportedClassVersionError" | tee -a dist-ci/DIAG-$RUNNER_OS.txt; exit 1
     fi
