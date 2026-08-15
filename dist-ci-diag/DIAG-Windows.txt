@@ -1,40 +1,40 @@
 [trigger2] compiling bootstrap jar from sources...
-[trigger2] default javac=/c/hostedtoolcache/windows/Java_Temurin-Hotspot_jdk/17.0.19-10/x64/bin/javac java=/c/hostedtoolcache/windows/Java_Temurin-Hotspot_jdk/17.0.19-10/x64/bin/java JAVA_HOME=C:\hostedtoolcache\windows\Java_Temurin-Hotspot_jdk\17.0.19-10\x64
-[trigger2] javac -version: javac 17.0.19
-[trigger2] java  -version: openjdk version "17.0.19" 2026-04-21
-[trigger2] picked javac (--release 21 capable): <NONE FOUND>
-FATAL: no javac supporting --release 21 found — using prebuilt (STALE) jar
-[trigger2] WARNING: javac produced no classes — using prebuilt jar
-[trigger2] entering cargo build for RUNNER_OS=Windows
-== DIAG Windows exit=0 time=2026-08-05T02:37:20Z ==
+[trigger2] javac sources: 12 files (ScreenInitPatcher/RsiftPacketTap excluded — need ASM/Netty, handled as absent at runtime)
+[trigger2] default javac=/c/hostedtoolcache/windows/Java_Temurin-Hotspot_jdk/17.0.20-8/x64/bin/javac
+[trigger2] javac rc=1
+FATAL: javac failed
+                                                                                 ^
+bootstrap\java\com\rsift\RsiftRenderHooks.java:86: error: unmappable character (0x8D) for encoding windows-1252
+    /** LevelRenderer.renderChunkLayer HEAD (vanilla �??画ループ実測。必�?��?�復帰)。 */
+                                                                                    ^
+bootstrap\java\com\rsift\RsiftRuntimeHooks.java:44: error: unmappable character (0x90) for encoding windows-1252
+        // wave HR: mojmap メソッド�??を obf 解決�?��?��?�らリフレクション
+                                        ^
+bootstrap\java\com\rsift\RsiftRuntimeHooks.java:44: error: unmappable character (0x8D) for encoding windows-1252
+        // wave HR: mojmap メソッド�??を obf 解決�?��?��?�らリフレクション
+                                         ^
+bootstrap\java\com\rsift\RsiftRuntimeHooks.java:44: error: unmappable character (0x81) for encoding windows-1252
+        // wave HR: mojmap メソッド�??を obf 解決�?��?��?�らリフレクション
+                                                         ^
+bootstrap\java\com\rsift\RsiftRuntimeHooks.java:44: error: unmappable character (0x81) for encoding windows-1252
+        // wave HR: mojmap メソッド�??を obf 解決�?��?��?�らリフレクション
+                                                            ^
+bootstrap\java\com\rsift\RsiftRuntimeHooks.java:44: error: unmappable character (0x81) for encoding windows-1252
+        // wave HR: mojmap メソッド�??を obf 解決�?��?��?�らリフレクション
+                                                               ^
+73 errors
+== DIAG Windows exit=1 time=2026-08-15T11:50:17Z ==
 -- target/release cdylib 候補 --
+ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
 ls: cannot access 'target/release/*.so': No such file or directory
--rwxr-xr-x 2 runneradmin 197121  6554112 Aug  5 02:33 target/release/rsgraphics.dll
--rwxr-xr-x 2 runneradmin 197121   107008 Aug  5 02:34 target/release/rsift_api.dll
--rwxr-xr-x 2 runneradmin 197121 11686400 Aug  5 02:37 target/release/rsift_jvm.dll
--rwxr-xr-x 2 runneradmin 197121   993792 Aug  5 02:33 target/release/rsreplay.dll
--rwxr-xr-x 2 runneradmin 197121   534016 Aug  5 02:33 target/release/rszoom.dll
 ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or directory
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
-total 42760
-drwxr-xr-x 1 runneradmin 197121        0 Aug  5 02:37 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug  5 02:28 ..
--rw-r--r-- 1 runneradmin 197121     1508 Aug  5 02:37 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 11779287 Aug  5 02:28 client.txt
--rw-r--r-- 1 runneradmin 197121 31989760 Aug  5 02:37 rsift-bundle-windows-x64.zip
-drwxr-xr-x 1 runneradmin 197121        0 Aug  5 02:37 selftest-win
-drwxr-xr-x 1 runneradmin 197121        0 Aug  5 02:37 windows
+total 11512
+drwxr-xr-x 1 runneradmin 197121        0 Aug 15 11:50 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug 15 11:50 ..
+-rw-r--r-- 1 runneradmin 197121     2506 Aug 15 11:50 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 11779287 Aug 15 11:50 client.txt
 -- selftest result --
-selftest_exit=0
-dist-ci/selftest-win/client.txt
-dist-ci/selftest-win/README_JA.md
-dist-ci/selftest-win/result.txt
-dist-ci/selftest-win/rsgraphics.dll
-dist-ci/selftest-win/rsift-bootstrap.jar
-dist-ci/selftest-win/rsift-setup.exe
-dist-ci/selftest-win/rsift.dll
-dist-ci/selftest-win/rsift_jvm.dll
-dist-ci/selftest-win/rsift_launch.json
-dist-ci/selftest-win/rsift_setup_log.jsonl
+cat: 'dist-ci/selftest-*/result.txt': No such file or directory
