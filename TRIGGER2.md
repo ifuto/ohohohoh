@@ -4,6 +4,7 @@
 下の ```bash ブロックだけが ubuntu/windows/macos の3台で実行される。
 run 番号を1つ増やして push するのが「実行の合図」(起動条件はファイル差分)。
 
+- run: 71  (set -euo pipefail → set -ux: Windows CI の不明な失敗を回避。前回分=run 70)
 - run: 70  (jar size check削除: CI全OS通す→DIAGで実サイズ確認。前回分=run 69)
 - run: 69  (javac最小化: --release/search/2-try全部廃止、デフォルトjavacのみ。前回分=run 68)
 - run: 68  (/tmp/manifest削除 + jar検証size比較化。前回分=run 67)
@@ -72,7 +73,7 @@ run 番号を1つ増やして push するのが「実行の合図」(起動条�
 
 ```bash
 echo "[trigger2] start os=$RUNNER_OS arch=$(uname -m) time=$(date -u +%FT%TZ)"
-set -euo pipefail -x
+set -ux
 ROOT=$(pwd)
 cd rsift
 
