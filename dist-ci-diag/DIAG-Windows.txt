@@ -23,7 +23,7 @@ bootstrap\java\com\rsift\RsiftRuntimeHooks.java:44: error: unmappable character 
         // wave HR: mojmap メソッド�??を obf 解決�?��?��?�らリフレクション
                                                                ^
 73 errors
-== DIAG Windows exit=1 time=2026-08-15T11:50:17Z ==
+== DIAG Windows exit=1 time=2026-08-15T11:59:25Z ==
 -- target/release cdylib 候補 --
 ls: cannot access 'target/release/*.dll': No such file or directory
 ls: cannot access 'target/release/*.dylib': No such file or directory
@@ -32,9 +32,9 @@ ls: cannot access 'target/aarch64-apple-darwin/release/*.dylib': No such file or
 ls: cannot access 'target/x86_64-apple-darwin/release/*.dylib': No such file or directory
 -- dist-ci --
 total 11512
-drwxr-xr-x 1 runneradmin 197121        0 Aug 15 11:50 .
-drwxr-xr-x 1 runneradmin 197121        0 Aug 15 11:50 ..
--rw-r--r-- 1 runneradmin 197121     2506 Aug 15 11:50 DIAG-Windows.txt
--rw-r--r-- 1 runneradmin 197121 11779287 Aug 15 11:50 client.txt
+drwxr-xr-x 1 runneradmin 197121        0 Aug 15 11:59 .
+drwxr-xr-x 1 runneradmin 197121        0 Aug 15 11:59 ..
+-rw-r--r-- 1 runneradmin 197121     2506 Aug 15 11:59 DIAG-Windows.txt
+-rw-r--r-- 1 runneradmin 197121 11779287 Aug 15 11:59 client.txt
 -- selftest result --
 cat: 'dist-ci/selftest-*/result.txt': No such file or directory
